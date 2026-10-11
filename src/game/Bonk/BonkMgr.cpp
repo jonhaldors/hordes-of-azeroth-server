@@ -12,22 +12,66 @@
 
 INSTANTIATE_SINGLETON_1(BonkMgr);
 
-char const* BonkMap::GetDifficultyName() const
-{
-    switch (difficulty)
-    {
-        case 0: return "Easy";
-        case 1: return "Normal";
-        default: return "Hard";
-    }
-}
-
 void BonkMgr::Load()
 {
+    LoadTiers();
     LoadMaps();
     LoadMapCreatures();
+    LoadMapEvents();
     LoadWeapons();
     LoadPassives();
+
+    for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL })
+        if (!sObjectMgr.GetGameObjectTemplate(entry))
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: gameobject template %u is missing; runs will lack chests or portals.", entry);
+}
+
+void BonkMgr::LoadTiers()
+{
+    m_tiers.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `key`, `name`, `health_multiplier`, `damage_multiplier`, `stage_health_growth`, `stage_damage_growth`, "
+        "`stage_spawn_growth`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage` FROM `bonk_tier`"));
+
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk tiers. Table `bonk_tier` is empty or missing.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkTier tier;
+        tier.id = fields[0].GetUInt32();
+        tier.key = fields[1].GetCppString();
+        tier.name = fields[2].GetCppString();
+        tier.healthMultiplier = fields[3].GetFloat();
+        tier.damageMultiplier = fields[4].GetFloat();
+        tier.stageHealthGrowth = fields[5].GetFloat();
+        tier.stageDamageGrowth = fields[6].GetFloat();
+        tier.stageSpawnGrowth = fields[7].GetFloat();
+        tier.chestCost = fields[8].GetUInt32();
+        tier.chestCostGrowth = fields[9].GetFloat();
+        tier.unlockTierId = fields[10].GetUInt32();
+        tier.unlockStage = fields[11].GetUInt32();
+
+        m_tiers[tier.id] = std::move(tier);
+    } while (result->NextRow());
+
+    for (auto& itr : m_tiers)
+    {
+        BonkTier& tier = itr.second;
+        if (tier.unlockTierId && !m_tiers.count(tier.unlockTierId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_tier`: tier %u is unlocked by unknown tier %u; it is always open.", tier.id, tier.unlockTierId);
+            tier.unlockTierId = 0;
+        }
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk tiers", uint32(m_tiers.size()));
 }
 
 void BonkMgr::LoadMaps()
@@ -36,10 +80,10 @@ void BonkMgr::LoadMaps()
     m_arenaZonesByMap.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `key`, `name`, `difficulty`, `map_id`, `zone_id`, `position_x`, `position_y`, `position_z`, `orientation`, "
+        "SELECT `id`, `key`, `name`, `tier`, `map_id`, `zone_id`, `position_x`, `position_y`, `position_z`, `orientation`, "
         "`duration_sec`, `level_offset`, `health_multiplier`, `damage_multiplier`, `health_growth_per_min`, "
         "`spawn_interval_ms`, `spawn_batch`, `spawn_batch_growth_per_min`, `max_alive`, `elite_interval_sec`, "
-        "`gold_per_kill`, `victory_gold` FROM `bonk_map`"));
+        "`gold_per_kill`, `stage_gold`, `coins_per_kill` FROM `bonk_map`"));
 
     if (!result)
     {
@@ -55,7 +99,7 @@ void BonkMgr::LoadMaps()
         map.id = fields[0].GetUInt32();
         map.key = fields[1].GetCppString();
         map.name = fields[2].GetCppString();
-        map.difficulty = fields[3].GetUInt8();
+        map.tierId = fields[3].GetUInt32();
         map.mapId = fields[4].GetUInt32();
         map.zoneId = fields[5].GetUInt32();
         map.x = fields[6].GetFloat();
@@ -73,13 +117,20 @@ void BonkMgr::LoadMaps()
         map.maxAlive = fields[18].GetUInt32();
         map.eliteIntervalSeconds = fields[19].GetUInt32();
         map.goldPerKill = fields[20].GetUInt32();
-        map.victoryGold = fields[21].GetUInt32();
+        map.stageGold = fields[21].GetUInt32();
+        map.coinsPerKill = fields[22].GetUInt32();
 
         if (!sMapStorage.LookupEntry<MapEntry>(map.mapId))
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map`: map %u (%s) does not exist, skipped.", map.mapId, map.name.c_str());
             continue;
         }
+
+        auto tier = m_tiers.find(map.tierId);
+        if (tier == m_tiers.end())
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map`: map %u (%s) belongs to unknown tier %u; no run will use it.", map.id, map.name.c_str(), map.tierId);
+        else
+            tier->second.mapIds.push_back(map.id);
 
         m_arenaZonesByMap[map.mapId].insert(map.zoneId);
         m_maps[map.id] = std::move(map);
@@ -115,7 +166,7 @@ void BonkMgr::LoadMapCreatures()
 
         BonkMapCreature creature;
         creature.entry = fields[1].GetUInt32();
-        creature.kind = BonkSpawnKind(std::min<uint8>(fields[2].GetUInt8(), BONK_SPAWN_BOSS));
+        uint8 const kind = fields[2].GetUInt8();
         creature.minSecond = fields[3].GetUInt32();
         creature.maxSecond = fields[4].GetUInt32();
         creature.weight = std::max(1u, fields[5].GetUInt32());
@@ -123,6 +174,13 @@ void BonkMgr::LoadMapCreatures()
         creature.damageMultiplier = fields[7].GetFloat();
         creature.speed = fields[8].GetFloat();
         creature.scale = fields[9].GetFloat();
+
+        if (kind >= MAX_BONK_SPAWN_KIND)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map_creature`: creature %u has unknown kind %u, skipped.", creature.entry, kind);
+            continue;
+        }
+        creature.kind = BonkSpawnKind(kind);
 
         if (!sObjectMgr.GetCreatureTemplate(creature.entry))
         {
@@ -135,6 +193,49 @@ void BonkMgr::LoadMapCreatures()
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk map creatures", count);
+}
+
+void BonkMgr::LoadMapEvents()
+{
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `bonk_map_id`, `second`, `event`, `count` FROM `bonk_map_event` ORDER BY `second`"));
+
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk map events.");
+        return;
+    }
+
+    uint32 count = 0;
+    do
+    {
+        Field* fields = result->Fetch();
+
+        uint32 const bonkMapId = fields[0].GetUInt32();
+        auto map = m_maps.find(bonkMapId);
+        if (map == m_maps.end())
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map_event`: unknown bonk map %u, skipped.", bonkMapId);
+            continue;
+        }
+
+        BonkMapEvent event;
+        event.second = fields[1].GetUInt32();
+        uint8 const type = fields[2].GetUInt8();
+        event.count = std::max(1u, fields[3].GetUInt32());
+
+        if (type >= MAX_BONK_EVENT)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map_event`: map %u has unknown event %u, skipped.", bonkMapId, type);
+            continue;
+        }
+        event.type = BonkEventType(type);
+
+        map->second.events.push_back(event);
+        ++count;
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk map events", count);
 }
 
 void BonkMgr::LoadWeapons()
@@ -234,18 +335,24 @@ void BonkMgr::LoadPassives()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk passives", uint32(m_passives.size()));
 }
 
+BonkTier const* BonkMgr::GetTier(uint32 id) const
+{
+    auto itr = m_tiers.find(id);
+    return itr != m_tiers.end() ? &itr->second : nullptr;
+}
+
+BonkTier const* BonkMgr::FindTier(std::string const& keyOrId) const
+{
+    for (auto const& itr : m_tiers)
+        if (itr.second.key == keyOrId || std::to_string(itr.first) == keyOrId)
+            return &itr.second;
+    return nullptr;
+}
+
 BonkMap const* BonkMgr::GetMap(uint32 id) const
 {
     auto itr = m_maps.find(id);
     return itr != m_maps.end() ? &itr->second : nullptr;
-}
-
-BonkMap const* BonkMgr::FindMap(std::string const& keyOrId) const
-{
-    for (auto const& itr : m_maps)
-        if (itr.second.key == keyOrId || std::to_string(itr.first) == keyOrId)
-            return &itr.second;
-    return nullptr;
 }
 
 BonkWeapon const* BonkMgr::GetWeapon(uint32 id) const

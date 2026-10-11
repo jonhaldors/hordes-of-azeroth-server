@@ -7,6 +7,7 @@
 #include "BonkPlayer.h"
 #include "Chat.h"
 #include "Creature.h"
+#include "GameObject.h"
 #include "Map.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -28,10 +29,18 @@ namespace
     // Summons only count down when they despawn on the summoner's map, so the
     // count drifts a little every run; the run enforces max_alive itself.
     uint32 const BONK_SUMMON_LIMIT         = 1000;
+    // Chests and portals despawn on their own after this long if the run
+    // could not remove them (logout during a teleport).
+    uint32 const BONK_OBJECT_LIFETIME_SEC  = 3600;
 
     float const BONK_SPAWN_MIN_DISTANCE    = 26.0f;
     float const BONK_SPAWN_MAX_DISTANCE    = 36.0f;
     float const BONK_SPAWN_MAX_HEIGHT_DIFF = 20.0f;
+    float const BONK_CHEST_MIN_DISTANCE    = 15.0f;
+    float const BONK_CHEST_MAX_DISTANCE    = 45.0f;
+    float const BONK_PORTAL_DISTANCE       = 6.0f;
+    // A swarm may push the enemy count this far past max_alive.
+    float const BONK_SWARM_OVERFLOW        = 1.5f;
 
     size_t const BONK_MAX_WEAPONS  = 6;
     size_t const BONK_MAX_PASSIVES = 6;
@@ -45,9 +54,10 @@ namespace
     {
         switch (kind)
         {
-            case BONK_SPAWN_ELITE: return 10.0f;
-            case BONK_SPAWN_BOSS:  return 150.0f;
-            default:               return 1.0f;
+            case BONK_SPAWN_ELITE:    return 10.0f;
+            case BONK_SPAWN_MINIBOSS: return 40.0f;
+            case BONK_SPAWN_BOSS:     return 150.0f;
+            default:                  return 1.0f;
         }
     }
 
@@ -55,19 +65,33 @@ namespace
     {
         switch (kind)
         {
-            case BONK_SPAWN_ELITE: return 2.0f;
-            case BONK_SPAWN_BOSS:  return 4.0f;
-            default:               return 1.0f;
+            case BONK_SPAWN_ELITE:    return 2.0f;
+            case BONK_SPAWN_MINIBOSS: return 3.0f;
+            case BONK_SPAWN_BOSS:     return 4.0f;
+            default:                  return 1.0f;
         }
     }
 
+    // Gold, coins and experience, in normal kills.
     uint32 GetKindReward(BonkSpawnKind kind)
     {
         switch (kind)
         {
-            case BONK_SPAWN_ELITE: return 5;
-            case BONK_SPAWN_BOSS:  return 50;
-            default:               return 1;
+            case BONK_SPAWN_ELITE:    return 5;
+            case BONK_SPAWN_MINIBOSS: return 20;
+            case BONK_SPAWN_BOSS:     return 50;
+            default:                  return 1;
+        }
+    }
+
+    uint32 GetKindLevelBonus(BonkSpawnKind kind)
+    {
+        switch (kind)
+        {
+            case BONK_SPAWN_ELITE:    return 1;
+            case BONK_SPAWN_MINIBOSS: return 2;
+            case BONK_SPAWN_BOSS:     return 2;
+            default:                  return 0;
         }
     }
 
@@ -86,12 +110,20 @@ namespace
     }
 }
 
-BonkRun::BonkRun(Player* player, BonkMap const& map) : m_player(player), m_map(map)
+BonkRun::BonkRun(Player* player, BonkTier const& tier) : m_player(player), m_tier(tier)
 {
 }
 
 bool BonkRun::Begin(std::string& error)
 {
+    BonkMap const* first = ChooseNextMap();
+    if (!first)
+    {
+        error = "No maps are set up for " + m_tier.name + ".";
+        return false;
+    }
+    m_map = *first;
+
     // GM mode makes the player untargetable, which would make the run trivial.
     if (m_player->IsGameMaster())
         m_player->SetGameMaster(false);
@@ -100,13 +132,50 @@ bool BonkRun::Begin(std::string& error)
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
 
-    if (!m_player->TeleportTo(m_map.mapId, m_map.x, m_map.y, m_map.z, m_map.o))
+    return TeleportToStage(m_map, error);
+}
+
+BonkMap const* BonkRun::ChooseNextMap()
+{
+    // Each lap plays every map of the pool once in random order, and the
+    // same map never comes twice in a row unless it is the only one.
+    std::vector<BonkMap const*> pool;
+    for (uint32 id : m_tier.mapIds)
+        if (BonkMap const* map = sBonkMgr.GetMap(id))
+            if (!map->creatures.empty())
+                pool.push_back(map);
+
+    if (pool.empty())
+        return nullptr;
+
+    std::vector<BonkMap const*> candidates;
+    for (BonkMap const* map : pool)
+        if (!m_playedMaps.count(map->id))
+            candidates.push_back(map);
+
+    if (candidates.empty())
     {
-        error = "Could not enter " + m_map.name + ".";
+        m_playedMaps.clear();
+        for (BonkMap const* map : pool)
+            if (pool.size() == 1 || map->id != m_map.id)
+                candidates.push_back(map);
+    }
+
+    BonkMap const* map = candidates[urand(0, uint32(candidates.size() - 1))];
+    m_playedMaps.insert(map->id);
+    return map;
+}
+
+bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
+{
+    if (!m_player->TeleportTo(map.mapId, map.x, map.y, map.z, map.o))
+    {
+        error = "Could not enter " + map.name + ".";
         return false;
     }
 
     m_state = STATE_ENTERING;
+    m_enterTimer = 0;
     return true;
 }
 
@@ -118,7 +187,7 @@ void BonkRun::Update(uint32 diff)
         {
             if (m_player->GetMapId() == m_map.mapId && !m_player->IsBeingTeleported())
             {
-                StartRunning();
+                StartStage();
                 return;
             }
 
@@ -126,13 +195,40 @@ void BonkRun::Update(uint32 diff)
             if (m_enterTimer >= BONK_ENTER_TIMEOUT_MS)
             {
                 m_player->GetBonkPlayer()->Notify("Could not enter " + m_map.name + ".");
-                m_state = STATE_FINISHED;
+                Exit();
             }
             break;
         }
         case STATE_RUNNING:
             UpdateRunning(diff);
             break;
+        case STATE_PORTAL:
+        {
+            if (!m_player->IsAlive())
+            {
+                Finish(false);
+                return;
+            }
+
+            UpdateOffers();
+            UpdateBoundary(diff);
+
+            m_stateTimer += diff;
+            if (m_stateTimer >= BONK_STATE_INTERVAL_MS)
+            {
+                m_stateTimer = 0;
+                SendState();
+
+                // Never leave the player without a way out.
+                if (!m_player->GetMap()->GetGameObject(m_portalGuid) && !m_player->IsBeingTeleported())
+                {
+                    float const angle = m_player->GetOrientation();
+                    PlacePortal(m_player->GetPositionX() + BONK_PORTAL_DISTANCE * std::cos(angle),
+                        m_player->GetPositionY() + BONK_PORTAL_DISTANCE * std::sin(angle), m_player->GetPositionZ());
+                }
+            }
+            break;
+        }
         case STATE_ENDING:
             m_endTimer -= int32(diff);
             if (m_endTimer <= 0)
@@ -143,11 +239,15 @@ void BonkRun::Update(uint32 diff)
     }
 }
 
-void BonkRun::StartRunning()
+void BonkRun::StartStage()
 {
     m_state = STATE_RUNNING;
+    m_elapsedMs = 0;
+    m_nextEvent = 0;
     m_spawnTimer = BONK_FIRST_WAVE_MS;
     m_eliteTimer = m_map.eliteIntervalSeconds * IN_MILLISECONDS;
+    m_bossSpawned = false;
+    m_bossGuid.Clear();
     m_lastLevel = m_player->GetLevel();
     m_safeX = m_player->GetPositionX();
     m_safeY = m_player->GetPositionY();
@@ -156,28 +256,39 @@ void BonkRun::StartRunning()
     // The summon limit is stored per map, so set it once we are in the arena.
     m_player->SetCreatureSummonLimit(BONK_SUMMON_LIMIT);
 
-    uint32 const classMask = m_player->GetClassMask();
-    for (auto const& itr : sBonkMgr.GetWeapons())
-        if (itr.second.starterClassMask & classMask)
-            AddWeapon(itr.second);
-
-    // Every class needs something that fires on its own.
     if (m_weapons.empty())
+    {
+        uint32 const classMask = m_player->GetClassMask();
         for (auto const& itr : sBonkMgr.GetWeapons())
-            if (!itr.second.classMask || (itr.second.classMask & classMask))
-            {
+            if (itr.second.starterClassMask & classMask)
                 AddWeapon(itr.second);
-                break;
-            }
+
+        // Every class needs something that fires on its own.
+        if (m_weapons.empty())
+            for (auto const& itr : sBonkMgr.GetWeapons())
+                if (!itr.second.classMask || (itr.second.classMask & classMask))
+                {
+                    AddWeapon(itr.second);
+                    break;
+                }
+    }
+    else
+    {
+        // A fresh stage starts at full health.
+        m_player->SetHealth(m_player->GetMaxHealth());
+        m_player->SetPower(POWER_MANA, m_player->GetMaxPower(POWER_MANA));
+    }
+
+    m_player->GetBonkPlayer()->RecordStage(m_tier.id, m_stage);
 
     SendFullState();
-    m_player->GetBonkPlayer()->Notify(m_map.name + " - survive " + FormatTime(m_map.durationSeconds) + "!");
+    m_player->GetBonkPlayer()->Notify("Stage " + std::to_string(m_stage) + ": " + m_map.name + " - the boss comes in " + FormatTime(m_map.durationSeconds) + "!");
 }
 
 void BonkRun::SendFullState() const
 {
     BonkPlayer* bonk = m_player->GetBonkPlayer();
-    bonk->SendAddon("start~" + m_map.name + "~" + m_map.GetDifficultyName() + "~" + std::to_string(m_map.durationSeconds));
+    bonk->SendAddon("start~" + m_map.name + "~" + m_tier.name + "~" + std::to_string(m_map.durationSeconds) + "~" + std::to_string(m_stage));
     SendLoadout();
     SendState();
     if (!m_offer.empty())
@@ -192,23 +303,19 @@ void BonkRun::UpdateRunning(uint32 diff)
         return;
     }
 
-    uint32 const level = m_player->GetLevel();
-    if (level > m_lastLevel)
-    {
-        m_pendingLevels += level - m_lastLevel;
-        m_lastLevel = level;
-    }
-
-    if (m_pendingLevels && m_offer.empty())
-        OfferUpgrades();
-
+    UpdateOffers();
     if (m_paused)
         return;
 
     m_elapsedMs += diff;
+    m_totalMs += diff;
 
     UpdateBoundary(diff);
     UpdateRecovery(diff);
+    UpdateEvents();
+    if (m_state != STATE_RUNNING)
+        return;
+
     UpdateSpawns(diff);
     if (m_state != STATE_RUNNING)
         return;
@@ -223,6 +330,25 @@ void BonkRun::UpdateRunning(uint32 diff)
         m_stateTimer = 0;
         SendState();
     }
+}
+
+void BonkRun::UpdateOffers()
+{
+    uint32 const level = m_player->GetLevel();
+    if (level > m_lastLevel)
+    {
+        m_pendingLevels += level - m_lastLevel;
+        m_lastLevel = level;
+    }
+
+    if (!m_offer.empty())
+        return;
+
+    // Chests first: the player just walked up to one.
+    if (m_pendingChests)
+        OfferUpgrades(OFFER_CHEST);
+    else if (m_pendingLevels)
+        OfferUpgrades(OFFER_LEVEL);
 }
 
 void BonkRun::UpdateBoundary(uint32 diff)
@@ -261,6 +387,76 @@ void BonkRun::UpdateRecovery(uint32 diff)
     m_player->ModifyHealth(std::max(1, int32(m_player->GetMaxHealth() * percent / 100.0f)));
 }
 
+void BonkRun::UpdateEvents()
+{
+    uint32 const elapsedSeconds = m_elapsedMs / IN_MILLISECONDS;
+    while (m_nextEvent < m_map.events.size() && m_map.events[m_nextEvent].second <= elapsedSeconds)
+    {
+        RunEvent(m_map.events[m_nextEvent++]);
+        if (m_state != STATE_RUNNING)
+            return;
+    }
+}
+
+void BonkRun::RunEvent(BonkMapEvent const& event)
+{
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+
+    switch (event.type)
+    {
+        case BONK_EVENT_MINIBOSS:
+        {
+            std::string name;
+            for (uint32 i = 0; i < event.count; ++i)
+            {
+                BonkMapCreature const* creature = PickCreature(BONK_SPAWN_MINIBOSS);
+                if (!creature)
+                    creature = PickCreature(BONK_SPAWN_ELITE);
+                if (creature)
+                    if (Creature* mob = SpawnMob(*creature))
+                        name = mob->GetName();
+            }
+            if (!name.empty())
+                bonk->Notify(name + " has arrived!");
+            break;
+        }
+        case BONK_EVENT_ELITES:
+        {
+            bool spawned = false;
+            for (uint32 i = 0; i < event.count; ++i)
+                if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_ELITE))
+                    spawned |= SpawnMob(*creature) != nullptr;
+            if (spawned)
+                bonk->Notify("Elites are closing in!");
+            break;
+        }
+        case BONK_EVENT_SWARM:
+        {
+            PruneMobs();
+            uint32 const cap = uint32(m_map.maxAlive * BONK_SWARM_OVERFLOW);
+            uint32 const alive = m_mobs.size();
+            uint32 const count = std::min(event.count, cap > alive ? cap - alive : 0u);
+            for (uint32 i = 0; i < count; ++i)
+                if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_NORMAL))
+                    SpawnMob(*creature);
+            if (count)
+                bonk->Notify("A swarm is coming!");
+            break;
+        }
+        case BONK_EVENT_CHESTS:
+        {
+            uint32 placed = 0;
+            for (uint32 i = 0; i < event.count; ++i)
+                placed += SpawnChestNearby() ? 1 : 0;
+            if (placed)
+                bonk->Notify(placed == 1 ? "A chest appeared nearby." : "Chests appeared nearby.");
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 void BonkRun::PruneMobs()
 {
     Map* map = m_player->GetMap();
@@ -275,18 +471,28 @@ void BonkRun::UpdateSpawns(uint32 diff)
 {
     uint32 const elapsedSeconds = m_elapsedMs / IN_MILLISECONDS;
 
+    // A boss that left without dying (despawned, removed by a GM) comes back.
+    if (m_bossSpawned)
+    {
+        Creature* boss = m_player->GetMap()->GetCreature(m_bossGuid);
+        if (!boss || (boss->IsAlive() && boss->HasCreatureState(CSTATE_DESPAWNING)))
+            m_bossSpawned = false;
+    }
+
     if (!m_bossSpawned && elapsedSeconds >= m_map.durationSeconds)
     {
-        m_bossSpawned = true;
-        if (BonkMapCreature const* boss = PickCreature(BONK_SPAWN_BOSS))
+        BonkMapCreature const* boss = PickCreature(BONK_SPAWN_BOSS);
+        if (!boss)
         {
-            SpawnMob(*boss);
-            m_player->GetBonkPlayer()->Notify("The boss has arrived!");
-        }
-        else
-        {
-            Finish(true);
+            OpenPortal(nullptr);
             return;
+        }
+
+        // Without room around the player, try again next update.
+        if (Creature* mob = SpawnMob(*boss))
+        {
+            m_bossSpawned = true;
+            m_player->GetBonkPlayer()->Notify(std::string(mob->GetName()) + " has arrived!");
         }
     }
 
@@ -310,7 +516,8 @@ void BonkRun::UpdateSpawns(uint32 diff)
     {
         m_spawnTimer += m_map.spawnIntervalMs;
 
-        float const batch = m_map.spawnBatch + m_map.spawnBatchGrowthPerMinute * (m_elapsedMs / float(MINUTE * IN_MILLISECONDS));
+        float const stageBonus = 1.0f + m_tier.stageSpawnGrowth * (m_stage - 1);
+        float const batch = (m_map.spawnBatch + m_map.spawnBatchGrowthPerMinute * (m_elapsedMs / float(MINUTE * IN_MILLISECONDS))) * stageBonus;
         uint32 count = uint32(batch);
         if (frand(0.0f, 1.0f) < batch - float(count))
             ++count;
@@ -346,7 +553,7 @@ BonkMapCreature const* BonkRun::PickCreature(BonkSpawnKind kind) const
     return nullptr;
 }
 
-bool BonkRun::FindSpawnPosition(float& x, float& y, float& z) const
+bool BonkRun::FindSpawnPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const
 {
     Map const* map = m_player->GetMap();
     float const playerZ = m_player->GetPositionZ();
@@ -354,7 +561,7 @@ bool BonkRun::FindSpawnPosition(float& x, float& y, float& z) const
     for (uint32 attempt = 0; attempt < 10; ++attempt)
     {
         float const angle = frand(0.0f, 2.0f * M_PI_F);
-        float const distance = frand(BONK_SPAWN_MIN_DISTANCE, BONK_SPAWN_MAX_DISTANCE);
+        float const distance = frand(minDistance, maxDistance);
         x = m_player->GetPositionX() + distance * std::cos(angle);
         y = m_player->GetPositionY() + distance * std::sin(angle);
         z = map->GetHeight(x, y, playerZ + BONK_SPAWN_MAX_HEIGHT_DIFF, true, 2.0f * BONK_SPAWN_MAX_HEIGHT_DIFF);
@@ -383,40 +590,45 @@ float BonkRun::GetMobHealth(uint32 level) const
     return 40.0f * level;
 }
 
-void BonkRun::SpawnMob(BonkMapCreature const& creature)
+float BonkRun::GetStageHealthMultiplier() const
+{
+    return m_tier.healthMultiplier * (1.0f + m_tier.stageHealthGrowth * (m_stage - 1));
+}
+
+float BonkRun::GetStageDamageMultiplier() const
+{
+    return m_tier.damageMultiplier * (1.0f + m_tier.stageDamageGrowth * (m_stage - 1));
+}
+
+Creature* BonkRun::SpawnMob(BonkMapCreature const& creature)
 {
     float x, y, z;
-    if (!FindSpawnPosition(x, y, z))
-        return;
+    if (!FindSpawnPosition(x, y, z, BONK_SPAWN_MIN_DISTANCE, BONK_SPAWN_MAX_DISTANCE))
+        return nullptr;
 
     float const facing = std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x);
     Creature* mob = m_player->SummonCreature(creature.entry, x, y, z, facing, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 2000, false, 0, &BonkMobAI::Install);
     if (!mob)
-        return;
+        return nullptr;
 
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
         ai->SetKind(creature.kind);
 
-    uint32 level = GetMobLevel();
-    if (creature.kind == BONK_SPAWN_ELITE)
-        level += 1;
-    else if (creature.kind == BONK_SPAWN_BOSS)
-        level += 2;
-    level = std::min(level, 63u);
-
+    uint32 const level = std::min(GetMobLevel() + GetKindLevelBonus(creature.kind), 63u);
     mob->SetLevel(level);
     mob->InitStatsForLevel();
 
     float const minutes = m_elapsedMs / float(MINUTE * IN_MILLISECONDS);
-    uint32 const health = std::max(1u, uint32(GetMobHealth(level) * m_map.healthMultiplier * creature.healthMultiplier *
-        GetKindHealth(creature.kind) * (1.0f + m_map.healthGrowthPerMinute * minutes)));
+    uint32 const health = std::max(1u, uint32(GetMobHealth(level) * GetStageHealthMultiplier() * m_map.healthMultiplier *
+        creature.healthMultiplier * GetKindHealth(creature.kind) * (1.0f + m_map.healthGrowthPerMinute * minutes)));
     mob->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, float(health));
     mob->SetMaxHealth(health);
     mob->SetHealth(health);
 
     if (CreatureClassLevelStats const* stats = sObjectMgr.GetCreatureClassLevelStats(CLASS_WARRIOR, level))
     {
-        float const damage = stats->melee_damage * m_map.damageMultiplier * creature.damageMultiplier * GetKindDamage(creature.kind);
+        float const damage = stats->melee_damage * GetStageDamageMultiplier() * m_map.damageMultiplier * creature.damageMultiplier *
+            GetKindDamage(creature.kind);
         mob->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, damage * 0.85f);
         mob->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, damage * 1.15f);
         mob->UpdateDamagePhysical(BASE_ATTACK);
@@ -432,6 +644,7 @@ void BonkRun::SpawnMob(BonkMapCreature const& creature)
     m_mobs.push_back(mob->GetObjectGuid());
     if (creature.kind == BONK_SPAWN_BOSS)
         m_bossGuid = mob->GetObjectGuid();
+    return mob;
 }
 
 std::vector<Creature*> BonkRun::GetMobsInRange(float range) const
@@ -466,6 +679,180 @@ void BonkRun::DespawnMobs()
             if (Creature* mob = map->GetCreature(guid))
                 mob->DespawnOrUnsummon();
     m_mobs.clear();
+}
+
+GameObject* BonkRun::PlaceObject(uint32 entry, float x, float y, float z)
+{
+    return m_player->SummonGameObject(entry, x, y, z, frand(0.0f, 2.0f * M_PI_F), 0.0f, 0.0f, 0.0f, 0.0f, BONK_OBJECT_LIFETIME_SEC, false);
+}
+
+bool BonkRun::SpawnChest(bool free, float x, float y, float z)
+{
+    GameObject* chest = PlaceObject(free ? BONK_GO_CHEST_FREE : BONK_GO_CHEST, x, y, z);
+    if (!chest)
+        return false;
+    m_chests.push_back(chest->GetObjectGuid());
+    return true;
+}
+
+bool BonkRun::SpawnChestNearby()
+{
+    // Somewhere the player can see, so it is not buried in a wall.
+    for (uint32 attempt = 0; attempt < 5; ++attempt)
+    {
+        float x, y, z;
+        if (!FindSpawnPosition(x, y, z, BONK_CHEST_MIN_DISTANCE, BONK_CHEST_MAX_DISTANCE))
+            return false;
+        if (!m_player->IsWithinLOS(x, y, z))
+            continue;
+        return SpawnChest(false, x, y, z);
+    }
+    return false;
+}
+
+uint32 BonkRun::GetChestCost() const
+{
+    return uint32(m_tier.chestCost * (1.0f + m_tier.chestCostGrowth * m_chestsBought) + 0.5f);
+}
+
+void BonkRun::DespawnObjects()
+{
+    if (Map* map = m_player->FindMap())
+    {
+        for (ObjectGuid const& guid : m_chests)
+            if (GameObject* chest = map->GetGameObject(guid))
+                chest->Delete();
+        if (GameObject* portal = map->GetGameObject(m_portalGuid))
+            portal->Delete();
+    }
+    m_chests.clear();
+    m_portalGuid.Clear();
+}
+
+void BonkRun::UseChest(GameObject* chest)
+{
+    if (m_state != STATE_RUNNING && m_state != STATE_PORTAL)
+        return;
+
+    auto itr = std::find(m_chests.begin(), m_chests.end(), chest->GetObjectGuid());
+    if (itr == m_chests.end())
+        return;
+
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    if (chest->GetEntry() != BONK_GO_CHEST_FREE)
+    {
+        uint32 const cost = GetChestCost();
+        if (m_coins < cost)
+        {
+            bonk->Notify("This chest costs " + std::to_string(cost) + " coins. You have " + std::to_string(m_coins) + ".");
+            return;
+        }
+        m_coins -= cost;
+        ++m_chestsBought;
+    }
+
+    m_chests.erase(itr);
+    chest->Delete();
+
+    ++m_pendingChests;
+    UpdateOffers();
+    SendState();
+}
+
+bool BonkRun::IsOwnPortal(GameObject const* portal) const
+{
+    return m_state == STATE_PORTAL && portal->GetObjectGuid() == m_portalGuid;
+}
+
+BonkMap const* BonkRun::GetNextMap() const
+{
+    return sBonkMgr.GetMap(m_nextMapId);
+}
+
+void BonkRun::OpenPortal(Creature* boss)
+{
+    // Enemies despawn themselves once the run is no longer active.
+    m_state = STATE_PORTAL;
+    m_bossGuid.Clear();
+    GiveGold(m_map.stageGold * m_stage);
+
+    BonkMap const* next = ChooseNextMap();
+    m_nextMapId = next ? next->id : 0;
+
+    // Just past where the boss died (its chest lands on the spot), or in
+    // front of the player.
+    if (boss)
+    {
+        float const angle = m_player->GetAngle(boss);
+        PlacePortal(boss->GetPositionX() + BONK_PORTAL_DISTANCE * std::cos(angle),
+            boss->GetPositionY() + BONK_PORTAL_DISTANCE * std::sin(angle), boss->GetPositionZ());
+    }
+    else
+    {
+        float const angle = m_player->GetOrientation();
+        PlacePortal(m_player->GetPositionX() + BONK_PORTAL_DISTANCE * std::cos(angle),
+            m_player->GetPositionY() + BONK_PORTAL_DISTANCE * std::sin(angle), m_player->GetPositionZ());
+    }
+
+    m_player->GetBonkPlayer()->Notify("Stage " + std::to_string(m_stage) + " cleared! Take the portal onward, or home.");
+    SendState();
+}
+
+void BonkRun::PlacePortal(float x, float y, float baseZ)
+{
+    float z = m_player->GetMap()->GetHeight(x, y, baseZ + 5.0f, true, 2.0f * BONK_SPAWN_MAX_HEIGHT_DIFF);
+    if (z <= INVALID_HEIGHT || !m_player->IsWithinLOS(x, y, z))
+    {
+        x = m_player->GetPositionX();
+        y = m_player->GetPositionY();
+        z = m_player->GetPositionZ();
+    }
+
+    if (GameObject* portal = PlaceObject(BONK_GO_PORTAL, x, y, z))
+        m_portalGuid = portal->GetObjectGuid();
+}
+
+void BonkRun::EnterNextStage()
+{
+    if (m_state != STATE_PORTAL)
+        return;
+
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    if (!m_offer.empty())
+    {
+        bonk->Notify("Choose your upgrade first.");
+        return;
+    }
+
+    BonkMap const* next = GetNextMap();
+    if (!next)
+        next = ChooseNextMap();
+    if (!next)
+    {
+        bonk->Notify("The portal leads nowhere.");
+        return;
+    }
+
+    DespawnObjects();
+    DespawnMobs();
+
+    std::string error;
+    if (!TeleportToStage(*next, error))
+    {
+        bonk->Notify(error);
+        Finish(true);
+        return;
+    }
+
+    ++m_stage;
+    m_map = *next;
+    m_nextMapId = 0;
+}
+
+void BonkRun::GoHome()
+{
+    if (m_state == STATE_PORTAL)
+        Finish(true);
 }
 
 float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
@@ -609,7 +996,9 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
         return;
 
     ++m_kills;
-    GiveGold(m_map.goldPerKill * GetKindReward(kind));
+    uint32 const reward = GetKindReward(kind);
+    GiveGold(m_map.goldPerKill * reward);
+    m_coins += m_map.coinsPerKill * reward;
 
     if (kind != BONK_SPAWN_BOSS)
     {
@@ -617,26 +1006,30 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
         uint32 const level = m_player->GetLevel();
         uint32 const killsForLevel = 4 + 2 * level;
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
-        uint32 const xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / float(killsForLevel) * GetKindReward(kind) * growth));
+        uint32 const xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / float(killsForLevel) * reward * growth));
         GiveExperience(xp);
     }
 
+    // Anything tougher than a normal enemy drops a free chest.
+    if (kind != BONK_SPAWN_NORMAL)
+        SpawnChest(true, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ());
+
     if (mob->GetObjectGuid() == m_bossGuid)
-        Finish(true);
+        OpenPortal(mob);
 }
 
 void BonkRun::OnMobStrayed(Creature* mob, BonkSpawnKind kind)
 {
-    // A boss is never recycled: bring it back next to the player instead.
-    if (kind != BONK_SPAWN_BOSS || m_state != STATE_RUNNING)
+    // Bosses are never recycled: bring them back next to the player instead.
+    if ((kind != BONK_SPAWN_BOSS && kind != BONK_SPAWN_MINIBOSS) || m_state != STATE_RUNNING)
         return;
 
     float x, y, z;
-    if (FindSpawnPosition(x, y, z))
+    if (FindSpawnPosition(x, y, z, BONK_SPAWN_MIN_DISTANCE, BONK_SPAWN_MAX_DISTANCE))
         mob->NearTeleportTo(x, y, z, mob->GetOrientation());
 }
 
-void BonkRun::OfferUpgrades()
+bool BonkRun::OfferUpgrades(OfferSource source)
 {
     struct Candidate
     {
@@ -695,14 +1088,19 @@ void BonkRun::OfferUpgrades()
     if (m_offer.empty())
     {
         // Everything is maxed out: a bag of gold instead.
-        --m_pendingLevels;
+        if (source == OFFER_CHEST)
+            --m_pendingChests;
+        else
+            --m_pendingLevels;
         GiveGold(m_map.goldPerKill * 25);
         m_player->GetBonkPlayer()->Notify("Everything is maxed - have some gold!");
-        return;
+        return false;
     }
 
+    m_offerSource = source;
     m_paused = true;
     SendOffer();
+    return true;
 }
 
 std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon, uint8* maxLevel) const
@@ -731,7 +1129,7 @@ std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon, uint8*
 
 bool BonkRun::Pick(uint32 choice, std::string& error)
 {
-    if (m_state != STATE_RUNNING || m_offer.empty())
+    if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
     {
         error = "There is nothing to choose right now.";
         return false;
@@ -759,24 +1157,29 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
     }
 
     m_offer.clear();
-    if (m_pendingLevels)
+    if (m_offerSource == OFFER_CHEST)
+    {
+        if (m_pendingChests)
+            --m_pendingChests;
+    }
+    else if (m_pendingLevels)
         --m_pendingLevels;
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->SendAddon("picked");
     SendLoadout();
 
-    if (m_pendingLevels)
-        OfferUpgrades();
-    else
-        m_paused = false;
+    // The next pending choice pauses again right away.
+    m_paused = false;
+    UpdateOffers();
     return true;
 }
 
 void BonkRun::SendState() const
 {
     m_player->GetBonkPlayer()->SendAddon("state~" + std::to_string(m_elapsedMs / IN_MILLISECONDS) + "~" + std::to_string(m_map.durationSeconds) + "~" +
-        std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0"));
+        std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0") + "~" +
+        std::to_string(m_coins) + "~" + std::to_string(GetChestCost()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0"));
 }
 
 void BonkRun::SendLoadout() const
@@ -796,7 +1199,8 @@ void BonkRun::SendOffer() const
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (bonk->IsAddonReady())
     {
-        bonk->SendAddon("offer~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_offer.size()));
+        bonk->SendAddon("offer~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_offer.size()) + "~" +
+            (m_offerSource == OFFER_CHEST ? "chest" : "level"));
         for (size_t i = 0; i < m_offer.size(); ++i)
         {
             Offer const& offer = m_offer[i];
@@ -820,7 +1224,10 @@ void BonkRun::SendOffer() const
     }
 
     ChatHandler handler(m_player);
-    handler.PSendSysMessage("Level %u! Choose an upgrade with .bonk pick <number>:", m_player->GetLevel());
+    if (m_offerSource == OFFER_CHEST)
+        handler.SendSysMessage("Chest! Choose an upgrade with .bonk pick <number>:");
+    else
+        handler.PSendSysMessage("Level %u! Choose an upgrade with .bonk pick <number>:", m_player->GetLevel());
     for (size_t i = 0; i < m_offer.size(); ++i)
     {
         std::string const name = DescribeOffer(m_offer[i], nullptr, nullptr);
@@ -829,41 +1236,46 @@ void BonkRun::SendOffer() const
     }
 }
 
-void BonkRun::Finish(bool victory)
+void BonkRun::Finish(bool wentHome)
 {
-    if (m_state != STATE_RUNNING)
+    if (m_state != STATE_RUNNING && m_state != STATE_PORTAL)
         return;
 
     m_state = STATE_ENDING;
-    m_victory = victory;
+    m_wentHome = wentHome;
     m_paused = false;
     m_offer.clear();
+    m_pendingLevels = 0;
+    m_pendingChests = 0;
     m_endTimer = BONK_END_DELAY_MS;
 
     // Enemies despawn themselves once the run is no longer active.
-    if (victory)
-        GiveGold(m_map.victoryGold);
-
     if (m_player->IsAlive())
         m_player->CombatStop(true);
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
-    uint32 const seconds = m_elapsedMs / IN_MILLISECONDS;
+    uint32 const seconds = m_totalMs / IN_MILLISECONDS;
     if (bonk->IsAddonReady())
-        bonk->SendAddon("end~" + std::string(victory ? "1" : "0") + "~" + std::to_string(seconds) + "~" + std::to_string(m_kills) + "~" +
-            std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()));
+        bonk->SendAddon("end~" + std::string(wentHome ? "1" : "0") + "~" + std::to_string(seconds) + "~" + std::to_string(m_kills) + "~" +
+            std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_stage));
     else
-        ChatHandler(m_player).PSendSysMessage("%s Survived %s, %u kills, level %u, earned %s.", victory ? "Victory!" : "Defeated.",
-            FormatTime(seconds).c_str(), m_kills, m_player->GetLevel(), FormatGold(m_goldEarned).c_str());
+        ChatHandler(m_player).PSendSysMessage("%s Reached stage %u in %s, %u kills, level %u, earned %s.", wentHome ? "Run complete!" : "Defeated.",
+            m_stage, FormatTime(seconds).c_str(), m_kills, m_player->GetLevel(), FormatGold(m_goldEarned).c_str());
+}
+
+void BonkRun::CleanUp()
+{
+    DespawnMobs();
+    DespawnObjects();
+    m_player->SetCreatureSummonLimit(sWorld.getConfig(CONFIG_UINT32_CREATURE_SUMMON_LIMIT));
+    m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
+    m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
 }
 
 void BonkRun::Exit()
 {
-    DespawnMobs();
+    CleanUp();
     m_state = STATE_FINISHED;
-    m_player->SetCreatureSummonLimit(sWorld.getConfig(CONFIG_UINT32_CREATURE_SUMMON_LIMIT));
-    m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
-    m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->ResetCharacter();
@@ -875,11 +1287,8 @@ void BonkRun::Abort()
     if (m_state == STATE_FINISHED)
         return;
 
-    DespawnMobs();
+    CleanUp();
     m_state = STATE_FINISHED;
-    m_player->SetCreatureSummonLimit(sWorld.getConfig(CONFIG_UINT32_CREATURE_SUMMON_LIMIT));
-    m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
-    m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
     m_player->GetBonkPlayer()->ResetCharacter();
 }
 
@@ -887,9 +1296,8 @@ void BonkRun::Surrender()
 {
     if (m_state == STATE_RUNNING)
         Finish(false);
+    else if (m_state == STATE_PORTAL)
+        Finish(true);
     else if (m_state == STATE_ENTERING)
-    {
-        m_state = STATE_FINISHED;
-        m_player->GetBonkPlayer()->TeleportToCamp();
-    }
+        Exit();
 }

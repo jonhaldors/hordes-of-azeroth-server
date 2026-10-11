@@ -22,6 +22,7 @@ set (game_SRCS
     Bonk/BonkCommands.cpp
     Bonk/BonkMgr.cpp
     Bonk/BonkMobAI.cpp
+    Bonk/BonkNpcs.cpp
     Bonk/BonkPlayer.cpp
     Bonk/BonkRun.cpp
     Camera.cpp

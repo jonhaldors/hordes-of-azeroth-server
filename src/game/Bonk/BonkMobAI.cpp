@@ -101,8 +101,8 @@ void BonkMobAI::UpdateAI(uint32 const diff)
             m_strayTimer = 0;
             run->OnMobStrayed(m_creature, m_kind);
 
-            // The boss is brought back instead of recycled.
-            if (m_kind != BONK_SPAWN_BOSS)
+            // Bosses are brought back instead of recycled.
+            if (m_kind != BONK_SPAWN_BOSS && m_kind != BONK_SPAWN_MINIBOSS)
             {
                 m_creature->DespawnOrUnsummon();
                 return;

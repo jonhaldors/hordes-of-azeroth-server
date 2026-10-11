@@ -15,17 +15,17 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
     Player* player = m_session->GetPlayer();
     char* key = ExtractArg(&args);
 
-    BonkMap const* map = key ? sBonkMgr.FindMap(key) : nullptr;
-    if (!map)
+    BonkTier const* tier = key ? sBonkMgr.FindTier(key) : nullptr;
+    if (!tier)
     {
-        SendSysMessage("Choose a map:");
-        player->GetBonkPlayer()->SendMapList();
+        SendSysMessage("Choose a difficulty:");
+        player->GetBonkPlayer()->SendTierList();
         SetSentErrorMessage(true);
         return false;
     }
 
     std::string error;
-    if (!player->GetBonkPlayer()->StartRun(*map, error))
+    if (!player->GetBonkPlayer()->StartRun(*tier, error))
     {
         SendSysMessage(error.c_str());
         SetSentErrorMessage(true);
@@ -71,7 +71,7 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     bonk->SetAddonReady();
     bonk->SendAddon("hello~1");
-    bonk->SendMapList();
+    bonk->SendTierList();
     if (BonkRun* run = bonk->GetRun())
         run->SendFullState();
     return true;
@@ -79,8 +79,8 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
 
 bool ChatHandler::HandleBonkMapsCommand(char* /*args*/)
 {
-    SendSysMessage("Maps:");
-    m_session->GetPlayer()->GetBonkPlayer()->SendMapList();
+    SendSysMessage("Difficulties:");
+    m_session->GetPlayer()->GetBonkPlayer()->SendTierList();
     return true;
 }
 

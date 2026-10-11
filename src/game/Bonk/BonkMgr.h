@@ -2,8 +2,9 @@
  * Vanilla Bonk: a Vampire Survivors style game mode.
  *
  * BonkMgr owns the static game-mode data loaded from the world database
- * (arena maps, their spawn pools, weapons and passive upgrades) and the
- * glue between core systems and the per-player state in BonkPlayer.
+ * (difficulty tiers, the arena maps in their pools, spawn pools, timed
+ * events, weapons and passive upgrades) and the glue between core systems
+ * and the per-player state in BonkPlayer.
  */
 
 #ifndef MANGOS_BONKMGR_H
@@ -24,11 +25,34 @@ class Player;
 // Where players live between runs: GM Island.
 WorldLocation const BONK_CAMP_LOCATION(1, 16226.2f, 16257.0f, 13.2022f, 1.65007f);
 
+// Gameobjects a run places in the arena (world database ids).
+uint32 const BONK_GO_CHEST      = 900001;   // costs coins to open
+uint32 const BONK_GO_CHEST_FREE = 900002;   // dropped by elites and bosses
+uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
+
 enum BonkSpawnKind : uint8
 {
-    BONK_SPAWN_NORMAL = 0,
-    BONK_SPAWN_ELITE  = 1,
-    BONK_SPAWN_BOSS   = 2,
+    BONK_SPAWN_NORMAL   = 0,
+    BONK_SPAWN_ELITE    = 1,
+    BONK_SPAWN_BOSS     = 2,    // ends the stage
+    BONK_SPAWN_MINIBOSS = 3,
+    MAX_BONK_SPAWN_KIND
+};
+
+enum BonkEventType : uint8
+{
+    BONK_EVENT_MINIBOSS = 0,    // `count` mini-bosses
+    BONK_EVENT_ELITES   = 1,    // `count` elites
+    BONK_EVENT_SWARM    = 2,    // `count` normal enemies at once
+    BONK_EVENT_CHESTS   = 3,    // `count` chests that cost coins
+    MAX_BONK_EVENT
+};
+
+struct BonkMapEvent
+{
+    uint32 second = 0;              // seconds into the stage
+    BonkEventType type = BONK_EVENT_MINIBOSS;
+    uint32 count = 1;
 };
 
 struct BonkMapCreature
@@ -44,16 +68,17 @@ struct BonkMapCreature
     float scale = 1.0f;
 };
 
+// One stage of a run: an arena map from a tier's pool.
 struct BonkMap
 {
     uint32 id = 0;
-    std::string key;                // short name used by `.bonk start`
+    std::string key;
     std::string name;
-    uint8 difficulty = 0;           // 0 easy, 1 normal, 2 hard
+    uint32 tierId = 0;              // the tier whose pool it belongs to
     uint32 mapId = 0;
     uint32 zoneId = 0;              // arena boundary; 0 = the whole map
     float x = 0.0f, y = 0.0f, z = 0.0f, o = 0.0f;
-    uint32 durationSeconds = 600;   // the boss arrives after this long
+    uint32 durationSeconds = 600;   // the stage boss arrives after this long
     int32 levelOffset = 0;          // mob level relative to the player
     float healthMultiplier = 1.0f;
     float damageMultiplier = 1.0f;
@@ -64,11 +89,30 @@ struct BonkMap
     uint32 maxAlive = 80;
     uint32 eliteIntervalSeconds = 90;
     uint32 goldPerKill = 10;        // copper
-    uint32 victoryGold = 5000;      // copper
+    uint32 stageGold = 5000;        // copper for the stage boss, times the stage number
+    uint32 coinsPerKill = 1;        // in-run currency for chests
 
     std::vector<BonkMapCreature> creatures;
+    std::vector<BonkMapEvent> events;   // sorted by time
+};
 
-    char const* GetDifficultyName() const;
+// A difficulty: a pool of maps played one after another, each stage harder.
+struct BonkTier
+{
+    uint32 id = 0;
+    std::string key;                // short name used by `.bonk start`
+    std::string name;
+    float healthMultiplier = 1.0f;
+    float damageMultiplier = 1.0f;
+    float stageHealthGrowth = 0.75f;    // extra enemy health per stage after the first
+    float stageDamageGrowth = 0.35f;
+    float stageSpawnGrowth = 0.2f;      // extra enemies per wave per stage
+    uint32 chestCost = 10;              // coins for the first chest of a run
+    float chestCostGrowth = 0.5f;       // price increase per chest bought
+    uint32 unlockTierId = 0;            // reach unlockStage on this tier to unlock, 0 = always open
+    uint32 unlockStage = 0;
+
+    std::vector<uint32> mapIds;     // the pool, bonk_map ids
 };
 
 enum BonkWeaponTarget : uint8
@@ -125,8 +169,11 @@ class BonkMgr
     public:
         void Load();
 
+        BonkTier const* GetTier(uint32 id) const;
+        BonkTier const* FindTier(std::string const& keyOrId) const;
+        std::map<uint32, BonkTier> const& GetTiers() const { return m_tiers; }
+
         BonkMap const* GetMap(uint32 id) const;
-        BonkMap const* FindMap(std::string const& keyOrId) const;
         std::map<uint32, BonkMap> const& GetMaps() const { return m_maps; }
 
         BonkWeapon const* GetWeapon(uint32 id) const;
@@ -140,11 +187,14 @@ class BonkMgr
         bool IsArenaLocation(uint32 mapId, uint32 zoneId) const;
 
     private:
+        void LoadTiers();
         void LoadMaps();
         void LoadMapCreatures();
+        void LoadMapEvents();
         void LoadWeapons();
         void LoadPassives();
 
+        std::map<uint32, BonkTier> m_tiers;
         std::map<uint32, BonkMap> m_maps;
         std::map<uint32, BonkWeapon> m_weapons;
         std::map<uint32, BonkPassive> m_passives;
