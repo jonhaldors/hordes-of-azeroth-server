@@ -54,6 +54,10 @@ class BonkPlayer
         bool ToggleTalent(uint32 talentId, std::string& message);
         BonkRunBonuses GetRunBonuses() const;
 
+        // Set while a run fires an auto-weapon, so the cast takes no ammo.
+        void SetFiringWeapon(bool firing) { m_firingWeapon = firing; }
+        bool IsFiringWeapon() const { return m_firingWeapon; }
+
         void SetAddonReady() { m_addonReady = true; }
         bool IsAddonReady() const { return m_addonReady; }
 
@@ -89,6 +93,7 @@ class BonkPlayer
         Player* m_player;
         std::unique_ptr<BonkRun> m_run;
         bool m_addonReady = false;
+        bool m_firingWeapon = false;
         bool m_campCheckPending = false;
         bool m_goldLoaded = false;
         std::map<uint32, uint32> m_bestStages;  // tier id -> furthest stage reached

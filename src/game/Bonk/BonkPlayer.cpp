@@ -216,6 +216,8 @@ void BonkPlayer::WriteHeroScreenStats() const
     lua << "-- Written by mangosd (Bonk.GlueStatsFile) when a character logs out.\n";
     lua << "BONK_STATS = {\n";
     lua << "\tgold = " << m_player->GetMoney() << ",\n";
+    // The hero screen starts on the character that logged out last.
+    lua << "\tlastHero = \"" << m_player->GetName() << "\",\n";
     lua << "\theroes = {\n";
     for (auto const& itr : heroes)
     {

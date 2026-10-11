@@ -12,6 +12,25 @@
 
 INSTANTIATE_SINGLETON_1(BonkMgr);
 
+namespace
+{
+    // The effect whose base points carry a spell's damage: direct damage
+    // first, damage over time otherwise, -1 for none.
+    int32 FindDamageEffect(SpellEntry const* spellInfo)
+    {
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (spellInfo->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE)
+                return int32(i);
+
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if ((spellInfo->Effect[i] == SPELL_EFFECT_APPLY_AURA || spellInfo->Effect[i] == SPELL_EFFECT_PERSISTENT_AREA_AURA) &&
+                spellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
+                return int32(i);
+
+        return -1;
+    }
+}
+
 void BonkMgr::Load()
 {
     LoadTiers();
@@ -24,10 +43,15 @@ void BonkMgr::Load()
     LoadUpgrades();
     LoadTalents();
     LoadItemPower();
+    LoadMobs();
 
     for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL })
         if (!sObjectMgr.GetGameObjectTemplate(entry))
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: gameobject template %u is missing; runs will lack chests or portals.", entry);
+
+    for (uint32 entry : { BONK_ORB_SMALL, BONK_ORB_LARGE, BONK_ORB_HUGE })
+        if (!sObjectMgr.GetCreatureTemplate(entry))
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: creature template %u is missing; kills will give experience directly.", entry);
 }
 
 void BonkMgr::LoadTiers()
@@ -253,7 +277,7 @@ void BonkMgr::LoadWeapons()
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
-        "`class_mask`, `starter_class_mask`, `max_level` FROM `bonk_weapon`"));
+        "`class_mask`, `starter_class_mask`, `max_level`, `evolves_from`, `evolve_passive` FROM `bonk_weapon`"));
 
     if (!result)
     {
@@ -278,6 +302,8 @@ void BonkMgr::LoadWeapons()
         weapon.classMask = fields[9].GetUInt32();
         weapon.starterClassMask = fields[10].GetUInt32();
         weapon.maxLevel = std::max<uint8>(1, fields[11].GetUInt8());
+        weapon.evolvesFrom = fields[12].GetUInt32();
+        weapon.evolvePassive = fields[13].GetUInt32();
 
         SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
         if (!spellInfo)
@@ -286,23 +312,70 @@ void BonkMgr::LoadWeapons()
             continue;
         }
 
-        // Direct damage wins over damage over time.
-        for (uint32 i = 0; i < MAX_EFFECT_INDEX && weapon.damageEffectIndex < 0; ++i)
-            if (spellInfo->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE)
-                weapon.damageEffectIndex = i;
-
-        for (uint32 i = 0; i < MAX_EFFECT_INDEX && weapon.damageEffectIndex < 0; ++i)
-            if ((spellInfo->Effect[i] == SPELL_EFFECT_APPLY_AURA || spellInfo->Effect[i] == SPELL_EFFECT_PERSISTENT_AREA_AURA) &&
-                spellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
-                weapon.damageEffectIndex = i;
-
+        weapon.damageEffectIndex = FindDamageEffect(spellInfo);
         if (weapon.damageEffectIndex < 0)
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: spell %u of weapon %u has no damage effect; it will use its own values.", weapon.spellId, weapon.id);
 
         m_weapons[weapon.id] = std::move(weapon);
     } while (result->NextRow());
 
+    for (auto const& itr : m_weapons)
+        if (itr.second.evolvesFrom && !m_weapons.count(itr.second.evolvesFrom))
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u evolves from unknown weapon %u.", itr.first, itr.second.evolvesFrom);
+
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk weapons", uint32(m_weapons.size()));
+}
+
+void BonkMgr::LoadMobs()
+{
+    m_mobs.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `role`, `range` FROM `bonk_mob`"));
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            BonkMob& mob = m_mobs[fields[0].GetUInt32()];
+            mob.role = BonkMobRole(std::min<uint8>(fields[1].GetUInt8(), MAX_BONK_MOB_ROLE - 1));
+            mob.range = fields[2].GetFloat();
+        } while (result->NextRow());
+    }
+
+    uint32 abilities = 0;
+    result = WorldDatabase.Query("SELECT `entry`, `spell_id`, `target`, `cooldown_ms`, `first_ms`, `min_range`, `max_range`, `damage` "
+        "FROM `bonk_mob_ability` ORDER BY `entry`, `spell_id`");
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+
+            BonkMobAbility ability;
+            uint32 const entry = fields[0].GetUInt32();
+            ability.spellId = fields[1].GetUInt32();
+            ability.target = fields[2].GetUInt8() ? BONK_ABILITY_SELF : BONK_ABILITY_PLAYER;
+            ability.cooldownMs = std::max(500u, fields[3].GetUInt32());
+            ability.firstMs = fields[4].GetUInt32();
+            ability.minRange = fields[5].GetFloat();
+            ability.maxRange = fields[6].GetFloat();
+            ability.damage = fields[7].GetFloat();
+
+            SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(ability.spellId);
+            if (!spellInfo)
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_mob_ability`: creature %u uses unknown spell %u, skipped.", entry, ability.spellId);
+                continue;
+            }
+            ability.damageEffectIndex = FindDamageEffect(spellInfo);
+
+            // An ability without a bonk_mob row belongs to a plain melee enemy.
+            m_mobs[entry].abilities.push_back(ability);
+            ++abilities;
+        } while (result->NextRow());
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk enemy types with %u abilities", uint32(m_mobs.size()), abilities);
 }
 
 void BonkMgr::LoadPassives()
@@ -555,6 +628,20 @@ BonkWeapon const* BonkMgr::GetWeapon(uint32 id) const
 {
     auto itr = m_weapons.find(id);
     return itr != m_weapons.end() ? &itr->second : nullptr;
+}
+
+BonkWeapon const* BonkMgr::GetEvolution(uint32 weaponId) const
+{
+    for (auto const& itr : m_weapons)
+        if (itr.second.evolvesFrom == weaponId)
+            return &itr.second;
+    return nullptr;
+}
+
+BonkMob const* BonkMgr::GetMob(uint32 entry) const
+{
+    auto itr = m_mobs.find(entry);
+    return itr != m_mobs.end() ? &itr->second : nullptr;
 }
 
 BonkPassive const* BonkMgr::GetPassive(uint32 id) const

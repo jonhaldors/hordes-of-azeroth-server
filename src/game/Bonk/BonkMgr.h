@@ -31,6 +31,11 @@ uint32 const BONK_GO_CHEST      = 900001;   // costs coins to open
 uint32 const BONK_GO_CHEST_FREE = 900002;   // dropped by elites and bosses
 uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
 
+// Experience orbs dropped by kills (creature templates, only their looks are used).
+uint32 const BONK_ORB_SMALL = 900100;     // normal enemies
+uint32 const BONK_ORB_LARGE = 900101;     // elites
+uint32 const BONK_ORB_HUGE  = 900102;     // mini-bosses
+
 enum BonkSpawnKind : uint8
 {
     BONK_SPAWN_NORMAL   = 0,
@@ -46,6 +51,8 @@ enum BonkEventType : uint8
     BONK_EVENT_ELITES   = 1,    // `count` elites
     BONK_EVENT_SWARM    = 2,    // `count` normal enemies at once
     BONK_EVENT_CHESTS   = 3,    // `count` chests that cost coins
+    BONK_EVENT_RING     = 4,    // `count` normal enemies in a ring closing in on the player
+    BONK_EVENT_RUSH     = 5,    // `count` normal enemies charging in from one side
     MAX_BONK_EVENT
 };
 
@@ -149,6 +156,10 @@ struct BonkWeapon
     uint32 classMask = 0;           // classes that can be offered it, 0 = all
     uint32 starterClassMask = 0;    // classes that start every run with it
     uint8 maxLevel = 8;
+    // An evolved weapon replaces `evolvesFrom` once that is at max level and
+    // the player has the passive `evolvePassive`; it is never offered otherwise.
+    uint32 evolvesFrom = 0;
+    uint32 evolvePassive = 0;
 
     int32 damageEffectIndex = -1;   // effect whose base points carry the damage
 };
@@ -163,6 +174,7 @@ enum BonkPassiveEffect : uint8
     BONK_PASSIVE_RECOVERY    = 5,   // health regained per second, % of max
     BONK_PASSIVE_GREED       = 6,   // + gold, %
     BONK_PASSIVE_GROWTH      = 7,   // + experience, %
+    BONK_PASSIVE_MAGNET      = 8,   // + range experience orbs are pulled in from, %
     MAX_BONK_PASSIVE_EFFECT
 };
 
@@ -175,6 +187,42 @@ struct BonkPassive
     BonkPassiveEffect effect = BONK_PASSIVE_MIGHT;
     float valuePerRank = 10.0f;
     uint8 maxRank = 5;
+};
+
+// How an enemy fights, by creature entry (bonk_mob); entries without a row
+// walk up and hit.
+enum BonkMobRole : uint8
+{
+    BONK_ROLE_MELEE    = 0,
+    BONK_ROLE_RANGED   = 1,     // stops `range` yards away and casts
+    BONK_ROLE_EXPLODER = 2,     // runs in and, within `range` yards, casts its self abilities and is gone
+    MAX_BONK_MOB_ROLE
+};
+
+enum BonkAbilityTarget : uint8
+{
+    BONK_ABILITY_PLAYER = 0,    // cast at the player
+    BONK_ABILITY_SELF   = 1,    // on the enemy itself: areas around it, buffs
+};
+
+// A spell an enemy casts on a cooldown (bonk_mob_ability).
+struct BonkMobAbility
+{
+    uint32 spellId = 0;
+    BonkAbilityTarget target = BONK_ABILITY_PLAYER;
+    uint32 cooldownMs = 8000;
+    uint32 firstMs = 3000;          // before the first cast
+    float minRange = 0.0f;          // only when the player is at least this far...
+    float maxRange = 30.0f;         // ...and at most this far away
+    float damage = 0.0f;            // hit damage in the enemy's melee hits, 0 = the spell's own
+    int32 damageEffectIndex = -1;
+};
+
+struct BonkMob
+{
+    BonkMobRole role = BONK_ROLE_MELEE;
+    float range = 0.0f;
+    std::vector<BonkMobAbility> abilities;
 };
 
 // Money as players read it: "1g 20s", leaving out empty parts.
@@ -257,6 +305,10 @@ class BonkMgr
 
         BonkWeapon const* GetWeapon(uint32 id) const;
         std::map<uint32, BonkWeapon> const& GetWeapons() const { return m_weapons; }
+        // The weapon `weaponId` evolves into, if any.
+        BonkWeapon const* GetEvolution(uint32 weaponId) const;
+
+        BonkMob const* GetMob(uint32 entry) const;
 
         BonkPassive const* GetPassive(uint32 id) const;
         std::map<uint32, BonkPassive> const& GetPassives() const { return m_passives; }
@@ -287,6 +339,7 @@ class BonkMgr
         void LoadUpgrades();
         void LoadTalents();
         void LoadItemPower();
+        void LoadMobs();
 
         std::map<uint32, BonkTier> m_tiers;
         std::map<uint32, BonkMap> m_maps;
@@ -296,6 +349,7 @@ class BonkMgr
         std::map<uint32, BonkUpgrade> m_upgrades;
         std::map<uint32, BonkTalent> m_talents;
         std::map<uint32, float> m_itemPower;
+        std::map<uint32, BonkMob> m_mobs;
         std::map<uint32, std::set<uint32>> m_arenaZonesByMap;   // zone 0 = whole map
 };
 

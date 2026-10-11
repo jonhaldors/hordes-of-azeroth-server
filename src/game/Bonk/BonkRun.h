@@ -9,6 +9,10 @@
  * character dies or goes home through a portal. Gold earned is kept either
  * way. What the character bought at camp (upgrades, talents, gear) is
  * applied for the whole run.
+ *
+ * Kills drop experience orbs that fly to the player once they are close;
+ * a maxed weapon whose paired passive is owned can evolve into a stronger
+ * one, which a chest always offers.
  */
 
 #ifndef MANGOS_BONKRUN_H
@@ -88,6 +92,14 @@ class BonkRun
             bool isWeapon = true;
             uint32 id = 0;
             uint8 newLevel = 1;
+            bool isEvolution = false;   // `id` is the evolved weapon
+        };
+
+        struct Orb
+        {
+            ObjectGuid guid;
+            uint32 experience = 0;
+            bool pulled = false;        // flying to the player
         };
 
         BonkMap const* ChooseNextMap();
@@ -107,7 +119,10 @@ class BonkRun
         void PruneMobs();
         BonkMapCreature const* PickCreature(BonkSpawnKind kind) const;
         bool FindSpawnPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const;
+        bool FindSpawnPositionAt(float angle, float distance, float& x, float& y, float& z) const;
         Creature* SpawnMob(BonkMapCreature const& creature);
+        Creature* SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z);
+        uint32 SpawnFormation(BonkMapEvent const& event);
         std::vector<Creature*> GetMobsInRange(float range) const;
         void DespawnMobs();
 
@@ -132,6 +147,11 @@ class BonkRun
 
         void GiveExperience(uint32 xp);
         void GiveGold(uint32 copper);
+
+        void DropOrb(Creature const* mob, uint32 experience, BonkSpawnKind kind);
+        void UpdateOrbs(uint32 diff);
+        void CollectAllOrbs();
+        void DespawnOrbs();
 
         // `avoid`: cards just shown, kept out of a reroll when others are left.
         bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr);
@@ -181,6 +201,8 @@ class BonkRun
         std::vector<ObjectGuid> m_mobs;
         std::vector<ObjectGuid> m_chests;
         std::vector<ObjectGuid> m_powerups;
+        std::vector<Orb> m_orbs;
+        uint32 m_orbTimer = 0;
         ObjectGuid m_portalGuid;
         int32 m_powerupSpawnTimer = 0;
         uint32 m_powerupCheckTimer = 0;

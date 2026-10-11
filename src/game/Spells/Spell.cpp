@@ -48,6 +48,7 @@
 #include "Geometry.h"
 #include "Anticheat.h"
 #include "Utilities/Random.h"
+#include "Bonk/BonkPlayer.h"
 
 using namespace Spells;
 
@@ -5130,6 +5131,10 @@ void Spell::TakeAmmo()
 {
     Player* pCaster = m_caster->ToPlayer();
     if (!pCaster)
+        return;
+
+    // Vanilla Bonk's auto-firing weapons never use up ammo or thrown weapons.
+    if (pCaster->GetBonkPlayer()->IsFiringWeapon())
         return;
 
     // Some ranged attacks dont take any ammo
