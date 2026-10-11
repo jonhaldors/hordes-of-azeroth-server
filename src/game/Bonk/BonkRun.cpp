@@ -5,14 +5,19 @@
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
+#include "CellImpl.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "GameObject.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Map.h"
 #include "NullCreatureAI.h"
 #include "ObjectMgr.h"
+#include "PathFinder.h"
 #include "Player.h"
 #include "SpellMgr.h"
+#include "TemporarySummon.h"
 #include "World.h"
 #include "Utilities/Random.h"
 
@@ -35,6 +40,16 @@ namespace
     uint32 const BONK_OBJECT_LIFETIME_SEC  = 3600;
 
     float const BONK_SPAWN_MAX_HEIGHT_DIFF = 20.0f;
+    // An enemy must be able to walk to the player, without a long way round.
+    float const BONK_SPAWN_MAX_DETOUR      = 2.5f;     // times the straight distance
+    float const BONK_SPAWN_SNAP_DISTANCE   = 3.0f;     // spot may move this far onto the path mesh
+
+    // The arena belongs to the run: the zone's own hostile creatures near the
+    // player are removed, and come back long after the run has left.
+    uint32 const BONK_NATIVE_SWEEP_MS      = 500;
+    float const BONK_NATIVE_SWEEP_RANGE    = 90.0f;
+    uint32 const BONK_NATIVE_RESPAWN_SEC   = 30 * MINUTE;
+
     float const BONK_CHEST_MIN_DISTANCE    = 15.0f;
     float const BONK_CHEST_MAX_DISTANCE    = 45.0f;
     float const BONK_PORTAL_DISTANCE       = 6.0f;
@@ -162,9 +177,12 @@ bool BonkRun::Begin(std::string& error)
     }
     m_map = *first;
 
-    // GM mode makes the player untargetable, which would make the run trivial.
+    // GM mode makes the player untargetable, and GM accounts log in with god
+    // mode (GM.CheatGod), which stops all damage at 1 health; either would
+    // make the run unlosable.
     if (m_player->IsGameMaster())
         m_player->SetGameMaster(false);
+    m_player->SetCheatGod(false);
 
     m_player->GetBonkPlayer()->ResetCharacter();
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
@@ -253,6 +271,7 @@ void BonkRun::Update(uint32 diff)
 
             UpdateOffers();
             UpdateBoundary(diff);
+            UpdateNatives(diff);
             UpdatePowerups(diff, false);
             UpdateOrbs(diff);
 
@@ -292,6 +311,7 @@ void BonkRun::StartStage()
     m_bossSpawned = false;
     m_bossGuid.Clear();
     m_powerupSpawnTimer = m_map.powerupIntervalSeconds * IN_MILLISECONDS / 2;
+    m_nativeTimer = BONK_NATIVE_SWEEP_MS;     // clear the arrival spot right away
     m_lastLevel = m_player->GetLevel();
     m_safeX = m_player->GetPositionX();
     m_safeY = m_player->GetPositionY();
@@ -357,6 +377,8 @@ void BonkRun::UpdateRunning(uint32 diff)
     }
 
     UpdateOffers();
+    // The zone's own creatures do not pause with the run.
+    UpdateNatives(diff);
     if (m_paused)
         return;
 
@@ -428,6 +450,37 @@ void BonkRun::UpdateBoundary(uint32 diff)
 
     m_player->NearTeleportTo(m_safeX, m_safeY, m_safeZ, m_player->GetOrientation());
     m_player->GetBonkPlayer()->Notify("You can't leave " + m_map.name + ".");
+}
+
+void BonkRun::UpdateNatives(uint32 diff)
+{
+    m_nativeTimer += diff;
+    if (m_nativeTimer < BONK_NATIVE_SWEEP_MS)
+        return;
+    m_nativeTimer = 0;
+
+    if (m_player->IsBeingTeleported() || !m_player->IsInWorld())
+        return;
+
+    std::list<Creature*> creatures;
+    MaNGOS::AnyUnitInObjectRangeCheck check(m_player, BONK_NATIVE_SWEEP_RANGE);
+    MaNGOS::CreatureListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(creatures, check);
+    Cell::VisitGridObjects(m_player, searcher, BONK_NATIVE_SWEEP_RANGE);
+
+    ObjectGuid const playerGuid = m_player->GetObjectGuid();
+    for (Creature* creature : creatures)
+    {
+        // Run enemies and orbs are the player's summons; pets and guardians
+        // belong to someone. Friendly townsfolk can stay.
+        if (creature->IsTemporarySummon() && static_cast<TemporarySummon*>(creature)->GetSummonerGuid() == playerGuid)
+            continue;
+        if (creature->IsPet() || creature->GetCharmerOrOwnerGuid() || creature->IsFriendlyTo(m_player))
+            continue;
+        if (creature->HasCreatureState(CSTATE_DESPAWNING))
+            continue;
+
+        creature->DespawnOrUnsummon(0, BONK_NATIVE_RESPAWN_SEC);
+    }
 }
 
 void BonkRun::UpdateRecovery(uint32 diff)
@@ -673,7 +726,27 @@ bool BonkRun::FindSpawnPositionAt(float angle, float distance, float& x, float& 
     if (z <= INVALID_HEIGHT || std::fabs(z - playerZ) > BONK_SPAWN_MAX_HEIGHT_DIFF)
         return false;
 
-    return !m_map.zoneId || map->GetTerrain()->GetZoneId(x, y, z) == m_map.zoneId;
+    if (m_map.zoneId && map->GetTerrain()->GetZoneId(x, y, z) != m_map.zoneId)
+        return false;
+
+    // Ground behind a wall, up a cliff or inside rock has a height too; only
+    // spots with a path to the player will do.
+    PathFinder path(m_player);
+    path.ExcludeSteepSlopes();
+    path.calculate(x, y, z);
+    if (path.getPathType() & PATHFIND_NOT_USING_PATH)
+        return true;    // no path mesh for this map
+    if (!(path.getPathType() & PATHFIND_NORMAL) || path.Length() > distance * BONK_SPAWN_MAX_DETOUR)
+        return false;
+
+    Vector3 const end = path.getActualEndPosition();
+    if ((end.x - x) * (end.x - x) + (end.y - y) * (end.y - y) > BONK_SPAWN_SNAP_DISTANCE * BONK_SPAWN_SNAP_DISTANCE)
+        return false;
+
+    x = end.x;
+    y = end.y;
+    z = end.z;
+    return true;
 }
 
 uint32 BonkRun::GetMobLevel() const
@@ -747,6 +820,12 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     Creature* mob = m_player->SummonCreature(creature.entry, x, y, z, facing, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 2000, false, 0, &BonkMobAI::Install);
     if (!mob)
         return nullptr;
+
+    // Only a template's looks are used: no auras from it (Double Attack,
+    // stealth), and no invulnerability or immunity from its static flags.
+    mob->RemoveAllAuras();
+    mob->SetInvincibilityHpThreshold(0);
+    mob->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE);
 
     uint32 const level = std::min(GetMobLevel() + GetKindLevelBonus(creature.kind), 63u);
     mob->SetLevel(level);

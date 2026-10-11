@@ -111,6 +111,7 @@ class BonkRun
         void UpdateSpawns(uint32 diff);
         void UpdateWeapons(uint32 diff);
         void UpdateBoundary(uint32 diff);
+        void UpdateNatives(uint32 diff);
         void UpdateRecovery(uint32 diff);
         void RunEvent(BonkMapEvent const& event);
         void OpenPortal(Creature* boss);
@@ -192,6 +193,7 @@ class BonkRun
         int32 m_spawnTimer = 0;
         int32 m_eliteTimer = 0;
         uint32 m_boundaryTimer = 0;
+        uint32 m_nativeTimer = 0;
         uint32 m_recoveryTimer = 0;
         uint32 m_stateTimer = 0;
         int32 m_endTimer = 0;
