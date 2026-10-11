@@ -1343,6 +1343,8 @@ void BonkRun::Finish(bool wentHome)
     m_state = STATE_ENDING;
     m_wentHome = wentHome;
     m_paused = false;
+
+    m_player->GetBonkPlayer()->RecordRun(m_stage, m_totalMs / IN_MILLISECONDS, m_kills, m_goldEarned);
     m_offer.clear();
     m_pendingLevels = 0;
     m_pendingChests = 0;
@@ -1385,6 +1387,10 @@ void BonkRun::Abort()
 {
     if (m_state == STATE_FINISHED)
         return;
+
+    // A run that ended before the logout was recorded by Finish already.
+    if (m_state == STATE_RUNNING || m_state == STATE_PORTAL || (m_state == STATE_ENTERING && m_stage > 1))
+        m_player->GetBonkPlayer()->RecordRun(m_stage, m_totalMs / IN_MILLISECONDS, m_kills, m_goldEarned);
 
     CleanUp();
     m_state = STATE_FINISHED;

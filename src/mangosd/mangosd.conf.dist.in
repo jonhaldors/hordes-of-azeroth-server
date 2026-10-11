@@ -3335,3 +3335,16 @@ DynamicRespawn.AffectLevelBelow = 0
 DynamicRespawn.PlayersThreshold = 0
 DynamicRespawn.PlayersMaxLevelDiff = 0
 
+
+###################################################################################################################
+# VANILLA BONK
+#
+#    Bonk.GlueStatsFile
+#        File each hero's record and the account's gold are written to whenever a character logs out,
+#        for the hero screen of the patched client (Interface\GlueXML\BonkStats.lua in the client
+#        folder). A relative path starts from the directory mangosd runs in.
+#        Default: "" - (Do not write it)
+#
+###################################################################################################################
+
+Bonk.GlueStatsFile = ""

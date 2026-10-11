@@ -40,6 +40,9 @@ class BonkPlayer
         std::string GetUnlockHint(BonkTier const& tier) const;
         void RecordStage(uint32 tierId, uint32 stage);
 
+        // This character's record over all its runs, shown on the hero screen.
+        void RecordRun(uint32 stage, uint32 seconds, uint32 kills, uint32 goldEarned);
+
         void SetAddonReady() { m_addonReady = true; }
         bool IsAddonReady() const { return m_addonReady; }
 
@@ -55,12 +58,25 @@ class BonkPlayer
         void TeleportToCamp();
 
     private:
+        struct Record
+        {
+            uint32 runs = 0;
+            uint32 bestStage = 0;
+            uint32 bestSeconds = 0;
+            uint32 kills = 0;
+            uint32 goldEarned = 0;
+        };
+
+        // Writes every hero's record for the client's hero screen (BonkStats.lua).
+        void WriteHeroScreenStats() const;
+
         Player* m_player;
         std::unique_ptr<BonkRun> m_run;
         bool m_addonReady = false;
         bool m_campCheckPending = false;
         bool m_goldLoaded = false;
         std::map<uint32, uint32> m_bestStages;  // tier id -> furthest stage reached
+        Record m_record;
 };
 
 #endif
