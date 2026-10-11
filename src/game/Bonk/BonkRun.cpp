@@ -52,6 +52,9 @@ namespace
     // Passive upgrades that need a real aura on the player.
     uint32 const BONK_SPELL_MOVE_SPEED = 17498;     // Speed: SPELL_AURA_MOD_INCREASE_SPEED
     uint32 const BONK_SPELL_MAX_HEALTH = 19255;     // Survivalist: SPELL_AURA_MOD_INCREASE_HEALTH_PERCENT
+    // A few seconds safe from melee after a revive.
+    uint32 const BONK_SPELL_REVIVE_SHIELD = 1022;   // Blessing of Protection, rank 1
+    float const BONK_REVIVE_CLEAR_RADIUS  = 15.0f;
 
     float GetKindHealth(BonkSpawnKind kind)
     {
@@ -113,8 +116,13 @@ namespace
     }
 }
 
-BonkRun::BonkRun(Player* player, BonkTier const& tier) : m_player(player), m_tier(tier)
+BonkRun::BonkRun(Player* player, BonkTier const& tier) : m_player(player), m_tier(tier),
+    m_bonuses(player->GetBonkPlayer()->GetRunBonuses())
 {
+    m_rerolls = m_bonuses.rerolls;
+    m_banishes = m_bonuses.banishes;
+    m_revives = m_bonuses.revives;
+    m_coins = m_bonuses.startCoins;
 }
 
 bool BonkRun::Begin(std::string& error)
@@ -209,7 +217,10 @@ void BonkRun::Update(uint32 diff)
         {
             if (!m_player->IsAlive())
             {
-                Finish(false);
+                if (m_revives)
+                    Revive();
+                else
+                    Finish(false);
                 return;
             }
 
@@ -249,7 +260,7 @@ void BonkRun::StartStage()
     m_elapsedMs = 0;
     m_nextEvent = 0;
     m_spawnTimer = BONK_FIRST_WAVE_MS;
-    m_eliteTimer = m_map.eliteIntervalSeconds * IN_MILLISECONDS;
+    m_eliteTimer = GetEliteIntervalMs();
     m_bossSpawned = false;
     m_bossGuid.Clear();
     m_powerupSpawnTimer = m_map.powerupIntervalSeconds * IN_MILLISECONDS / 2;
@@ -276,6 +287,9 @@ void BonkRun::StartStage()
                     AddWeapon(itr.second);
                     break;
                 }
+
+        // Permanent upgrades may already need their auras.
+        ApplyPassives();
     }
     else
     {
@@ -283,6 +297,9 @@ void BonkRun::StartStage()
         m_player->SetHealth(m_player->GetMaxHealth());
         m_player->SetPower(POWER_MANA, m_player->GetMaxPower(POWER_MANA));
     }
+
+    // Worn gear adds weapon power; checked again every second.
+    m_gearPower = GetGearPower();
 
     m_player->GetBonkPlayer()->RecordStage(m_tier.id, m_stage);
 
@@ -304,7 +321,10 @@ void BonkRun::UpdateRunning(uint32 diff)
 {
     if (!m_player->IsAlive())
     {
-        Finish(false);
+        if (m_revives)
+            Revive();
+        else
+            Finish(false);
         return;
     }
 
@@ -334,6 +354,8 @@ void BonkRun::UpdateRunning(uint32 diff)
     if (m_stateTimer >= BONK_STATE_INTERVAL_MS)
     {
         m_stateTimer = 0;
+        // Gear can be swapped from the bags mid-run.
+        m_gearPower = GetGearPower();
         SendState();
     }
 }
@@ -512,7 +534,7 @@ void BonkRun::UpdateSpawns(uint32 diff)
 
     if (m_eliteTimer <= 0)
     {
-        m_eliteTimer += m_map.eliteIntervalSeconds * IN_MILLISECONDS;
+        m_eliteTimer += GetEliteIntervalMs();
         if (m_map.eliteIntervalSeconds && alive < m_map.maxAlive)
             if (BonkMapCreature const* elite = PickCreature(BONK_SPAWN_ELITE))
                 SpawnMob(*elite);
@@ -522,7 +544,7 @@ void BonkRun::UpdateSpawns(uint32 diff)
     {
         m_spawnTimer += m_map.spawnIntervalMs;
 
-        float const stageBonus = 1.0f + m_tier.stageSpawnGrowth * (m_stage - 1);
+        float const stageBonus = (1.0f + m_tier.stageSpawnGrowth * (m_stage - 1)) * (1.0f + m_bonuses.spawnRate / 100.0f);
         float const batch = (m_map.spawnBatch + m_map.spawnBatchGrowthPerMinute * (m_elapsedMs / float(MINUTE * IN_MILLISECONDS))) * stageBonus;
         uint32 count = uint32(batch);
         if (frand(0.0f, 1.0f) < batch - float(count))
@@ -598,12 +620,46 @@ float BonkRun::GetMobHealth(uint32 level) const
 
 float BonkRun::GetStageHealthMultiplier() const
 {
-    return m_tier.healthMultiplier * (1.0f + m_tier.stageHealthGrowth * (m_stage - 1));
+    return m_tier.healthMultiplier * (1.0f + m_tier.stageHealthGrowth * (m_stage - 1)) * (1.0f + m_bonuses.enemyHealth / 100.0f);
 }
 
 float BonkRun::GetStageDamageMultiplier() const
 {
-    return m_tier.damageMultiplier * (1.0f + m_tier.stageDamageGrowth * (m_stage - 1));
+    return m_tier.damageMultiplier * (1.0f + m_tier.stageDamageGrowth * (m_stage - 1)) * (1.0f + m_bonuses.enemyDamage / 100.0f);
+}
+
+uint32 BonkRun::GetEliteIntervalMs() const
+{
+    return uint32(m_map.eliteIntervalSeconds * IN_MILLISECONDS / (1.0f + m_bonuses.eliteRate / 100.0f));
+}
+
+float BonkRun::GetGearPower() const
+{
+    float power = 0.0f;
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            power += sBonkMgr.GetItemPower(item->GetEntry());
+    return power;
+}
+
+void BonkRun::Revive()
+{
+    --m_revives;
+    m_player->ResurrectPlayer(0.5f);
+    m_player->SpawnCorpseBones();
+    m_player->CastSpell(m_player, BONK_SPELL_REVIVE_SHIELD, true);
+
+    // Room to breathe: normal enemies close by are swept away; bosses and
+    // elites stay.
+    Map* map = m_player->GetMap();
+    for (ObjectGuid const& guid : m_mobs)
+        if (Creature* mob = map->GetCreature(guid))
+            if (mob->IsAlive() && m_player->IsWithinDistInMap(mob, BONK_REVIVE_CLEAR_RADIUS))
+                if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+                    if (ai->GetKind() == BONK_SPAWN_NORMAL)
+                        mob->DespawnOrUnsummon();
+    m_player->GetBonkPlayer()->Notify(m_revives ? "Second wind! " + std::to_string(m_revives) + " left." : "Second wind!");
+    SendState();
 }
 
 Creature* BonkRun::SpawnMob(BonkMapCreature const& creature)
@@ -951,7 +1007,7 @@ void BonkRun::GoHome()
 
 float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
 {
-    float total = 0.0f;
+    float total = m_bonuses.passives[effect];
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             if (passive->effect == effect)
@@ -962,7 +1018,7 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
 float BonkRun::GetWeaponDamage(OwnedWeapon const& owned) const
 {
     float const levelBonus = 1.0f + 0.25f * (owned.level - 1);
-    float const might = 1.0f + GetPassiveTotal(BONK_PASSIVE_MIGHT) / 100.0f;
+    float const might = 1.0f + (GetPassiveTotal(BONK_PASSIVE_MIGHT) + m_gearPower) / 100.0f;
     return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * levelBonus * might;
 }
 
@@ -1082,7 +1138,7 @@ void BonkRun::GiveExperience(uint32 xp)
 
 void BonkRun::GiveGold(uint32 copper)
 {
-    copper = uint32(copper * (1.0f + GetPassiveTotal(BONK_PASSIVE_GREED) / 100.0f));
+    copper = uint32(copper * (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus) / 100.0f));
     if (!copper)
         return;
     m_player->ModifyMoney(int32(copper));
@@ -1128,7 +1184,7 @@ void BonkRun::OnMobStrayed(Creature* mob, BonkSpawnKind kind)
         mob->NearTeleportTo(x, y, z, mob->GetOrientation());
 }
 
-bool BonkRun::OfferUpgrades(OfferSource source)
+bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid)
 {
     struct Candidate
     {
@@ -1139,7 +1195,7 @@ bool BonkRun::OfferUpgrades(OfferSource source)
 
     uint32 const classMask = m_player->GetClassMask();
     for (auto const& owned : m_weapons)
-        if (owned.level < owned.weapon.maxLevel)
+        if (owned.level < owned.weapon.maxLevel && !m_banished.count({ true, owned.weapon.id }))
             candidates.push_back({ { true, owned.weapon.id, uint8(owned.level + 1) }, 3 });
 
     if (m_weapons.size() < BONK_MAX_WEAPONS)
@@ -1147,6 +1203,8 @@ bool BonkRun::OfferUpgrades(OfferSource source)
         {
             BonkWeapon const& weapon = itr.second;
             if (weapon.classMask && !(weapon.classMask & classMask))
+                continue;
+            if (m_banished.count({ true, weapon.id }))
                 continue;
             if (std::any_of(m_weapons.begin(), m_weapons.end(), [&](OwnedWeapon const& owned) { return owned.weapon.id == weapon.id; }))
                 continue;
@@ -1160,27 +1218,55 @@ bool BonkRun::OfferUpgrades(OfferSource source)
         uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
         if (current >= itr.second.maxRank || (!current && ownedPassives >= BONK_MAX_PASSIVES))
             continue;
+        if (m_banished.count({ false, itr.first }))
+            continue;
         candidates.push_back({ { false, itr.first, uint8(current + 1) }, 2 });
     }
 
-    m_offer.clear();
-    while (m_offer.size() < BONK_OFFER_SIZE && !candidates.empty())
+    // Cards to avoid are only drawn once the fresh ones run out.
+    std::vector<Candidate> repeats;
+    if (avoid)
     {
-        uint32 totalWeight = 0;
-        for (auto const& candidate : candidates)
-            totalWeight += candidate.weight;
-
-        uint32 roll = urand(1, totalWeight);
-        for (auto itr = candidates.begin(); itr != candidates.end(); ++itr)
+        auto shown = [avoid](Candidate const& candidate)
         {
-            if (roll > itr->weight)
+            return std::any_of(avoid->begin(), avoid->end(), [&](Offer const& offer)
             {
-                roll -= itr->weight;
-                continue;
+                return offer.isWeapon == candidate.offer.isWeapon && offer.id == candidate.offer.id;
+            });
+        };
+        for (auto itr = candidates.begin(); itr != candidates.end();)
+        {
+            if (shown(*itr))
+            {
+                repeats.push_back(*itr);
+                itr = candidates.erase(itr);
             }
-            m_offer.push_back(itr->offer);
-            candidates.erase(itr);
-            break;
+            else
+                ++itr;
+        }
+    }
+
+    m_offer.clear();
+    for (std::vector<Candidate>* pool : { &candidates, &repeats })
+    {
+        while (m_offer.size() < BONK_OFFER_SIZE && !pool->empty())
+        {
+            uint32 totalWeight = 0;
+            for (auto const& candidate : *pool)
+                totalWeight += candidate.weight;
+
+            uint32 roll = urand(1, totalWeight);
+            for (auto itr = pool->begin(); itr != pool->end(); ++itr)
+            {
+                if (roll > itr->weight)
+                {
+                    roll -= itr->weight;
+                    continue;
+                }
+                m_offer.push_back(itr->offer);
+                pool->erase(itr);
+                break;
+            }
         }
     }
 
@@ -1231,12 +1317,14 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
     if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
     {
         error = "There is nothing to choose right now.";
+        m_player->GetBonkPlayer()->SendAddon("picked");
         return false;
     }
 
     if (choice < 1 || choice > m_offer.size())
     {
         error = "Choose a number from 1 to " + std::to_string(m_offer.size()) + ".";
+        SendOffer();
         return false;
     }
 
@@ -1274,6 +1362,63 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
     return true;
 }
 
+bool BonkRun::Reroll(std::string& error)
+{
+    if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
+    {
+        error = "There is nothing to reroll right now.";
+        m_player->GetBonkPlayer()->SendAddon("picked");
+        return false;
+    }
+
+    if (!m_rerolls)
+    {
+        error = "No rerolls left.";
+        SendOffer();
+        return false;
+    }
+
+    --m_rerolls;
+    std::vector<Offer> const previous = m_offer;
+    // Nothing left to offer turns into gold; close the choice then.
+    if (!OfferUpgrades(m_offerSource, &previous))
+    {
+        m_paused = false;
+        m_player->GetBonkPlayer()->SendAddon("picked");
+    }
+    return true;
+}
+
+bool BonkRun::Banish(uint32 choice, std::string& error)
+{
+    if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
+    {
+        error = "There is nothing to banish right now.";
+        m_player->GetBonkPlayer()->SendAddon("picked");
+        return false;
+    }
+
+    if (!m_banishes || choice < 1 || choice > m_offer.size())
+    {
+        error = m_banishes ? "Choose a number from 1 to " + std::to_string(m_offer.size()) + "." : "No banishes left.";
+        SendOffer();
+        return false;
+    }
+
+    Offer const& offer = m_offer[choice - 1];
+    m_banished.insert({ offer.isWeapon, offer.id });
+    m_player->GetBonkPlayer()->Notify(DescribeOffer(offer, nullptr, nullptr) + " is banished for this run.");
+    --m_banishes;
+
+    // Nothing left to offer turns into gold; close the choice then.
+    if (!OfferUpgrades(m_offerSource))
+    {
+        m_paused = false;
+        m_player->GetBonkPlayer()->SendAddon("picked");
+    }
+    return true;
+}
+
 void BonkRun::SendState() const
 {
     m_player->GetBonkPlayer()->SendAddon("state~" + std::to_string(m_elapsedMs / IN_MILLISECONDS) + "~" + std::to_string(m_map.durationSeconds) + "~" +
@@ -1299,7 +1444,7 @@ void BonkRun::SendOffer() const
     if (bonk->IsAddonReady())
     {
         bonk->SendAddon("offer~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_offer.size()) + "~" +
-            (m_offerSource == OFFER_CHEST ? "chest" : "level"));
+            (m_offerSource == OFFER_CHEST ? "chest" : "level") + "~" + std::to_string(m_rerolls) + "~" + std::to_string(m_banishes));
         for (size_t i = 0; i < m_offer.size(); ++i)
         {
             Offer const& offer = m_offer[i];
@@ -1333,6 +1478,10 @@ void BonkRun::SendOffer() const
         handler.PSendSysMessage("  %u) %s %s", uint32(i + 1), name.c_str(),
             m_offer[i].newLevel == 1 ? "(new)" : ("(level " + std::to_string(m_offer[i].newLevel) + ")").c_str());
     }
+    if (m_rerolls)
+        handler.PSendSysMessage("  .bonk reroll for new choices (%u left)", m_rerolls);
+    if (m_banishes)
+        handler.PSendSysMessage("  .bonk banish <number> to remove one for this run (%u left)", m_banishes);
 }
 
 void BonkRun::Finish(bool wentHome)

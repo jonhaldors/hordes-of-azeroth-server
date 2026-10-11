@@ -266,6 +266,18 @@ void WorldSession::HandleCastSpellOpcode(WorldPackets::Spell::CastSpell const& p
     if (!spellInfo)
         return;
 
+    // Vanilla Bonk: characters fight only with the weapons a run gives them,
+    // which the server casts. GMs keep their spells.
+    if (!_player->IsGameMaster())
+    {
+        auto castPacket = std::make_unique<WorldPackets::Spell::CastResult>();
+        castPacket->spellId = spellInfo->Id;
+        castPacket->result = static_cast<uint8>(SPELL_RESULT_STATUS_FAIL);
+        castPacket->failureReason = static_cast<uint8>(SPELL_FAILED_SPELL_UNAVAILABLE);
+        SendPacket(std::move(castPacket));
+        return;
+    }
+
     // not have spell in spellbook or spell passive and not casted by client
     if (!_player->HasActiveSpell(packet.spellId) || spellInfo->IsPassiveSpell())
     {

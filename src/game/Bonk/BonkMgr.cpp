@@ -21,6 +21,9 @@ void BonkMgr::Load()
     LoadWeapons();
     LoadPassives();
     LoadPowerups();
+    LoadUpgrades();
+    LoadTalents();
+    LoadItemPower();
 
     for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL })
         if (!sObjectMgr.GetGameObjectTemplate(entry))
@@ -377,6 +380,155 @@ void BonkMgr::LoadPowerups()
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk power-ups", uint32(m_powerups.size()));
+}
+
+std::string FormatBonkMoney(uint32 copper)
+{
+    std::string text;
+    if (uint32 const gold = copper / 10000)
+        text += std::to_string(gold) + "g";
+    if (uint32 const silver = (copper / 100) % 100)
+        text += (text.empty() ? "" : " ") + std::to_string(silver) + "s";
+    if (uint32 const rest = copper % 100)
+        text += (text.empty() ? "" : " ") + std::to_string(rest) + "c";
+    return text.empty() ? "0c" : text;
+}
+
+uint32 BonkUpgrade::GetCost(uint8 ownedRanks) const
+{
+    return uint32(cost * (1.0f + costGrowth * ownedRanks) + 0.5f);
+}
+
+uint32 BonkTalent::GetCost(uint8 ownedRanks) const
+{
+    return uint32(cost * (1.0f + costGrowth * ownedRanks) + 0.5f);
+}
+
+void BonkMgr::LoadUpgrades()
+{
+    m_upgrades.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `description`, `effect`, `value_per_rank`, `max_rank`, `cost`, `cost_growth` FROM `bonk_upgrade`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk upgrades.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkUpgrade upgrade;
+        upgrade.id = fields[0].GetUInt32();
+        upgrade.name = fields[1].GetCppString();
+        upgrade.description = fields[2].GetCppString();
+        uint8 const effect = fields[3].GetUInt8();
+        upgrade.valuePerRank = fields[4].GetFloat();
+        upgrade.maxRank = std::max<uint8>(1, fields[5].GetUInt8());
+        upgrade.cost = fields[6].GetUInt32();
+        upgrade.costGrowth = fields[7].GetFloat();
+
+        if (effect >= MAX_BONK_PASSIVE_EFFECT)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_upgrade`: upgrade %u has unknown effect %u, skipped.", upgrade.id, effect);
+            continue;
+        }
+        upgrade.effect = BonkPassiveEffect(effect);
+
+        m_upgrades[upgrade.id] = std::move(upgrade);
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk upgrades", uint32(m_upgrades.size()));
+}
+
+void BonkMgr::LoadTalents()
+{
+    m_talents.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `description`, `effect`, `value_per_rank`, `gold_bonus`, `max_rank`, `cost`, `cost_growth` FROM `bonk_talent`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk talents.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkTalent talent;
+        talent.id = fields[0].GetUInt32();
+        talent.name = fields[1].GetCppString();
+        talent.description = fields[2].GetCppString();
+        uint8 const effect = fields[3].GetUInt8();
+        talent.valuePerRank = fields[4].GetFloat();
+        talent.goldBonus = fields[5].GetFloat();
+        talent.maxRank = std::max<uint8>(1, fields[6].GetUInt8());
+        talent.cost = fields[7].GetUInt32();
+        talent.costGrowth = fields[8].GetFloat();
+
+        if (effect >= MAX_BONK_TALENT_EFFECT)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_talent`: talent %u has unknown effect %u, skipped.", talent.id, effect);
+            continue;
+        }
+        talent.effect = BonkTalentEffect(effect);
+
+        // A toggle is either owned or not.
+        if (talent.IsToggle())
+            talent.maxRank = 1;
+
+        m_talents[talent.id] = std::move(talent);
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk talents", uint32(m_talents.size()));
+}
+
+void BonkMgr::LoadItemPower()
+{
+    m_itemPower.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `power` FROM `bonk_item_power`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk gear items.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 const entry = fields[0].GetUInt32();
+        if (!sObjectMgr.GetItemPrototype(entry))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_power`: item %u does not exist, skipped.", entry);
+            continue;
+        }
+        m_itemPower[entry] = fields[1].GetFloat();
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk gear items", uint32(m_itemPower.size()));
+}
+
+BonkUpgrade const* BonkMgr::GetUpgrade(uint32 id) const
+{
+    auto itr = m_upgrades.find(id);
+    return itr != m_upgrades.end() ? &itr->second : nullptr;
+}
+
+BonkTalent const* BonkMgr::GetTalent(uint32 id) const
+{
+    auto itr = m_talents.find(id);
+    return itr != m_talents.end() ? &itr->second : nullptr;
+}
+
+float BonkMgr::GetItemPower(uint32 itemEntry) const
+{
+    auto itr = m_itemPower.find(itemEntry);
+    return itr != m_itemPower.end() ? itr->second : 0.0f;
 }
 
 BonkTier const* BonkMgr::GetTier(uint32 id) const

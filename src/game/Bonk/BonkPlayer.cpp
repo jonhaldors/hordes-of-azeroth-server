@@ -66,9 +66,42 @@ void BonkPlayer::OnLogin()
         m_record.goldEarned = fields[4].GetUInt32();
     }
 
+    LoadPurchases();
+
     // Runs never survive a logout.
     ResetCharacter();
     m_campCheckPending = true;
+}
+
+void BonkPlayer::LoadPurchases()
+{
+    uint32 const guid = m_player->GetGUIDLow();
+
+    m_upgradeRanks.clear();
+    std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `upgrade`, `rank` FROM `bonk_character_upgrade` WHERE `guid` = %u", guid);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            m_upgradeRanks[fields[0].GetUInt32()] = fields[1].GetUInt8();
+        } while (result->NextRow());
+    }
+
+    m_talentRanks.clear();
+    m_enabledTalents.clear();
+    result = CharacterDatabase.PQuery("SELECT `talent`, `rank`, `enabled` FROM `bonk_character_talent` WHERE `guid` = %u", guid);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 const talentId = fields[0].GetUInt32();
+            m_talentRanks[talentId] = fields[1].GetUInt8();
+            if (fields[2].GetUInt8())
+                m_enabledTalents.insert(talentId);
+        } while (result->NextRow());
+    }
 }
 
 void BonkPlayer::OnLogout()
@@ -219,12 +252,163 @@ void BonkPlayer::WriteHeroScreenStats() const
 
 void BonkPlayer::OnSave()
 {
+    SaveGold();
+}
+
+void BonkPlayer::SaveGold() const
+{
     // A character being created has no account gold yet; don't overwrite it.
     if (!m_goldLoaded)
         return;
 
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account` (`account`, `gold`) VALUES (%u, %u)",
         m_player->GetSession()->GetAccountId(), m_player->GetMoney());
+}
+
+uint8 BonkPlayer::GetUpgradeRank(uint32 upgradeId) const
+{
+    auto itr = m_upgradeRanks.find(upgradeId);
+    return itr != m_upgradeRanks.end() ? itr->second : 0;
+}
+
+uint8 BonkPlayer::GetTalentRank(uint32 talentId) const
+{
+    auto itr = m_talentRanks.find(talentId);
+    return itr != m_talentRanks.end() ? itr->second : 0;
+}
+
+bool BonkPlayer::Spend(uint32 copper, std::string& message)
+{
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    if (m_player->GetMoney() < copper)
+    {
+        message = "You need " + FormatBonkMoney(copper) + ".";
+        return false;
+    }
+
+    m_player->ModifyMoney(-int32(copper));
+    SaveGold();
+    return true;
+}
+
+bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
+{
+    BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(upgradeId);
+    if (!upgrade)
+        return false;
+
+    uint8 const rank = GetUpgradeRank(upgradeId);
+    if (rank >= upgrade->maxRank)
+    {
+        message = upgrade->name + " is already at its highest rank.";
+        return false;
+    }
+
+    if (!Spend(upgrade->GetCost(rank), message))
+        return false;
+
+    m_upgradeRanks[upgradeId] = rank + 1;
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_character_upgrade` (`guid`, `upgrade`, `rank`) VALUES (%u, %u, %u)",
+        m_player->GetGUIDLow(), upgradeId, uint32(rank + 1));
+    message = upgrade->name + " rank " + std::to_string(rank + 1) + "!";
+    return true;
+}
+
+bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
+{
+    BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
+    if (!talent)
+        return false;
+
+    uint8 const rank = GetTalentRank(talentId);
+    if (rank >= talent->maxRank)
+    {
+        message = talent->name + " is already learned.";
+        return false;
+    }
+
+    if (!Spend(talent->GetCost(rank), message))
+        return false;
+
+    m_talentRanks[talentId] = rank + 1;
+    // A new difficulty toggle starts switched on: that is why it was bought.
+    if (talent->IsToggle())
+        m_enabledTalents.insert(talentId);
+    SaveTalent(talentId);
+    message = talent->IsToggle() ? talent->name + " learned and switched on." : talent->name + " rank " + std::to_string(rank + 1) + "!";
+    return true;
+}
+
+bool BonkPlayer::ToggleTalent(uint32 talentId, std::string& message)
+{
+    BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
+    if (!talent || !talent->IsToggle() || !GetTalentRank(talentId))
+        return false;
+
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    bool const enable = !IsTalentEnabled(talentId);
+    if (enable)
+        m_enabledTalents.insert(talentId);
+    else
+        m_enabledTalents.erase(talentId);
+    SaveTalent(talentId);
+    message = talent->name + (enable ? " is on." : " is off.");
+    return true;
+}
+
+void BonkPlayer::SaveTalent(uint32 talentId) const
+{
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_character_talent` (`guid`, `talent`, `rank`, `enabled`) VALUES (%u, %u, %u, %u)",
+        m_player->GetGUIDLow(), talentId, uint32(GetTalentRank(talentId)), IsTalentEnabled(talentId) ? 1u : 0u);
+}
+
+BonkRunBonuses BonkPlayer::GetRunBonuses() const
+{
+    BonkRunBonuses bonuses;
+
+    for (auto const& itr : m_upgradeRanks)
+        if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(itr.first))
+            bonuses.passives[upgrade->effect] += upgrade->valuePerRank * std::min(itr.second, upgrade->maxRank);
+
+    for (auto const& itr : m_talentRanks)
+    {
+        BonkTalent const* talent = sBonkMgr.GetTalent(itr.first);
+        if (!talent || !itr.second)
+            continue;
+
+        float const value = talent->valuePerRank * std::min(itr.second, talent->maxRank);
+        if (talent->IsToggle())
+        {
+            if (!IsTalentEnabled(talent->id))
+                continue;
+            bonuses.goldBonus += talent->goldBonus;
+        }
+
+        switch (talent->effect)
+        {
+            case BONK_TALENT_ENEMY_HEALTH: bonuses.enemyHealth += value; break;
+            case BONK_TALENT_ENEMY_DAMAGE: bonuses.enemyDamage += value; break;
+            case BONK_TALENT_SPAWN_RATE:   bonuses.spawnRate += value; break;
+            case BONK_TALENT_ELITE_RATE:   bonuses.eliteRate += value; break;
+            case BONK_TALENT_REROLL:       bonuses.rerolls += uint32(value); break;
+            case BONK_TALENT_BANISH:       bonuses.banishes += uint32(value); break;
+            case BONK_TALENT_REVIVE:       bonuses.revives += uint32(value); break;
+            case BONK_TALENT_START_COINS:  bonuses.startCoins += uint32(value); break;
+            default: break;
+        }
+    }
+
+    return bonuses;
 }
 
 void BonkPlayer::Update(uint32 diff)

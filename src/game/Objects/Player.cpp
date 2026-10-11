@@ -14998,7 +14998,21 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     bool hasItems = _LoadInventory(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADINVENTORY), timeDiff, hasEpicMount);
 
     if (!hasItems && m_playedTime[PLAYED_TIME_TOTAL] == 0)
+    {
         AddStartingItems();
+
+        // Vanilla Bonk: characters start with empty bags (no food, no
+        // hearthstone), only what they wear.
+        for (int i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
+            if (GetItemByPos(INVENTORY_SLOT_BAG_0, i))
+                DestroyItem(INVENTORY_SLOT_BAG_0, i, false);
+
+        for (int i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
+            if (Bag* bag = dynamic_cast<Bag*>(GetItemByPos(INVENTORY_SLOT_BAG_0, i)))
+                for (uint32 j = 0; j < bag->GetBagSize(); ++j)
+                    if (GetItemByPos(i, j))
+                        DestroyItem(i, j, false);
+    }
 
     _LoadItemLoot(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADITEMLOOT));
 

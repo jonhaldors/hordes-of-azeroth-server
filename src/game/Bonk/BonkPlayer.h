@@ -13,10 +13,12 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 
 class BonkRun;
 class Player;
+struct BonkRunBonuses;
 struct BonkTier;
 
 class BonkPlayer
@@ -42,6 +44,15 @@ class BonkPlayer
 
         // This character's record over all its runs, shown on the hero screen.
         void RecordRun(uint32 stage, uint32 seconds, uint32 kills, uint32 goldEarned);
+
+        // Camp purchases belong to this character; gold is the account's.
+        uint8 GetUpgradeRank(uint32 upgradeId) const;
+        uint8 GetTalentRank(uint32 talentId) const;
+        bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
+        bool BuyUpgrade(uint32 upgradeId, std::string& message);
+        bool BuyTalent(uint32 talentId, std::string& message);
+        bool ToggleTalent(uint32 talentId, std::string& message);
+        BonkRunBonuses GetRunBonuses() const;
 
         void SetAddonReady() { m_addonReady = true; }
         bool IsAddonReady() const { return m_addonReady; }
@@ -70,6 +81,11 @@ class BonkPlayer
         // Writes every hero's record for the client's hero screen (BonkStats.lua).
         void WriteHeroScreenStats() const;
 
+        void LoadPurchases();
+        bool Spend(uint32 copper, std::string& message);
+        void SaveGold() const;
+        void SaveTalent(uint32 talentId) const;
+
         Player* m_player;
         std::unique_ptr<BonkRun> m_run;
         bool m_addonReady = false;
@@ -77,6 +93,9 @@ class BonkPlayer
         bool m_goldLoaded = false;
         std::map<uint32, uint32> m_bestStages;  // tier id -> furthest stage reached
         Record m_record;
+        std::map<uint32, uint8> m_upgradeRanks;
+        std::map<uint32, uint8> m_talentRanks;
+        std::set<uint32> m_enabledTalents;      // difficulty toggles switched on
 };
 
 #endif

@@ -3,8 +3,9 @@
  *
  * BonkMgr owns the static game-mode data loaded from the world database
  * (difficulty tiers, the arena maps in their pools, spawn pools, timed
- * events, power-ups, weapons and passive upgrades) and the glue between
- * core systems and the per-player state in BonkPlayer.
+ * events, power-ups, weapons and passive upgrades, and what camp sells:
+ * permanent upgrades, talents and gear power) and the glue between core
+ * systems and the per-player state in BonkPlayer.
  */
 
 #ifndef MANGOS_BONKMGR_H
@@ -176,6 +177,72 @@ struct BonkPassive
     uint8 maxRank = 5;
 };
 
+// Money as players read it: "1g 20s", leaving out empty parts.
+std::string FormatBonkMoney(uint32 copper);
+
+// Permanent upgrade bought at camp; every rank adds to a passive effect in
+// every run.
+struct BonkUpgrade
+{
+    uint32 id = 0;
+    std::string name;
+    std::string description;
+    BonkPassiveEffect effect = BONK_PASSIVE_MIGHT;
+    float valuePerRank = 5.0f;
+    uint8 maxRank = 5;
+    uint32 cost = 5000;             // copper for the first rank
+    float costGrowth = 1.0f;        // each rank owned makes the next cost this share of `cost` more
+
+    uint32 GetCost(uint8 ownedRanks) const;
+};
+
+enum BonkTalentEffect : uint8
+{
+    // Difficulty toggles: switched on and off at camp, each pays bonus gold.
+    BONK_TALENT_ENEMY_HEALTH = 0,   // + enemy health, %
+    BONK_TALENT_ENEMY_DAMAGE = 1,   // + enemy damage, %
+    BONK_TALENT_SPAWN_RATE   = 2,   // + enemies per wave, %
+    BONK_TALENT_ELITE_RATE   = 3,   // + elites, %
+    // Perks: always on once bought.
+    BONK_TALENT_REROLL       = 4,   // rerolls of an upgrade choice per run
+    BONK_TALENT_BANISH       = 5,   // upgrades that can be banished per run
+    BONK_TALENT_REVIVE       = 6,   // revives per run
+    BONK_TALENT_START_COINS  = 7,   // coins at the start of a run
+    MAX_BONK_TALENT_EFFECT
+};
+
+// Run unlock bought at camp.
+struct BonkTalent
+{
+    uint32 id = 0;
+    std::string name;
+    std::string description;
+    BonkTalentEffect effect = BONK_TALENT_REROLL;
+    float valuePerRank = 1.0f;
+    float goldBonus = 0.0f;         // toggles: + gold while switched on, %
+    uint8 maxRank = 1;
+    uint32 cost = 10000;            // copper for the first rank
+    float costGrowth = 1.0f;
+
+    bool IsToggle() const { return effect <= BONK_TALENT_ELITE_RATE; }
+    uint32 GetCost(uint8 ownedRanks) const;
+};
+
+// Everything a character brings into a run from camp.
+struct BonkRunBonuses
+{
+    float passives[MAX_BONK_PASSIVE_EFFECT] = {};
+    float enemyHealth = 0.0f;       // %
+    float enemyDamage = 0.0f;       // %
+    float spawnRate = 0.0f;         // %
+    float eliteRate = 0.0f;         // %
+    float goldBonus = 0.0f;         // %
+    uint32 rerolls = 0;
+    uint32 banishes = 0;
+    uint32 revives = 0;
+    uint32 startCoins = 0;
+};
+
 class BonkMgr
 {
     public:
@@ -196,6 +263,15 @@ class BonkMgr
 
         std::vector<BonkPowerup> const& GetPowerups() const { return m_powerups; }
 
+        BonkUpgrade const* GetUpgrade(uint32 id) const;
+        std::map<uint32, BonkUpgrade> const& GetUpgrades() const { return m_upgrades; }
+
+        BonkTalent const* GetTalent(uint32 id) const;
+        std::map<uint32, BonkTalent> const& GetTalents() const { return m_talents; }
+
+        // Camp gear: extra auto-weapon damage, %, for wearing this item.
+        float GetItemPower(uint32 itemEntry) const;
+
         // Arena maps start empty: the run spawns every enemy itself.
         bool IsStaticCreatureSuppressed(Map const* map, uint32 dbGuid) const;
         bool IsArenaLocation(uint32 mapId, uint32 zoneId) const;
@@ -208,12 +284,18 @@ class BonkMgr
         void LoadWeapons();
         void LoadPassives();
         void LoadPowerups();
+        void LoadUpgrades();
+        void LoadTalents();
+        void LoadItemPower();
 
         std::map<uint32, BonkTier> m_tiers;
         std::map<uint32, BonkMap> m_maps;
         std::map<uint32, BonkWeapon> m_weapons;
         std::map<uint32, BonkPassive> m_passives;
         std::vector<BonkPowerup> m_powerups;
+        std::map<uint32, BonkUpgrade> m_upgrades;
+        std::map<uint32, BonkTalent> m_talents;
+        std::map<uint32, float> m_itemPower;
         std::map<uint32, std::set<uint32>> m_arenaZonesByMap;   // zone 0 = whole map
 };
 

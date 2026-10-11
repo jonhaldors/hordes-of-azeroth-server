@@ -7,7 +7,8 @@
  * timer runs out its boss arrives; killing it stops the spawns and opens a
  * portal to the next, harder stage. The run is endless: it ends when the
  * character dies or goes home through a portal. Gold earned is kept either
- * way.
+ * way. What the character bought at camp (upgrades, talents, gear) is
+ * applied for the whole run.
  */
 
 #ifndef MANGOS_BONKRUN_H
@@ -46,6 +47,8 @@ class BonkRun
         void OnMobKilled(Creature* mob, BonkSpawnKind kind);
         void OnMobStrayed(Creature* mob, BonkSpawnKind kind);
         bool Pick(uint32 choice, std::string& error);
+        bool Reroll(std::string& error);
+        bool Banish(uint32 choice, std::string& error);
 
         // Chests and the portal call these when the player uses them.
         void UseChest(GameObject* chest);
@@ -130,12 +133,17 @@ class BonkRun
         void GiveExperience(uint32 xp);
         void GiveGold(uint32 copper);
 
-        bool OfferUpgrades(OfferSource source);
+        // `avoid`: cards just shown, kept out of a reroll when others are left.
+        bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr);
         std::string DescribeOffer(Offer const& offer, std::string* icon, uint8* maxLevel) const;
 
         void SendState() const;
         void SendLoadout() const;
         void SendOffer() const;
+
+        void Revive();
+        float GetGearPower() const;
+        uint32 GetEliteIntervalMs() const;
 
         void Finish(bool wentHome);
         void Exit();
@@ -143,6 +151,12 @@ class BonkRun
 
         Player* m_player;
         BonkTier const m_tier;
+        BonkRunBonuses const m_bonuses;     // from camp, fixed for the run
+        float m_gearPower = 0.0f;           // % auto-weapon damage from worn gear
+        uint32 m_rerolls = 0;
+        uint32 m_banishes = 0;
+        uint32 m_revives = 0;
+        std::set<std::pair<bool, uint32>> m_banished;   // (is weapon, id)
         BonkMap m_map;
         uint32 m_stage = 1;
         uint32 m_nextMapId = 0;
