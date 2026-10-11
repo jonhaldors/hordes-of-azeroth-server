@@ -253,6 +253,18 @@ ChatCommand * ChatHandler::getCommandTable()
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 
+    static ChatCommand bonkCommandTable[] =
+    {
+        { "start",          SEC_PLAYER,         false, &ChatHandler::HandleBonkStartCommand,           "", nullptr },
+        { "stop",           SEC_PLAYER,         false, &ChatHandler::HandleBonkStopCommand,            "", nullptr },
+        { "pick",           SEC_PLAYER,         false, &ChatHandler::HandleBonkPickCommand,            "", nullptr },
+        { "hello",          SEC_PLAYER,         false, &ChatHandler::HandleBonkHelloCommand,           "", nullptr },
+        { "maps",           SEC_PLAYER,         false, &ChatHandler::HandleBonkMapsCommand,            "", nullptr },
+        { "camp",           SEC_PLAYER,         false, &ChatHandler::HandleBonkCampCommand,            "", nullptr },
+        { "reload",         SEC_ADMINISTRATOR,  false, &ChatHandler::HandleBonkReloadCommand,          "", nullptr },
+        { nullptr,          0,                  false, nullptr,                                        "", nullptr }
+    };
+
     static ChatCommand cheatCommandTable[] =
     {
         { "fly",            SEC_GAMEMASTER,     false, &ChatHandler::HandleCheatFlyCommand,               "", nullptr },
@@ -1186,6 +1198,7 @@ ChatCommand * ChatHandler::getCommandTable()
     {
         { "account",        SEC_PLAYER,         true, nullptr,                                         "", accountCommandTable  },
         { "auction",        SEC_TICKETMASTER,   false, nullptr,                                        "", auctionCommandTable  },
+        { "bonk",           SEC_PLAYER,         false, nullptr,                                        "", bonkCommandTable     },
         { "cast",           SEC_DEVELOPER,      false, nullptr,                                        "", castCommandTable     },
         { "character",      SEC_TICKETMASTER,   true, nullptr,                                         "", characterCommandTable},
         { "charge",         SEC_GAMEMASTER,     false, &ChatHandler::HandleChargeCommand,              "", nullptr },

@@ -43,6 +43,7 @@
 #include "PlayerBotMgr.h"
 #include "MapManager.h"
 #include "AccountMgr.h"
+#include "Bonk/BonkPlayer.h"
 
 class LoginQueryHolder : public SqlQueryHolder
 {
@@ -695,6 +696,9 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder *holder)
             pCurrChar->KillPlayer();
     }
     pCurrChar->RestorePendingTeleport();
+
+    if (!alreadyOnline)
+        pCurrChar->GetBonkPlayer()->OnLogin();
 
     sObjectMgr.UpdatePlayerCachedPosition(pCurrChar);
 

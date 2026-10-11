@@ -201,6 +201,15 @@ class ChatHandler
         bool HandleViewLogCommand(char*);
         bool HandleSniffCommand(char*);
 
+        // Vanilla Bonk
+        bool HandleBonkStartCommand(char* args);
+        bool HandleBonkStopCommand(char* args);
+        bool HandleBonkPickCommand(char* args);
+        bool HandleBonkHelloCommand(char* args);
+        bool HandleBonkMapsCommand(char* args);
+        bool HandleBonkCampCommand(char* args);
+        bool HandleBonkReloadCommand(char* args);
+
         //Cheats
         bool HandleCheatStatusCommand(char *);
         bool HandleCheatBeastmasterCommand(char* args);

@@ -65,6 +65,7 @@ class ZoneScript;
 class PlayerAI;
 class PlayerBroadcaster;
 class BattleGround;
+class BonkPlayer;
 
 #define PLAYER_MAX_SKILLS           127
 #define PLAYER_EXPLORED_ZONES_SIZE  64
@@ -1967,6 +1968,12 @@ class Player final: public Unit
         void ModPossessPet(Pet* pPet, bool apply, AuraRemoveMode m_removeMode = AURA_REMOVE_BY_DEFAULT);
 
         void SetDeathState(DeathState s) override;                   // overwrite Unit::SetDeathState
+
+        // Vanilla Bonk game-mode state
+        BonkPlayer* GetBonkPlayer() const { return m_bonkPlayer.get(); }
+    private:
+        std::unique_ptr<BonkPlayer> m_bonkPlayer;
+    public:
 
         /*********************************************************/
         /***                  SESSION SYSTEM                   ***/

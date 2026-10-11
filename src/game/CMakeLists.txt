@@ -19,6 +19,11 @@ set (game_SRCS
     AccountMgr.cpp
     AuraRemovalMgr.cpp
     AutoBroadCastMgr.cpp
+    Bonk/BonkCommands.cpp
+    Bonk/BonkMgr.cpp
+    Bonk/BonkMobAI.cpp
+    Bonk/BonkPlayer.cpp
+    Bonk/BonkRun.cpp
     Camera.cpp
     Conditions.cpp
     CreatureGroups.cpp
@@ -252,6 +257,10 @@ set (game_SRCS
     AccountMgr.h
     AuraRemovalMgr.h
     AutoBroadCastMgr.h
+    Bonk/BonkMgr.h
+    Bonk/BonkMobAI.h
+    Bonk/BonkPlayer.h
+    Bonk/BonkRun.h
     Camera.h
     ClientDefines.h
     Conditions.h
@@ -548,6 +557,7 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/Anticheat
   ${CMAKE_CURRENT_SOURCE_DIR}/AuctionHouse
   ${CMAKE_CURRENT_SOURCE_DIR}/Battlegrounds
+  ${CMAKE_CURRENT_SOURCE_DIR}/Bonk
   ${CMAKE_CURRENT_SOURCE_DIR}/Chat
   ${CMAKE_CURRENT_SOURCE_DIR}/Commands
   ${CMAKE_CURRENT_SOURCE_DIR}/Database

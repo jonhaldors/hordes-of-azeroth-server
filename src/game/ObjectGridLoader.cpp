@@ -31,6 +31,7 @@
 #include "World.h"
 #include "CellImpl.h"
 #include "BattleGround.h"
+#include "Bonk/BonkMgr.h"
 
 class ObjectGridRespawnMover
 {
@@ -152,6 +153,9 @@ void LoadHelper(CellGuidSet const& guid_set, CellPair& cell, GridRefManager<T>& 
     for (const auto& guid : guid_set)
     {
         if (!IsEnabledOnMap<T>(map, guid))
+            continue;
+
+        if (std::is_same<T, Creature>::value && sBonkMgr.IsStaticCreatureSuppressed(map, guid))
             continue;
 
         T* obj;

@@ -82,6 +82,7 @@
 #include "GameEventMgr.h"
 #include "world/scourge_invasion.h"
 #include "world/world_event_wareffort.h"
+#include "Bonk/BonkPlayer.h"
 
 #include <climits>
 
@@ -255,6 +256,8 @@ Player::Player(WorldSession* session) : Unit(),
     m_worldMask = WORLD_DEFAULT_CHAR;
     m_AI = nullptr;
     m_cheatOptions = 0x0;
+
+    m_bonkPlayer = std::make_unique<BonkPlayer>(this);
 
     m_lastFromClientCastedSpellID = 0;
 
@@ -1306,6 +1309,11 @@ void Player::Update(uint32 update_diff, uint32 p_time)
 
     if (m_currentCinematicEntry)
         UpdateCinematic(p_time);
+
+    // Teleports requested by the game mode run below with the other delayed ones.
+    SetCanDelayTeleport(true);
+    m_bonkPlayer->Update(update_diff);
+    SetCanDelayTeleport(false);
 
     if (IsHasDelayedTeleport())
         TeleportTo(m_teleportDest, m_teleportOptions, m_teleportRecoverDelayed);
@@ -16518,6 +16526,8 @@ void Player::SaveToDB(bool online, bool force)
     // Systeme de phasing
     sObjectMgr.SetPlayerWorldMask(GetGUIDLow(), GetWorldMask());
     GetSession()->SaveTutorialsData();                      // changed only while character in game
+
+    m_bonkPlayer->OnSave();
 
     CharacterDatabase.CommitTransaction();
 

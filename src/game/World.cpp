@@ -85,6 +85,7 @@
 #include "TransportMgr.h"
 #include "RealmZone.h"
 #include "IO/Multithreading/CreateThread.h"
+#include "Bonk/BonkMgr.h"
 
 #include <chrono>
 
@@ -1835,6 +1836,9 @@ void World::SetInitialWorldSettings()
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading auto broadcast");
     sAutoBroadCastMgr.Load();
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Vanilla Bonk tables");
+    sBonkMgr.Load();
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading AH bot");
     sAuctionHouseBotMgr.Load();
