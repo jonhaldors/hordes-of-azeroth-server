@@ -87,6 +87,8 @@ struct BonkMap
     float spawnBatch = 2.0f;
     float spawnBatchGrowthPerMinute = 0.5f;
     uint32 maxAlive = 80;
+    float spawnMinDistance = 38.0f; // enemies appear this far from the player
+    float spawnMaxDistance = 48.0f;
     uint32 eliteIntervalSeconds = 90;
     uint32 goldPerKill = 10;        // copper
     uint32 stageGold = 5000;        // copper for the stage boss, times the stage number

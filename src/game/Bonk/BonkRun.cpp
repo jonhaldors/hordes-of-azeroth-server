@@ -33,8 +33,6 @@ namespace
     // could not remove them (logout during a teleport).
     uint32 const BONK_OBJECT_LIFETIME_SEC  = 3600;
 
-    float const BONK_SPAWN_MIN_DISTANCE    = 26.0f;
-    float const BONK_SPAWN_MAX_DISTANCE    = 36.0f;
     float const BONK_SPAWN_MAX_HEIGHT_DIFF = 20.0f;
     float const BONK_CHEST_MIN_DISTANCE    = 15.0f;
     float const BONK_CHEST_MAX_DISTANCE    = 45.0f;
@@ -611,7 +609,7 @@ float BonkRun::GetStageDamageMultiplier() const
 Creature* BonkRun::SpawnMob(BonkMapCreature const& creature)
 {
     float x, y, z;
-    if (!FindSpawnPosition(x, y, z, BONK_SPAWN_MIN_DISTANCE, BONK_SPAWN_MAX_DISTANCE))
+    if (!FindSpawnPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
         return nullptr;
 
     float const facing = std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x);
@@ -1126,7 +1124,7 @@ void BonkRun::OnMobStrayed(Creature* mob, BonkSpawnKind kind)
         return;
 
     float x, y, z;
-    if (FindSpawnPosition(x, y, z, BONK_SPAWN_MIN_DISTANCE, BONK_SPAWN_MAX_DISTANCE))
+    if (FindSpawnPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
         mob->NearTeleportTo(x, y, z, mob->GetOrientation());
 }
 
