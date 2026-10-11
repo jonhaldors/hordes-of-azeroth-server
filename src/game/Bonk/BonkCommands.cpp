@@ -115,6 +115,22 @@ bool ChatHandler::HandleBonkToggleCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkShardsCommand(char* args)
+{
+    // GM testing aid: give the selected character (or yourself) Talent Shards.
+    uint32 count;
+    if (!ExtractUInt32(&args, count) || !count)
+        return false;
+
+    Player* target = GetSelectedPlayer();
+    if (!target)
+        target = m_session->GetPlayer();
+
+    target->GetBonkPlayer()->AddShards(count);
+    PSendSysMessage("%s now has %s.", target->GetName(), FormatBonkShards(target->GetBonkPlayer()->GetShards()).c_str());
+    return true;
+}
+
 bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
 {
     // The addon announces itself; from now on it gets protocol lines.

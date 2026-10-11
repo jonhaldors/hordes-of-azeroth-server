@@ -49,6 +49,9 @@ class BonkPlayer
         void RecordRun(uint32 stage, uint32 seconds, uint32 kills, uint32 goldEarned);
 
         // Camp purchases belong to this character; gold is the account's.
+        // Talents cost Talent Shards, which belong to the character too.
+        uint32 GetShards() const { return m_shards; }
+        void AddShards(uint32 count);
         uint8 GetUpgradeRank(uint32 upgradeId) const;
         uint8 GetTalentRank(uint32 talentId) const;
         bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
@@ -97,7 +100,9 @@ class BonkPlayer
 
         void LoadPurchases();
         bool Spend(uint32 copper, std::string& message);
+        bool SpendShards(uint32 count, std::string& message);
         void SaveGold() const;
+        void SaveShards() const;
         void SaveTalent(uint32 talentId) const;
 
         // `open`: the NPC was just spoken to, rather than a purchase made.
@@ -115,6 +120,7 @@ class BonkPlayer
         std::map<uint32, uint8> m_upgradeRanks;
         std::map<uint32, uint8> m_talentRanks;
         std::set<uint32> m_enabledTalents;      // difficulty toggles switched on
+        uint32 m_shards = 0;
         BonkShop m_shop{};                      // last shop spoken to; none at first
         ObjectGuid m_shopNpc;
         std::string m_shopNpcName;

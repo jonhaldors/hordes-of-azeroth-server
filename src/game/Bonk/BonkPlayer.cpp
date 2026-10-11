@@ -101,6 +101,11 @@ void BonkPlayer::LoadPurchases()
         } while (result->NextRow());
     }
 
+    m_shards = 0;
+    result = CharacterDatabase.PQuery("SELECT `shards` FROM `bonk_character_shards` WHERE `guid` = %u", guid);
+    if (result)
+        m_shards = result->Fetch()[0].GetUInt32();
+
     m_talentRanks.clear();
     m_enabledTalents.clear();
     result = CharacterDatabase.PQuery("SELECT `talent`, `rank`, `enabled` FROM `bonk_character_talent` WHERE `guid` = %u", guid);
@@ -311,6 +316,36 @@ bool BonkPlayer::Spend(uint32 copper, std::string& message)
     return true;
 }
 
+bool BonkPlayer::SpendShards(uint32 count, std::string& message)
+{
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    if (m_shards < count)
+    {
+        message = "You need " + FormatBonkShards(count) + ". You have " + std::to_string(m_shards) + ".";
+        return false;
+    }
+
+    m_shards -= count;
+    SaveShards();
+    return true;
+}
+
+void BonkPlayer::AddShards(uint32 count)
+{
+    m_shards += count;
+    SaveShards();
+}
+
+void BonkPlayer::SaveShards() const
+{
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_character_shards` (`guid`, `shards`) VALUES (%u, %u)", m_player->GetGUIDLow(), m_shards);
+}
+
 bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
 {
     BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(upgradeId);
@@ -361,7 +396,7 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
         return false;
     }
 
-    if (!Spend(talent->GetCost(rank), message))
+    if (!SpendShards(talent->GetCost(rank), message))
         return false;
 
     m_talentRanks[talentId] = rank + 1;
@@ -455,7 +490,10 @@ void BonkPlayer::ShopToggle(uint32 id)
 
 void BonkPlayer::SendShop(bool open) const
 {
-    SendAddon("shop~" + std::to_string(uint32(m_shop)) + "~" + (open ? "1" : "0") + "~" + m_shopNpcName);
+    // shop~kind~open~npc~currency~balance: upgrades cost gold, talents Talent Shards.
+    bool const shards = m_shop == BONK_SHOP_TALENTS;
+    SendAddon("shop~" + std::to_string(uint32(m_shop)) + "~" + (open ? "1" : "0") + "~" + m_shopNpcName + "~" +
+        (shards ? "shards~" + std::to_string(m_shards) : "gold~" + std::to_string(m_player->GetMoney())));
 
     for (auto const& itr : sBonkMgr.GetShopTrees())
         if (itr.second.shop == m_shop)

@@ -48,9 +48,9 @@ void BonkMgr::Load()
     LoadItemPower();
     LoadMobs();
 
-    for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL })
+    for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL, BONK_GO_SHARD })
         if (!sObjectMgr.GetGameObjectTemplate(entry))
-            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: gameobject template %u is missing; runs will lack chests or portals.", entry);
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: gameobject template %u is missing; runs will lack chests or portals, and give shards without a drop.", entry);
 
     for (uint32 entry : { BONK_ORB_SMALL, BONK_ORB_LARGE, BONK_ORB_HUGE })
         if (!sObjectMgr.GetCreatureTemplate(entry))
@@ -63,7 +63,8 @@ void BonkMgr::LoadTiers()
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `key`, `name`, `health_multiplier`, `damage_multiplier`, `stage_health_growth`, `stage_damage_growth`, "
-        "`stage_spawn_growth`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage` FROM `bonk_tier`"));
+        "`stage_spawn_growth`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
+        "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -88,6 +89,10 @@ void BonkMgr::LoadTiers()
         tier.chestCostGrowth = fields[9].GetFloat();
         tier.unlockTierId = fields[10].GetUInt32();
         tier.unlockStage = fields[11].GetUInt32();
+        tier.shardChanceNormal = fields[12].GetFloat();
+        tier.shardChanceElite = fields[13].GetFloat();
+        tier.shardsMiniboss = fields[14].GetUInt32();
+        tier.shardsBoss = fields[15].GetUInt32();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -468,6 +473,11 @@ std::string FormatBonkMoney(uint32 copper)
     if (uint32 const rest = copper % 100)
         text += (text.empty() ? "" : " ") + std::to_string(rest) + "c";
     return text.empty() ? "0c" : text;
+}
+
+std::string FormatBonkShards(uint32 count)
+{
+    return std::to_string(count) + (count == 1 ? " Talent Shard" : " Talent Shards");
 }
 
 uint32 BonkUpgrade::GetCost(uint8 ownedRanks) const

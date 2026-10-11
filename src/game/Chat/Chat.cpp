@@ -266,6 +266,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "maps",           SEC_PLAYER,         false, &ChatHandler::HandleBonkMapsCommand,            "", nullptr },
         { "camp",           SEC_PLAYER,         false, &ChatHandler::HandleBonkCampCommand,            "", nullptr },
         { "reload",         SEC_ADMINISTRATOR,  false, &ChatHandler::HandleBonkReloadCommand,          "", nullptr },
+        { "shards",         SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkShardsCommand,          "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 

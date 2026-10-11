@@ -102,6 +102,13 @@ class BonkRun
             bool pulled = false;        // flying to the player
         };
 
+        // Talent Shards lying where an enemy died.
+        struct ShardDrop
+        {
+            ObjectGuid guid;
+            uint32 count = 0;
+        };
+
         BonkMap const* ChooseNextMap();
         bool TeleportToStage(BonkMap const& map, std::string& error);
         void StartStage();
@@ -154,6 +161,13 @@ class BonkRun
         void CollectAllOrbs();
         void DespawnOrbs();
 
+        // Kept when taken; the stage's leftovers are taken for the player when
+        // it leaves through the portal, and lost when it dies.
+        void DropShards(Creature const* mob, BonkSpawnKind kind);
+        void UpdateShards(uint32 diff);
+        void CollectAllShards();
+        void GiveShards(uint32 count);
+
         // `avoid`: cards just shown, kept out of a reroll when others are left.
         bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr);
         std::string DescribeOffer(Offer const& offer, std::string* icon, uint8* maxLevel) const;
@@ -205,12 +219,15 @@ class BonkRun
         std::vector<ObjectGuid> m_powerups;
         std::vector<Orb> m_orbs;
         uint32 m_orbTimer = 0;
+        std::vector<ShardDrop> m_shardDrops;
+        uint32 m_shardTimer = 0;
         ObjectGuid m_portalGuid;
         int32 m_powerupSpawnTimer = 0;
         uint32 m_powerupCheckTimer = 0;
 
         uint32 m_kills = 0;
         uint32 m_goldEarned = 0;
+        uint32 m_shardsEarned = 0;
         uint32 m_coins = 0;
         uint32 m_chestsBought = 0;
         uint32 m_lastLevel = 1;

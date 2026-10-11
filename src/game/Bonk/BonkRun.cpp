@@ -58,6 +58,9 @@ namespace
     float const BONK_POWERUP_PICKUP_RANGE  = 3.0f;
     uint32 const BONK_POWERUP_LIFETIME_SEC = 90;
     uint32 const BONK_POWERUP_CHECK_MS     = 250;
+    float const BONK_SHARD_PICKUP_RANGE    = 3.0f;
+    float const BONK_SHARD_SCATTER         = 2.0f;     // lands this far from where the enemy died
+    uint32 const BONK_SHARD_CHECK_MS       = 250;
     // A swarm may push the enemy count this far past max_alive.
     float const BONK_SWARM_OVERFLOW        = 1.5f;
     float const BONK_RING_DISTANCE         = 22.0f;    // a ring starts this close
@@ -274,6 +277,7 @@ void BonkRun::Update(uint32 diff)
             UpdateNatives(diff);
             UpdatePowerups(diff, false);
             UpdateOrbs(diff);
+            UpdateShards(diff);
 
             m_stateTimer += diff;
             if (m_stateTimer >= BONK_STATE_INTERVAL_MS)
@@ -389,6 +393,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateRecovery(diff);
     UpdatePowerups(diff, true);
     UpdateOrbs(diff);
+    UpdateShards(diff);
     UpdateEvents();
     if (m_state != STATE_RUNNING)
         return;
@@ -1026,11 +1031,15 @@ void BonkRun::DespawnObjects()
         for (ObjectGuid const& guid : m_powerups)
             if (GameObject* powerup = map->GetGameObject(guid))
                 powerup->Delete();
+        for (ShardDrop const& drop : m_shardDrops)
+            if (GameObject* shard = map->GetGameObject(drop.guid))
+                shard->Delete();
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
             portal->Delete();
     }
     m_chests.clear();
     m_powerups.clear();
+    m_shardDrops.clear();
     m_portalGuid.Clear();
 }
 
@@ -1139,6 +1148,8 @@ void BonkRun::EnterNextStage()
         return;
     }
 
+    // Shards still lying around go with the player.
+    CollectAllShards();
     DespawnObjects();
     DespawnMobs();
     DespawnOrbs();
@@ -1398,6 +1409,102 @@ void BonkRun::DespawnOrbs()
     m_orbs.clear();
 }
 
+void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
+{
+    // Rare on purpose: talents are meant to take many runs.
+    uint32 count = 0;
+    switch (kind)
+    {
+        case BONK_SPAWN_NORMAL:   count = roll_chance_f(m_tier.shardChanceNormal) ? 1 : 0; break;
+        case BONK_SPAWN_ELITE:    count = roll_chance_f(m_tier.shardChanceElite) ? 1 : 0; break;
+        case BONK_SPAWN_MINIBOSS: count = m_tier.shardsMiniboss; break;
+        case BONK_SPAWN_BOSS:     count = m_tier.shardsBoss; break;
+        default: break;
+    }
+    if (!count)
+        return;
+
+    // Beside the spot, so it doesn't hide under the chest that drops there too.
+    float const angle = frand(0.0f, 2.0f * M_PI_F);
+    float x = mob->GetPositionX() + BONK_SHARD_SCATTER * std::cos(angle);
+    float y = mob->GetPositionY() + BONK_SHARD_SCATTER * std::sin(angle);
+    float z = m_player->GetMap()->GetHeight(x, y, mob->GetPositionZ() + 2.0f, true, 10.0f);
+    if (z <= INVALID_HEIGHT)
+    {
+        x = mob->GetPositionX();
+        y = mob->GetPositionY();
+        z = mob->GetPositionZ();
+    }
+
+    GameObject* go = PlaceObject(BONK_GO_SHARD, x, y, z, BONK_OBJECT_LIFETIME_SEC);
+    if (!go)
+    {
+        GiveShards(count);
+        return;
+    }
+
+    ShardDrop drop;
+    drop.guid = go->GetObjectGuid();
+    drop.count = count;
+    m_shardDrops.push_back(drop);
+    m_player->GetBonkPlayer()->Notify(count == 1 ? "A Talent Shard dropped!" : FormatBonkShards(count) + " dropped!");
+}
+
+void BonkRun::UpdateShards(uint32 diff)
+{
+    m_shardTimer += diff;
+    if (m_shardTimer < BONK_SHARD_CHECK_MS || m_shardDrops.empty())
+        return;
+    m_shardTimer = 0;
+
+    Map* map = m_player->GetMap();
+    uint32 taken = 0;
+    for (auto itr = m_shardDrops.begin(); itr != m_shardDrops.end();)
+    {
+        GameObject* go = map->GetGameObject(itr->guid);
+        if (go && go->isSpawned() && m_player->GetDistance(go) > BONK_SHARD_PICKUP_RANGE)
+        {
+            ++itr;
+            continue;
+        }
+
+        // Touched, or gone some other way: the shards are not lost.
+        taken += itr->count;
+        if (go)
+            go->Delete();
+        itr = m_shardDrops.erase(itr);
+    }
+
+    if (taken)
+        GiveShards(taken);
+}
+
+void BonkRun::CollectAllShards()
+{
+    uint32 taken = 0;
+    for (ShardDrop const& drop : m_shardDrops)
+        taken += drop.count;
+
+    if (Map* map = m_player->FindMap())
+        for (ShardDrop const& drop : m_shardDrops)
+            if (GameObject* go = map->GetGameObject(drop.guid))
+                go->Delete();
+    m_shardDrops.clear();
+
+    if (taken)
+        GiveShards(taken);
+}
+
+void BonkRun::GiveShards(uint32 count)
+{
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    bonk->AddShards(count);
+    m_shardsEarned += count;
+    bonk->SendAddon("shard~" + std::to_string(count) + "~" + std::to_string(bonk->GetShards()));
+    bonk->Notify("+" + FormatBonkShards(count) + "!");
+    SendState();
+}
+
 void BonkRun::GiveGold(uint32 copper)
 {
     copper = uint32(copper * (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus) / 100.0f));
@@ -1430,6 +1537,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     // Anything tougher than a normal enemy drops a free chest.
     if (kind != BONK_SPAWN_NORMAL)
         SpawnChest(true, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ());
+
+    DropShards(mob, kind);
 
     if (mob->GetObjectGuid() == m_bossGuid)
         OpenPortal(mob);
@@ -1737,7 +1846,8 @@ void BonkRun::SendState() const
 {
     m_player->GetBonkPlayer()->SendAddon("state~" + std::to_string(m_elapsedMs / IN_MILLISECONDS) + "~" + std::to_string(m_map.durationSeconds) + "~" +
         std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0") + "~" +
-        std::to_string(m_coins) + "~" + std::to_string(GetChestCost()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0"));
+        std::to_string(m_coins) + "~" + std::to_string(GetChestCost()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0") + "~" +
+        std::to_string(m_shardsEarned));
 }
 
 void BonkRun::SendLoadout() const
@@ -1815,6 +1925,10 @@ void BonkRun::Finish(bool wentHome)
     m_wentHome = wentHome;
     m_paused = false;
 
+    // Going home takes the shards still lying around; dying leaves them.
+    if (wentHome)
+        CollectAllShards();
+
     m_player->GetBonkPlayer()->RecordRun(m_stage, m_totalMs / IN_MILLISECONDS, m_kills, m_goldEarned);
     m_offer.clear();
     m_pendingLevels = 0;
@@ -1829,10 +1943,10 @@ void BonkRun::Finish(bool wentHome)
     uint32 const seconds = m_totalMs / IN_MILLISECONDS;
     if (bonk->IsAddonReady())
         bonk->SendAddon("end~" + std::string(wentHome ? "1" : "0") + "~" + std::to_string(seconds) + "~" + std::to_string(m_kills) + "~" +
-            std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_stage));
+            std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_stage) + "~" + std::to_string(m_shardsEarned));
     else
-        ChatHandler(m_player).PSendSysMessage("%s Reached stage %u in %s, %u kills, level %u, earned %s.", wentHome ? "Run complete!" : "Defeated.",
-            m_stage, FormatTime(seconds).c_str(), m_kills, m_player->GetLevel(), FormatGold(m_goldEarned).c_str());
+        ChatHandler(m_player).PSendSysMessage("%s Reached stage %u in %s, %u kills, level %u, earned %s and %s.", wentHome ? "Run complete!" : "Defeated.",
+            m_stage, FormatTime(seconds).c_str(), m_kills, m_player->GetLevel(), FormatGold(m_goldEarned).c_str(), FormatBonkShards(m_shardsEarned).c_str());
 }
 
 void BonkRun::CleanUp()

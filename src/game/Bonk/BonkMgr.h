@@ -30,6 +30,7 @@ WorldLocation const BONK_CAMP_LOCATION(1, 16226.2f, 16257.0f, 13.2022f, 1.65007f
 uint32 const BONK_GO_CHEST      = 900001;   // costs coins to open
 uint32 const BONK_GO_CHEST_FREE = 900002;   // dropped by elites and bosses
 uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
+uint32 const BONK_GO_SHARD      = 900007;   // a dropped Talent Shard, taken by walking over it
 
 // Experience orbs dropped by kills (creature templates, only their looks are used).
 uint32 const BONK_ORB_SMALL = 900100;     // normal enemies
@@ -131,6 +132,11 @@ struct BonkTier
     float chestCostGrowth = 0.5f;       // price increase per chest bought
     uint32 unlockTierId = 0;            // reach unlockStage on this tier to unlock, 0 = always open
     uint32 unlockStage = 0;
+    // Talent Shards, the talent trainer's currency: rare on purpose.
+    float shardChanceNormal = 0.1f;     // % per normal kill
+    float shardChanceElite = 12.0f;     // % per elite
+    uint32 shardsMiniboss = 1;          // every mini-boss drops this many
+    uint32 shardsBoss = 2;              // every stage boss drops this many
 
     std::vector<uint32> mapIds;     // the pool, bonk_map ids
 };
@@ -227,6 +233,8 @@ struct BonkMob
 
 // Money as players read it: "1g 20s", leaving out empty parts.
 std::string FormatBonkMoney(uint32 copper);
+// "1 Talent Shard", "3 Talent Shards".
+std::string FormatBonkShards(uint32 count);
 
 // The camp shops. With the addon, each shows its wares as talent trees.
 enum BonkShop : uint8
@@ -290,7 +298,7 @@ enum BonkTalentEffect : uint8
     MAX_BONK_TALENT_EFFECT
 };
 
-// Run unlock bought at camp.
+// Run unlock bought at camp with Talent Shards.
 struct BonkTalent
 {
     uint32 id = 0;
@@ -300,7 +308,7 @@ struct BonkTalent
     float valuePerRank = 1.0f;
     float goldBonus = 0.0f;         // toggles: + gold while switched on, %
     uint8 maxRank = 1;
-    uint32 cost = 10000;            // copper for the first rank
+    uint32 cost = 1;                // Talent Shards for the first rank
     float costGrowth = 1.0f;
     BonkShopNode layout;
 

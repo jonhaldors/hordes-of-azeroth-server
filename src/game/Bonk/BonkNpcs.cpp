@@ -149,7 +149,7 @@ bool GossipHello_npc_bonk_talents(Player* player, Creature* creature)
         if (!talent.IsToggle())
             text += " " + std::to_string(rank) + "/" + std::to_string(talent.maxRank);
         text += ": " + talent.description;
-        text += rank < talent.maxRank ? " - " + FormatBonkMoney(talent.GetCost(rank)) : " (max)";
+        text += rank < talent.maxRank ? " - " + FormatBonkShards(talent.GetCost(rank)) : " (max)";
         player->ADD_GOSSIP_ITEM(rank < talent.maxRank ? GOSSIP_ICON_TRAINER : GOSSIP_ICON_CHAT, text.c_str(), SENDER_BUY, action);
     }
 
