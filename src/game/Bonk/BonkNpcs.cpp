@@ -77,6 +77,15 @@ bool GossipSelect_npc_bonk_run_master(Player* player, Creature* /*creature*/, ui
 bool GossipHello_npc_bonk_quartermaster(Player* player, Creature* creature)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
+
+    // The addon hides this menu and shows the upgrades as talent trees.
+    if (bonk->IsAddonReady())
+    {
+        bonk->OpenShop(BONK_SHOP_UPGRADES, creature);
+        player->SEND_GOSSIP_MENU(BONK_TEXT_QUARTERMASTER, creature->GetObjectGuid());
+        return true;
+    }
+
     for (auto const& itr : sBonkMgr.GetUpgrades())
     {
         if (player->PlayerTalkClass->GetGossipMenu().MenuItemCount() >= GOSSIP_MAX_MENU_ITEMS)
@@ -111,6 +120,15 @@ bool GossipSelect_npc_bonk_quartermaster(Player* player, Creature* creature, uin
 bool GossipHello_npc_bonk_talents(Player* player, Creature* creature)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
+
+    // The addon hides this menu and shows the talents as talent trees.
+    if (bonk->IsAddonReady())
+    {
+        bonk->OpenShop(BONK_SHOP_TALENTS, creature);
+        player->SEND_GOSSIP_MENU(BONK_TEXT_TALENTS, creature->GetObjectGuid());
+        return true;
+    }
+
     for (auto const& itr : sBonkMgr.GetTalents())
     {
         if (player->PlayerTalkClass->GetGossipMenu().MenuItemCount() >= GOSSIP_MAX_MENU_ITEMS)

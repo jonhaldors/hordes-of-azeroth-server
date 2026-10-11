@@ -10,6 +10,8 @@
 #include "Policies/SingletonImp.h"
 #include "SpellMgr.h"
 
+#include <tuple>
+
 INSTANTIATE_SINGLETON_1(BonkMgr);
 
 namespace
@@ -40,6 +42,7 @@ void BonkMgr::Load()
     LoadWeapons();
     LoadPassives();
     LoadPowerups();
+    LoadShopTrees();
     LoadUpgrades();
     LoadTalents();
     LoadItemPower();
@@ -477,12 +480,92 @@ uint32 BonkTalent::GetCost(uint8 ownedRanks) const
     return uint32(cost * (1.0f + costGrowth * ownedRanks) + 0.5f);
 }
 
+void BonkMgr::LoadShopTrees()
+{
+    m_shopTrees.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `id`, `shop`, `name`, `background` FROM `bonk_shop_tree`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk shop trees.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkShopTree tree;
+        tree.id = fields[0].GetUInt32();
+        uint8 const shop = fields[1].GetUInt8();
+        tree.name = fields[2].GetCppString();
+        tree.background = fields[3].GetCppString();
+
+        if (shop != BONK_SHOP_UPGRADES && shop != BONK_SHOP_TALENTS)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_shop_tree`: tree %u has unknown shop %u, skipped.", tree.id, shop);
+            continue;
+        }
+        tree.shop = BonkShop(shop);
+
+        m_shopTrees[tree.id] = std::move(tree);
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk shop trees", uint32(m_shopTrees.size()));
+}
+
+template <class Entry>
+void BonkMgr::CheckShopLayout(char const* table, BonkShop shop, std::map<uint32, Entry>& entries) const
+{
+    std::set<std::tuple<uint32, uint8, uint8>> taken;
+    for (auto& itr : entries)
+    {
+        Entry& entry = itr.second;
+        BonkShopNode& node = entry.layout;
+
+        auto tree = m_shopTrees.find(node.tree);
+        if (tree == m_shopTrees.end() || tree->second.shop != shop)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `%s`: %u is in tree %u, which this shop doesn't have; it won't show in the trees.",
+                table, entry.id, node.tree);
+            node.tree = 0;
+        }
+        else if (node.row < 1 || node.row > BONK_SHOP_ROWS || node.column < 1 || node.column > BONK_SHOP_COLUMNS)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `%s`: %u sits at row %u, column %u, outside the %ux%u tree; it won't show in the trees.",
+                table, entry.id, node.row, node.column, BONK_SHOP_ROWS, BONK_SHOP_COLUMNS);
+            node.tree = 0;
+        }
+        else if (!taken.insert(std::make_tuple(node.tree, node.row, node.column)).second)
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `%s`: %u shares row %u, column %u of tree %u with another entry.",
+                table, entry.id, node.row, node.column, node.tree);
+
+        if (!node.requiredId)
+        {
+            node.requiredRank = 0;
+            continue;
+        }
+
+        auto required = entries.find(node.requiredId);
+        if (required == entries.end() || node.requiredId == entry.id)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `%s`: %u requires %u, which doesn't exist; requirement dropped.",
+                table, entry.id, node.requiredId);
+            node.requiredId = 0;
+            node.requiredRank = 0;
+            continue;
+        }
+        node.requiredRank = std::min(std::max<uint8>(1, node.requiredRank), required->second.maxRank);
+    }
+}
+
 void BonkMgr::LoadUpgrades()
 {
     m_upgrades.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `description`, `effect`, `value_per_rank`, `max_rank`, `cost`, `cost_growth` FROM `bonk_upgrade`"));
+        "SELECT `id`, `name`, `description`, `effect`, `value_per_rank`, `max_rank`, `cost`, `cost_growth`, "
+        "`icon`, `tree`, `tree_row`, `tree_column`, `required_id`, `required_rank` FROM `bonk_upgrade`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk upgrades.");
@@ -502,6 +585,12 @@ void BonkMgr::LoadUpgrades()
         upgrade.maxRank = std::max<uint8>(1, fields[5].GetUInt8());
         upgrade.cost = fields[6].GetUInt32();
         upgrade.costGrowth = fields[7].GetFloat();
+        upgrade.layout.icon = fields[8].GetCppString();
+        upgrade.layout.tree = fields[9].GetUInt32();
+        upgrade.layout.row = fields[10].GetUInt8();
+        upgrade.layout.column = fields[11].GetUInt8();
+        upgrade.layout.requiredId = fields[12].GetUInt32();
+        upgrade.layout.requiredRank = fields[13].GetUInt8();
 
         if (effect >= MAX_BONK_PASSIVE_EFFECT)
         {
@@ -513,6 +602,7 @@ void BonkMgr::LoadUpgrades()
         m_upgrades[upgrade.id] = std::move(upgrade);
     } while (result->NextRow());
 
+    CheckShopLayout("bonk_upgrade", BONK_SHOP_UPGRADES, m_upgrades);
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk upgrades", uint32(m_upgrades.size()));
 }
 
@@ -521,7 +611,8 @@ void BonkMgr::LoadTalents()
     m_talents.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `description`, `effect`, `value_per_rank`, `gold_bonus`, `max_rank`, `cost`, `cost_growth` FROM `bonk_talent`"));
+        "SELECT `id`, `name`, `description`, `effect`, `value_per_rank`, `gold_bonus`, `max_rank`, `cost`, `cost_growth`, "
+        "`icon`, `tree`, `tree_row`, `tree_column`, `required_id`, `required_rank` FROM `bonk_talent`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk talents.");
@@ -542,6 +633,12 @@ void BonkMgr::LoadTalents()
         talent.maxRank = std::max<uint8>(1, fields[6].GetUInt8());
         talent.cost = fields[7].GetUInt32();
         talent.costGrowth = fields[8].GetFloat();
+        talent.layout.icon = fields[9].GetCppString();
+        talent.layout.tree = fields[10].GetUInt32();
+        talent.layout.row = fields[11].GetUInt8();
+        talent.layout.column = fields[12].GetUInt8();
+        talent.layout.requiredId = fields[13].GetUInt32();
+        talent.layout.requiredRank = fields[14].GetUInt8();
 
         if (effect >= MAX_BONK_TALENT_EFFECT)
         {
@@ -557,6 +654,7 @@ void BonkMgr::LoadTalents()
         m_talents[talent.id] = std::move(talent);
     } while (result->NextRow());
 
+    CheckShopLayout("bonk_talent", BONK_SHOP_TALENTS, m_talents);
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk talents", uint32(m_talents.size()));
 }
 

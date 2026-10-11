@@ -95,6 +95,26 @@ bool ChatHandler::HandleBonkBanishCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkLearnCommand(char* args)
+{
+    uint32 id;
+    if (!ExtractUInt32(&args, id))
+        return false;
+
+    m_session->GetPlayer()->GetBonkPlayer()->ShopLearn(id);
+    return true;
+}
+
+bool ChatHandler::HandleBonkToggleCommand(char* args)
+{
+    uint32 id;
+    if (!ExtractUInt32(&args, id))
+        return false;
+
+    m_session->GetPlayer()->GetBonkPlayer()->ShopToggle(id);
+    return true;
+}
+
 bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
 {
     // The addon announces itself; from now on it gets protocol lines.

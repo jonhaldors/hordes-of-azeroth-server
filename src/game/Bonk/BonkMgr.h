@@ -228,6 +228,36 @@ struct BonkMob
 // Money as players read it: "1g 20s", leaving out empty parts.
 std::string FormatBonkMoney(uint32 copper);
 
+// The camp shops. With the addon, each shows its wares as talent trees.
+enum BonkShop : uint8
+{
+    BONK_SHOP_NONE     = 0,
+    BONK_SHOP_UPGRADES = 1,         // quartermaster: bonk_upgrade
+    BONK_SHOP_TALENTS  = 2,         // talent trainer: bonk_talent
+};
+
+uint8 const BONK_SHOP_ROWS    = 7;
+uint8 const BONK_SHOP_COLUMNS = 4;
+
+struct BonkShopTree
+{
+    uint32 id = 0;
+    BonkShop shop = BONK_SHOP_NONE;
+    std::string name;
+    std::string background;         // Interface\TalentFrame art, e.g. "WarriorArms"
+};
+
+// Where a purchase sits in its shop's trees, and what must be bought first.
+struct BonkShopNode
+{
+    std::string icon;               // Interface\Icons file name
+    uint32 tree = 0;                // bonk_shop_tree id; 0 = not shown in the trees
+    uint8 row = 1;
+    uint8 column = 1;
+    uint32 requiredId = 0;          // another purchase of the same shop
+    uint8 requiredRank = 0;         // ranks of it needed
+};
+
 // Permanent upgrade bought at camp; every rank adds to a passive effect in
 // every run.
 struct BonkUpgrade
@@ -240,6 +270,7 @@ struct BonkUpgrade
     uint8 maxRank = 5;
     uint32 cost = 5000;             // copper for the first rank
     float costGrowth = 1.0f;        // each rank owned makes the next cost this share of `cost` more
+    BonkShopNode layout;
 
     uint32 GetCost(uint8 ownedRanks) const;
 };
@@ -271,6 +302,7 @@ struct BonkTalent
     uint8 maxRank = 1;
     uint32 cost = 10000;            // copper for the first rank
     float costGrowth = 1.0f;
+    BonkShopNode layout;
 
     bool IsToggle() const { return effect <= BONK_TALENT_ELITE_RATE; }
     uint32 GetCost(uint8 ownedRanks) const;
@@ -315,6 +347,8 @@ class BonkMgr
 
         std::vector<BonkPowerup> const& GetPowerups() const { return m_powerups; }
 
+        std::map<uint32, BonkShopTree> const& GetShopTrees() const { return m_shopTrees; }
+
         BonkUpgrade const* GetUpgrade(uint32 id) const;
         std::map<uint32, BonkUpgrade> const& GetUpgrades() const { return m_upgrades; }
 
@@ -336,16 +370,22 @@ class BonkMgr
         void LoadWeapons();
         void LoadPassives();
         void LoadPowerups();
+        void LoadShopTrees();
         void LoadUpgrades();
         void LoadTalents();
         void LoadItemPower();
         void LoadMobs();
+
+        // Drops tree slots and requirements that don't fit, with a log line each.
+        template <class Entry>
+        void CheckShopLayout(char const* table, BonkShop shop, std::map<uint32, Entry>& entries) const;
 
         std::map<uint32, BonkTier> m_tiers;
         std::map<uint32, BonkMap> m_maps;
         std::map<uint32, BonkWeapon> m_weapons;
         std::map<uint32, BonkPassive> m_passives;
         std::vector<BonkPowerup> m_powerups;
+        std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;
         std::map<uint32, BonkTalent> m_talents;
         std::map<uint32, float> m_itemPower;

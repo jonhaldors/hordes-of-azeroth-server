@@ -10,6 +10,7 @@
 #define MANGOS_BONKPLAYER_H
 
 #include "Common.h"
+#include "ObjectGuid.h"
 
 #include <map>
 #include <memory>
@@ -17,7 +18,9 @@
 #include <string>
 
 class BonkRun;
+class Creature;
 class Player;
+enum BonkShop : uint8;
 struct BonkRunBonuses;
 struct BonkTier;
 
@@ -53,6 +56,13 @@ class BonkPlayer
         bool BuyTalent(uint32 talentId, std::string& message);
         bool ToggleTalent(uint32 talentId, std::string& message);
         BonkRunBonuses GetRunBonuses() const;
+
+        // Shop window (addon only): `npc` sells `shop`; the addon shows its
+        // trees and buys with `.bonk learn` and `.bonk toggle` while the
+        // character stays near the NPC.
+        void OpenShop(BonkShop shop, Creature const* npc);
+        void ShopLearn(uint32 id);
+        void ShopToggle(uint32 id);
 
         // Set while a run fires an auto-weapon, so the cast takes no ammo.
         void SetFiringWeapon(bool firing) { m_firingWeapon = firing; }
@@ -90,6 +100,10 @@ class BonkPlayer
         void SaveGold() const;
         void SaveTalent(uint32 talentId) const;
 
+        // `open`: the NPC was just spoken to, rather than a purchase made.
+        void SendShop(bool open) const;
+        bool IsAtShop() const;
+
         Player* m_player;
         std::unique_ptr<BonkRun> m_run;
         bool m_addonReady = false;
@@ -101,6 +115,9 @@ class BonkPlayer
         std::map<uint32, uint8> m_upgradeRanks;
         std::map<uint32, uint8> m_talentRanks;
         std::set<uint32> m_enabledTalents;      // difficulty toggles switched on
+        BonkShop m_shop{};                      // last shop spoken to; none at first
+        ObjectGuid m_shopNpc;
+        std::string m_shopNpcName;
 };
 
 #endif

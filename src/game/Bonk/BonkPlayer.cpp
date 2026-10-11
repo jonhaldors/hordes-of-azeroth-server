@@ -7,8 +7,10 @@
 #include "BonkRun.h"
 #include "Chat.h"
 #include "Config/Config.h"
+#include "Creature.h"
 #include "Database/DatabaseEnv.h"
 #include "Log.h"
+#include "Map.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "World.h"
@@ -23,6 +25,17 @@ namespace
 {
     // Characters this close to the camp spawn point count as being at camp.
     float const BONK_CAMP_RADIUS = 300.0f;
+
+    // The shop window works this close to the NPC it was opened at. The
+    // client closes it a little sooner.
+    float const BONK_SHOP_RANGE = 15.0f;
+
+    std::string RequirementText(std::string const& name, uint8 ranks, uint8 maxRank)
+    {
+        if (maxRank <= 1)
+            return "Requires " + name + ".";
+        return "Requires " + std::to_string(ranks) + (ranks == 1 ? " rank in " : " ranks in ") + name + ".";
+    }
 }
 
 BonkPlayer::BonkPlayer(Player* player) : m_player(player)
@@ -311,6 +324,13 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
         return false;
     }
 
+    BonkUpgrade const* required = sBonkMgr.GetUpgrade(upgrade->layout.requiredId);
+    if (required && GetUpgradeRank(required->id) < upgrade->layout.requiredRank)
+    {
+        message = RequirementText(required->name, upgrade->layout.requiredRank, required->maxRank);
+        return false;
+    }
+
     if (!Spend(upgrade->GetCost(rank), message))
         return false;
 
@@ -331,6 +351,13 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     if (rank >= talent->maxRank)
     {
         message = talent->name + " is already learned.";
+        return false;
+    }
+
+    BonkTalent const* required = sBonkMgr.GetTalent(talent->layout.requiredId);
+    if (required && GetTalentRank(required->id) < talent->layout.requiredRank)
+    {
+        message = RequirementText(required->name, talent->layout.requiredRank, required->maxRank);
         return false;
     }
 
@@ -372,6 +399,105 @@ void BonkPlayer::SaveTalent(uint32 talentId) const
 {
     CharacterDatabase.PExecute("REPLACE INTO `bonk_character_talent` (`guid`, `talent`, `rank`, `enabled`) VALUES (%u, %u, %u, %u)",
         m_player->GetGUIDLow(), talentId, uint32(GetTalentRank(talentId)), IsTalentEnabled(talentId) ? 1u : 0u);
+}
+
+void BonkPlayer::OpenShop(BonkShop shop, Creature const* npc)
+{
+    m_shop = shop;
+    m_shopNpc = npc->GetObjectGuid();
+    m_shopNpcName = npc->GetName();
+    SendShop(true);
+}
+
+bool BonkPlayer::IsAtShop() const
+{
+    if (m_shop == BONK_SHOP_NONE || !m_player->IsInWorld())
+        return false;
+
+    Creature const* npc = m_player->GetMap()->GetCreature(m_shopNpc);
+    return npc && npc->IsAlive() && m_player->IsWithinDistInMap(npc, BONK_SHOP_RANGE);
+}
+
+void BonkPlayer::ShopLearn(uint32 id)
+{
+    if (!IsAtShop())
+    {
+        Notify("You are too far from the trainer.");
+        SendAddon("shopclose");
+        return;
+    }
+
+    std::string message;
+    if (m_shop == BONK_SHOP_UPGRADES)
+        BuyUpgrade(id, message);
+    else
+        BuyTalent(id, message);
+    if (!message.empty())
+        Notify(message);
+    SendShop(false);
+}
+
+void BonkPlayer::ShopToggle(uint32 id)
+{
+    if (!IsAtShop() || m_shop != BONK_SHOP_TALENTS)
+    {
+        Notify("You are too far from the trainer.");
+        SendAddon("shopclose");
+        return;
+    }
+
+    std::string message;
+    ToggleTalent(id, message);
+    if (!message.empty())
+        Notify(message);
+    SendShop(false);
+}
+
+void BonkPlayer::SendShop(bool open) const
+{
+    SendAddon("shop~" + std::to_string(uint32(m_shop)) + "~" + (open ? "1" : "0") + "~" + m_shopNpcName);
+
+    for (auto const& itr : sBonkMgr.GetShopTrees())
+        if (itr.second.shop == m_shop)
+            SendAddon("tree~" + std::to_string(itr.first) + "~" + itr.second.name + "~" + itr.second.background);
+
+    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description
+    auto sendNode = [this](uint32 id, BonkShopNode const& layout, uint8 rank, uint8 maxRank, uint32 nextCost, bool toggle, bool enabled,
+        std::string const& name, std::string const& description)
+    {
+        if (!layout.tree)
+            return;
+
+        rank = std::min(rank, maxRank);
+        std::ostringstream line;
+        line << "node~" << layout.tree << '~' << id << '~' << uint32(layout.row) << '~' << uint32(layout.column) << '~' << layout.icon
+             << '~' << uint32(rank) << '~' << uint32(maxRank) << '~' << (rank < maxRank ? nextCost : 0)
+             << '~' << layout.requiredId << '~' << uint32(layout.requiredRank) << '~' << (toggle ? 1 : 0) << '~' << (enabled ? 1 : 0)
+             << '~' << name << '~' << description;
+        SendAddon(line.str());
+    };
+
+    if (m_shop == BONK_SHOP_UPGRADES)
+    {
+        for (auto const& itr : sBonkMgr.GetUpgrades())
+        {
+            BonkUpgrade const& upgrade = itr.second;
+            uint8 const rank = GetUpgradeRank(upgrade.id);
+            sendNode(upgrade.id, upgrade.layout, rank, upgrade.maxRank, upgrade.GetCost(rank), false, false, upgrade.name, upgrade.description);
+        }
+    }
+    else if (m_shop == BONK_SHOP_TALENTS)
+    {
+        for (auto const& itr : sBonkMgr.GetTalents())
+        {
+            BonkTalent const& talent = itr.second;
+            uint8 const rank = GetTalentRank(talent.id);
+            sendNode(talent.id, talent.layout, rank, talent.maxRank, talent.GetCost(rank), talent.IsToggle(), IsTalentEnabled(talent.id),
+                talent.name, talent.description);
+        }
+    }
+
+    SendAddon("shopend");
 }
 
 BonkRunBonuses BonkPlayer::GetRunBonuses() const
