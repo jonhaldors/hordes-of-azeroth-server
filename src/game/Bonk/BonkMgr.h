@@ -3,8 +3,8 @@
  *
  * BonkMgr owns the static game-mode data loaded from the world database
  * (difficulty tiers, the arena maps in their pools, spawn pools, timed
- * events, weapons and passive upgrades) and the glue between core systems
- * and the per-player state in BonkPlayer.
+ * events, power-ups, weapons and passive upgrades) and the glue between
+ * core systems and the per-player state in BonkPlayer.
  */
 
 #ifndef MANGOS_BONKMGR_H
@@ -91,9 +91,19 @@ struct BonkMap
     uint32 goldPerKill = 10;        // copper
     uint32 stageGold = 5000;        // copper for the stage boss, times the stage number
     uint32 coinsPerKill = 1;        // in-run currency for chests
+    uint32 powerupIntervalSeconds = 40; // a new power-up appears this often, 0 = none
+    uint32 powerupMax = 3;          // most power-ups lying around at once
 
     std::vector<BonkMapCreature> creatures;
     std::vector<BonkMapEvent> events;   // sorted by time
+};
+
+// Battleground-style buff lying in the arena; walking over it casts the spell.
+struct BonkPowerup
+{
+    uint32 entry = 0;               // gameobject_template, only its looks are used
+    uint32 spellId = 0;
+    uint32 weight = 1;
 };
 
 // A difficulty: a pool of maps played one after another, each stage harder.
@@ -182,6 +192,8 @@ class BonkMgr
         BonkPassive const* GetPassive(uint32 id) const;
         std::map<uint32, BonkPassive> const& GetPassives() const { return m_passives; }
 
+        std::vector<BonkPowerup> const& GetPowerups() const { return m_powerups; }
+
         // Arena maps start empty: the run spawns every enemy itself.
         bool IsStaticCreatureSuppressed(Map const* map, uint32 dbGuid) const;
         bool IsArenaLocation(uint32 mapId, uint32 zoneId) const;
@@ -193,11 +205,13 @@ class BonkMgr
         void LoadMapEvents();
         void LoadWeapons();
         void LoadPassives();
+        void LoadPowerups();
 
         std::map<uint32, BonkTier> m_tiers;
         std::map<uint32, BonkMap> m_maps;
         std::map<uint32, BonkWeapon> m_weapons;
         std::map<uint32, BonkPassive> m_passives;
+        std::vector<BonkPowerup> m_powerups;
         std::map<uint32, std::set<uint32>> m_arenaZonesByMap;   // zone 0 = whole map
 };
 

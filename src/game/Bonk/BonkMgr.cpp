@@ -20,6 +20,7 @@ void BonkMgr::Load()
     LoadMapEvents();
     LoadWeapons();
     LoadPassives();
+    LoadPowerups();
 
     for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL })
         if (!sObjectMgr.GetGameObjectTemplate(entry))
@@ -83,7 +84,7 @@ void BonkMgr::LoadMaps()
         "SELECT `id`, `key`, `name`, `tier`, `map_id`, `zone_id`, `position_x`, `position_y`, `position_z`, `orientation`, "
         "`duration_sec`, `level_offset`, `health_multiplier`, `damage_multiplier`, `health_growth_per_min`, "
         "`spawn_interval_ms`, `spawn_batch`, `spawn_batch_growth_per_min`, `max_alive`, `elite_interval_sec`, "
-        "`gold_per_kill`, `stage_gold`, `coins_per_kill` FROM `bonk_map`"));
+        "`gold_per_kill`, `stage_gold`, `coins_per_kill`, `powerup_interval_sec`, `powerup_max` FROM `bonk_map`"));
 
     if (!result)
     {
@@ -119,6 +120,8 @@ void BonkMgr::LoadMaps()
         map.goldPerKill = fields[20].GetUInt32();
         map.stageGold = fields[21].GetUInt32();
         map.coinsPerKill = fields[22].GetUInt32();
+        map.powerupIntervalSeconds = fields[23].GetUInt32();
+        map.powerupMax = fields[24].GetUInt32();
 
         if (!sMapStorage.LookupEntry<MapEntry>(map.mapId))
         {
@@ -333,6 +336,44 @@ void BonkMgr::LoadPassives()
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk passives", uint32(m_passives.size()));
+}
+
+void BonkMgr::LoadPowerups()
+{
+    m_powerups.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `spell_id`, `weight` FROM `bonk_powerup`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk power-ups.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkPowerup powerup;
+        powerup.entry = fields[0].GetUInt32();
+        powerup.spellId = fields[1].GetUInt32();
+        powerup.weight = std::max(1u, fields[2].GetUInt32());
+
+        if (!sObjectMgr.GetGameObjectTemplate(powerup.entry))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_powerup`: gameobject %u does not exist, skipped.", powerup.entry);
+            continue;
+        }
+
+        if (!sSpellMgr.GetSpellEntry(powerup.spellId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_powerup`: power-up %u uses unknown spell %u, skipped.", powerup.entry, powerup.spellId);
+            continue;
+        }
+
+        m_powerups.push_back(powerup);
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk power-ups", uint32(m_powerups.size()));
 }
 
 BonkTier const* BonkMgr::GetTier(uint32 id) const

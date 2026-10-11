@@ -2,7 +2,8 @@
  * Vanilla Bonk: one run. The character starts at level 1 and plays a chain
  * of stages, each on a map from the chosen tier's pool. Enemies spawn
  * around them in growing waves, weapons fire on their own, and every level
- * up or opened chest pauses the run to offer three upgrades. When a stage's
+ * up or opened chest pauses the run to offer three upgrades, and power-ups
+ * lying around give short buffs. When a stage's
  * timer runs out its boss arrives; killing it stops the spawns and opens a
  * portal to the next, harder stage. The run is endless: it ends when the
  * character dies or goes home through a portal. Gold earned is kept either
@@ -107,10 +108,12 @@ class BonkRun
         std::vector<Creature*> GetMobsInRange(float range) const;
         void DespawnMobs();
 
-        GameObject* PlaceObject(uint32 entry, float x, float y, float z);
+        GameObject* PlaceObject(uint32 entry, float x, float y, float z, uint32 lifetimeSeconds);
         bool SpawnChest(bool free, float x, float y, float z);
         bool SpawnChestNearby();
         uint32 GetChestCost() const;
+        void SpawnPowerup();
+        void UpdatePowerups(uint32 diff, bool spawn);
         void DespawnObjects();
 
         uint32 GetMobLevel() const;
@@ -163,7 +166,10 @@ class BonkRun
         ObjectGuid m_bossGuid;
         std::vector<ObjectGuid> m_mobs;
         std::vector<ObjectGuid> m_chests;
+        std::vector<ObjectGuid> m_powerups;
         ObjectGuid m_portalGuid;
+        int32 m_powerupSpawnTimer = 0;
+        uint32 m_powerupCheckTimer = 0;
 
         uint32 m_kills = 0;
         uint32 m_goldEarned = 0;

@@ -39,6 +39,11 @@ namespace
     float const BONK_CHEST_MIN_DISTANCE    = 15.0f;
     float const BONK_CHEST_MAX_DISTANCE    = 45.0f;
     float const BONK_PORTAL_DISTANCE       = 6.0f;
+    float const BONK_POWERUP_MIN_DISTANCE  = 20.0f;
+    float const BONK_POWERUP_MAX_DISTANCE  = 50.0f;
+    float const BONK_POWERUP_PICKUP_RANGE  = 3.0f;
+    uint32 const BONK_POWERUP_LIFETIME_SEC = 90;
+    uint32 const BONK_POWERUP_CHECK_MS     = 250;
     // A swarm may push the enemy count this far past max_alive.
     float const BONK_SWARM_OVERFLOW        = 1.5f;
 
@@ -212,6 +217,7 @@ void BonkRun::Update(uint32 diff)
 
             UpdateOffers();
             UpdateBoundary(diff);
+            UpdatePowerups(diff, false);
 
             m_stateTimer += diff;
             if (m_stateTimer >= BONK_STATE_INTERVAL_MS)
@@ -248,6 +254,7 @@ void BonkRun::StartStage()
     m_eliteTimer = m_map.eliteIntervalSeconds * IN_MILLISECONDS;
     m_bossSpawned = false;
     m_bossGuid.Clear();
+    m_powerupSpawnTimer = m_map.powerupIntervalSeconds * IN_MILLISECONDS / 2;
     m_lastLevel = m_player->GetLevel();
     m_safeX = m_player->GetPositionX();
     m_safeY = m_player->GetPositionY();
@@ -312,6 +319,7 @@ void BonkRun::UpdateRunning(uint32 diff)
 
     UpdateBoundary(diff);
     UpdateRecovery(diff);
+    UpdatePowerups(diff, true);
     UpdateEvents();
     if (m_state != STATE_RUNNING)
         return;
@@ -681,14 +689,14 @@ void BonkRun::DespawnMobs()
     m_mobs.clear();
 }
 
-GameObject* BonkRun::PlaceObject(uint32 entry, float x, float y, float z)
+GameObject* BonkRun::PlaceObject(uint32 entry, float x, float y, float z, uint32 lifetimeSeconds)
 {
-    return m_player->SummonGameObject(entry, x, y, z, frand(0.0f, 2.0f * M_PI_F), 0.0f, 0.0f, 0.0f, 0.0f, BONK_OBJECT_LIFETIME_SEC, false);
+    return m_player->SummonGameObject(entry, x, y, z, frand(0.0f, 2.0f * M_PI_F), 0.0f, 0.0f, 0.0f, 0.0f, lifetimeSeconds, false);
 }
 
 bool BonkRun::SpawnChest(bool free, float x, float y, float z)
 {
-    GameObject* chest = PlaceObject(free ? BONK_GO_CHEST_FREE : BONK_GO_CHEST, x, y, z);
+    GameObject* chest = PlaceObject(free ? BONK_GO_CHEST_FREE : BONK_GO_CHEST, x, y, z, BONK_OBJECT_LIFETIME_SEC);
     if (!chest)
         return false;
     m_chests.push_back(chest->GetObjectGuid());
@@ -715,6 +723,90 @@ uint32 BonkRun::GetChestCost() const
     return uint32(m_tier.chestCost * (1.0f + m_tier.chestCostGrowth * m_chestsBought) + 0.5f);
 }
 
+void BonkRun::SpawnPowerup()
+{
+    std::vector<BonkPowerup> const& powerups = sBonkMgr.GetPowerups();
+    uint32 totalWeight = 0;
+    for (BonkPowerup const& powerup : powerups)
+        totalWeight += powerup.weight;
+    if (!totalWeight)
+        return;
+
+    uint32 roll = urand(1, totalWeight);
+    BonkPowerup const* chosen = nullptr;
+    for (BonkPowerup const& powerup : powerups)
+    {
+        if (roll <= powerup.weight)
+        {
+            chosen = &powerup;
+            break;
+        }
+        roll -= powerup.weight;
+    }
+    if (!chosen)
+        return;
+
+    for (uint32 attempt = 0; attempt < 5; ++attempt)
+    {
+        float x, y, z;
+        if (!FindSpawnPosition(x, y, z, BONK_POWERUP_MIN_DISTANCE, BONK_POWERUP_MAX_DISTANCE))
+            return;
+        if (!m_player->IsWithinLOS(x, y, z))
+            continue;
+        if (GameObject* go = PlaceObject(chosen->entry, x, y, z, BONK_POWERUP_LIFETIME_SEC))
+            m_powerups.push_back(go->GetObjectGuid());
+        return;
+    }
+}
+
+void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
+{
+    m_powerupCheckTimer += diff;
+    if (m_powerupCheckTimer < BONK_POWERUP_CHECK_MS)
+        return;
+    uint32 const elapsed = m_powerupCheckTimer;
+    m_powerupCheckTimer = 0;
+
+    // Walking over a power-up takes it; unclaimed ones expire on their own.
+    Map* map = m_player->GetMap();
+    for (auto itr = m_powerups.begin(); itr != m_powerups.end();)
+    {
+        GameObject* go = map->GetGameObject(*itr);
+        if (!go || !go->isSpawned())
+        {
+            itr = m_powerups.erase(itr);
+            continue;
+        }
+
+        if (m_player->GetDistance(go) > BONK_POWERUP_PICKUP_RANGE)
+        {
+            ++itr;
+            continue;
+        }
+
+        auto powerup = std::find_if(sBonkMgr.GetPowerups().begin(), sBonkMgr.GetPowerups().end(),
+            [go](BonkPowerup const& p) { return p.entry == go->GetEntry(); });
+        if (powerup != sBonkMgr.GetPowerups().end())
+        {
+            m_player->CastSpell(m_player, powerup->spellId, true);
+            m_player->GetBonkPlayer()->Notify(std::string(go->GetGOInfo()->name) + "!");
+        }
+        go->Delete();
+        itr = m_powerups.erase(itr);
+    }
+
+    if (!spawn || !m_map.powerupIntervalSeconds)
+        return;
+
+    m_powerupSpawnTimer -= int32(elapsed);
+    if (m_powerupSpawnTimer > 0)
+        return;
+    m_powerupSpawnTimer += m_map.powerupIntervalSeconds * IN_MILLISECONDS;
+
+    if (m_powerups.size() < m_map.powerupMax)
+        SpawnPowerup();
+}
+
 void BonkRun::DespawnObjects()
 {
     if (Map* map = m_player->FindMap())
@@ -722,10 +814,14 @@ void BonkRun::DespawnObjects()
         for (ObjectGuid const& guid : m_chests)
             if (GameObject* chest = map->GetGameObject(guid))
                 chest->Delete();
+        for (ObjectGuid const& guid : m_powerups)
+            if (GameObject* powerup = map->GetGameObject(guid))
+                powerup->Delete();
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
             portal->Delete();
     }
     m_chests.clear();
+    m_powerups.clear();
     m_portalGuid.Clear();
 }
 
@@ -808,7 +904,7 @@ void BonkRun::PlacePortal(float x, float y, float baseZ)
         z = m_player->GetPositionZ();
     }
 
-    if (GameObject* portal = PlaceObject(BONK_GO_PORTAL, x, y, z))
+    if (GameObject* portal = PlaceObject(BONK_GO_PORTAL, x, y, z, BONK_OBJECT_LIFETIME_SEC))
         m_portalGuid = portal->GetObjectGuid();
 }
 
@@ -968,7 +1064,10 @@ void BonkRun::GiveExperience(uint32 xp)
     if (!xp || level >= maxLevel)
         return;
 
-    // Same as Player::GiveXP without the chat line for every kill.
+    // Same as Player::GiveXP without the chat line for every kill, and
+    // without the full heal a level up normally gives.
+    uint32 const health = m_player->GetHealth();
+    uint32 const startLevel = level;
     uint32 current = m_player->GetUInt32Value(PLAYER_XP) + xp;
     uint32 next = m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
     while (current >= next && level < maxLevel)
@@ -979,6 +1078,8 @@ void BonkRun::GiveExperience(uint32 xp)
         next = m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
     }
     m_player->SetUInt32Value(PLAYER_XP, level >= maxLevel ? 0 : current);
+    if (level != startLevel && m_player->IsAlive())
+        m_player->SetHealth(std::min(health, m_player->GetMaxHealth()));
 }
 
 void BonkRun::GiveGold(uint32 copper)
