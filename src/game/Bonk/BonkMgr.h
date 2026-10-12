@@ -37,6 +37,8 @@ uint32 const BONK_GO_HEAL       = 900008;   // a dropped Turkey Leg, eaten by wa
 uint32 const BONK_ORB_SMALL = 900100;     // normal enemies
 uint32 const BONK_ORB_LARGE = 900101;     // elites
 uint32 const BONK_ORB_HUGE  = 900102;     // mini-bosses
+// An invisible marker where a Sanguine enemy died; its pool's look is an aura on it.
+uint32 const BONK_SANGUINE_POOL = 900110;
 
 enum BonkSpawnKind : uint8
 {
@@ -150,6 +152,8 @@ struct BonkTier
     // Chance elites dodge the hero's hits, %; mini-bosses and bosses dodge
     // BONK_BOSS_EXTRA_DODGE more. Hit takes it off; normal enemies never dodge.
     float eliteDodge = 0.0f;
+    // Affixes every elite rolls; mini-bosses roll one more.
+    uint8 eliteAffixes = 1;
     // Class Mastery experience for the class played.
     uint32 masteryXpMinute = 10;        // per minute survived
     uint32 masteryXpMiniboss = 15;      // per mini-boss killed

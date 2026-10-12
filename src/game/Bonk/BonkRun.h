@@ -64,6 +64,8 @@ class BonkRun
         // An enemy's hit on the hero: Armor takes its share off, then the
         // Shield soaks what it can. Returns what is left for health.
         uint32 MitigateDamage(uint32 damage);
+        // A Necrotic enemy hit the hero: healing is weaker for a while.
+        void AddNecroticStack();
         // Power and the class's Mastery bonuses for `spell` (null for melee
         // swings) against `victim`, added up: applies to all damage the
         // player deals (SpellCaster::SpellDamageBonusDone and
@@ -179,6 +181,15 @@ class BonkRun
         // addon's bar in step.
         void UpdateShield(uint32 diff);
         uint32 GetMaxShield() const;
+        // Necrotic stacks wear off all at once a while after the last hit.
+        void UpdateNecrotic(uint32 diff);
+        void SetNecroticStacks(uint32 stacks);
+        // What a heal on the hero comes to after Necrotic.
+        uint32 ReduceHealing(uint32 heal) const;
+        // Affixes that act when an elite dies: Bolstering and Sanguine.
+        void OnAffixedDeath(Creature* mob);
+        void UpdatePools(uint32 diff);
+        void DespawnPools();
         void RunEvent(BonkMapEvent const& event);
         void OpenPortal(Creature* boss);
         void PlacePortal(float x, float y, float baseZ);
@@ -196,7 +207,11 @@ class BonkRun
         void DespawnMobs();
 
         GameObject* PlaceObject(uint32 entry, float x, float y, float z, uint32 lifetimeSeconds);
-        bool SpawnChest(bool free, float x, float y, float z);
+        // `choices`: cards it offers when opened.
+        bool SpawnChest(bool free, float x, float y, float z, uint32 choices = 3);
+        // Elites drop a chest by chance, better with every affix; mini-bosses
+        // and bosses always do.
+        void DropChest(Creature const* mob, BonkSpawnKind kind);
         bool SpawnChestNearby();
         uint32 GetChestCost() const;
         void SpawnPowerup();
@@ -355,6 +370,19 @@ class BonkRun
         uint32 m_shardsEarned = 0;
         uint32 m_coins = 0;
         float m_leechCarry = 0.0f;          // Leech healing not yet given
+        uint32 m_necroticStacks = 0;
+        uint32 m_necroticIdleMs = 0;        // since the last Necrotic hit
+        struct Pool
+        {
+            ObjectGuid marker;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            uint32 leftMs = 0;
+        };
+        std::vector<Pool> m_pools;          // Sanguine
+        uint32 m_poolTimer = 0;
+        uint32 m_elitesWithoutChest = 0;
+        std::map<ObjectGuid, uint32> m_chestChoices;    // chest -> cards it offers
+        std::vector<uint32> m_pendingChestChoices;      // chests opened, waiting for their choice
         uint32 m_shield = 0;                // absorb left
         uint32 m_shieldIdleMs = 0;          // since the hero last took damage
         uint32 m_shieldSendTimer = 0;
@@ -363,7 +391,6 @@ class BonkRun
         uint32 m_chestsBought = 0;
         uint32 m_lastLevel = 1;
         uint32 m_pendingLevels = 0;
-        uint32 m_pendingChests = 0;
 
         std::vector<OwnedWeapon> m_weapons;
         std::map<uint32, uint8> m_passiveRanks;

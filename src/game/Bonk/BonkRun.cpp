@@ -99,6 +99,26 @@ namespace
     BonkRarity const BONK_CHEST_MIN_RARITY = BONK_RARITY_RARE;
     // A skipped choice pays this share of the next chest's price in coins.
     float const BONK_SKIP_COINS = 0.25f;
+    // An elite chest offers one more card per affix, up to this many.
+    size_t const BONK_MAX_OFFER_SIZE = 6;
+
+    // Elites drop a chest by chance (%), better with every affix and every
+    // point of Luck; after this many elites without one, the next drops one.
+    float const BONK_ELITE_CHEST_CHANCE    = 15.0f;
+    float const BONK_ELITE_CHEST_PER_AFFIX = 10.0f;
+    float const BONK_ELITE_CHEST_PER_LUCK  = 0.1f;
+    uint32 const BONK_ELITE_CHEST_PITY     = 5;
+
+    // Affixes the run carries out.
+    uint32 const BONK_SPELL_NECROTIC       = 22577;     // Glowy (Green): the hero's look while Necrotic
+    float const BONK_NECROTIC_PER_STACK    = 5.0f;      // % less healing
+    uint32 const BONK_NECROTIC_MAX_STACKS  = 15;
+    uint32 const BONK_NECROTIC_DURATION_MS = 6000;      // after the last Necrotic hit
+    float const BONK_BOLSTER_RANGE         = 12.0f;
+    uint32 const BONK_SPELL_SANGUINE       = 31951;     // Spirit Particles (red, super big): the pool's look
+    float const BONK_SANGUINE_RADIUS       = 5.0f;
+    float const BONK_SANGUINE_HEAL         = 0.05f;     // of max health a second
+    uint32 const BONK_SANGUINE_DURATION_MS = 12000;
 
     // Passive upgrades that need a real aura on the player.
     uint32 const BONK_SPELL_MOVE_SPEED = 17498;     // Speed: SPELL_AURA_MOD_INCREASE_SPEED
@@ -237,9 +257,7 @@ namespace
             return "cleaves 1 more enemy";
         if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
             return "spreads to 1 more enemy";
-        if (weapon.chains)
-            return "jumps to 1 more enemy";
-        return "pierces to 1 more enemy";
+        return "hits 1 more enemy";
     }
 
     // CastCustomSpell for a spot on the ground.
@@ -520,9 +538,13 @@ void BonkRun::StartStage()
     // Worn gear adds its stats and set bonuses; checked again every second.
     UpdateGear();
 
-    // Every stage starts behind a full Shield.
+    // Every stage starts behind a full Shield, clear of the last stage's
+    // Necrotic stacks and pools.
     m_shield = GetMaxShield();
     m_shieldIdleMs = 0;
+    SetNecroticStacks(0);
+    DespawnPools();
+    m_player->GetBonkPlayer()->SendAddon("mobclear");
 
     m_player->GetBonkPlayer()->RecordStage(m_tier.id, m_stage);
 
@@ -563,6 +585,8 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateBoundary(diff);
     UpdateRecovery(diff);
     UpdateShield(diff);
+    UpdateNecrotic(diff);
+    UpdatePools(diff);
     UpdatePowerups(diff, true);
     UpdateOrbs(diff);
     UpdateShards(diff);
@@ -602,7 +626,7 @@ void BonkRun::UpdateOffers()
         return;
 
     // Chests first: the player just walked up to one.
-    if (m_pendingChests)
+    if (!m_pendingChestChoices.empty())
         OfferUpgrades(OFFER_CHEST);
     else if (m_pendingLevels)
         OfferUpgrades(OFFER_LEVEL);
@@ -677,7 +701,7 @@ void BonkRun::UpdateRecovery(uint32 diff)
         heal += std::max(1u, uint32(m_player->GetMaxHealth() * percent / 100.0f));
 
     if (heal && m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth())
-        m_player->ModifyHealth(int32(heal));
+        m_player->ModifyHealth(int32(ReduceHealing(heal)));
 }
 
 void BonkRun::UpdateEvents()
@@ -1023,6 +1047,118 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     return damage;
 }
 
+void BonkRun::AddNecroticStack()
+{
+    m_necroticIdleMs = 0;
+    if (m_necroticStacks < BONK_NECROTIC_MAX_STACKS)
+        SetNecroticStacks(m_necroticStacks + 1);
+}
+
+void BonkRun::SetNecroticStacks(uint32 stacks)
+{
+    if (stacks == m_necroticStacks)
+        return;
+
+    bool const had = m_necroticStacks > 0;
+    m_necroticStacks = stacks;
+    if (stacks && !had && m_player->IsAlive())
+        m_player->AddAura(BONK_SPELL_NECROTIC);
+    else if (!stacks && had)
+        m_player->RemoveAurasDueToSpell(BONK_SPELL_NECROTIC);
+    m_player->GetBonkPlayer()->SendAddon("necrotic~" + std::to_string(stacks) + "~" + Percent(stacks * BONK_NECROTIC_PER_STACK));
+}
+
+void BonkRun::UpdateNecrotic(uint32 diff)
+{
+    if (!m_necroticStacks)
+        return;
+    m_necroticIdleMs += diff;
+    if (m_necroticIdleMs >= BONK_NECROTIC_DURATION_MS)
+        SetNecroticStacks(0);
+}
+
+uint32 BonkRun::ReduceHealing(uint32 heal) const
+{
+    if (!m_necroticStacks)
+        return heal;
+    float const kept = 1.0f - std::min(100.0f, m_necroticStacks * BONK_NECROTIC_PER_STACK) / 100.0f;
+    return uint32(heal * kept);
+}
+
+void BonkRun::OnAffixedDeath(Creature* mob)
+{
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+    if (!ai)
+        return;
+
+    // Bolstering: the enemies around it, bosses aside, grow stronger.
+    if (ai->IsBolstering())
+        for (Creature* other : GetMobsInRange(BONK_BOLSTER_RANGE, mob))
+            if (BonkMobAI* otherAi = dynamic_cast<BonkMobAI*>(other->AI()))
+                if (otherAi->GetKind() == BONK_SPAWN_NORMAL || otherAi->GetKind() == BONK_SPAWN_ELITE)
+                    otherAi->Bolster();
+
+    // Sanguine: a pool that heals enemies standing in it.
+    if (ai->IsSanguine())
+    {
+        Pool pool;
+        pool.x = mob->GetPositionX();
+        pool.y = mob->GetPositionY();
+        pool.z = mob->GetPositionZ();
+        pool.leftMs = BONK_SANGUINE_DURATION_MS;
+        if (Creature* marker = m_player->SummonCreature(BONK_SANGUINE_POOL, pool.x, pool.y, pool.z, 0.0f,
+            TEMPSUMMON_TIMED_DESPAWN, BONK_SANGUINE_DURATION_MS * 2, false, 0, &InstallOrbAI))
+        {
+            marker->SetFactionTemplateId(BONK_ORB_FACTION);
+            marker->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+            marker->AddAura(BONK_SPELL_SANGUINE);
+            pool.marker = marker->GetObjectGuid();
+        }
+        m_pools.push_back(pool);
+    }
+}
+
+void BonkRun::UpdatePools(uint32 diff)
+{
+    if (m_pools.empty())
+        return;
+
+    m_poolTimer += diff;
+    bool const tick = m_poolTimer >= IN_MILLISECONDS;
+    if (tick)
+        m_poolTimer -= IN_MILLISECONDS;
+
+    Map* map = m_player->GetMap();
+    for (auto itr = m_pools.begin(); itr != m_pools.end();)
+    {
+        if (tick)
+            for (ObjectGuid const& guid : m_mobs)
+                if (Creature* mob = map->GetCreature(guid))
+                    if (mob->IsAlive() && mob->GetHealth() < mob->GetMaxHealth() &&
+                        mob->GetDistance2d(itr->x, itr->y) <= BONK_SANGUINE_RADIUS)
+                        mob->ModifyHealth(int32(std::max(1.0f, mob->GetMaxHealth() * BONK_SANGUINE_HEAL)));
+
+        itr->leftMs = itr->leftMs > diff ? itr->leftMs - diff : 0;
+        if (itr->leftMs)
+        {
+            ++itr;
+            continue;
+        }
+        if (Creature* marker = map->GetCreature(itr->marker))
+            marker->DespawnOrUnsummon();
+        itr = m_pools.erase(itr);
+    }
+}
+
+void BonkRun::DespawnPools()
+{
+    if (Map* map = m_player->FindMap())
+        for (Pool const& pool : m_pools)
+            if (Creature* marker = map->GetCreature(pool.marker))
+                marker->DespawnOrUnsummon();
+    m_pools.clear();
+}
+
 uint32 BonkRun::GetMaxShield() const
 {
     float const shield = GetPassiveTotal(BONK_PASSIVE_SHIELD);
@@ -1174,7 +1310,7 @@ void BonkRun::SoulSiphon(uint32 killingSpell)
     if (percent <= 0.0f)
         return;
     m_siphonHealed += percent;
-    m_player->ModifyHealth(int32(std::max(1.0f, m_player->GetMaxHealth() * percent / 100.0f)));
+    m_player->ModifyHealth(int32(ReduceHealing(uint32(std::max(1.0f, m_player->GetMaxHealth() * percent / 100.0f)))));
 }
 
 void BonkRun::AwardMastery()
@@ -1320,13 +1456,38 @@ GameObject* BonkRun::PlaceObject(uint32 entry, float x, float y, float z, uint32
     return m_player->SummonGameObject(entry, x, y, z, frand(0.0f, 2.0f * M_PI_F), 0.0f, 0.0f, 0.0f, 0.0f, lifetimeSeconds, false);
 }
 
-bool BonkRun::SpawnChest(bool free, float x, float y, float z)
+bool BonkRun::SpawnChest(bool free, float x, float y, float z, uint32 choices)
 {
     GameObject* chest = PlaceObject(free ? BONK_GO_CHEST_FREE : BONK_GO_CHEST, x, y, z, BONK_OBJECT_LIFETIME_SEC);
     if (!chest)
         return false;
     m_chests.push_back(chest->GetObjectGuid());
+    m_chestChoices[chest->GetObjectGuid()] = choices;
     return true;
+}
+
+void BonkRun::DropChest(Creature const* mob, BonkSpawnKind kind)
+{
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+    uint32 const affixes = ai ? ai->GetAffixCount() : 0;
+
+    // Elites drop one now and then (always Valor and experience); a run of
+    // bad luck ends after BONK_ELITE_CHEST_PITY of them.
+    if (kind == BONK_SPAWN_ELITE)
+    {
+        float const chance = BONK_ELITE_CHEST_CHANCE + BONK_ELITE_CHEST_PER_AFFIX * affixes +
+            BONK_ELITE_CHEST_PER_LUCK * std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_LUCK));
+        if (m_elitesWithoutChest < BONK_ELITE_CHEST_PITY && !roll_chance_f(chance))
+        {
+            ++m_elitesWithoutChest;
+            return;
+        }
+        m_elitesWithoutChest = 0;
+    }
+
+    // Every affix adds a card to choose from.
+    uint32 const choices = std::min(uint32(BONK_OFFER_SIZE) + affixes, uint32(BONK_MAX_OFFER_SIZE));
+    SpawnChest(true, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), choices);
 }
 
 bool BonkRun::SpawnChestNearby()
@@ -1482,9 +1643,12 @@ void BonkRun::UseChest(GameObject* chest)
     }
 
     m_chests.erase(itr);
+    auto choices = m_chestChoices.find(chest->GetObjectGuid());
+    m_pendingChestChoices.push_back(choices != m_chestChoices.end() ? choices->second : uint32(BONK_OFFER_SIZE));
+    if (choices != m_chestChoices.end())
+        m_chestChoices.erase(choices);
     chest->Delete();
 
-    ++m_pendingChests;
     UpdateOffers();
     SendState();
 }
@@ -1933,7 +2097,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
 
     // A share of max health, so it keeps pace with the player's level.
     if (weapon.healPct > 0.0f && m_player->IsAlive())
-        m_player->DealHeal(m_player, std::max(1u, uint32(m_player->GetMaxHealth() * weapon.healPct / 100.0f)), spellInfo);
+        m_player->DealHeal(m_player, ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * weapon.healPct / 100.0f))), spellInfo);
 
     owned.timer = GetWeaponCooldown(owned);
 
@@ -2008,7 +2172,7 @@ void BonkRun::GiveExperience(uint32 xp)
     if (level != startLevel && m_player->IsAlive())
     {
         // Not the full heal a level normally gives: a share per level.
-        uint32 const heal = uint32(m_player->GetMaxHealth() * BONK_LEVEL_UP_HEAL * (level - startLevel));
+        uint32 const heal = ReduceHealing(uint32(m_player->GetMaxHealth() * BONK_LEVEL_UP_HEAL * (level - startLevel)));
         m_player->SetHealth(std::min(health + heal, m_player->GetMaxHealth()));
     }
 }
@@ -2269,7 +2433,7 @@ void BonkRun::UpdateHeals(uint32 diff)
             continue;
         }
 
-        uint32 const heal = std::max(1u, uint32(m_player->GetMaxHealth() * BONK_HEAL_AMOUNT));
+        uint32 const heal = ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * BONK_HEAL_AMOUNT)));
         if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_HEAL_TEXT))
             m_player->DealHeal(m_player, heal, spellInfo);
         else
@@ -2328,9 +2492,12 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
         DropOrb(mob, xp, kind);
     }
 
-    // Anything tougher than a normal enemy drops a free chest.
     if (kind != BONK_SPAWN_NORMAL)
-        SpawnChest(true, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ());
+    {
+        DropChest(mob, kind);
+        OnAffixedDeath(mob);
+        m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()));
+    }
 
     DropShards(mob, kind);
     DropHeal(mob, kind);
@@ -2341,6 +2508,10 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
 
 void BonkRun::OnMobStrayed(Creature* mob, BonkSpawnKind kind)
 {
+    // A stray elite is recycled: gone from the nameplates too.
+    if (kind == BONK_SPAWN_ELITE)
+        m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()));
+
     // Bosses are never recycled: bring them back next to the player instead.
     if ((kind != BONK_SPAWN_BOSS && kind != BONK_SPAWN_MINIBOSS) || m_state != STATE_RUNNING)
         return;
@@ -2572,6 +2743,9 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     };
     std::vector<Candidate> candidates;
     BonkRarity const minimum = source == OFFER_CHEST ? BONK_CHEST_MIN_RARITY : BONK_LEVEL_MIN_RARITY;
+    // An elite chest offers a card more for every affix the elite had.
+    size_t const offerSize = source == OFFER_CHEST && !m_pendingChestChoices.empty() ?
+        std::min<size_t>(m_pendingChestChoices.front(), BONK_MAX_OFFER_SIZE) : BONK_OFFER_SIZE;
 
     // Locked cards stay: from this choice on a reroll or banish, or from the
     // last chest.
@@ -2585,7 +2759,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
         m_lockedOffers.clear();
     }
     for (Offer offer : carried)
-        if (cards.size() < BONK_OFFER_SIZE && RefreshKeptOffer(offer))
+        if (cards.size() < offerSize && RefreshKeptOffer(offer))
         {
             offer.locked = true;
             cards.push_back(offer);
@@ -2602,7 +2776,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
         if (m_banished.count({ true, owned.weapon.id }) || isCard(true, owned.weapon.id))
             continue;
         Offer const offer = MakeRankOffer(owned, BONK_RARITY_COMMON);
-        if (offer.step == BONK_STEP_EVOLVE && owned.rank >= BONK_EVOLVE_PITY_RANK && cards.size() < BONK_OFFER_SIZE)
+        if (offer.step == BONK_STEP_EVOLVE && owned.rank >= BONK_EVOLVE_PITY_RANK && cards.size() < offerSize)
             cards.push_back(offer);
         else
             candidates.push_back({ offer, 3 });
@@ -2672,7 +2846,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
 
     for (std::vector<Candidate>* pool : { &candidates, &repeats })
     {
-        while (cards.size() < BONK_OFFER_SIZE && !pool->empty())
+        while (cards.size() < offerSize && !pool->empty())
         {
             uint32 totalWeight = 0;
             for (auto const& candidate : *pool)
@@ -2720,10 +2894,10 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     if (m_offer.empty())
     {
         // Nothing left to offer: a bag of gold instead.
-        if (source == OFFER_CHEST)
-            --m_pendingChests;
-        else
+        if (source != OFFER_CHEST)
             --m_pendingLevels;
+        else if (!m_pendingChestChoices.empty())
+            m_pendingChestChoices.erase(m_pendingChestChoices.begin());
         GiveGold(m_map.goldPerKill * 25);
         m_player->GetBonkPlayer()->Notify("Nothing left to learn - have some gold!");
         return false;
@@ -2874,8 +3048,8 @@ void BonkRun::CloseOffer(uint32 pickedIndex)
     m_offer.clear();
     if (m_offerSource == OFFER_CHEST)
     {
-        if (m_pendingChests)
-            --m_pendingChests;
+        if (!m_pendingChestChoices.empty())
+            m_pendingChestChoices.erase(m_pendingChestChoices.begin());
     }
     else if (m_pendingLevels)
         --m_pendingLevels;
@@ -3099,7 +3273,7 @@ void BonkRun::Finish(bool wentHome)
     AwardMastery();
     m_offer.clear();
     m_pendingLevels = 0;
-    m_pendingChests = 0;
+    m_pendingChestChoices.clear();
     m_endTimer = BONK_END_DELAY_MS;
 
     // Enemies despawn themselves once the run is no longer active.
@@ -3184,6 +3358,10 @@ void BonkRun::CleanUp()
     m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
     m_shield = 0;
     m_player->GetBonkPlayer()->SendAddon("shield~0~0");
+    SetNecroticStacks(0);
+    DespawnPools();
+    m_chestChoices.clear();
+    m_player->GetBonkPlayer()->SendAddon("mobclear");
     SetMovementImmunity(m_player, false);
 }
 

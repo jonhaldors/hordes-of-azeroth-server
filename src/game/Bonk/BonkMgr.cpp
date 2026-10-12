@@ -112,6 +112,9 @@ void BonkMgr::Load()
     for (uint32 entry : { BONK_ORB_SMALL, BONK_ORB_LARGE, BONK_ORB_HUGE })
         if (!sObjectMgr.GetCreatureTemplate(entry))
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: creature template %u is missing; kills will give experience directly.", entry);
+
+    if (!sObjectMgr.GetCreatureTemplate(BONK_SANGUINE_POOL))
+        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: creature template %u is missing; Sanguine pools will heal without a look.", BONK_SANGUINE_POOL);
 }
 
 void BonkMgr::LoadTiers()
@@ -122,7 +125,7 @@ void BonkMgr::LoadTiers()
         "SELECT `id`, `key`, `name`, `health_multiplier`, `damage_multiplier`, `stage_health_growth`, `stage_damage_growth`, "
         "`stage_spawn_growth`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
-        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge` FROM `bonk_tier`"));
+        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -157,6 +160,7 @@ void BonkMgr::LoadTiers()
         tier.masteryXpMiniboss = fields[19].GetUInt32();
         tier.masteryXpBoss = fields[20].GetUInt32();
         tier.eliteDodge = fields[21].GetFloat();
+        tier.eliteAffixes = fields[22].GetUInt8();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());

@@ -13,6 +13,8 @@
 #include "TemporarySummon.h"
 #include "Utilities/Random.h"
 
+#include <algorithm>
+
 namespace
 {
     // Enemies this far from the player for this long are recycled.
@@ -37,8 +39,46 @@ namespace
     uint32 const BONK_BURN_INTERVAL     = 3000;
     float const BONK_VAMPIRIC_HEAL      = 0.5f;     // share of damage dealt
     float const BONK_FRENZIED_SPEED     = 1.5f;     // times the enemy's attack speed
+    float const BONK_FORTIFIED_HEALTH   = 1.5f;
+    float const BONK_FORTIFIED_SCALE    = 1.15f;
+    float const BONK_RAGING_HEALTH      = 30.0f;    // % of max health it enrages below
+    float const BONK_RAGING_DAMAGE      = 1.5f;     // times its damage once enraged
+    uint32 const BONK_SPELL_RAGING      = 20368;    // Tag: Red Skulls, while enraged
+    float const BONK_BOLSTER_BONUS      = 0.2f;     // more health and damage per stack
+    float const BONK_BOLSTER_SCALE      = 1.05f;    // bigger per stack
+    uint32 const BONK_BOLSTER_MAX       = 10;
 
-    char const* const BONK_AFFIX_NAMES[] = { "Swift", "Bulwark", "Molten", "Vampiric", "Frenzied" };
+    enum AffixCategory : uint8
+    {
+        AFFIX_PRESSURE,
+        AFFIX_SUSTAIN,
+        AFFIX_BULK,
+        AFFIX_ENRAGE,
+        MAX_AFFIX_CATEGORY
+    };
+
+    // By BonkMobAI::Affix. `glow`: a dummy aura with a coloured glow, its look
+    // on the enemy.
+    struct AffixInfo
+    {
+        char const* name;
+        char const* icon;
+        AffixCategory category;
+        uint32 glow;
+    };
+    AffixInfo const BONK_AFFIXES[] =
+    {
+        { "Swift",      "Ability_Rogue_Sprint",              AFFIX_PRESSURE, 22580 },   // Glowy (Yellow)
+        { "Explosive",  "Spell_Fire_SelfDestruct",           AFFIX_PRESSURE, 22579 },   // Glowy (Orange)
+        { "Necrotic",   "Spell_Shadow_AbominationExplosion", AFFIX_PRESSURE, 22577 },   // Glowy (Green)
+        { "Vampiric",   "Spell_Shadow_LifeDrain02",          AFFIX_SUSTAIN,  22578 },   // Glowy (Black)
+        { "Bolstering", "Ability_Warrior_BattleShout",       AFFIX_SUSTAIN,  22581 },   // Glowy (Purple)
+        { "Sanguine",   "Spell_Shadow_BloodBoil",            AFFIX_SUSTAIN,  22518 },   // Glowy (Red)
+        { "Bulwark",    "Spell_Holy_PowerWordShield",        AFFIX_BULK,     26388 },   // Glowy (NoColor)
+        { "Fortified",  "Ability_Warrior_DefensiveStance",   AFFIX_BULK,     22576 },   // Glowy (Blue)
+        { "Frenzied",   "Ability_GhoulFrenzy",               AFFIX_ENRAGE,   28126 },   // Spirit Particles (purple)
+        { "Raging",     "Ability_Racial_BloodRage",          AFFIX_ENRAGE,   31309 },   // Spirit Particles (red, big)
+    };
 }
 
 BonkMobAI::BonkMobAI(Creature* creature) : CreatureAI(creature)
@@ -87,14 +127,23 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
         m_creature->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
     }
 
+    // Elites roll the tier's number of affixes, mini-bosses one more.
+    Player* owner = GetOwner();
+    BonkRun* run = owner ? owner->GetBonkPlayer()->GetRun() : nullptr;
+    uint32 const affixes = run ? run->GetTier().eliteAffixes : 1;
     if (kind == BONK_SPAWN_ELITE)
-        RollAffixes(1);
+        RollAffixes(affixes);
     else if (kind == BONK_SPAWN_MINIBOSS)
-        RollAffixes(2);
+        RollAffixes(affixes + 1);
+
+    // The addon's nameplates know elites and bosses by name.
+    if (kind != BONK_SPAWN_NORMAL && owner)
+        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(kind) + "~" + m_creature->GetName() + "~" + GetAffixIcons());
 }
 
 void BonkMobAI::RollAffixes(uint32 count)
 {
+    // At most one from each category.
     std::vector<Affix> available;
     for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
         available.push_back(Affix(affix));
@@ -104,9 +153,15 @@ void BonkMobAI::RollAffixes(uint32 count)
     {
         uint32 const pick = urand(0, uint32(available.size() - 1));
         Affix const affix = available[pick];
-        available.erase(available.begin() + pick);
+        AffixCategory const category = BONK_AFFIXES[affix].category;
+        available.erase(std::remove_if(available.begin(), available.end(), [category](Affix other)
+        {
+            return BONK_AFFIXES[other].category == category;
+        }), available.end());
+
         m_affixes |= 1u << affix;
-        names += (names.empty() ? "" : ", ") + std::string(BONK_AFFIX_NAMES[affix]);
+        names += (names.empty() ? "" : ", ") + std::string(BONK_AFFIXES[affix].name);
+        m_creature->AddAura(BONK_AFFIXES[affix].glow);
     }
 
     if (HasAffix(AFFIX_SWIFT))
@@ -118,9 +173,53 @@ void BonkMobAI::RollAffixes(uint32 count)
     if (HasAffix(AFFIX_FRENZIED))
         m_creature->SetAttackTime(BASE_ATTACK, uint32(m_creature->GetAttackTime(BASE_ATTACK) / BONK_FRENZIED_SPEED));
 
+    if (HasAffix(AFFIX_FORTIFIED))
+    {
+        ScaleHealth(BONK_FORTIFIED_HEALTH);
+        m_creature->SetObjectScale(m_creature->GetObjectScale() * BONK_FORTIFIED_SCALE);
+        m_creature->UpdateModelData();     // melee reach follows the size
+    }
+
     if (!names.empty())
         if (Player* owner = GetOwner())
             owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + ": " + names);
+}
+
+void BonkMobAI::ScaleHealth(float factor)
+{
+    float const maxHealth = m_creature->GetMaxHealth() * factor;
+    uint32 const health = std::max(1u, uint32(m_creature->GetHealth() * factor));
+    m_creature->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, maxHealth);
+    m_creature->SetMaxHealth(uint32(maxHealth));
+    m_creature->SetHealth(std::min(health, m_creature->GetMaxHealth()));
+}
+
+uint32 BonkMobAI::GetAffixCount() const
+{
+    uint32 count = 0;
+    for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
+        if (HasAffix(Affix(affix)))
+            ++count;
+    return count;
+}
+
+std::string BonkMobAI::GetAffixIcons() const
+{
+    std::string icons;
+    for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
+        if (HasAffix(Affix(affix)))
+            icons += (icons.empty() ? "" : ",") + std::string(BONK_AFFIXES[affix].icon);
+    return icons;
+}
+
+void BonkMobAI::Bolster()
+{
+    if (m_bolsterStacks >= BONK_BOLSTER_MAX || !m_creature->IsAlive())
+        return;
+    ++m_bolsterStacks;
+    ScaleHealth(1.0f + BONK_BOLSTER_BONUS);
+    m_creature->SetObjectScale(m_creature->GetObjectScale() * BONK_BOLSTER_SCALE);
+    m_creature->UpdateModelData();
 }
 
 float BonkMobAI::GetMeleeHit() const
@@ -311,7 +410,7 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
         }
     }
 
-    if (HasAffix(AFFIX_MOLTEN))
+    if (HasAffix(AFFIX_EXPLOSIVE))
     {
         m_burnTimer -= int32(diff);
         if (m_burnTimer <= 0 && m_creature->IsWithinDistInMap(owner, BONK_BURN_RANGE))
@@ -320,6 +419,13 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
             int32 const damage = std::max(1, int32(GetMeleeHit() * BONK_BURN_DAMAGE));
             m_creature->CastCustomSpell(m_creature, BONK_SPELL_BURN, damage, {}, {}, true);
         }
+    }
+
+    if (HasAffix(AFFIX_RAGING) && !m_enraged && m_creature->GetHealthPercent() < BONK_RAGING_HEALTH)
+    {
+        m_enraged = true;
+        m_creature->AddAura(BONK_SPELL_RAGING);
+        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " is enraged!");
     }
 }
 
@@ -344,11 +450,19 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
     if (!damage || victim == m_creature)
         return;
 
-    // Armor takes its share off every hit and spell, then the Shield soaks
-    // what it can.
+    // Bolstered and enraged enemies hit harder; then Armor takes its share
+    // off every hit and spell, and the Shield soaks what it can.
     if (victim->GetObjectGuid() == m_ownerGuid)
         if (BonkRun* run = static_cast<Player*>(victim)->GetBonkPlayer()->GetRun())
+        {
+            float multiplier = 1.0f + BONK_BOLSTER_BONUS * m_bolsterStacks;
+            if (m_enraged)
+                multiplier *= BONK_RAGING_DAMAGE;
+            damage = std::max(1u, uint32(damage * multiplier));
+            if (HasAffix(AFFIX_NECROTIC))
+                run->AddNecroticStack();
             damage = run->MitigateDamage(damage);
+        }
 
     if (HasAffix(AFFIX_VAMPIRIC))
         m_creature->ModifyHealth(int32(damage * BONK_VAMPIRIC_HEAL));

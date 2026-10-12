@@ -5,7 +5,9 @@
  * What an enemy does beyond walking up and hitting comes from bonk_mob and
  * bonk_mob_ability: ranged enemies keep their distance and cast, exploders
  * run in and blow up, and any enemy can have abilities on cooldowns. Elites
- * and mini-bosses also roll random affixes.
+ * and mini-bosses also roll random affixes: at most one from each category
+ * (pressure, sustain, bulk, enrage), as many as the tier says, each with a
+ * glow of its own.
  */
 
 #ifndef MANGOS_BONKMOBAI_H
@@ -34,6 +36,16 @@ class BonkMobAI : public CreatureAI
         BonkSpawnKind GetKind() const { return m_kind; }
         ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
 
+        // Affixes, for the run: elite chests, what happens when it dies, and
+        // the addon's nameplates.
+        uint32 GetAffixCount() const;
+        bool IsBolstering() const { return HasAffix(AFFIX_BOLSTERING); }
+        bool IsSanguine() const { return HasAffix(AFFIX_SANGUINE); }
+        // "Icon,Icon": the affixes' icons.
+        std::string GetAffixIcons() const;
+        // A Bolstering enemy died nearby: more health, damage and size.
+        void Bolster();
+
         void MoveInLineOfSight(Unit*) override {}
         void AttackStart(Unit* victim) override;
         void EnterEvadeMode() override;
@@ -45,17 +57,23 @@ class BonkMobAI : public CreatureAI
     private:
         enum Affix : uint8
         {
-            AFFIX_SWIFT,        // moves faster
-            AFFIX_BULWARK,      // shields itself again a while after a shield breaks
-            AFFIX_MOLTEN,       // burns the player when close
-            AFFIX_VAMPIRIC,     // heals from the damage it deals
-            AFFIX_FRENZIED,     // attacks faster
+            AFFIX_SWIFT,        // pressure: moves faster
+            AFFIX_EXPLOSIVE,    // pressure: a ring of fire bursts around it while the player is close
+            AFFIX_NECROTIC,     // pressure: its hits stack a healing reduction on the player
+            AFFIX_VAMPIRIC,     // sustain: heals from the damage it deals
+            AFFIX_BOLSTERING,   // sustain: when it dies, enemies nearby grow stronger
+            AFFIX_SANGUINE,     // sustain: when it dies, leaves a pool that heals enemies
+            AFFIX_BULWARK,      // bulk: shields itself again a while after a shield breaks
+            AFFIX_FORTIFIED,    // bulk: more health
+            AFFIX_FRENZIED,     // enrage: attacks faster
+            AFFIX_RAGING,       // enrage: deals much more damage once below 30% health
             MAX_AFFIX
         };
 
         Player* GetOwner() const;
         bool HasAffix(Affix affix) const { return (m_affixes & (1u << affix)) != 0; }
         void RollAffixes(uint32 count);
+        void ScaleHealth(float factor);
         float GetMeleeHit() const;
         void Cast(BonkMobAbility const& ability, Player* owner, bool triggered);
         void UpdateAbilities(uint32 diff, Player* owner);
@@ -69,6 +87,8 @@ class BonkMobAI : public CreatureAI
         uint32 m_affixes = 0;
         int32 m_shieldTimer = 0;
         int32 m_burnTimer = 0;
+        uint32 m_bolsterStacks = 0;
+        bool m_enraged = false;     // Raging, below its health mark
         bool m_frozen = false;
         bool m_exploded = false;
         uint32 m_strayTimer = 0;

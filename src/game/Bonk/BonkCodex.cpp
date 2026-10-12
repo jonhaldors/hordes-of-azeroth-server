@@ -71,10 +71,8 @@ namespace
                 rare.push_back("cleaves 1 more enemy");
             else if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
                 rare.push_back("spreads to 1 more enemy");
-            else if (weapon.chains)
-                rare.push_back("jumps to 1 more enemy");
             else
-                rare.push_back("pierces to 1 more enemy");
+                rare.push_back("hits 1 more enemy");
         }
         else
             rare.push_back("+" + Points(BONK_RANK_WIDE) + " area");
