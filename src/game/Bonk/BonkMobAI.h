@@ -35,11 +35,16 @@ class BonkMobAI : public CreatureAI
         void SetFrozen(bool frozen);
         BonkSpawnKind GetKind() const { return m_kind; }
         ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
+        // Normal enemies only: what it is in the crowd.
+        void SetArchetype(BonkArchetype archetype) { m_archetype = archetype; }
+        BonkArchetype GetArchetype() const { return m_archetype; }
 
         // Affixes, for the run: elite chests, what happens when it dies, and
         // the addon's nameplates.
         uint32 GetAffixCount() const;
         bool IsBolstering() const { return HasAffix(AFFIX_BOLSTERING); }
+        // How close the hero must stay for its Necrotic stacks to hold, 0 = not Necrotic.
+        float GetNecroticRange() const;
         bool IsSanguine() const { return HasAffix(AFFIX_SANGUINE); }
         // "Icon,Icon": the affixes' icons.
         std::string GetAffixIcons() const;
@@ -82,6 +87,7 @@ class BonkMobAI : public CreatureAI
 
         ObjectGuid m_ownerGuid;
         BonkSpawnKind m_kind = BONK_SPAWN_NORMAL;
+        BonkArchetype m_archetype = BONK_ARCHETYPE_GRUNT;
         BonkMob const* m_mob = nullptr;
         std::vector<int32> m_abilityTimers;
         uint32 m_affixes = 0;

@@ -181,7 +181,7 @@ class BonkRun
         // addon's bar in step.
         void UpdateShield(uint32 diff);
         uint32 GetMaxShield() const;
-        // Necrotic stacks wear off all at once a while after the last hit.
+        // Necrotic stacks clear once no living Necrotic enemy is in range.
         void UpdateNecrotic(uint32 diff);
         void SetNecroticStacks(uint32 stacks);
         // What a heal on the hero comes to after Necrotic.
@@ -195,7 +195,26 @@ class BonkRun
         void PlacePortal(float x, float y, float baseZ);
 
         void PruneMobs();
-        BonkMapCreature const* PickCreature(BonkSpawnKind kind) const;
+        enum class BruiserPick { ANY, NONE, ONLY };
+        // An enemy of `kind` whose time has come; normal enemies also wait
+        // for their archetype's time.
+        BonkMapCreature const* PickCreature(BonkSpawnKind kind, BruiserPick bruisers = BruiserPick::ANY) const;
+        // A normal enemy for the crowd: a bruiser by the spawn curve's
+        // share, while there is room for one.
+        BonkMapCreature const* PickTrash() const;
+        uint32 CountTrash() const;
+        uint32 CountBruisers() const;
+        // The spawn curve right now (by stage time): the point in force and
+        // the crowd to keep alive, at most the tier's cap; past the cap the
+        // rest makes enemies tougher (GetCrowdOverflow).
+        BonkSpawnPoint const& GetSpawnPoint() const;
+        float GetCurveMinAlive() const;
+        uint32 GetSpawnTarget() const;
+        float GetCrowdOverflow() const;
+        // No elites or events within 30 seconds of the mini-boss or the boss.
+        bool IsQuietTime() const;
+        // An event that waits out a quiet time.
+        static bool IsQuietEvent(BonkEventType type);
         uint32 CountAlive(uint32 entry) const;
         bool FindSpawnPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const;
         bool FindSpawnPositionAt(float angle, float distance, float& x, float& y, float& z) const;
@@ -256,7 +275,7 @@ class BonkRun
         void GiveExperience(uint32 xp);
         void GiveGold(uint32 copper);
 
-        void DropOrb(Creature const* mob, uint32 experience, BonkSpawnKind kind);
+        void DropOrb(Creature const* mob, uint32 experience, BonkOrb colour);
         void UpdateOrbs(uint32 diff);
         void CollectAllOrbs();
         void DespawnOrbs();
@@ -302,10 +321,8 @@ class BonkRun
 
         void Revive();
         void UpdateGear();
+        // The spawn curve's elite interval now (more elites with the talent), 0 = none.
         uint32 GetEliteIntervalMs() const;
-        // Most enemies alive at once right now: low as a stage starts, so the
-        // player is not overrun before their weapons level up.
-        uint32 GetAliveCap() const;
 
         // A choice is open: the player and every enemy stand still.
         void SetPaused(bool paused);
@@ -342,6 +359,8 @@ class BonkRun
         uint32 m_elapsedMs = 0;             // this stage
         uint32 m_totalMs = 0;               // the whole run
         size_t m_nextEvent = 0;
+        std::vector<BonkMapEvent> m_heldEvents;     // waiting out a quiet time
+        float m_gruntRadius = 0.0f;         // the biggest grunt this stage: bruisers are bigger
         int32 m_spawnTimer = 0;
         int32 m_eliteTimer = 0;
         uint32 m_boundaryTimer = 0;
@@ -356,6 +375,7 @@ class BonkRun
         std::vector<ObjectGuid> m_chests;
         std::vector<ObjectGuid> m_powerups;
         std::vector<Orb> m_orbs;
+        ObjectGuid m_overflowOrb;           // the red orb that gathers experience past the orb cap
         uint32 m_orbTimer = 0;
         std::vector<ShardDrop> m_shardDrops;
         std::vector<ObjectGuid> m_healDrops;
@@ -371,7 +391,7 @@ class BonkRun
         uint32 m_coins = 0;
         float m_leechCarry = 0.0f;          // Leech healing not yet given
         uint32 m_necroticStacks = 0;
-        uint32 m_necroticIdleMs = 0;        // since the last Necrotic hit
+        uint32 m_necroticCheckMs = 0;
         struct Pool
         {
             ObjectGuid marker;

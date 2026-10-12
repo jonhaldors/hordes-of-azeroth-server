@@ -33,10 +33,11 @@ uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
 uint32 const BONK_GO_SHARD      = 900007;   // a dropped Talent Shard, taken by walking over it
 uint32 const BONK_GO_HEAL       = 900008;   // a dropped Turkey Leg, eaten by walking over it while hurt
 
-// Experience orbs dropped by kills (creature templates, only their looks are used).
-uint32 const BONK_ORB_SMALL = 900100;     // normal enemies
-uint32 const BONK_ORB_LARGE = 900101;     // elites
-uint32 const BONK_ORB_HUGE  = 900102;     // mini-bosses
+// Experience orbs dropped by kills (creature templates, only their looks are
+// used): blue for most trash, green for bruisers, red for elites and bosses.
+uint32 const BONK_ORB_SMALL = 900100;
+uint32 const BONK_ORB_LARGE = 900101;
+uint32 const BONK_ORB_HUGE  = 900102;
 // An invisible marker where a Sanguine enemy died; its pool's look is an aura on it.
 uint32 const BONK_SANGUINE_POOL = 900110;
 
@@ -67,10 +68,53 @@ struct BonkMapEvent
     uint32 count = 1;
 };
 
+// What a normal enemy is in the crowd (bonk_archetype): its health, damage,
+// experience and orb, and from when in a stage it shows up.
+enum BonkArchetype : uint8
+{
+    BONK_ARCHETYPE_SWARMER = 0,     // small, fast, comes in numbers
+    BONK_ARCHETYPE_GRUNT   = 1,     // the standard walker
+    BONK_ARCHETYPE_BRUISER = 2,     // big and slow, hits hard; its share of the crowd follows the spawn curve
+    BONK_ARCHETYPE_CASTER  = 3,     // keeps its distance and casts
+    BONK_ARCHETYPE_CHARGER = 4,     // charges in
+    MAX_BONK_ARCHETYPE
+};
+
+enum BonkOrb : uint8
+{
+    BONK_ORB_BLUE  = 0,
+    BONK_ORB_GREEN = 1,
+    BONK_ORB_RED   = 2,
+};
+
+struct BonkArchetypeInfo
+{
+    std::string name;
+    float healthMultiplier = 1.0f;  // times a grunt's
+    float damageMultiplier = 1.0f;
+    float experience = 1.0f;        // times a grunt's
+    uint32 firstSecond = 0;         // into a stage, stage 1
+    uint32 firstSecondLater = 0;    // the same from stage 2 on
+    BonkOrb orb = BONK_ORB_BLUE;
+};
+
+// The spawn curve (bonk_spawn_curve): from `second` into a stage, the crowd
+// is kept at least `minAlive` strong (rising to the next point's), a
+// `bruiserShare` of new enemies are bruisers, and an elite comes every
+// `eliteIntervalSeconds` (0 = none).
+struct BonkSpawnPoint
+{
+    uint32 second = 0;
+    float minAlive = 0.0f;
+    float bruiserShare = 0.0f;      // 0..1
+    uint32 eliteIntervalSeconds = 0;
+};
+
 struct BonkMapCreature
 {
     uint32 entry = 0;
     BonkSpawnKind kind = BONK_SPAWN_NORMAL;
+    BonkArchetype archetype = BONK_ARCHETYPE_GRUNT;    // normal enemies only
     uint32 minSecond = 0;           // first second of the run it can spawn
     uint32 maxSecond = 0;           // last second it can spawn, 0 = until the end
     uint32 weight = 1;
@@ -98,17 +142,9 @@ struct BonkMap
     float damageMultiplier = 1.0f;
     float healthGrowthPerMinute = 0.1f;
     float damageGrowthPerMinute = 0.0f;
-    uint32 spawnIntervalMs = 2000;
-    float spawnBatch = 2.0f;
-    float spawnBatchGrowthPerMinute = 0.5f;
-    uint32 maxAlive = 80;
-    // Most enemies alive at once when a stage starts; the cap grows to
-    // maxAlive over maxAliveRampSeconds. 0 = maxAlive from the start.
-    uint32 maxAliveStart = 0;
-    uint32 maxAliveRampSeconds = 0;
     float spawnMinDistance = 38.0f; // enemies appear this far from the player
     float spawnMaxDistance = 48.0f;
-    uint32 eliteIntervalSeconds = 90;
+    uint32 minibossSecond = 0;      // its first mini-boss event, 0 = none
     uint32 goldPerKill = 10;        // copper
     uint32 stageGold = 5000;        // copper for the stage boss, times the stage number
     uint32 coinsPerKill = 1;        // in-run currency for chests
@@ -137,9 +173,17 @@ struct BonkTier
     std::string art;                // texture shown on its card in the arena window
     float healthMultiplier = 1.0f;
     float damageMultiplier = 1.0f;
-    float stageHealthGrowth = 0.75f;    // extra enemy health per stage after the first
-    float stageDamageGrowth = 0.35f;
-    float stageSpawnGrowth = 0.2f;      // extra enemies per wave per stage
+    // Enemy health and damage at stage s: 1 + growth (s - 1) + accel (s - 1)(s - 2).
+    float stageHealthGrowth = 0.25f;
+    float stageDamageGrowth = 0.25f;
+    float stageHealthAccel = 0.05f;
+    float stageDamageAccel = 0.05f;
+    // The spawn curve's crowd times this; past maxAlive the rest goes into
+    // enemy health and damage instead.
+    float minAliveMultiplier = 1.0f;
+    uint32 maxAlive = 200;
+    uint32 maxBruisers = 8;
+    uint32 firstEliteSecond = 150;      // into a stage
     uint32 chestCost = 10;              // coins for the first chest of a run
     float chestCostGrowth = 0.5f;       // price increase per chest bought
     uint32 unlockTierId = 0;            // reach unlockStage on this tier to unlock, 0 = always open
@@ -511,6 +555,10 @@ class BonkMgr
 
         BonkMob const* GetMob(uint32 entry) const;
 
+        BonkArchetypeInfo const& GetArchetype(BonkArchetype archetype) const { return m_archetypes[archetype]; }
+        // The spawn curve, by second into a stage.
+        std::vector<BonkSpawnPoint> const& GetSpawnCurve() const { return m_spawnCurve; }
+
         BonkPassive const* GetPassive(uint32 id) const;
         // Its description, and which passive it can't be taken with.
         std::string DescribePassive(BonkPassive const& passive) const;
@@ -550,6 +598,8 @@ class BonkMgr
         void LoadTalents();
         void LoadItemStats();
         void LoadMobs();
+        void LoadArchetypes();
+        void LoadSpawnCurve();
 
         // Drops tree slots and requirements that don't fit, with a log line each.
         template <class Entry>
@@ -566,6 +616,8 @@ class BonkMgr
         std::map<uint32, BonkItemStat> m_itemStats;
         std::map<uint32, BonkItemSet> m_itemSets;
         std::map<uint32, BonkMob> m_mobs;
+        BonkArchetypeInfo m_archetypes[MAX_BONK_ARCHETYPE];
+        std::vector<BonkSpawnPoint> m_spawnCurve;   // by second
         std::map<uint32, std::set<uint32>> m_arenaZonesByMap;   // zone 0 = whole map
 };
 

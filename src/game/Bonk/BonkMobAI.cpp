@@ -47,6 +47,9 @@ namespace
     float const BONK_BOLSTER_BONUS      = 0.2f;     // more health and damage per stack
     float const BONK_BOLSTER_SCALE      = 1.05f;    // bigger per stack
     uint32 const BONK_BOLSTER_MAX       = 10;
+    // The hero keeps Necrotic stacks within this of a Necrotic enemy (melee
+    // reach and some leeway); ranged ones count out to where they cast from.
+    float const BONK_NECROTIC_RANGE     = 10.0f;
 
     enum AffixCategory : uint8
     {
@@ -198,6 +201,15 @@ void BonkMobAI::ScaleHealth(float factor)
     m_creature->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, maxHealth);
     m_creature->SetMaxHealth(uint32(maxHealth));
     m_creature->SetHealth(std::min(health, m_creature->GetMaxHealth()));
+}
+
+float BonkMobAI::GetNecroticRange() const
+{
+    if (!HasAffix(AFFIX_NECROTIC))
+        return 0.0f;
+    if (m_mob && m_mob->role == BONK_ROLE_RANGED)
+        return std::max(BONK_NECROTIC_RANGE, m_mob->range);
+    return BONK_NECROTIC_RANGE;
 }
 
 uint32 BonkMobAI::GetAffixCount() const

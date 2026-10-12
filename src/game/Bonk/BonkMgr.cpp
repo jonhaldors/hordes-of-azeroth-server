@@ -90,6 +90,8 @@ namespace
 void BonkMgr::Load()
 {
     LoadTiers();
+    LoadArchetypes();
+    LoadSpawnCurve();
     LoadMaps();
     LoadMapCreatures();
     LoadMapEvents();
@@ -123,9 +125,10 @@ void BonkMgr::LoadTiers()
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `key`, `name`, `health_multiplier`, `damage_multiplier`, `stage_health_growth`, `stage_damage_growth`, "
-        "`stage_spawn_growth`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
+        "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
-        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes` FROM `bonk_tier`"));
+        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes`, "
+        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -145,7 +148,7 @@ void BonkMgr::LoadTiers()
         tier.damageMultiplier = fields[4].GetFloat();
         tier.stageHealthGrowth = fields[5].GetFloat();
         tier.stageDamageGrowth = fields[6].GetFloat();
-        tier.stageSpawnGrowth = fields[7].GetFloat();
+        tier.stageHealthAccel = fields[7].GetFloat();
         tier.chestCost = fields[8].GetUInt32();
         tier.chestCostGrowth = fields[9].GetFloat();
         tier.unlockTierId = fields[10].GetUInt32();
@@ -161,6 +164,11 @@ void BonkMgr::LoadTiers()
         tier.masteryXpBoss = fields[20].GetUInt32();
         tier.eliteDodge = fields[21].GetFloat();
         tier.eliteAffixes = fields[22].GetUInt8();
+        tier.stageDamageAccel = fields[23].GetFloat();
+        tier.minAliveMultiplier = fields[24].GetFloat();
+        tier.maxAlive = std::max(1u, fields[25].GetUInt32());
+        tier.maxBruisers = fields[26].GetUInt32();
+        tier.firstEliteSecond = fields[27].GetUInt32();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -186,9 +194,8 @@ void BonkMgr::LoadMaps()
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `key`, `name`, `tier`, `map_id`, `zone_id`, `position_x`, `position_y`, `position_z`, `orientation`, "
         "`duration_sec`, `level_offset`, `health_multiplier`, `damage_multiplier`, `health_growth_per_min`, "
-        "`spawn_interval_ms`, `spawn_batch`, `spawn_batch_growth_per_min`, `max_alive`, `elite_interval_sec`, "
         "`gold_per_kill`, `stage_gold`, `coins_per_kill`, `powerup_interval_sec`, `powerup_max`, "
-        "`spawn_min_distance`, `spawn_max_distance`, `icon`, `damage_growth_per_min`, `max_alive_start`, `max_alive_ramp_sec` FROM `bonk_map`"));
+        "`spawn_min_distance`, `spawn_max_distance`, `icon`, `damage_growth_per_min` FROM `bonk_map`"));
 
     if (!result)
     {
@@ -216,22 +223,15 @@ void BonkMgr::LoadMaps()
         map.healthMultiplier = fields[12].GetFloat();
         map.damageMultiplier = fields[13].GetFloat();
         map.healthGrowthPerMinute = fields[14].GetFloat();
-        map.spawnIntervalMs = std::max(250u, fields[15].GetUInt32());
-        map.spawnBatch = fields[16].GetFloat();
-        map.spawnBatchGrowthPerMinute = fields[17].GetFloat();
-        map.maxAlive = fields[18].GetUInt32();
-        map.eliteIntervalSeconds = fields[19].GetUInt32();
-        map.goldPerKill = fields[20].GetUInt32();
-        map.stageGold = fields[21].GetUInt32();
-        map.coinsPerKill = fields[22].GetUInt32();
-        map.powerupIntervalSeconds = fields[23].GetUInt32();
-        map.powerupMax = fields[24].GetUInt32();
-        map.spawnMinDistance = std::max(5.0f, fields[25].GetFloat());
-        map.spawnMaxDistance = std::max(map.spawnMinDistance, fields[26].GetFloat());
-        map.icon = fields[27].GetCppString();
-        map.damageGrowthPerMinute = fields[28].GetFloat();
-        map.maxAliveStart = fields[29].GetUInt32();
-        map.maxAliveRampSeconds = fields[30].GetUInt32();
+        map.goldPerKill = fields[15].GetUInt32();
+        map.stageGold = fields[16].GetUInt32();
+        map.coinsPerKill = fields[17].GetUInt32();
+        map.powerupIntervalSeconds = fields[18].GetUInt32();
+        map.powerupMax = fields[19].GetUInt32();
+        map.spawnMinDistance = std::max(5.0f, fields[20].GetFloat());
+        map.spawnMaxDistance = std::max(map.spawnMinDistance, fields[21].GetFloat());
+        map.icon = fields[22].GetCppString();
+        map.damageGrowthPerMinute = fields[23].GetFloat();
 
         if (!sMapStorage.LookupEntry<MapEntry>(map.mapId))
         {
@@ -252,11 +252,78 @@ void BonkMgr::LoadMaps()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk maps", uint32(m_maps.size()));
 }
 
+void BonkMgr::LoadArchetypes()
+{
+    for (BonkArchetypeInfo& archetype : m_archetypes)
+        archetype = BonkArchetypeInfo();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `health_multiplier`, `damage_multiplier`, `experience`, `first_sec`, `first_sec_later`, `orb` FROM `bonk_archetype`"));
+    uint32 count = 0;
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint8 const id = fields[0].GetUInt8();
+            if (id >= MAX_BONK_ARCHETYPE)
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_archetype`: unknown archetype %u, skipped.", id);
+                continue;
+            }
+
+            BonkArchetypeInfo& archetype = m_archetypes[id];
+            archetype.name = fields[1].GetCppString();
+            archetype.healthMultiplier = fields[2].GetFloat();
+            archetype.damageMultiplier = fields[3].GetFloat();
+            archetype.experience = fields[4].GetFloat();
+            archetype.firstSecond = fields[5].GetUInt32();
+            archetype.firstSecondLater = fields[6].GetUInt32();
+            archetype.orb = BonkOrb(std::min<uint8>(fields[7].GetUInt8(), BONK_ORB_RED));
+            ++count;
+        } while (result->NextRow());
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk enemy archetypes", count);
+}
+
+void BonkMgr::LoadSpawnCurve()
+{
+    m_spawnCurve.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `second`, `min_alive`, `bruiser_share`, `elite_interval_sec` FROM `bonk_spawn_curve` ORDER BY `second`"));
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            BonkSpawnPoint point;
+            point.second = fields[0].GetUInt32();
+            point.minAlive = std::max(0.0f, fields[1].GetFloat());
+            point.bruiserShare = std::min(1.0f, std::max(0.0f, fields[2].GetFloat() / 100.0f));
+            point.eliteIntervalSeconds = fields[3].GetUInt32();
+            m_spawnCurve.push_back(point);
+        } while (result->NextRow());
+    }
+
+    if (m_spawnCurve.empty())
+    {
+        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_spawn_curve` is empty; runs keep a small crowd.");
+        BonkSpawnPoint point;
+        point.minAlive = 20.0f;
+        point.eliteIntervalSeconds = 90;
+        m_spawnCurve.push_back(point);
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk spawn curve points", uint32(m_spawnCurve.size()));
+}
+
 void BonkMgr::LoadMapCreatures()
 {
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `bonk_map_id`, `entry`, `kind`, `min_sec`, `max_sec`, `weight`, `health_multiplier`, `damage_multiplier`, `speed`, `scale`, `max_alive` "
-        "FROM `bonk_map_creature`"));
+        "SELECT `bonk_map_id`, `entry`, `kind`, `min_sec`, `max_sec`, `weight`, `health_multiplier`, `damage_multiplier`, `speed`, `scale`, `max_alive`, "
+        "`archetype` FROM `bonk_map_creature`"));
 
     if (!result)
     {
@@ -288,6 +355,11 @@ void BonkMgr::LoadMapCreatures()
         creature.speed = fields[8].GetFloat();
         creature.scale = fields[9].GetFloat();
         creature.maxAlive = fields[10].GetUInt32();
+        uint8 const archetype = fields[11].GetUInt8();
+        if (archetype < MAX_BONK_ARCHETYPE)
+            creature.archetype = BonkArchetype(archetype);
+        else
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map_creature`: creature %u has unknown archetype %u; it is a grunt.", creature.entry, archetype);
 
         if (kind >= MAX_BONK_SPAWN_KIND)
         {
@@ -344,6 +416,9 @@ void BonkMgr::LoadMapEvents()
             continue;
         }
         event.type = BonkEventType(type);
+        // Sorted by second: the first mini-boss event is when it arrives.
+        if (event.type == BONK_EVENT_MINIBOSS && !map->second.minibossSecond)
+            map->second.minibossSecond = event.second;
 
         map->second.events.push_back(event);
         ++count;

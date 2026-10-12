@@ -73,13 +73,19 @@ namespace
     float const BONK_SHARD_PICKUP_RANGE    = 3.0f;
     float const BONK_SHARD_SCATTER         = 2.0f;     // lands this far from where the enemy died
     uint32 const BONK_SHARD_CHECK_MS       = 250;
-    // A swarm may push the enemy count this far past max_alive.
-    float const BONK_SWARM_OVERFLOW        = 1.5f;
+    // The crowd is topped up to the spawn curve every tick, a few at a time.
+    uint32 const BONK_SPAWN_TICK_MS        = 1000;
+    uint32 const BONK_SPAWN_PER_TICK       = 12;
+    float const BONK_BOSS_CROWD            = 0.5f;     // of the crowd, while the stage boss is up
+    uint32 const BONK_QUIET_SECONDS        = 30;       // no elites or events this close to a mini-boss or the boss
+    uint32 const BONK_ELITE_RETRY_MS       = 5000;     // an elite held back looks again this soon
+    float const BONK_BRUISER_SIZE          = 1.3f;     // bruisers are at least this much bigger than the biggest grunt
+    float const BONK_BRUISER_MAX_GROWTH    = 2.5f;
     float const BONK_RING_DISTANCE         = 22.0f;    // a ring starts this close
     float const BONK_RUSH_WIDTH            = 0.6f;     // radians either side of a rush's direction
 
     // Experience orbs.
-    size_t const BONK_MAX_ORBS             = 150;      // past this, orbs grow instead
+    size_t const BONK_MAX_ORBS             = 300;      // past this, one red orb gathers the rest
     uint32 const BONK_ORB_CHECK_MS         = 100;
     float const BONK_ORB_PICKUP_RANGE      = 1.5f;
     float const BONK_ORB_MAGNET_RANGE      = 6.0f;     // before the Magnet passive
@@ -88,6 +94,8 @@ namespace
     float const BONK_ORB_FLY_SPEED         = 28.0f;
     float const BONK_ORB_REAIM_DISTANCE    = 1.0f;
     uint32 const BONK_ORB_FACTION          = 35;       // friendly: enemies and area spells leave it be
+    uint32 const BONK_SPELL_ORB_GREEN      = 22577;    // Glowy (Green): bruiser orbs
+    uint32 const BONK_SPELL_ORB_RED        = 22518;    // Glowy (Red): elite, boss and overflow orbs
     // Orbs the run lost track of (cleanup off the map) still go away eventually.
     uint32 const BONK_ORB_LIFETIME_MS      = 30 * MINUTE * IN_MILLISECONDS;
 
@@ -110,10 +118,10 @@ namespace
     uint32 const BONK_ELITE_CHEST_PITY     = 5;
 
     // Affixes the run carries out.
-    uint32 const BONK_SPELL_NECROTIC       = 22577;     // Glowy (Green): the hero's look while Necrotic
+    uint32 const BONK_SPELL_NECROTIC       = 18951;     // Spirit Particles (green): the hero's look while Necrotic; Glowy (Green)'s tint would outlive the aura
     float const BONK_NECROTIC_PER_STACK    = 5.0f;      // % less healing
     uint32 const BONK_NECROTIC_MAX_STACKS  = 15;
-    uint32 const BONK_NECROTIC_DURATION_MS = 6000;      // after the last Necrotic hit
+    uint32 const BONK_NECROTIC_CHECK_MS    = 250;       // stacks clear once no living Necrotic enemy is in range
     float const BONK_BOLSTER_RANGE         = 12.0f;
     uint32 const BONK_SPELL_SANGUINE       = 31951;     // Spirit Particles (red, super big): the pool's look
     float const BONK_SANGUINE_RADIUS       = 5.0f;
@@ -447,6 +455,8 @@ void BonkRun::Update(uint32 diff)
             UpdateBoundary(diff);
             UpdateNatives(diff);
             UpdateShield(diff);
+            UpdateNecrotic(diff);
+            UpdatePools(diff);
             UpdatePowerups(diff, false);
             UpdateOrbs(diff);
             UpdateShards(diff);
@@ -484,7 +494,9 @@ void BonkRun::StartStage()
     m_elapsedMs = 0;
     m_nextEvent = 0;
     m_spawnTimer = BONK_FIRST_WAVE_MS;
-    m_eliteTimer = GetEliteIntervalMs();
+    m_eliteTimer = int32(m_tier.firstEliteSecond * IN_MILLISECONDS);
+    m_heldEvents.clear();
+    m_gruntRadius = 0.0f;
     m_bossSpawned = false;
     m_bossGuid.Clear();
     m_powerupSpawnTimer = m_map.powerupIntervalSeconds * IN_MILLISECONDS / 2;
@@ -707,12 +719,50 @@ void BonkRun::UpdateRecovery(uint32 diff)
 void BonkRun::UpdateEvents()
 {
     uint32 const elapsedSeconds = m_elapsedMs / IN_MILLISECONDS;
+    bool const quiet = IsQuietTime();
+
+    // Events held through a quiet time come once it is over; none once the
+    // stage boss is up.
+    if (!quiet && !m_heldEvents.empty())
+    {
+        std::vector<BonkMapEvent> const held = std::move(m_heldEvents);
+        m_heldEvents.clear();
+        if (!m_bossSpawned)
+            for (BonkMapEvent const& event : held)
+            {
+                RunEvent(event);
+                if (m_state != STATE_RUNNING)
+                    return;
+            }
+    }
+
     while (m_nextEvent < m_map.events.size() && m_map.events[m_nextEvent].second <= elapsedSeconds)
     {
-        RunEvent(m_map.events[m_nextEvent++]);
+        BonkMapEvent const& event = m_map.events[m_nextEvent++];
+        if (quiet && IsQuietEvent(event.type))
+        {
+            m_heldEvents.push_back(event);
+            continue;
+        }
+        RunEvent(event);
         if (m_state != STATE_RUNNING)
             return;
     }
+}
+
+bool BonkRun::IsQuietEvent(BonkEventType type)
+{
+    return type == BONK_EVENT_ELITES || type == BONK_EVENT_SWARM || type == BONK_EVENT_RING || type == BONK_EVENT_RUSH;
+}
+
+bool BonkRun::IsQuietTime() const
+{
+    uint32 const second = m_elapsedMs / IN_MILLISECONDS;
+    auto closeTo = [second](uint32 mark) { return second + BONK_QUIET_SECONDS >= mark && second <= mark + BONK_QUIET_SECONDS; };
+    if (m_map.minibossSecond && closeTo(m_map.minibossSecond))
+        return true;
+    // From shortly before the boss until the stage ends.
+    return second + BONK_QUIET_SECONDS >= m_map.durationSeconds;
 }
 
 void BonkRun::RunEvent(BonkMapEvent const& event)
@@ -749,12 +799,12 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
         }
         case BONK_EVENT_SWARM:
         {
+            // On top of the crowd, but never past the tier's cap.
             PruneMobs();
-            uint32 const cap = uint32(GetAliveCap() * BONK_SWARM_OVERFLOW);
             uint32 const alive = m_mobs.size();
-            uint32 const count = std::min(event.count, cap > alive ? cap - alive : 0u);
+            uint32 const count = std::min(event.count, m_tier.maxAlive > alive ? m_tier.maxAlive - alive : 0u);
             for (uint32 i = 0; i < count; ++i)
-                if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_NORMAL))
+                if (BonkMapCreature const* creature = PickTrash())
                     SpawnMob(*creature);
             if (count)
                 bonk->Notify("A swarm is coming!");
@@ -781,22 +831,11 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
     }
 }
 
-uint32 BonkRun::GetAliveCap() const
-{
-    if (!m_map.maxAliveRampSeconds || m_map.maxAliveStart >= m_map.maxAlive)
-        return m_map.maxAlive;
-
-    // Run time, not stage time: a new stage keeps the crowd the last one had.
-    float const progress = std::min(1.0f, m_totalMs / float(m_map.maxAliveRampSeconds * IN_MILLISECONDS));
-    return m_map.maxAliveStart + uint32((m_map.maxAlive - m_map.maxAliveStart) * progress);
-}
-
 uint32 BonkRun::SpawnFormation(BonkMapEvent const& event)
 {
     PruneMobs();
-    uint32 const cap = uint32(GetAliveCap() * BONK_SWARM_OVERFLOW);
     uint32 const alive = m_mobs.size();
-    uint32 const count = std::min(event.count, cap > alive ? cap - alive : 0u);
+    uint32 const count = std::min(event.count, m_tier.maxAlive > alive ? m_tier.maxAlive - alive : 0u);
 
     // A ring surrounds the player evenly and close; a rush comes as a wedge
     // from one side at the usual distance.
@@ -804,7 +843,7 @@ uint32 BonkRun::SpawnFormation(BonkMapEvent const& event)
     uint32 spawned = 0;
     for (uint32 i = 0; i < count; ++i)
     {
-        BonkMapCreature const* creature = PickCreature(BONK_SPAWN_NORMAL);
+        BonkMapCreature const* creature = PickTrash();
         if (!creature)
             break;
 
@@ -872,37 +911,125 @@ void BonkRun::UpdateSpawns(uint32 diff)
         return;
 
     PruneMobs();
-    uint32 const alive = m_mobs.size();
 
+    // Elites by the spawn curve; held back near a mini-boss, once the boss
+    // is up, and where the curve has none.
     if (m_eliteTimer <= 0)
     {
-        m_eliteTimer += GetEliteIntervalMs();
-        if (m_map.eliteIntervalSeconds && alive < GetAliveCap())
+        uint32 const interval = GetEliteIntervalMs();
+        if (!interval || IsQuietTime() || m_bossSpawned || m_mobs.size() >= m_tier.maxAlive)
+            m_eliteTimer = int32(BONK_ELITE_RETRY_MS);
+        else
+        {
+            m_eliteTimer += int32(interval);
             if (BonkMapCreature const* elite = PickCreature(BONK_SPAWN_ELITE))
                 SpawnMob(*elite);
+        }
     }
 
+    // The crowd is kept at least as big as the curve says, a few at a time.
     if (m_spawnTimer <= 0)
     {
-        m_spawnTimer += m_map.spawnIntervalMs;
+        m_spawnTimer += int32(BONK_SPAWN_TICK_MS);
 
-        // Spawns keep growing over the whole run, so a new stage picks up
-        // where the last one left off.
-        float const stageBonus = (1.0f + m_tier.stageSpawnGrowth * (m_stage - 1)) * (1.0f + m_bonuses.spawnRate / 100.0f);
-        float const batch = (m_map.spawnBatch + m_map.spawnBatchGrowthPerMinute * GetRunMinutes()) * stageBonus;
-        uint32 count = uint32(batch);
-        if (frand(0.0f, 1.0f) < batch - float(count))
-            ++count;
-
-        uint32 const cap = GetAliveCap();
-        count = std::min(count, cap > alive ? cap - alive : 0u);
+        uint32 const target = GetSpawnTarget();
+        uint32 const trash = CountTrash();
+        uint32 const alive = m_mobs.size();
+        uint32 count = target > trash ? target - trash : 0;
+        count = std::min(count, m_tier.maxAlive > alive ? m_tier.maxAlive - alive : 0u);
+        count = std::min(count, BONK_SPAWN_PER_TICK);
         for (uint32 i = 0; i < count; ++i)
-            if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_NORMAL))
+            if (BonkMapCreature const* creature = PickTrash())
                 SpawnMob(*creature);
     }
 }
 
-BonkMapCreature const* BonkRun::PickCreature(BonkSpawnKind kind) const
+BonkSpawnPoint const& BonkRun::GetSpawnPoint() const
+{
+    std::vector<BonkSpawnPoint> const& curve = sBonkMgr.GetSpawnCurve();
+    uint32 const second = m_elapsedMs / IN_MILLISECONDS;
+    size_t index = 0;
+    while (index + 1 < curve.size() && curve[index + 1].second <= second)
+        ++index;
+    return curve[index];
+}
+
+float BonkRun::GetCurveMinAlive() const
+{
+    // Rises evenly from one point of the curve to the next.
+    std::vector<BonkSpawnPoint> const& curve = sBonkMgr.GetSpawnCurve();
+    float const second = m_elapsedMs / float(IN_MILLISECONDS);
+    size_t index = 0;
+    while (index + 1 < curve.size() && curve[index + 1].second <= second)
+        ++index;
+
+    float minAlive = curve[index].minAlive;
+    if (index + 1 < curve.size())
+    {
+        BonkSpawnPoint const& next = curve[index + 1];
+        float const span = float(next.second - curve[index].second);
+        if (span > 0.0f)
+            minAlive += (next.minAlive - minAlive) * (second - curve[index].second) / span;
+    }
+    return minAlive * m_tier.minAliveMultiplier * (1.0f + m_bonuses.spawnRate / 100.0f);
+}
+
+uint32 BonkRun::GetSpawnTarget() const
+{
+    float target = std::min(GetCurveMinAlive(), float(m_tier.maxAlive));
+    if (m_bossSpawned)
+        target *= BONK_BOSS_CROWD;
+    return uint32(target + 0.5f);
+}
+
+float BonkRun::GetCrowdOverflow() const
+{
+    return std::max(1.0f, GetCurveMinAlive() / float(m_tier.maxAlive));
+}
+
+uint32 BonkRun::GetEliteIntervalMs() const
+{
+    uint32 const interval = GetSpawnPoint().eliteIntervalSeconds;
+    if (!interval)
+        return 0;
+    return uint32(interval * IN_MILLISECONDS / (1.0f + m_bonuses.eliteRate / 100.0f));
+}
+
+BonkMapCreature const* BonkRun::PickTrash() const
+{
+    bool const bruiser = !m_bossSpawned && CountBruisers() < m_tier.maxBruisers && roll_chance_f(GetSpawnPoint().bruiserShare * 100.0f);
+    if (bruiser)
+        if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_NORMAL, BruiserPick::ONLY))
+            return creature;
+    return PickCreature(BONK_SPAWN_NORMAL, BruiserPick::NONE);
+}
+
+uint32 BonkRun::CountTrash() const
+{
+    Map* map = m_player->GetMap();
+    uint32 count = 0;
+    for (ObjectGuid const& guid : m_mobs)
+        if (Creature const* mob = map->GetCreature(guid))
+            if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI()))
+                if (ai->GetKind() == BONK_SPAWN_NORMAL)
+                    ++count;
+    return count;
+}
+
+uint32 BonkRun::CountBruisers() const
+{
+    Map* map = m_player->GetMap();
+    uint32 count = 0;
+    for (ObjectGuid const& guid : m_mobs)
+        if (Creature const* mob = map->GetCreature(guid))
+            if (mob->IsAlive())
+                if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI()))
+                    if (ai->GetKind() == BONK_SPAWN_NORMAL && ai->GetArchetype() == BONK_ARCHETYPE_BRUISER)
+                        ++count;
+    return count;
+}
+
+BonkMapCreature const* BonkRun::PickCreature(BonkSpawnKind kind, BruiserPick bruisers) const
 {
     uint32 const elapsedSeconds = m_elapsedMs / IN_MILLISECONDS;
 
@@ -914,6 +1041,16 @@ BonkMapCreature const* BonkRun::PickCreature(BonkSpawnKind kind) const
     {
         if (creature.kind != kind || elapsedSeconds < creature.minSecond || (creature.maxSecond && elapsedSeconds > creature.maxSecond))
             continue;
+        if (kind == BONK_SPAWN_NORMAL)
+        {
+            // Every archetype has its time in a stage; bruisers come sooner after the first.
+            BonkArchetypeInfo const& archetype = sBonkMgr.GetArchetype(creature.archetype);
+            if (elapsedSeconds < (m_stage > 1 ? archetype.firstSecondLater : archetype.firstSecond))
+                continue;
+            bool const isBruiser = creature.archetype == BONK_ARCHETYPE_BRUISER;
+            if ((bruisers == BruiserPick::ONLY && !isBruiser) || (bruisers == BruiserPick::NONE && isBruiser))
+                continue;
+        }
         if (creature.maxAlive && CountAlive(creature.entry) >= creature.maxAlive)
             continue;
         candidates.push_back(&creature);
@@ -1003,17 +1140,17 @@ float BonkRun::GetMobHealth(uint32 level) const
 
 float BonkRun::GetStageHealthMultiplier() const
 {
-    return m_tier.healthMultiplier * (1.0f + m_tier.stageHealthGrowth * (m_stage - 1)) * (1.0f + m_bonuses.enemyHealth / 100.0f);
+    // Stage 2 +25%, stage 3 +60%, and steeper after (bonk_tier growth and accel).
+    float const stages = float(m_stage - 1);
+    return m_tier.healthMultiplier * (1.0f + m_tier.stageHealthGrowth * stages + m_tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f)) *
+        (1.0f + m_bonuses.enemyHealth / 100.0f);
 }
 
 float BonkRun::GetStageDamageMultiplier() const
 {
-    return m_tier.damageMultiplier * (1.0f + m_tier.stageDamageGrowth * (m_stage - 1)) * (1.0f + m_bonuses.enemyDamage / 100.0f);
-}
-
-uint32 BonkRun::GetEliteIntervalMs() const
-{
-    return uint32(m_map.eliteIntervalSeconds * IN_MILLISECONDS / (1.0f + m_bonuses.eliteRate / 100.0f));
+    float const stages = float(m_stage - 1);
+    return m_tier.damageMultiplier * (1.0f + m_tier.stageDamageGrowth * stages + m_tier.stageDamageAccel * stages * std::max(0.0f, stages - 1.0f)) *
+        (1.0f + m_bonuses.enemyDamage / 100.0f);
 }
 
 void BonkRun::UpdateGear()
@@ -1049,7 +1186,6 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
 
 void BonkRun::AddNecroticStack()
 {
-    m_necroticIdleMs = 0;
     if (m_necroticStacks < BONK_NECROTIC_MAX_STACKS)
         SetNecroticStacks(m_necroticStacks + 1);
 }
@@ -1072,9 +1208,22 @@ void BonkRun::UpdateNecrotic(uint32 diff)
 {
     if (!m_necroticStacks)
         return;
-    m_necroticIdleMs += diff;
-    if (m_necroticIdleMs >= BONK_NECROTIC_DURATION_MS)
-        SetNecroticStacks(0);
+    m_necroticCheckMs += diff;
+    if (m_necroticCheckMs < BONK_NECROTIC_CHECK_MS)
+        return;
+    m_necroticCheckMs = 0;
+
+    // The stacks hold while a living Necrotic enemy is close, and are gone
+    // the moment none is.
+    Map* map = m_player->GetMap();
+    for (ObjectGuid const& guid : m_mobs)
+        if (Creature const* mob = map->GetCreature(guid))
+            if (mob->IsAlive())
+                if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI()))
+                    if (float const range = ai->GetNecroticRange())
+                        if (m_player->IsWithinDistInMap(mob, range))
+                            return;
+    SetNecroticStacks(0);
 }
 
 uint32 BonkRun::ReduceHealing(uint32 heal) const
@@ -1371,8 +1520,14 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     // these factors make enemies tougher relative to the player.
     float const minutes = GetRunMinutes();
     float const levelGrowth = 1.0f + BONK_HEALTH_PER_LEVEL * (m_player->GetLevel() - 1);
+    // Normal enemies by their archetype; a crowd bigger than the tier's cap
+    // makes everything tougher instead.
+    BonkArchetypeInfo const* archetype = creature.kind == BONK_SPAWN_NORMAL ? &sBonkMgr.GetArchetype(creature.archetype) : nullptr;
+    float const overflow = GetCrowdOverflow();
+    float const archetypeHealth = archetype ? archetype->healthMultiplier : 1.0f;
+    float const archetypeDamage = archetype ? archetype->damageMultiplier : 1.0f;
     uint32 const health = std::max(1u, uint32(GetMobHealth(level) * GetStageHealthMultiplier() * m_map.healthMultiplier *
-        creature.healthMultiplier * GetKindHealth(creature.kind) * levelGrowth * (1.0f + m_map.healthGrowthPerMinute * minutes)));
+        creature.healthMultiplier * archetypeHealth * overflow * GetKindHealth(creature.kind) * levelGrowth * (1.0f + m_map.healthGrowthPerMinute * minutes)));
     mob->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, float(health));
     mob->SetMaxHealth(health);
     mob->SetHealth(health);
@@ -1381,7 +1536,7 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     {
         // Gentle at the start of a run, harder the longer it goes.
         float const damage = stats->melee_damage * GetStageDamageMultiplier() * m_map.damageMultiplier * creature.damageMultiplier *
-            GetKindDamage(creature.kind) * (1.0f + m_map.damageGrowthPerMinute * minutes);
+            archetypeDamage * overflow * GetKindDamage(creature.kind) * (1.0f + m_map.damageGrowthPerMinute * minutes);
         mob->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, damage * 0.85f);
         mob->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, damage * 1.15f);
         mob->UpdateDamagePhysical(BASE_ATTACK);
@@ -1396,11 +1551,29 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
         // Melee reach and size follow the new scale.
         mob->UpdateModelData();
     }
+
+    // Bruisers must read as bruisers: clearly bigger than the biggest grunt
+    // this stage has seen.
+    if (archetype && creature.archetype == BONK_ARCHETYPE_GRUNT)
+        m_gruntRadius = std::max(m_gruntRadius, mob->GetObjectBoundingRadius());
+    else if (archetype && creature.archetype == BONK_ARCHETYPE_BRUISER && m_gruntRadius > 0.0f)
+    {
+        float const radius = mob->GetObjectBoundingRadius();
+        float const wanted = BONK_BRUISER_SIZE * m_gruntRadius;
+        if (radius > 0.0f && radius < wanted)
+        {
+            mob->SetObjectScale(mob->GetObjectScale() * std::min(wanted / radius, BONK_BRUISER_MAX_GROWTH));
+            mob->UpdateModelData();
+        }
+    }
     mob->SetNoXP();
 
     // Last, so abilities and affixes build on the final stats.
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+    {
+        ai->SetArchetype(creature.archetype);
         ai->Setup(creature.kind);
+    }
 
     m_mobs.push_back(mob->GetObjectGuid());
     if (creature.kind == BONK_SPAWN_BOSS)
@@ -2177,35 +2350,26 @@ void BonkRun::GiveExperience(uint32 xp)
     }
 }
 
-void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkSpawnKind kind)
+void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
 {
     if (!experience)
         return;
 
-    // Past the cap, the experience joins the orb nearest to where it dropped.
+    // Past the cap, one red orb gathers the experience instead.
     Map* map = m_player->GetMap();
-    if (m_orbs.size() >= BONK_MAX_ORBS)
+    bool const overflow = m_orbs.size() >= BONK_MAX_ORBS;
+    if (overflow)
     {
-        Orb* nearest = nullptr;
-        float nearestDistance = 0.0f;
         for (Orb& orb : m_orbs)
-            if (Creature const* creature = map->GetCreature(orb.guid))
+            if (orb.guid == m_overflowOrb && map->GetCreature(orb.guid))
             {
-                float const distance = mob->GetDistance(creature);
-                if (!nearest || distance < nearestDistance)
-                {
-                    nearest = &orb;
-                    nearestDistance = distance;
-                }
+                orb.experience += experience;
+                return;
             }
-        if (nearest)
-        {
-            nearest->experience += experience;
-            return;
-        }
+        colour = BONK_ORB_RED;
     }
 
-    uint32 const entry = kind == BONK_SPAWN_NORMAL ? BONK_ORB_SMALL : kind == BONK_SPAWN_ELITE ? BONK_ORB_LARGE : BONK_ORB_HUGE;
+    uint32 const entry = colour == BONK_ORB_BLUE ? BONK_ORB_SMALL : colour == BONK_ORB_GREEN ? BONK_ORB_LARGE : BONK_ORB_HUGE;
     Creature* orb = m_player->SummonCreature(entry, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), 0.0f,
         TEMPSUMMON_TIMED_DESPAWN, BONK_ORB_LIFETIME_MS, false, 0, &InstallOrbAI);
     if (!orb)
@@ -2216,11 +2380,17 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkSpawnKind kind
 
     orb->SetFactionTemplateId(BONK_ORB_FACTION);
     orb->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    if (colour == BONK_ORB_GREEN)
+        orb->AddAura(BONK_SPELL_ORB_GREEN);
+    else if (colour == BONK_ORB_RED)
+        orb->AddAura(BONK_SPELL_ORB_RED);
 
     Orb dropped;
     dropped.guid = orb->GetObjectGuid();
     dropped.experience = experience;
     m_orbs.push_back(dropped);
+    if (overflow)
+        m_overflowOrb = dropped.guid;
 }
 
 void BonkRun::UpdateOrbs(uint32 diff)
@@ -2488,8 +2658,20 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
         uint32 const level = m_player->GetLevel();
         uint32 const killsForLevel = 4 + 2 * level;
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
-        uint32 const xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / float(killsForLevel) * reward * growth));
-        DropOrb(mob, xp, kind);
+
+        // Normal enemies by archetype: swarmers give half, bruisers a green
+        // orb worth several; elites and bosses red ones.
+        float experience = float(reward);
+        BonkOrb colour = BONK_ORB_RED;
+        if (kind == BONK_SPAWN_NORMAL)
+        {
+            BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+            BonkArchetypeInfo const& archetype = sBonkMgr.GetArchetype(ai ? ai->GetArchetype() : BONK_ARCHETYPE_GRUNT);
+            experience *= archetype.experience;
+            colour = archetype.orb;
+        }
+        uint32 const xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / float(killsForLevel) * experience * growth));
+        DropOrb(mob, xp, colour);
     }
 
     if (kind != BONK_SPAWN_NORMAL)
