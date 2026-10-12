@@ -81,6 +81,10 @@ Spell::Spell(Unit* caster, SpellEntry const* info, bool triggered, ObjectGuid or
     m_autoRepeat = m_spellInfo->IsAutoRepeatRangedSpell();
     m_channeled = info->IsChanneledSpell();
 
+    // Vanilla Bonk: no weapon spell holds the hero in place.
+    if (Player const* player = caster->ToPlayer())
+        m_bonkWeapon = player->GetBonkPlayer()->IsFiringWeapon();
+
     // determine reflection
     m_canReflect = victim ? m_spellInfo->IsReflectableSpell(caster, victim) : m_spellInfo->IsReflectableSpell();
 
@@ -4042,7 +4046,7 @@ void Spell::update(uint32 difftime)
         nowPosZ = m_caster->GetPositionZ();
         nowO = m_caster->GetOrientation();
     }
-    if (m_caster->IsPlayer() && m_timer != 0 && !m_spellInfo->HasAttribute(SPELL_ATTR_EX3_HIDE_CHANNEL_BAR) &&
+    if (m_caster->IsPlayer() && m_timer != 0 && !m_bonkWeapon && !m_spellInfo->HasAttribute(SPELL_ATTR_EX3_HIDE_CHANNEL_BAR) &&
        (fabs(m_castPosition.x - nowPosX) > 0.5f || fabs(m_castPosition.y - nowPosY) > 0.5f || fabs(m_castPosition.z - nowPosZ) > 0.5f) &&
        (m_spellInfo->Effect[EFFECT_INDEX_0] != SPELL_EFFECT_STUCK || !((Player*)m_caster)->m_movementInfo.HasMovementFlag(MOVEFLAG_FALLINGFAR)) &&
        (m_spellInfo->HasSpellInterruptFlag(SPELL_INTERRUPT_FLAG_MOVEMENT) || m_spellInfo->HasAuraInterruptFlag(AURA_INTERRUPT_MOVING_CANCELS) || m_spellInfo->HasChannelInterruptFlag(AURA_INTERRUPT_MOVING_CANCELS)))

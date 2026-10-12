@@ -1003,7 +1003,7 @@ uint32 SpellCaster::SpellCriticalDamageBonus(SpellEntry const* spellProto, uint3
     if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
     {
         bool const weaponAttack = spellProto->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_RANGED;
-        return uint32(damage * run->RollCritMultiplier(weaponAttack));
+        return uint32(damage * run->RollCritMultiplier(weaponAttack, pVictim));
     }
 
     // Calculate critical bonus
@@ -2093,6 +2093,7 @@ bool SpellCaster::IsNoMovementSpellCasted() const
         return (true);
     else if (m_currentSpells[CURRENT_CHANNELED_SPELL] &&
              m_currentSpells[CURRENT_CHANNELED_SPELL]->getState() != SPELL_STATE_FINISHED &&
+             !m_currentSpells[CURRENT_CHANNELED_SPELL]->IsBonkWeapon() &&
             (m_currentSpells[CURRENT_CHANNELED_SPELL]->m_spellInfo->HasSpellInterruptFlag(SPELL_INTERRUPT_FLAG_MOVEMENT) ||
              m_currentSpells[CURRENT_CHANNELED_SPELL]->m_spellInfo->HasChannelInterruptFlag(AURA_INTERRUPT_MOVING_CANCELS)))
         return (true);
@@ -2114,8 +2115,12 @@ void SpellCaster::InterruptSpellsWithChannelFlags(uint32 flags, uint32 except)
 {
     if (Spell* spell = m_currentSpells[CURRENT_CHANNELED_SPELL])
         if (spell->getState() == SPELL_STATE_CASTING)
-            if ((spell->m_spellInfo->ChannelInterruptFlags & flags) && spell->m_spellInfo->Id != except)
+        {
+            // Vanilla Bonk: a run weapon keeps channeling while the hero moves.
+            uint32 const checked = spell->IsBonkWeapon() ? flags & ~uint32(AURA_INTERRUPT_MOVING_CANCELS | AURA_INTERRUPT_TURNING_CANCELS) : flags;
+            if ((spell->m_spellInfo->ChannelInterruptFlags & checked) && spell->m_spellInfo->Id != except)
                 InterruptSpell(CURRENT_CHANNELED_SPELL);
+        }
 }
 
 void SpellCaster::InterruptNonMeleeSpells(bool withDelayed, uint32 spell_id)

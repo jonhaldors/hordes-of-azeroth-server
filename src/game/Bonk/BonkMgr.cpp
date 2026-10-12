@@ -434,7 +434,7 @@ void BonkMgr::LoadWeapons()
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
         "`class_mask`, `starter_class_mask`, `evolves_from`, `heal_pct`, `duration_ms`, "
-        "`chains`, `behavior`, `behavior_value`, `tick_ms` FROM `bonk_weapon`"));
+        "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage` FROM `bonk_weapon`"));
 
     if (!result)
     {
@@ -465,6 +465,16 @@ void BonkMgr::LoadWeapons()
         weapon.behavior = BonkWeaponBehavior(std::min<uint8>(fields[15].GetUInt8(), MAX_BONK_BEHAVIOR - 1));
         weapon.behaviorValue = fields[16].GetFloat();
         weapon.tickMs = fields[17].GetUInt32();
+        weapon.baseTargets = std::max<uint8>(1, fields[18].GetUInt8());
+        weapon.altSpellId = fields[19].GetUInt32();
+        weapon.altEvery = fields[20].GetUInt8();
+        weapon.altDamage = fields[21].GetFloat();
+
+        if (weapon.altSpellId && !sSpellMgr.GetSpellEntry(weapon.altSpellId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u has unknown alt spell %u; it is left out.", weapon.id, weapon.altSpellId);
+            weapon.altSpellId = 0;
+        }
 
         SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
         if (!spellInfo)
@@ -475,7 +485,9 @@ void BonkMgr::LoadWeapons()
 
         weapon.damageEffectIndex = FindDamageEffect(spellInfo);
         weapon.weaponDamage = weapon.damageEffectIndex < 0 && HasWeaponDamage(spellInfo);
-        if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
+        // Shield spells cast nothing at enemies; the rest need a damage effect.
+        bool const shields = weapon.behavior == BONK_BEHAVIOR_SHIELD || weapon.behavior == BONK_BEHAVIOR_WARD;
+        if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage && !shields)
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: spell %u of weapon %u has no damage effect; it will use its own values.", weapon.spellId, weapon.id);
 
         weapon.tickEffectIndex = FindTickEffect(spellInfo, weapon.damageEffectIndex);

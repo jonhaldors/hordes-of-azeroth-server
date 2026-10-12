@@ -275,12 +275,21 @@ float const BONK_RARITY_LUCK[BONK_RARITY_LEGENDARY]   = { 0.0f, 1.0f, 2.0f, 3.0f
 
 char const* GetBonkRarityName(BonkRarity rarity);
 
-// What a weapon does beyond casting its spell.
+// What a weapon does beyond casting its spell. `alt` is its alt_spell_id.
 enum BonkWeaponBehavior : uint8
 {
-    BONK_BEHAVIOR_NONE   = 0,
-    BONK_BEHAVIOR_CLEAVE = 1,       // melee: each hit also strikes enemies next to its target; reach grows with level
-    BONK_BEHAVIOR_SPREAD = 2,       // at max level, or once evolved: jumps to nearby enemies when one carrying it dies
+    BONK_BEHAVIOR_NONE          = 0,
+    BONK_BEHAVIOR_CLEAVE        = 1,    // melee: each hit also strikes enemies next to its target (value: their share of the damage)
+    BONK_BEHAVIOR_SPREAD        = 2,    // from rank 8, or once evolved: moves on to nearby enemies when one carrying it dies (value: how many)
+    BONK_BEHAVIOR_ECHO          = 3,    // pulses again after value ms with a bigger area
+    BONK_BEHAVIOR_SHIELD        = 4,    // casts nothing: gives the hero value % of max health as a spell Shield
+    BONK_BEHAVIOR_SHIELD_PER_HIT = 5,   // value % of max health as a spell Shield for every enemy in reach
+    BONK_BEHAVIOR_DELAYED       = 6,    // value ms later, alt bursts where each target or ground spot was
+    BONK_BEHAVIOR_ORB           = 7,    // a slow orb moves ahead and casts the spell at enemies it passes (duration_ms, tick_ms)
+    BONK_BEHAVIOR_FREEZE        = 8,    // alt (a root) on the enemies in front; crits on rooted enemies deal +50%
+    BONK_BEHAVIOR_WARD          = 9,    // like SHIELD, and alt bursts around the hero when that Shield breaks
+    BONK_BEHAVIOR_VULNERABLE    = 10,   // alt (a stacking debuff) on every enemy it hits
+    BONK_BEHAVIOR_EXECUTE       = 11,   // alt_damage times the damage on enemies below value % health
     MAX_BONK_BEHAVIOR
 };
 
@@ -307,9 +316,13 @@ struct BonkWeapon
     uint32 tickMs = 0;
     bool chains = false;            // jumps from enemy to enemy; Rare ranks add jumps
     BonkWeaponBehavior behavior = BONK_BEHAVIOR_NONE;
-    // Cleave: share of the damage the enemies next to the target take.
-    // Spread: how many enemies it jumps to.
-    float behaviorValue = 0.0f;
+    float behaviorValue = 0.0f;     // see BonkWeaponBehavior
+    uint8 baseTargets = 1;          // enemies it fires at before ranks and passives add more
+    // A second spell: what a behavior casts, or, with altEvery, what every
+    // altEvery-th cast is instead, for altDamage times the damage.
+    uint32 altSpellId = 0;
+    uint8 altEvery = 0;
+    float altDamage = 1.0f;
 
     int32 damageEffectIndex = -1;   // effect whose base points carry the damage
     int32 tickEffectIndex = -1;     // damage over time besides damageEffectIndex (a hit that burns on)

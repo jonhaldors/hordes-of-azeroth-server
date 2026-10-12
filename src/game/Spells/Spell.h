@@ -336,6 +336,8 @@ class Spell
         bool m_isClientStarted = false;
         void SetClientStarted(bool isClientStarted);
         bool IsTriggered() const       { return m_IsTriggeredSpell; }
+        // Vanilla Bonk: cast by a run weapon, which channels on the move.
+        bool IsBonkWeapon() const      { return m_bonkWeapon; }
         bool IsTriggeredByAura() const { return m_triggeredByAuraSpell; }
         bool IsTriggeredByProc() const;
         bool IsCastByItem() const      { return m_CastItem; }
@@ -538,6 +540,7 @@ class Spell
 
         Position m_castPosition;
         bool m_IsTriggeredSpell = false;
+        bool m_bonkWeapon = false;
 
         // if need this can be replaced by Aura copy
         // we can't store original aura link to prevent access to deleted auras

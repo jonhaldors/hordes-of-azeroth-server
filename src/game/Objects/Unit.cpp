@@ -1448,7 +1448,7 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
             float multiplier = (200.0f + mod) / 100.0f;
             // Vanilla Bonk: Crit Damage, and a second crit past 100% crit chance.
             if (BonkRun const* run = BonkRun::FromAttack(this, damageInfo->target))
-                multiplier = run->RollCritMultiplier(true);
+                multiplier = run->RollCritMultiplier(true, damageInfo->target);
             damageInfo->totalDamage = uint32((damageInfo->totalDamage) * multiplier);
 
             for (uint8 i = 0; i < m_weaponDamageCount[damageInfo->attackType]; i++)

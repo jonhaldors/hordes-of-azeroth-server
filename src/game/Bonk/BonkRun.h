@@ -81,9 +81,10 @@ class BonkRun
         bool RollDodge(Unit const* victim) const;
         float GetCritChance() const;
         // Damage times this on a crit: a spell crit adds 50%, a weapon crit
-        // 100%, plus Crit Damage. Past 100% crit chance, the rest is the
-        // chance the hit crits a second time.
-        float RollCritMultiplier(bool weaponAttack) const;
+        // 100%, plus Crit Damage, and 50% more on rooted enemies with a
+        // freezing spell. Past 100% crit chance, the rest is the chance the
+        // hit crits a second time.
+        float RollCritMultiplier(bool weaponAttack, Unit const* victim = nullptr) const;
 
         // Stat totals without worn gear (the addon adds gear itself), for
         // the character sheet.
@@ -136,6 +137,7 @@ class BonkRun
             uint32 extraTargets = 0;        // targets, or drops for ground spells
             uint32 extraJumps = 0;          // pierces, bounces, spreads or cleaved enemies
             uint8 epicSteps = 0;            // Epic ranks that added a target
+            uint32 casts = 0;               // for every altEvery-th cast
             int32 timer = 0;
             std::map<ObjectGuid, uint32> recentTargets;     // random-target weapons: enemy -> ms hit
             std::map<ObjectGuid, uint32> carriers;          // spreading weapons: enemy -> ms its spell wears off
@@ -262,6 +264,15 @@ class BonkRun
         void StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare);
         // A spreading weapon's spell jumps from an enemy that died carrying it.
         void SpreadFrom(Creature const* dead);
+        bool HasBehavior(BonkWeaponBehavior behavior) const;
+        // Behaviors that act after the cast: echoes and delayed bursts wait
+        // here, orbs travel; spell Shields stack on the hero's Shield.
+        void UpdatePendingCasts(uint32 diff);
+        void LaunchOrb(OwnedWeapon& owned);
+        void UpdateWeaponOrbs(uint32 diff);
+        void DespawnWeaponOrbs();
+        void AddSpellShield(uint32 amount);
+        void CastSelfArea(OwnedWeapon& owned, SpellEntry const* spellInfo, float areaScale);
         void AddWeapon(BonkWeapon const& weapon);
         void ApplyPassives();
 
@@ -403,6 +414,28 @@ class BonkRun
         uint32 m_elitesWithoutChest = 0;
         std::map<ObjectGuid, uint32> m_chestChoices;    // chest -> cards it offers
         std::vector<uint32> m_pendingChestChoices;      // chests opened, waiting for their choice
+        // A cast a behavior holds back: an echo, or a delayed burst at a
+        // target (followed while it lives) or a spot.
+        struct PendingCast
+        {
+            uint32 weaponId = 0;
+            uint32 spellId = 0;
+            int32 leftMs = 0;
+            bool echo = false;
+            ObjectGuid target;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+        };
+        std::vector<PendingCast> m_pendingCasts;
+        struct WeaponOrb
+        {
+            ObjectGuid creature;
+            uint32 weaponId = 0;
+            int32 leftMs = 0;
+            int32 tickMs = 0;
+        };
+        std::vector<WeaponOrb> m_weaponOrbs;
+        uint32 m_spellShield = 0;           // from Shield spells, soaked before the stat Shield
+        bool m_wardBurst = false;           // a ward's Shield just broke
         uint32 m_shield = 0;                // absorb left
         uint32 m_shieldIdleMs = 0;          // since the hero last took damage
         uint32 m_shieldSendTimer = 0;
