@@ -144,13 +144,24 @@ namespace
     uint32 const BONK_SPELL_DODGE      = 13669;     // Increased Dodge: SPELL_AURA_MOD_DODGE_PERCENT
     uint32 const BONK_SPELL_HEAL_TEXT  = 439;       // Healing Potion: names the turkey leg's heal in combat text
 
-    // Turkey legs: drop chances (%), heal (share of max health) and reach.
+    // Turkey legs: drop chances (%) and heal (share of max health); taken
+    // from as far as orbs are pulled.
     float const BONK_HEAL_CHANCE_NORMAL  = 1.0f;
     float const BONK_HEAL_CHANCE_ELITE   = 35.0f;
     float const BONK_HEAL_AMOUNT         = 0.20f;
-    float const BONK_HEAL_PICKUP_RANGE   = 3.0f;
     uint32 const BONK_HEAL_CHECK_MS      = 250;
     size_t const BONK_MAX_HEAL_DROPS     = 20;
+
+    // Highlights on markers under pickups, so they stand out in a crowd.
+    uint32 const BONK_SPELL_HEAL_SPARKLE = 6758;    // Party Fever: an eating sparkle on turkey legs
+    uint32 const BONK_SPELL_SHARD_BEAM   = 25824;   // Spotlight: a moonbeam on Talent Shards
+    float const BONK_HEAL_SPARKLE_SCALE  = 1.0f;
+    float const BONK_SHARD_BEAM_SCALE    = 0.5f;
+    // A taken orb goes invisible at once and is gone a moment later; removed
+    // outright, the client would fade it out over a second or two.
+    uint32 const BONK_DISPLAY_INVISIBLE  = 11686;   // Onyxia Trigger's model
+    uint32 const BONK_ORB_FADE_MS        = 1000;
+
     // Each level gained heals this share of max health.
     float const BONK_LEVEL_UP_HEAL       = 0.10f;
     // A few seconds safe from melee after a revive.
@@ -240,6 +251,13 @@ namespace
     {
         creature->GetMotionMaster()->Initialize();
         creature->SetAI(new NullCreatureAI(creature));
+    }
+
+    void VanishOrb(Creature* orb)
+    {
+        orb->RemoveAllAuras();
+        orb->SetDisplayId(BONK_DISPLAY_INVISIBLE);
+        orb->DespawnOrUnsummon(BONK_ORB_FADE_MS);
     }
 
     // Weapon casts made while this is alive take no ammo (Spell::TakeAmmo).
@@ -1831,11 +1849,9 @@ void BonkRun::DespawnObjects()
             if (GameObject* powerup = map->GetGameObject(guid))
                 powerup->Delete();
         for (ShardDrop const& drop : m_shardDrops)
-            if (GameObject* shard = map->GetGameObject(drop.guid))
-                shard->Delete();
-        for (ObjectGuid const& guid : m_healDrops)
-            if (GameObject* heal = map->GetGameObject(guid))
-                heal->Delete();
+            RemovePickup(drop.guid, drop.marker);
+        for (HealDrop const& drop : m_healDrops)
+            RemovePickup(drop.guid, drop.marker);
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
             portal->Delete();
     }
@@ -2746,10 +2762,7 @@ void BonkRun::UpdateOrbs(uint32 diff)
         {
             collected += itr->experience;
             if (orb)
-            {
-                orb->DestroyForNearbyPlayers();     // vanish at once, not the out-of-range fade
-                orb->DespawnOrUnsummon();
-            }
+                VanishOrb(orb);
             itr = m_orbs.erase(itr);
             continue;
         }
@@ -2792,10 +2805,7 @@ void BonkRun::DespawnOrbs()
     if (Map* map = m_player->FindMap())
         for (Orb const& orb : m_orbs)
             if (Creature* creature = map->GetCreature(orb.guid))
-            {
-                creature->DestroyForNearbyPlayers();
-                creature->DespawnOrUnsummon();
-            }
+                VanishOrb(creature);
     m_orbs.clear();
 }
 
@@ -2836,6 +2846,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
     ShardDrop drop;
     drop.guid = go->GetObjectGuid();
     drop.count = count;
+    drop.marker = PlaceMarker(go, BONK_SPELL_SHARD_BEAM, BONK_SHARD_BEAM_SCALE);
     m_shardDrops.push_back(drop);
     m_player->GetBonkPlayer()->Notify(count == 1 ? "A Talent Shard dropped!" : FormatBonkShards(count) + " dropped!");
 }
@@ -2860,8 +2871,7 @@ void BonkRun::UpdateShards(uint32 diff)
 
         // Touched, or gone some other way: the shards are not lost.
         taken += itr->count;
-        if (go)
-            go->Delete();
+        RemovePickup(itr->guid, itr->marker);
         itr = m_shardDrops.erase(itr);
     }
 
@@ -2873,12 +2883,10 @@ void BonkRun::CollectAllShards()
 {
     uint32 taken = 0;
     for (ShardDrop const& drop : m_shardDrops)
+    {
         taken += drop.count;
-
-    if (Map* map = m_player->FindMap())
-        for (ShardDrop const& drop : m_shardDrops)
-            if (GameObject* go = map->GetGameObject(drop.guid))
-                go->Delete();
+        RemovePickup(drop.guid, drop.marker);
+    }
     m_shardDrops.clear();
 
     if (taken)
@@ -2908,7 +2916,12 @@ void BonkRun::DropHeal(Creature const* mob, BonkSpawnKind kind)
     }
 
     if (GameObject* go = PlaceObject(BONK_GO_HEAL, x, y, z, BONK_OBJECT_LIFETIME_SEC))
-        m_healDrops.push_back(go->GetObjectGuid());
+    {
+        HealDrop drop;
+        drop.guid = go->GetObjectGuid();
+        drop.marker = PlaceMarker(go, BONK_SPELL_HEAL_SPARKLE, BONK_HEAL_SPARKLE_SCALE);
+        m_healDrops.push_back(drop);
+    }
 }
 
 void BonkRun::UpdateHeals(uint32 diff)
@@ -2920,13 +2933,14 @@ void BonkRun::UpdateHeals(uint32 diff)
 
     // Left lying while the hero is unhurt: one may be needed later.
     bool hurt = m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth();
-    float const range = BONK_HEAL_PICKUP_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_PICKUP) / 100.0f);
+    float const range = BONK_ORB_MAGNET_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_PICKUP) / 100.0f);
     Map* map = m_player->GetMap();
     for (auto itr = m_healDrops.begin(); itr != m_healDrops.end();)
     {
-        GameObject* go = map->GetGameObject(*itr);
+        GameObject* go = map->GetGameObject(itr->guid);
         if (!go || !go->isSpawned())
         {
+            RemovePickup(itr->guid, itr->marker);
             itr = m_healDrops.erase(itr);
             continue;
         }
@@ -2941,7 +2955,7 @@ void BonkRun::UpdateHeals(uint32 diff)
             m_player->DealHeal(m_player, heal, spellInfo);
         else
             m_player->ModifyHealth(int32(heal));
-        go->Delete();
+        RemovePickup(itr->guid, itr->marker);
         itr = m_healDrops.erase(itr);
         hurt = m_player->GetHealth() < m_player->GetMaxHealth();
     }
@@ -2956,6 +2970,36 @@ void BonkRun::GiveShards(uint32 count)
     bonk->SendAddon("shard~" + std::to_string(count) + "~" + std::to_string(bonk->GetShards()));
     bonk->Notify("+" + FormatBonkShards(count) + "!");
     SendState();
+}
+
+ObjectGuid BonkRun::PlaceMarker(GameObject const* go, uint32 spellId, float scale)
+{
+    Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), 0.0f,
+        TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, false, 0, &InstallOrbAI);
+    if (!marker)
+        return ObjectGuid();
+
+    marker->SetFactionTemplateId(BONK_ORB_FACTION);
+    marker->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    marker->SetObjectScale(scale);
+    marker->AddAura(spellId, ADD_AURA_PERMANENT);
+    return marker->GetObjectGuid();
+}
+
+void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid)
+{
+    Map* map = m_player->FindMap();
+    if (!map)
+        return;
+    if (GameObject* go = map->GetGameObject(goGuid))
+        go->Delete();
+    // The highlight first: left on, the client would keep showing it while
+    // the marker fades out.
+    if (Creature* marker = map->GetCreature(markerGuid))
+    {
+        marker->RemoveAllAuras();
+        marker->DespawnOrUnsummon();
+    }
 }
 
 void BonkRun::GiveGold(uint32 copper)

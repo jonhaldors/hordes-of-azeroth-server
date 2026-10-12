@@ -166,6 +166,7 @@ class BonkRun
         {
             ObjectGuid guid;
             uint32 count = 0;
+            ObjectGuid marker;          // wears the shard's beam
         };
 
         BonkMap const* ChooseNextMap();
@@ -301,6 +302,10 @@ class BonkRun
         void DropHeal(Creature const* mob, BonkSpawnKind kind);
         void UpdateHeals(uint32 diff);
         void GiveShards(uint32 count);
+        // An invisible marker at a pickup wearing `spellId` as its highlight.
+        ObjectGuid PlaceMarker(GameObject const* go, uint32 spellId, float scale);
+        // Takes a pickup's object and its marker off the ground.
+        void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid);
 
         // `avoid`: cards just shown, kept out of a reroll when others are
         // left. `kept`: locked cards that stay.
@@ -389,7 +394,13 @@ class BonkRun
         ObjectGuid m_overflowOrb;           // the red orb that gathers experience past the orb cap
         uint32 m_orbTimer = 0;
         std::vector<ShardDrop> m_shardDrops;
-        std::vector<ObjectGuid> m_healDrops;
+        // Turkey legs lying where an enemy died.
+        struct HealDrop
+        {
+            ObjectGuid guid;
+            ObjectGuid marker;          // wears the leg's sparkle
+        };
+        std::vector<HealDrop> m_healDrops;
         uint32 m_healTimer = 0;
         uint32 m_shardTimer = 0;
         ObjectGuid m_portalGuid;

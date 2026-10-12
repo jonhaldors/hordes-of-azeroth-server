@@ -40,6 +40,8 @@ uint32 const BONK_ORB_LARGE = 900101;
 uint32 const BONK_ORB_HUGE  = 900102;
 // An invisible marker where a Sanguine enemy died; its pool's look is an aura on it.
 uint32 const BONK_SANGUINE_POOL = 900110;
+// An invisible marker under a turkey leg or Talent Shard; its highlight is an aura on it.
+uint32 const BONK_PICKUP_MARKER = 900111;
 
 enum BonkSpawnKind : uint8
 {
