@@ -366,7 +366,7 @@ struct BonkWeapon
     uint32 flags = 0;               // BonkWeaponFlags
 
     int32 damageEffectIndex = -1;   // effect whose base points carry the damage
-    int32 tickEffectIndex = -1;     // damage over time besides damageEffectIndex (a hit that burns on)
+    int32 tickEffectIndex = -1;     // damage over time besides damageEffectIndex (a hit that leaves it burning)
     float groundRadius = 0.0f;      // radius of its ground effect, if it has one
     bool weaponDamage = false;      // a melee or ranged attack: its damage replaces the weapon swing
     bool lasting = false;           // damage over time or a ground effect: ranks can make it last longer

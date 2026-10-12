@@ -309,7 +309,7 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
     // (a burst of fire, no damage); anywhere else it just fills and goes.
     // .bonk telegraph circle|cone|line|ring [size in yards] [seconds]
     char* shapeArg = ExtractArg(&args);
-    BonkTelegraphShape shape;
+    BonkTelegraphShape shape = BONK_TELEGRAPH_CIRCLE;
     if (!shapeArg || !ParseBonkTelegraphShape(shapeArg, shape))
     {
         SendSysMessage("Usage: .bonk telegraph circle|cone|line|ring [size] [seconds]");
