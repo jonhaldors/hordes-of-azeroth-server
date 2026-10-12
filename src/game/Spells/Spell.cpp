@@ -49,6 +49,7 @@
 #include "Anticheat.h"
 #include "Utilities/Random.h"
 #include "Bonk/BonkPlayer.h"
+#include "Bonk/BonkMobAI.h"
 
 using namespace Spells;
 
@@ -1743,6 +1744,15 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
 
     // Get Data Needed for Diminishing Returns, some effects may have multiple auras, so this must be done on spell hit, not aura add
     m_diminishGroup = m_spellInfo->GetDiminishingReturnsGroup(m_triggeredByAuraSpell);
+
+    // Vanilla Bonk: a hero's stuns on run enemies diminish like controlled
+    // stuns, also from creature spells made without a stun mechanic
+    // (Shockwave, Axe Flurry), so a weapon can't hold trash forever.
+    if (m_diminishGroup == DIMINISHING_NONE && m_spellInfo->HasAura(SPELL_AURA_MOD_STUN) && unit->IsCreature())
+        if (Player const* hero = pRealUnitCaster ? pRealUnitCaster->ToPlayer() : nullptr)
+            if (hero->GetBonkPlayer()->GetRun() && dynamic_cast<BonkMobAI const*>(static_cast<Creature*>(unit)->AI()))
+                m_diminishGroup = DIMINISHING_CONTROL_STUN;
+
     m_diminishLevel = unit->GetDiminishing(m_diminishGroup);
 
     if (m_spellInfo->IsSpellAppliesAura(effectMask))

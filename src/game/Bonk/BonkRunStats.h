@@ -40,6 +40,7 @@ struct BonkRunStats
 struct BonkSummaryWeapon
 {
     uint32 spellId = 0;
+    std::vector<uint32> spellIds;   // every spell its damage comes from (BonkStats::GetWeaponSpells)
     std::string name;
     std::string icon;
     uint32 level = 1;
@@ -54,6 +55,9 @@ namespace BonkStats
     uint32 CountKill(ObjectGuid player, ObjectGuid enemy, BonkSpawnKind kind);
     // What one spell has done this run so far.
     BonkRunStats::Spell GetSpellStats(ObjectGuid player, uint32 spellId);
+    // The spells a weapon deals damage with: its own, its alt spell and the
+    // spells either of them triggers.
+    std::vector<uint32> GetWeaponSpells(BonkWeapon const& weapon);
     // sum~damageTaken~elites~minibosses~bosses, sumw~icon~name~level~max~evolved~damage~kills..., sumend
     void SendSummary(Player* player, std::vector<BonkSummaryWeapon> const& weapons);
 

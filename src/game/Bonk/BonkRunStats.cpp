@@ -11,6 +11,7 @@
 #include "GridNotifiersImpl.h"
 #include "Player.h"
 #include "SpellEntry.h"
+#include "SpellMgr.h"
 #include "TemporarySummon.h"
 
 #include <list>
@@ -74,6 +75,22 @@ BonkRunStats::Spell BonkStats::GetSpellStats(ObjectGuid player, uint32 spellId)
     return spell != stats->second.bySpell.end() ? spell->second : BonkRunStats::Spell();
 }
 
+std::vector<uint32> BonkStats::GetWeaponSpells(BonkWeapon const& weapon)
+{
+    std::vector<uint32> spellIds;
+    for (uint32 spellId : { weapon.spellId, weapon.altSpellId })
+    {
+        SpellEntry const* spellInfo = spellId ? sSpellMgr.GetSpellEntry(spellId) : nullptr;
+        if (!spellInfo)
+            continue;
+        spellIds.push_back(spellId);
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (spellInfo->EffectTriggerSpell[i])
+                spellIds.push_back(spellInfo->EffectTriggerSpell[i]);
+    }
+    return spellIds;
+}
+
 void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const& weapons)
 {
     BonkRunStats stats;
@@ -86,31 +103,46 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
     bonk->SendAddon("sum~" + std::to_string(stats.damageTaken) + "~" + std::to_string(stats.kindKills[BONK_SPAWN_ELITE]) + "~" +
         std::to_string(stats.kindKills[BONK_SPAWN_MINIBOSS]) + "~" + std::to_string(stats.kindKills[BONK_SPAWN_BOSS]));
 
-    // Weapons sharing a spell (an evolution and its base) share one row.
+    // Each weapon's row holds every spell it deals damage with; weapons
+    // sharing a spell (an evolution and its base) share one row.
     std::set<uint32> sent;
     for (BonkSummaryWeapon const& weapon : weapons)
     {
-        if (!sent.insert(weapon.spellId).second)
+        if (sent.count(weapon.spellId))
             continue;
-        auto itr = stats.bySpell.find(weapon.spellId);
-        uint64 const damage = itr != stats.bySpell.end() ? itr->second.damage : 0;
-        uint32 const kills = itr != stats.bySpell.end() ? itr->second.kills : 0;
+        uint64 damage = 0;
+        uint32 kills = 0;
+        std::vector<uint32> const spellIds = weapon.spellIds.empty() ? std::vector<uint32>{ weapon.spellId } : weapon.spellIds;
+        for (uint32 spellId : spellIds)
+        {
+            if (!sent.insert(spellId).second)
+                continue;
+            auto itr = stats.bySpell.find(spellId);
+            if (itr == stats.bySpell.end())
+                continue;
+            damage += itr->second.damage;
+            kills += itr->second.kills;
+        }
         bonk->SendAddon("sumw~" + weapon.icon + "~" + weapon.name + "~" + std::to_string(weapon.level) + "~" + std::to_string(weapon.maxLevel) + "~" +
             (weapon.evolved ? "1" : "0") + "~" + std::to_string(damage) + "~" + std::to_string(kills));
     }
 
-    // Swings and anything else that was not a weapon.
-    uint64 otherDamage = 0;
-    uint32 otherKills = 0;
+    // The hero's own weapon swings, then any other spell by its name.
     for (auto const& itr : stats.bySpell)
     {
-        if (sent.count(itr.first))
+        if (sent.count(itr.first) || (!itr.second.damage && !itr.second.kills))
             continue;
-        otherDamage += itr.second.damage;
-        otherKills += itr.second.kills;
+        std::string icon = "INV_Misc_QuestionMark";
+        std::string name = "Spell " + std::to_string(itr.first);
+        if (!itr.first)
+        {
+            icon = "INV_Sword_04";
+            name = "Melee";
+        }
+        else if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(itr.first))
+            name = spellInfo->SpellName[0];
+        bonk->SendAddon("sumw~" + icon + "~" + name + "~0~0~0~" + std::to_string(itr.second.damage) + "~" + std::to_string(itr.second.kills));
     }
-    if (otherDamage || otherKills)
-        bonk->SendAddon("sumw~INV_Sword_04~Other~0~0~0~" + std::to_string(otherDamage) + "~" + std::to_string(otherKills));
 
     bonk->SendAddon("sumend");
 }
@@ -179,7 +211,17 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
     uint32 const health = victim->GetHealth();
     uint32 const dealt = std::min(damage, health);
 
-    if (Player* player = attacker->ToPlayer())
+    // A hero's beast counts for the spell that called it.
+    Player* owner = nullptr;
+    if (attacker->IsCreature() && !victim->IsPlayer())
+        if (Player* hero = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
+            if (uint32 const createdBy = attacker->GetUInt32Value(UNIT_CREATED_BY_SPELL))
+            {
+                owner = hero;
+                spellProto = sSpellMgr.GetSpellEntry(createdBy);
+            }
+
+    if (Player* player = owner ? owner : attacker->ToPlayer())
     {
         if (!victim->IsCreature() || !InRun(player))
             return;

@@ -231,8 +231,9 @@ namespace
 
     // Enemy health grows with the player's level as well as with time, the
     // way Megabonk scales with XP gained and time: every level is one more
-    // upgrade, and a run's damage grows about one starting weapon per upgrade.
-    float const BONK_HEALTH_PER_LEVEL = 0.10f;
+    // upgrade, and an average upgrade adds about 5% to a run's damage (a rank
+    // is +15-20% on one of five or six spells; new spell slots run out early).
+    float const BONK_HEALTH_PER_LEVEL = 0.05f;
 
     float GetKindDamage(BonkSpawnKind kind)
     {
@@ -3365,6 +3366,8 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
         {
             // The hero's: their crit and Power, and run enemies ignore it.
             pet->SetOwnerGuid(m_player->GetObjectGuid());
+            // Its hits count for the weapon on the results screen.
+            pet->SetUInt32Value(UNIT_CREATED_BY_SPELL, weapon.spellId);
             pet->SetFactionTemplateId(m_player->GetFactionTemplateId());
             pet->SetLevel(m_player->GetLevel());
             pet->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
@@ -4765,6 +4768,7 @@ void BonkRun::Finish(bool wentHome)
         {
             BonkSummaryWeapon weapon;
             weapon.spellId = owned.weapon.spellId;
+            weapon.spellIds = BonkStats::GetWeaponSpells(owned.weapon);
             weapon.name = owned.weapon.name;
             weapon.icon = owned.weapon.icon;
             weapon.level = owned.rank;
