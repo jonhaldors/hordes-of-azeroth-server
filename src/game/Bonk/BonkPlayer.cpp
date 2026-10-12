@@ -334,6 +334,71 @@ bool BonkPlayer::ResetMastery(std::string& message)
     return true;
 }
 
+bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
+{
+    BonkMasteryNode const* node = sBonkMastery.GetNode(nodeId);
+    if (!node || node->classId != m_player->GetClass())
+        return false;
+
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    uint8 const rank = GetMasteryRank(nodeId);
+    if (!rank)
+    {
+        message = "You have not learned " + node->name + ".";
+        return false;
+    }
+
+    // Every learned node keeps what let it be learned: its required node's
+    // ranks, and enough points in the rows above it.
+    for (auto const& itr : m_masteryRanks)
+    {
+        BonkMasteryNode const* other = sBonkMastery.GetNode(itr.first);
+        if (!other || !itr.second || other->id == nodeId)
+            continue;
+
+        if (other->requiredId == nodeId && rank - 1 < other->requiredRank)
+        {
+            message = "Refund " + other->name + " first: it needs this.";
+            return false;
+        }
+
+        if (other->tree == node->tree && other->row > node->row)
+        {
+            uint32 above = 0;
+            for (auto const& inner : m_masteryRanks)
+                if (BonkMasteryNode const* placed = sBonkMastery.GetNode(inner.first))
+                    if (placed->tree == other->tree && placed->row < other->row)
+                        above += inner.second;
+            if (above - 1 < uint32(other->row - 1) * BONK_MASTERY_POINTS_PER_ROW)
+            {
+                message = "Refund " + other->name + " first: it needs these points in the tree.";
+                return false;
+            }
+        }
+    }
+
+    if (rank > 1)
+    {
+        m_masteryRanks[nodeId] = rank - 1;
+        CharacterDatabase.PExecute("REPLACE INTO `bonk_account_mastery_node` (`account`, `node`, `rank`) VALUES (%u, %u, %u)",
+            m_player->GetSession()->GetAccountId(), nodeId, uint32(rank - 1));
+    }
+    else
+    {
+        m_masteryRanks.erase(nodeId);
+        CharacterDatabase.PExecute("DELETE FROM `bonk_account_mastery_node` WHERE `account` = %u AND `node` = %u",
+            m_player->GetSession()->GetAccountId(), nodeId);
+    }
+    message = node->name + " refunded: 1 Mastery Point back.";
+    SendMasteryState();
+    return true;
+}
+
 void BonkPlayer::OnLogout()
 {
     if (m_run)
@@ -546,6 +611,7 @@ bool BonkPlayer::SpendShards(uint32 count, std::string& message)
 
     m_shards -= count;
     SaveShards();
+    SendWallet();
     return true;
 }
 
@@ -553,6 +619,12 @@ void BonkPlayer::AddShards(uint32 count)
 {
     m_shards += count;
     SaveShards();
+    SendWallet();
+}
+
+void BonkPlayer::SendWallet() const
+{
+    SendAddon("wallet~" + std::to_string(m_shards));
 }
 
 void BonkPlayer::SaveShards() const
@@ -692,6 +764,98 @@ bool BonkPlayer::ResetTalents(std::string& message)
     return true;
 }
 
+bool BonkPlayer::RefundUpgrade(uint32 upgradeId, std::string& message)
+{
+    BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(upgradeId);
+    if (!upgrade)
+        return false;
+
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    uint8 const rank = GetUpgradeRank(upgradeId);
+    if (!rank)
+    {
+        message = "You have not bought " + upgrade->name + ".";
+        return false;
+    }
+
+    for (auto const& itr : m_upgradeRanks)
+        if (BonkUpgrade const* other = sBonkMgr.GetUpgrade(itr.first))
+            if (itr.second && other->layout.requiredId == upgradeId && rank - 1 < other->layout.requiredRank)
+            {
+                message = "Refund " + other->name + " first: it needs this.";
+                return false;
+            }
+
+    // The top rank back at what it costs now, like the full refund.
+    uint32 const refunded = upgrade->GetCost(rank - 1);
+    if (rank > 1)
+    {
+        m_upgradeRanks[upgradeId] = rank - 1;
+        CharacterDatabase.PExecute("REPLACE INTO `bonk_account_upgrade` (`account`, `upgrade`, `rank`) VALUES (%u, %u, %u)",
+            m_player->GetSession()->GetAccountId(), upgradeId, uint32(rank - 1));
+    }
+    else
+    {
+        m_upgradeRanks.erase(upgradeId);
+        CharacterDatabase.PExecute("DELETE FROM `bonk_account_upgrade` WHERE `account` = %u AND `upgrade` = %u",
+            m_player->GetSession()->GetAccountId(), upgradeId);
+    }
+    m_player->ModifyMoney(int32(refunded));
+    SaveGold();
+    message = upgrade->name + " refunded: " + FormatBonkMoney(refunded) + " back.";
+    return true;
+}
+
+bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
+{
+    BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
+    if (!talent)
+        return false;
+
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    uint8 const rank = GetTalentRank(talentId);
+    if (!rank)
+    {
+        message = "You have not learned " + talent->name + ".";
+        return false;
+    }
+
+    for (auto const& itr : m_talentRanks)
+        if (BonkTalent const* other = sBonkMgr.GetTalent(itr.first))
+            if (itr.second && other->layout.requiredId == talentId && rank - 1 < other->layout.requiredRank)
+            {
+                message = "Refund " + other->name + " first: it needs this.";
+                return false;
+            }
+
+    uint32 const refunded = talent->GetCost(rank - 1);
+    if (rank > 1)
+    {
+        m_talentRanks[talentId] = rank - 1;
+        SaveTalent(talentId);
+    }
+    else
+    {
+        m_talentRanks.erase(talentId);
+        m_enabledTalents.erase(talentId);
+        CharacterDatabase.PExecute("DELETE FROM `bonk_account_talent` WHERE `account` = %u AND `talent` = %u",
+            m_player->GetSession()->GetAccountId(), talentId);
+    }
+    AddShards(refunded);
+    message = talent->name + " refunded: " + FormatBonkShards(refunded) + " back.";
+    return true;
+}
+
 bool BonkPlayer::ToggleTalent(uint32 talentId, std::string& message)
 {
     BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
@@ -753,6 +917,28 @@ void BonkPlayer::ShopLearn(uint32 id)
         LearnMastery(id, message);
     else
         BuyTalent(id, message);
+    if (!message.empty())
+        Notify(message);
+    SendShop(false);
+    SendStats();
+}
+
+void BonkPlayer::ShopUnlearn(uint32 id)
+{
+    if (!IsAtShop())
+    {
+        Notify("You are too far from the trainer.");
+        SendAddon("shopclose");
+        return;
+    }
+
+    std::string message;
+    if (m_shop == BONK_SHOP_UPGRADES)
+        RefundUpgrade(id, message);
+    else if (m_shop == BONK_SHOP_MASTERY)
+        RefundMastery(id, message);
+    else
+        RefundTalent(id, message);
     if (!message.empty())
         Notify(message);
     SendShop(false);
@@ -826,7 +1012,7 @@ void BonkPlayer::SendShop(bool open) const
             std::ostringstream line;
             line << "node~" << node.tree << '~' << node.id << '~' << uint32(node.row) << '~' << uint32(node.column) << '~' << node.icon
                  << '~' << uint32(rank) << '~' << uint32(node.maxRank) << '~' << (rank < node.maxRank ? 1 : 0)
-                 << '~' << node.requiredId << '~' << uint32(node.requiredRank) << "~0~0~" << node.name << '~' << node.description << "~0~~" << FormatStat(node.valuePerRank);
+                 << '~' << node.requiredId << '~' << uint32(node.requiredRank) << "~0~0~" << node.name << '~' << node.description << "~0~~" << FormatStat(node.valuePerRank) << '~' << (rank ? 1 : 0);
             SendAddon(line.str());
         }
 
@@ -843,11 +1029,12 @@ void BonkPlayer::SendShop(bool open) const
         if (itr.second.shop == m_shop)
             SendAddon("tree~" + std::to_string(itr.first) + "~" + itr.second.name + "~" + itr.second.background);
 
-    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description~locked~quest~valuePerRank:
-    // the description states one rank's value, the addon shows it for the ranks learned and the next.
+    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description~locked~quest~valuePerRank~refund:
+    // the description states one rank's value, the addon shows it for the ranks learned and the next;
+    // refund is what giving back the top rank returns.
     BonkQuestReward const lockType = m_shop == BONK_SHOP_UPGRADES ? BONK_REWARD_UPGRADE : BONK_REWARD_TALENT;
-    auto sendNode = [this, lockType](uint32 id, BonkShopNode const& layout, uint8 rank, uint8 maxRank, uint32 nextCost, bool toggle, bool enabled,
-        std::string const& name, std::string const& description, float valuePerRank)
+    auto sendNode = [this, lockType](uint32 id, BonkShopNode const& layout, uint8 rank, uint8 maxRank, uint32 nextCost, uint32 refund, bool toggle,
+        bool enabled, std::string const& name, std::string const& description, float valuePerRank)
     {
         if (!layout.tree)
             return;
@@ -859,7 +1046,8 @@ void BonkPlayer::SendShop(bool open) const
         line << "node~" << layout.tree << '~' << id << '~' << uint32(layout.row) << '~' << uint32(layout.column) << '~' << layout.icon
              << '~' << uint32(rank) << '~' << uint32(maxRank) << '~' << (rank < maxRank ? nextCost : 0)
              << '~' << layout.requiredId << '~' << uint32(layout.requiredRank) << '~' << (toggle ? 1 : 0) << '~' << (enabled ? 1 : 0)
-             << '~' << name << '~' << description << '~' << (lock ? 1 : 0) << '~' << (lock ? lock->name : "") << '~' << FormatStat(valuePerRank);
+             << '~' << name << '~' << description << '~' << (lock ? 1 : 0) << '~' << (lock ? lock->name : "") << '~' << FormatStat(valuePerRank)
+             << '~' << (rank ? refund : 0);
         SendAddon(line.str());
     };
 
@@ -869,8 +1057,8 @@ void BonkPlayer::SendShop(bool open) const
         {
             BonkUpgrade const& upgrade = itr.second;
             uint8 const rank = GetUpgradeRank(upgrade.id);
-            sendNode(upgrade.id, upgrade.layout, rank, upgrade.maxRank, upgrade.GetCost(rank), false, false, upgrade.name, upgrade.description,
-                upgrade.valuePerRank);
+            sendNode(upgrade.id, upgrade.layout, rank, upgrade.maxRank, upgrade.GetCost(rank), rank ? upgrade.GetCost(rank - 1) : 0, false, false,
+                upgrade.name, upgrade.description, upgrade.valuePerRank);
         }
     }
     else if (m_shop == BONK_SHOP_TALENTS)
@@ -879,8 +1067,8 @@ void BonkPlayer::SendShop(bool open) const
         {
             BonkTalent const& talent = itr.second;
             uint8 const rank = GetTalentRank(talent.id);
-            sendNode(talent.id, talent.layout, rank, talent.maxRank, talent.GetCost(rank), talent.IsToggle(), IsTalentEnabled(talent.id),
-                talent.name, talent.description, talent.valuePerRank);
+            sendNode(talent.id, talent.layout, rank, talent.maxRank, talent.GetCost(rank), rank ? talent.GetCost(rank - 1) : 0, talent.IsToggle(),
+                IsTalentEnabled(talent.id), talent.name, talent.description, talent.valuePerRank);
         }
     }
 

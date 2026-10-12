@@ -402,7 +402,18 @@ struct BonkWeapon
             return "trap";
         if (behavior == BONK_BEHAVIOR_PET)
             return "beast";
-        return target == BONK_TARGET_GROUND ? "drop" : "target";
+        return target == BONK_TARGET_GROUND ? "pack" : "target";
+    }
+    // `count` of them, for tooltips: "3 targets", "lands on 2 packs".
+    std::string DescribeTargets(uint32 count) const
+    {
+        std::string const noun = std::to_string(count) + " " + GetTargetNoun() + (count == 1 ? "" : "s");
+        return target == BONK_TARGET_GROUND ? "lands on " + noun : noun;
+    }
+    // An Epic rank: "+1 target", or "lands on 1 more pack".
+    std::string DescribeExtraTarget() const
+    {
+        return target == BONK_TARGET_GROUND ? std::string("lands on 1 more pack") : std::string("+1 ") + GetTargetNoun();
     }
 };
 

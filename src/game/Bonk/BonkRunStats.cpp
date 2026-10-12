@@ -64,6 +64,16 @@ uint32 BonkStats::CountKill(ObjectGuid player, ObjectGuid enemy, BonkSpawnKind k
     return spellId;
 }
 
+BonkRunStats::Spell BonkStats::GetSpellStats(ObjectGuid player, uint32 spellId)
+{
+    std::lock_guard<std::mutex> guard(s_lock);
+    auto stats = s_stats.find(player);
+    if (stats == s_stats.end())
+        return BonkRunStats::Spell();
+    auto spell = stats->second.bySpell.find(spellId);
+    return spell != stats->second.bySpell.end() ? spell->second : BonkRunStats::Spell();
+}
+
 void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const& weapons)
 {
     BonkRunStats stats;

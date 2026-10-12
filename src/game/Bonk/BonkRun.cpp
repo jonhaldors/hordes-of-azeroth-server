@@ -700,7 +700,8 @@ void BonkRun::StartStage()
 void BonkRun::SendFullState() const
 {
     BonkPlayer* bonk = m_player->GetBonkPlayer();
-    bonk->SendAddon("start~" + m_map.name + "~" + m_tier.name + "~" + std::to_string(m_map.durationSeconds) + "~" + std::to_string(m_stage));
+    bonk->SendAddon("start~" + m_map.name + "~" + m_tier.name + "~" + std::to_string(m_map.durationSeconds) + "~" + std::to_string(m_stage) + "~" +
+        std::to_string(m_map.minibossSecond));
     SendLoadout();
     SendState();
     if (!m_offer.empty())
@@ -4019,6 +4020,7 @@ BonkRun::Offer BonkRun::MakeRankOffer(OwnedWeapon const& owned, BonkRarity minim
 void BonkRun::ApplyStep(OwnedWeapon& owned, Offer const& offer)
 {
     ++owned.rank;
+    owned.rarities += char('0' + int(offer.rarity));
     switch (offer.step)
     {
         case BONK_STEP_DAMAGE:
@@ -4348,7 +4350,7 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
             text = "+" + Percent(BONK_RANK_DAMAGE) + " damage";
             break;
         case BONK_STEP_COOLDOWN:
-            text = minor + "fires " + Percent(BONK_RANK_HASTE) + " more often";
+            text = minor + "attacks " + Percent(BONK_RANK_HASTE) + " more often";
             break;
         case BONK_STEP_AREA:
             text = minor + "+" + Percent(BONK_RANK_AREA) + (weapon->behavior == BONK_BEHAVIOR_CLEAVE ? " reach" : " area");
@@ -4369,7 +4371,8 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
         {
             OwnedWeapon const* owned = FindOwned(offer.id);
             uint32 const used = (owned ? owned->epicSteps : 0) + 1;
-            text = std::string("+1 ") + weapon->GetTargetNoun() + " (" + std::to_string(used) + "/" + std::to_string(BONK_MAX_EPIC_STEPS) + ")";
+            text = weapon->DescribeExtraTarget() + " (" + std::to_string(used) + "/" + std::to_string(BONK_MAX_EPIC_STEPS) + ")";
+            text[0] = char(toupper(text[0]));
             break;
         }
         case BONK_STEP_EPIC_DAMAGE:
@@ -4576,7 +4579,18 @@ void BonkRun::SendState() const
     m_player->GetBonkPlayer()->SendAddon("state~" + std::to_string(m_elapsedMs / IN_MILLISECONDS) + "~" + std::to_string(m_map.durationSeconds) + "~" +
         std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0") + "~" +
         std::to_string(m_coins) + "~" + std::to_string(GetChestCost()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0") + "~" +
-        std::to_string(m_shardsEarned));
+        std::to_string(m_shardsEarned) + "~" + DescribeWeaponStats());
+}
+
+std::string BonkRun::DescribeWeaponStats() const
+{
+    std::string text;
+    for (auto const& owned : m_weapons)
+    {
+        BonkRunStats::Spell const stats = BonkStats::GetSpellStats(m_player->GetObjectGuid(), owned.weapon.spellId);
+        text += std::to_string(stats.damage) + ":" + std::to_string(stats.kills) + ",";
+    }
+    return text;
 }
 
 void BonkRun::SendLoadout() const
@@ -4589,7 +4603,68 @@ void BonkRun::SendLoadout() const
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             line += "p:" + passive->icon + ":" + std::to_string(itr.second) + ":" + std::to_string(passive->maxRank) + ",";
-    m_player->GetBonkPlayer()->SendAddon(line);
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    bonk->SendAddon(line);
+
+    // pw~index~name~ranks~intervalMs~nextCastMs~line~description and, for
+    // spells, pwe~index~evolution~evolutionText~evolvedFrom~chanceText~chance;
+    // the index counts the loadout's entries above, from 1.
+    uint32 index = 0;
+    for (auto const& owned : m_weapons)
+    {
+        ++index;
+        BonkWeapon const& weapon = owned.weapon;
+        uint32 const interval = GetWeaponCooldown(owned);
+        uint32 const tenths = (interval + 50) / 100;
+        std::string stats = "Every " + std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " s";
+        uint32 const targets = weapon.baseTargets + owned.extraTargets;
+        if (weapon.HasTargets() && targets > 1)
+            stats += " - " + weapon.DescribeTargets(targets);
+        if (owned.extraJumps)
+        {
+            std::string const count = std::to_string(owned.extraJumps);
+            if (weapon.behavior == BONK_BEHAVIOR_CLEAVE)
+                stats += " - cleaves " + count + " more";
+            else if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
+                stats += " - spreads to " + count + " more";
+            else
+                stats += " - hits " + count + " more";
+        }
+        bonk->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(interval) + "~" +
+            std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + weapon.description);
+
+        std::string evolution, evolutionText, evolvedFrom, chanceText;
+        uint32 chance = 0;
+        if (weapon.evolvesFrom)
+        {
+            if (BonkWeapon const* base = sBonkMgr.GetWeapon(weapon.evolvesFrom))
+                evolvedFrom = base->name;
+        }
+        else if (BonkWeapon const* evolved = sBonkMgr.GetEvolution(weapon.id))
+        {
+            evolution = evolved->name;
+            evolutionText = evolved->description;
+            if (!CanEvolve(owned))
+                chanceText = "A quest still holds it back.";
+            else if (owned.rank < BONK_EVOLVE_RANK)
+                chanceText = "Offered from rank " + std::to_string(BONK_EVOLVE_RANK) + ".";
+            else
+            {
+                chance = uint32(std::min(100.0f, GetLegendaryChance(owned)) + 0.5f);
+                chanceText = chance >= 100 ? "Comes up at the next level-up." : std::to_string(chance) + "% chance for each card of this spell.";
+            }
+        }
+        bonk->SendAddon("pwe~" + std::to_string(index) + "~" + evolution + "~" + evolutionText + "~" + evolvedFrom + "~" + chanceText + "~" +
+            std::to_string(chance));
+    }
+    for (auto const& itr : m_passiveRanks)
+    {
+        BonkPassive const* passive = sBonkMgr.GetPassive(itr.first);
+        if (!passive)
+            continue;
+        ++index;
+        bonk->SendAddon("pw~" + std::to_string(index) + "~" + passive->name + "~~0~0~~Each rank: " + sBonkMgr.DescribePassive(*passive));
+    }
 }
 
 void BonkRun::SendOffer() const

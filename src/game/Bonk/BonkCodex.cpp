@@ -55,7 +55,7 @@ namespace
 
         std::string text = "Ranks have no cap; each card's rarity decides what it adds. Common: +" + Points(BONK_RANK_DAMAGE) + " damage.";
 
-        std::vector<std::string> uncommon = { "fires " + Points(BONK_RANK_HASTE) + " more often" };
+        std::vector<std::string> uncommon = { "attacks " + Points(BONK_RANK_HASTE) + " more often" };
         if (weapon.HasArea())
             uncommon.push_back("+" + Points(BONK_RANK_AREA) + (cleave ? " reach" : " area"));
         if (weapon.lasting)
@@ -78,13 +78,13 @@ namespace
         if (weapon.IsWide())
             rare.push_back("+" + Points(BONK_RANK_WIDE) + " area");
         if (rare.empty())
-            rare.push_back(weapon.lasting ? "lasts " + Points(BONK_RANK_DURATION) + " longer" : "fires " + Points(BONK_RANK_HASTE) + " more often");
+            rare.push_back(weapon.lasting ? "lasts " + Points(BONK_RANK_DURATION) + " longer" : "attacks " + Points(BONK_RANK_HASTE) + " more often");
         text += " Rare: " + minor + JoinOr(rare) + ".";
 
         if (!weapon.HasTargets())
             text += " Epic: +" + Points(BONK_RANK_EPIC_DAMAGE) + " damage.";
         else
-            text += std::string(" Epic: +1 ") + weapon.GetTargetNoun() + " (up to " + std::to_string(BONK_MAX_EPIC_STEPS) + "), then +" +
+            text += " Epic: " + weapon.DescribeExtraTarget() + " (up to " + std::to_string(BONK_MAX_EPIC_STEPS) + "), then +" +
                 Points(BONK_RANK_EPIC_DAMAGE) + " damage.";
 
         BonkWeapon const* evolved = weapon.evolvesFrom ? nullptr : sBonkMgr.GetEvolution(weapon.id);

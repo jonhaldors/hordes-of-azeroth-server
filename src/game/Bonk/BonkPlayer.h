@@ -66,6 +66,10 @@ class BonkPlayer
         // Free full refunds: every upgrade's gold, every talent's shards.
         bool ResetUpgrades(std::string& message);
         bool ResetTalents(std::string& message);
+        // One rank back at a time, for what it costs now; refused while
+        // another learned purchase still needs that rank.
+        bool RefundUpgrade(uint32 upgradeId, std::string& message);
+        bool RefundTalent(uint32 talentId, std::string& message);
         bool ToggleTalent(uint32 talentId, std::string& message);
         BonkRunBonuses GetRunBonuses() const;
 
@@ -81,17 +85,23 @@ class BonkPlayer
         void AddMasteryXp(uint32 xp);
         bool LearnMastery(uint32 nodeId, std::string& message);
         bool ResetMastery(std::string& message);
+        // One point back; refused while a learned node needs the rank, or
+        // a deeper row needs the points in its tree.
+        bool RefundMastery(uint32 nodeId, std::string& message);
         BonkMasteryBonuses GetMasteryBonuses() const;
         // mastery~class~level~xpIntoLevel~xpForNext~maxLevel~unspent~hasTrees,
         // for the addon's Mastery bar.
         void SendMasteryState() const;
+        // wallet~shards: the account's Talent Shards, for the camp's wallet.
+        void SendWallet() const;
 
         // Shop window (addon only): `npc` sells `shop`; the addon shows its
-        // trees and buys with `.bonk learn` and `.bonk toggle`, and refunds
-        // the whole shop with `.bonk respec`, while the character stays near
-        // the NPC.
+        // trees and buys with `.bonk learn` and `.bonk toggle`, refunds one
+        // rank with `.bonk unlearn` and the whole shop with `.bonk respec`,
+        // while the character stays near the NPC.
         void OpenShop(BonkShop shop, Creature const* npc);
         void ShopLearn(uint32 id);
+        void ShopUnlearn(uint32 id);
         void ShopToggle(uint32 id);
         void ShopRespec();
 

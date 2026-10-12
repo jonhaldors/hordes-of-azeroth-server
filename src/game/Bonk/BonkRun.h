@@ -161,6 +161,7 @@ class BonkRun
             uint32 extraTargets = 0;        // targets, or drops for ground spells
             uint32 extraJumps = 0;          // pierces, bounces, spreads or cleaved enemies
             uint8 epicSteps = 0;            // Epic ranks that added a target
+            std::string rarities;           // the BonkRarity each rank after the first rolled, one digit per rank
             uint32 casts = 0;               // for every altEvery-th cast
             int32 timer = 0;
             std::map<ObjectGuid, uint32> recentTargets;     // random-target weapons: enemy -> ms hit
@@ -374,6 +375,8 @@ class BonkRun
         Offer MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const;
         bool CanEvolve(OwnedWeapon const& owned) const;
         float GetLegendaryChance(OwnedWeapon const& owned) const;
+        // damage:kills of each spell, in loadout order, for the state line.
+        std::string DescribeWeaponStats() const;
         void ApplyStep(OwnedWeapon& owned, Offer const& offer);
         // A locked card brought to a later choice: false if it no longer
         // fits; otherwise its rank is brought up to date.

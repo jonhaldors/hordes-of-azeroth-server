@@ -52,6 +52,8 @@ namespace BonkStats
     void Reset(ObjectGuid player);
     // Counts an enemy's death; returns the spell that dealt the killing blow (0 = unknown or melee).
     uint32 CountKill(ObjectGuid player, ObjectGuid enemy, BonkSpawnKind kind);
+    // What one spell has done this run so far.
+    BonkRunStats::Spell GetSpellStats(ObjectGuid player, uint32 spellId);
     // sum~damageTaken~elites~minibosses~bosses, sumw~icon~name~level~max~evolved~damage~kills..., sumend
     void SendSummary(Player* player, std::vector<BonkSummaryWeapon> const& weapons);
 

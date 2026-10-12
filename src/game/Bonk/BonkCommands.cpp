@@ -140,6 +140,16 @@ bool ChatHandler::HandleBonkLearnCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkUnlearnCommand(char* args)
+{
+    uint32 id;
+    if (!ExtractUInt32(&args, id))
+        return false;
+
+    m_session->GetPlayer()->GetBonkPlayer()->ShopUnlearn(id);
+    return true;
+}
+
 bool ChatHandler::HandleBonkRespecCommand(char* /*args*/)
 {
     m_session->GetPlayer()->GetBonkPlayer()->ShopRespec();
@@ -250,6 +260,7 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     bonk->SendTierList();
     bonk->SendGearInfo();
     bonk->SendMasteryState();
+    bonk->SendWallet();
     sBonkQuests.SendLog(m_session->GetPlayer(), "");
     if (BonkRun* run = bonk->GetRun())
         run->SendFullState();
