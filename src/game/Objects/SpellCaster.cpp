@@ -45,6 +45,27 @@ namespace
         BonkRun const* run = player ? player->GetBonkPlayer()->GetRun() : nullptr;
         return run ? run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim) : 1.0f;
     }
+
+    // Vanilla Bonk: a hero's spells in a run deal a share of the enemies'
+    // health, which already grows with level. Scaling that damage by the
+    // caster's level again (spells made for creatures) would count it twice.
+    bool HasBonkRunDamage(SpellCaster const* caster, SpellEntry const* spell, SpellEffectIndex index)
+    {
+        Player const* player = caster->ToPlayer();
+        if (!player || !player->GetBonkPlayer()->GetRun())
+            return false;
+
+        switch (spell->Effect[index])
+        {
+            case SPELL_EFFECT_SCHOOL_DAMAGE:
+                return true;
+            case SPELL_EFFECT_APPLY_AURA:
+            case SPELL_EFFECT_PERSISTENT_AREA_AURA:
+                return spell->EffectApplyAuraName[index] == SPELL_AURA_PERIODIC_DAMAGE;
+            default:
+                return false;
+        }
+    }
 }
 
 Unit* SpellCaster::SelectMagnetTarget(Unit* victim, Spell* spell, SpellEffectIndex eff)
@@ -1264,7 +1285,8 @@ float SpellCaster::CalculateSpellEffectValue(Unit const* target, SpellEntry cons
     if (spellProto->HasAttribute(SPELL_ATTR_SCALES_WITH_CREATURE_LEVEL) && spellProto->spellLevel &&
         spellProto->Effect[effect_index] != SPELL_EFFECT_WEAPON_PERCENT_DAMAGE &&
         spellProto->Effect[effect_index] != SPELL_EFFECT_KNOCK_BACK &&
-        (spellProto->Effect[effect_index] != SPELL_EFFECT_APPLY_AURA || spellProto->EffectApplyAuraName[effect_index] != SPELL_AURA_MOD_DECREASE_SPEED))
+        (spellProto->Effect[effect_index] != SPELL_EFFECT_APPLY_AURA || spellProto->EffectApplyAuraName[effect_index] != SPELL_AURA_MOD_DECREASE_SPEED) &&
+        !HasBonkRunDamage(this, spellProto, effect_index))
     {
         CreatureClassLevelStats const* pCLS = sObjectMgr.GetCreatureClassLevelStats(1, GetLevel());
         float CLSPowerCreature = pCLS->melee_damage;
