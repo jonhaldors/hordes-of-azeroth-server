@@ -115,6 +115,12 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
         m_creature->SetPower(POWER_MANA, BONK_CASTER_MANA);
     }
 
+    // Only the template's looks carry over: a creature type or template that
+    // shrugs off poison, disease, curses or drain effects does not here.
+    for (DispelType dispel : { DISPEL_POISON, DISPEL_DISEASE, DISPEL_CURSE })
+        m_creature->ApplySpellImmune(0, IMMUNITY_DISPEL, dispel, false);
+    m_creature->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_PERIODIC_LEECH, false);
+
     // Elites and bosses shrug off stuns and other crowd control; slows still
     // work. Spells that stun still deal their damage.
     if (kind != BONK_SPAWN_NORMAL)

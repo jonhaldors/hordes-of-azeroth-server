@@ -2457,7 +2457,9 @@ bool Creature::IsImmuneToSpell(SpellEntry const* spellInfo, bool castOnSelf) con
         if (spellInfo->Mechanic && GetCreatureInfo()->mechanic_immune_mask & (1 << (spellInfo->Mechanic - 1)) && !IsBonkRunEnemy(this))
             return true;
 
-        if ((GetCreatureInfo()->school_immune_mask & (1 << spellInfo->School)) && !spellInfo->IsPositiveSpell())
+        // Vanilla Bonk: run enemies take only their looks from the template,
+        // so a fire elemental is not immune to fire.
+        if ((GetCreatureInfo()->school_immune_mask & (1 << spellInfo->School)) && !spellInfo->IsPositiveSpell() && !IsBonkRunEnemy(this))
             return true;
     }
 
@@ -2469,7 +2471,7 @@ bool Creature::IsImmuneToDamage(SpellSchoolMask meleeSchoolMask, SpellEntry cons
     if (spellInfo && (spellInfo->HasAttribute(SPELL_ATTR_NO_IMMUNITIES) || spellInfo->IsIgnoringCasterAndTargetRestrictions()))
         return false;
 
-    if (GetCreatureInfo()->school_immune_mask & meleeSchoolMask)
+    if ((GetCreatureInfo()->school_immune_mask & meleeSchoolMask) && !IsBonkRunEnemy(this))
         return true;
 
     return Unit::IsImmuneToDamage(meleeSchoolMask, spellInfo);
@@ -2483,6 +2485,11 @@ bool Creature::IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectInd
     uint32 mechanic = spellInfo->EffectMechanic[index];
     if (!mechanic && spellInfo->EffectApplyAuraName[index] && IsBonkRunEnemy(this))
         mechanic = spellInfo->Mechanic;
+
+    // Vanilla Bonk: elementals, undead and machines bleed in a run like
+    // everything else.
+    if (mechanic == MECHANIC_BLEED && IsBonkRunEnemy(this))
+        mechanic = 0;
 
     if (!castOnSelf && mechanic && GetCreatureInfo()->mechanic_immune_mask & (1 << (mechanic - 1)))
         return true;
