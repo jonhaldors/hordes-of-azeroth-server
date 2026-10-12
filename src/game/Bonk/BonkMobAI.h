@@ -85,6 +85,11 @@ class BonkMobAI : public CreatureAI
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);
         void Explode(Player* owner);
+        // Chargers: stop, warn with a red line, dash along it.
+        bool UpdateCharge(uint32 diff, Player* owner);
+        void StartCharge(Player* owner);
+        void Dash(Player* owner);
+        void EndCharge(Player* owner);
 
         ObjectGuid m_ownerGuid;
         BonkSpawnKind m_kind = BONK_SPAWN_NORMAL;
@@ -100,6 +105,12 @@ class BonkMobAI : public CreatureAI
         bool m_frozen = false;
         bool m_exploded = false;
         uint32 m_strayTimer = 0;
+        enum ChargeState : uint8 { CHARGE_NONE, CHARGE_WINDUP, CHARGE_DASH };
+        ChargeState m_chargeState = CHARGE_NONE;
+        int32 m_chargeTimer = 2000;         // to the next charge, the dash, or its end
+        float m_chargeX = 0.0f, m_chargeY = 0.0f, m_chargeZ = 0.0f;    // where the dash starts
+        float m_chargeAngle = 0.0f, m_chargeLength = 0.0f;
+        float m_dashX = 0.0f, m_dashY = 0.0f, m_dashZ = 0.0f;          // where it ends
 };
 
 #endif
