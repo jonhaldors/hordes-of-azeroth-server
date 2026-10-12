@@ -207,6 +207,8 @@ class ChatHandler
         bool HandleBonkPickCommand(char* args);
         bool HandleBonkRerollCommand(char* args);
         bool HandleBonkBanishCommand(char* args);
+        bool HandleBonkPassCommand(char* args);
+        bool HandleBonkLockCommand(char* args);
         bool HandleBonkLearnCommand(char* args);
         bool HandleBonkToggleCommand(char* args);
         bool HandleBonkRespecCommand(char* args);

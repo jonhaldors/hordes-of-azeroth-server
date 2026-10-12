@@ -260,6 +260,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "pick",           SEC_PLAYER,         false, &ChatHandler::HandleBonkPickCommand,            "", nullptr },
         { "reroll",         SEC_PLAYER,         false, &ChatHandler::HandleBonkRerollCommand,          "", nullptr },
         { "banish",         SEC_PLAYER,         false, &ChatHandler::HandleBonkBanishCommand,          "", nullptr },
+        { "pass",           SEC_PLAYER,         false, &ChatHandler::HandleBonkPassCommand,            "", nullptr },
+        { "lock",           SEC_PLAYER,         false, &ChatHandler::HandleBonkLockCommand,            "", nullptr },
         { "learn",          SEC_PLAYER,         false, &ChatHandler::HandleBonkLearnCommand,           "", nullptr },
         { "toggle",         SEC_PLAYER,         false, &ChatHandler::HandleBonkToggleCommand,          "", nullptr },
         { "respec",         SEC_PLAYER,         false, &ChatHandler::HandleBonkRespecCommand,          "", nullptr },

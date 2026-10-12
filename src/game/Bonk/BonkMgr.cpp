@@ -354,8 +354,8 @@ void BonkMgr::LoadWeapons()
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
-        "`class_mask`, `starter_class_mask`, `max_level`, `evolves_from`, `evolve_passive`, `heal_pct`, `duration_ms`, "
-        "`target_every`, `chain_every`, `behavior`, `behavior_value`, `tick_ms` FROM `bonk_weapon`"));
+        "`class_mask`, `starter_class_mask`, `evolves_from`, `heal_pct`, `duration_ms`, "
+        "`chains`, `behavior`, `behavior_value`, `tick_ms` FROM `bonk_weapon`"));
 
     if (!result)
     {
@@ -379,16 +379,13 @@ void BonkMgr::LoadWeapons()
         weapon.damageFraction = fields[8].GetFloat();
         weapon.classMask = fields[9].GetUInt32();
         weapon.starterClassMask = fields[10].GetUInt32();
-        weapon.maxLevel = std::max<uint8>(1, fields[11].GetUInt8());
-        weapon.evolvesFrom = fields[12].GetUInt32();
-        weapon.evolvePassive = fields[13].GetUInt32();
-        weapon.healPct = fields[14].GetFloat();
-        weapon.durationMs = fields[15].GetUInt32();
-        weapon.targetEvery = fields[16].GetUInt8();
-        weapon.chainEvery = fields[17].GetUInt8();
-        weapon.behavior = BonkWeaponBehavior(std::min<uint8>(fields[18].GetUInt8(), MAX_BONK_BEHAVIOR - 1));
-        weapon.behaviorValue = fields[19].GetFloat();
-        weapon.tickMs = fields[20].GetUInt32();
+        weapon.evolvesFrom = fields[11].GetUInt32();
+        weapon.healPct = fields[12].GetFloat();
+        weapon.durationMs = fields[13].GetUInt32();
+        weapon.chains = fields[14].GetUInt8() != 0;
+        weapon.behavior = BonkWeaponBehavior(std::min<uint8>(fields[15].GetUInt8(), MAX_BONK_BEHAVIOR - 1));
+        weapon.behaviorValue = fields[16].GetFloat();
+        weapon.tickMs = fields[17].GetUInt32();
 
         SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
         if (!spellInfo)
@@ -414,6 +411,9 @@ void BonkMgr::LoadWeapons()
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: ground weapon %u uses spell %u, which has no damaging ground effect; skipped.", weapon.id, weapon.spellId);
             continue;
         }
+
+        weapon.lasting = weapon.target == BONK_TARGET_GROUND || weapon.tickEffectIndex >= 0 || weapon.durationMs ||
+            (weapon.damageEffectIndex >= 0 && spellInfo->EffectApplyAuraName[weapon.damageEffectIndex] == SPELL_AURA_PERIODIC_DAMAGE);
 
         m_weapons[weapon.id] = std::move(weapon);
     } while (result->NextRow());
@@ -482,7 +482,7 @@ void BonkMgr::LoadPassives()
     m_passives.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `icon`, `description`, `effect`, `value_per_rank`, `max_rank` FROM `bonk_passive`"));
+        "SELECT `id`, `name`, `icon`, `description`, `effect`, `value_per_rank`, `max_rank`, `excludes` FROM `bonk_passive`"));
 
     if (!result)
     {
@@ -502,6 +502,7 @@ void BonkMgr::LoadPassives()
         uint8 const effect = fields[4].GetUInt8();
         passive.valuePerRank = fields[5].GetFloat();
         passive.maxRank = std::max<uint8>(1, fields[6].GetUInt8());
+        passive.excludes = fields[7].GetUInt32();
 
         if (effect >= MAX_BONK_PASSIVE_EFFECT)
         {
@@ -569,6 +570,18 @@ std::string FormatBonkMoney(uint32 copper)
 std::string FormatBonkShards(uint32 count)
 {
     return std::to_string(count) + (count == 1 ? " Talent Shard" : " Talent Shards");
+}
+
+char const* GetBonkRarityName(BonkRarity rarity)
+{
+    switch (rarity)
+    {
+        case BONK_RARITY_UNCOMMON:  return "Uncommon";
+        case BONK_RARITY_RARE:      return "Rare";
+        case BONK_RARITY_EPIC:      return "Epic";
+        case BONK_RARITY_LEGENDARY: return "Legendary";
+        default:                    return "Common";
+    }
 }
 
 uint32 BonkUpgrade::GetCost(uint8 ownedRanks) const
@@ -940,6 +953,14 @@ BonkPassive const* BonkMgr::GetPassive(uint32 id) const
 {
     auto itr = m_passives.find(id);
     return itr != m_passives.end() ? &itr->second : nullptr;
+}
+
+std::string BonkMgr::DescribePassive(BonkPassive const& passive) const
+{
+    for (auto const& itr : m_passives)
+        if (itr.first != passive.id && (itr.first == passive.excludes || itr.second.excludes == passive.id))
+            return passive.description + " Can't be taken with " + itr.second.name + ".";
+    return passive.description;
 }
 
 bool BonkMgr::IsArenaLocation(uint32 mapId, uint32 zoneId) const

@@ -858,6 +858,7 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
             case BONK_TALENT_ELITE_RATE:   bonuses.eliteRate += value; break;
             case BONK_TALENT_REROLL:       bonuses.rerolls += uint32(value); break;
             case BONK_TALENT_BANISH:       bonuses.banishes += uint32(value); break;
+            case BONK_TALENT_SKIP:         bonuses.skips += uint32(value); break;
             case BONK_TALENT_REVIVE:       bonuses.revives += uint32(value); break;
             case BONK_TALENT_START_COINS:  bonuses.startCoins += uint32(value); break;
             default: break;

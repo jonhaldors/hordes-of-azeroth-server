@@ -11,9 +11,10 @@
  * class's Mastery are applied for the whole run, which in turn earns that
  * class Mastery experience.
  *
- * Kills drop experience orbs that fly to the player once they are close;
- * a maxed weapon whose paired passive is owned can evolve into a stronger
- * one, which a chest always offers.
+ * Kills drop experience orbs that fly to the player once they are close.
+ * Spell ranks are uncapped: each card rolls a rarity that decides what the
+ * rank adds, and from rank 8 a Legendary rank evolves the spell. A run
+ * holds 5 spells and 6 passives.
  */
 
 #ifndef MANGOS_BONKRUN_H
@@ -88,6 +89,10 @@ class BonkRun
         bool Pick(uint32 choice, std::string& error);
         bool Reroll(std::string& error);
         bool Banish(uint32 choice, std::string& error);
+        // Turns the choice down for a few coins.
+        bool Skip(std::string& error);
+        // Chests: a locked card comes back at the next chest if not picked.
+        bool Lock(uint32 choice, std::string& error);
 
         // Chests and the portal call these when the player uses them.
         void UseChest(GameObject* chest);
@@ -115,10 +120,20 @@ class BonkRun
             OFFER_CHEST,
         };
 
+        // A spell the hero has. Its ranks are uncapped; each added what its
+        // rarity rolled (BonkRankStep), kept here.
         struct OwnedWeapon
         {
             BonkWeapon weapon;
-            uint8 level = 1;
+            uint32 rank = 1;
+            float damageBonus = 0.0f;       // %
+            float hasteBonus = 0.0f;        // %
+            float areaBonus = 0.0f;         // %
+            float durationBonus = 0.0f;     // %
+            float rangeBonus = 0.0f;        // %
+            uint32 extraTargets = 0;        // targets, or drops for ground spells
+            uint32 extraJumps = 0;          // pierces, bounces, spreads or cleaved enemies
+            uint8 epicSteps = 0;            // Epic ranks that added a target
             int32 timer = 0;
             std::map<ObjectGuid, uint32> recentTargets;     // random-target weapons: enemy -> ms hit
             std::map<ObjectGuid, uint32> carriers;          // spreading weapons: enemy -> ms its spell wears off
@@ -127,9 +142,11 @@ class BonkRun
         struct Offer
         {
             bool isWeapon = true;
-            uint32 id = 0;
-            uint8 newLevel = 1;
-            bool isEvolution = false;   // `id` is the evolved weapon
+            uint32 id = 0;              // the weapon (as owned, before evolving) or passive
+            uint32 newLevel = 1;        // the rank it brings
+            BonkRarity rarity = BONK_RARITY_COMMON;
+            BonkRankStep step = BONK_STEP_NEW;     // weapons: what the rank adds
+            bool locked = false;        // chests: comes back at the next chest if not picked
         };
 
         struct Orb
@@ -203,8 +220,6 @@ class BonkRun
         float GetWeaponArea(OwnedWeapon const& owned) const;
         // Enemies it fires at (projectiles, melee targets, damage over time).
         uint32 GetWeaponTargets(OwnedWeapon const& owned) const;
-        // Extra jumps, or extra enemies a cleave hits.
-        uint32 GetWeaponChainBonus(OwnedWeapon const& owned) const;
         void FireWeapon(OwnedWeapon& owned);
         // Base points for `damageShare` of the weapon's damage. Ground ticks hit
         // as hard as the strike; a hit's burn adds up to one more hit.
@@ -242,9 +257,29 @@ class BonkRun
         void UpdateHeals(uint32 diff);
         void GiveShards(uint32 count);
 
-        // `avoid`: cards just shown, kept out of a reroll when others are left.
-        bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr);
-        std::string DescribeOffer(Offer const& offer, std::string* icon, uint8* maxLevel) const;
+        // `avoid`: cards just shown, kept out of a reroll when others are
+        // left. `kept`: locked cards that stay.
+        bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr, std::vector<Offer> const* kept = nullptr);
+        // The card's name and icon (an evolution shows what it becomes).
+        std::string DescribeOffer(Offer const& offer, std::string* icon) const;
+        std::string DescribeStep(Offer const& offer) const;
+        OwnedWeapon* FindOwned(uint32 weaponId);
+        OwnedWeapon const* FindOwned(uint32 weaponId) const;
+
+        // Spell ranks: the rarity a card rolls (at least `minimum`, Legendary
+        // by its own chance), and what that rarity adds to this spell.
+        BonkRarity RollRarity(BonkRarity minimum) const;
+        BonkRankStep RollStep(OwnedWeapon const& owned, BonkRarity rarity) const;
+        Offer MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const;
+        bool CanEvolve(OwnedWeapon const& owned) const;
+        float GetLegendaryChance(OwnedWeapon const& owned) const;
+        void ApplyStep(OwnedWeapon& owned, Offer const& offer);
+        // A locked card brought to a later choice: false if it no longer
+        // fits; otherwise its rank is brought up to date.
+        bool RefreshKeptOffer(Offer& offer) const;
+        bool IsPassiveAllowed(BonkPassive const& passive) const;
+        // The choice is made (picked or skipped): the next pending one follows.
+        void CloseOffer(uint32 pickedIndex);
 
         void SendState() const;
         void SendLoadout() const;
@@ -276,7 +311,9 @@ class BonkRun
         BonkGearTotals m_gear;              // what worn gear adds, set bonuses included
         uint32 m_rerolls = 0;
         uint32 m_banishes = 0;
+        uint32 m_skips = 0;
         uint32 m_revives = 0;
+        std::vector<Offer> m_lockedOffers;  // for the next chest
         std::set<std::pair<bool, uint32>> m_banished;   // (is weapon, id)
         BonkMap m_map;
         uint32 m_stage = 1;

@@ -91,9 +91,14 @@ namespace
     // Orbs the run lost track of (cleanup off the map) still go away eventually.
     uint32 const BONK_ORB_LIFETIME_MS      = 30 * MINUTE * IN_MILLISECONDS;
 
-    size_t const BONK_MAX_WEAPONS  = 6;
+    size_t const BONK_MAX_WEAPONS  = 5;
     size_t const BONK_MAX_PASSIVES = 6;
     size_t const BONK_OFFER_SIZE   = 3;
+    // Every choice has at least one spell rank of this rarity or better.
+    BonkRarity const BONK_LEVEL_MIN_RARITY = BONK_RARITY_UNCOMMON;
+    BonkRarity const BONK_CHEST_MIN_RARITY = BONK_RARITY_RARE;
+    // A skipped choice pays this share of the next chest's price in coins.
+    float const BONK_SKIP_COINS = 0.25f;
 
     // Passive upgrades that need a real aura on the player.
     uint32 const BONK_SPELL_MOVE_SPEED = 17498;     // Speed: SPELL_AURA_MOD_INCREASE_SPEED
@@ -209,42 +214,32 @@ namespace
         bool m_wasFiring;
     };
 
-    // What a weapon gains at `level`, for the level-up card.
-    std::string DescribeWeaponLevel(BonkWeapon const& weapon, uint8 level)
+    std::string Percent(float value)
     {
-        std::string text = "+25% damage, faster";
-        std::string const growth = std::to_string(uint32(BONK_AREA_GROWTH * 100.0f + 0.5f)) + "%";
-        bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
-
-        if (weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_GROUND)
-            text += ", +" + growth + " area";
-        else if (cleave)
-            text += ", +" + growth + " reach";
-
-        // More enemies fired at and more jumps both read as targets; a
-        // cleave's extra victims are their own.
-        bool const moreTargets = (weapon.target == BONK_TARGET_NEAREST || weapon.target == BONK_TARGET_RANDOM) &&
-            weapon.targetEvery && level > 1 && (level - 1) % weapon.targetEvery == 0;
-        bool const moreChain = weapon.chainEvery && level > 1 && (level - 1) % weapon.chainEvery == 0;
-        uint32 const targets = (moreTargets ? 1 : 0) + (moreChain && !cleave ? 1 : 0);
-        if (targets)
-            text += ", +" + std::to_string(targets) + (targets > 1 ? " targets" : " target");
-        if (moreChain && cleave)
-            text += ", +1 cleaved enemy";
-
-        if (weapon.behavior == BONK_BEHAVIOR_SPREAD && level >= weapon.maxLevel)
-            text += ". Now spreads to nearby enemies when one carrying it dies";
-        return text;
+        char buffer[16];
+        snprintf(buffer, sizeof(buffer), "%g%%", value);
+        return buffer;
     }
 
-    // "Evolves with <passive> at max level." for a weapon that can evolve.
+    // " Legendary from rank 8: <evolved>." for a spell that can evolve.
     std::string DescribeEvolution(BonkWeapon const& weapon)
     {
         BonkWeapon const* evolved = sBonkMgr.GetEvolution(weapon.id);
-        BonkPassive const* passive = evolved ? sBonkMgr.GetPassive(evolved->evolvePassive) : nullptr;
-        if (!passive)
+        if (!evolved)
             return "";
-        return " Max level + " + passive->name + ": " + evolved->name + ".";
+        return " Legendary from rank " + std::to_string(BONK_EVOLVE_RANK) + ": " + evolved->name + ".";
+    }
+
+    // A spell's extra jumps, read as what they are for it.
+    std::string DescribeJump(BonkWeapon const& weapon)
+    {
+        if (weapon.behavior == BONK_BEHAVIOR_CLEAVE)
+            return "cleaves 1 more enemy";
+        if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
+            return "spreads to 1 more enemy";
+        if (weapon.chains)
+            return "jumps to 1 more enemy";
+        return "pierces to 1 more enemy";
     }
 
     // CastCustomSpell for a spot on the ground.
@@ -319,6 +314,7 @@ BonkRun::BonkRun(Player* player, BonkTier const& tier) : m_player(player), m_tie
 
     m_rerolls = m_bonuses.rerolls;
     m_banishes = m_bonuses.banishes;
+    m_skips = m_bonuses.skips;
     m_revives = m_bonuses.revives;
     m_coins = m_bonuses.startCoins;
 }
@@ -1663,21 +1659,19 @@ void BonkRun::SendStats() const
 float BonkRun::GetWeaponDamage(OwnedWeapon const& owned) const
 {
     // Power is not in here: GetDamageMultiplier applies it to every hit.
-    float const levelBonus = 1.0f + BONK_DAMAGE_PER_LEVEL * (owned.level - 1);
-    return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * levelBonus;
+    return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * (1.0f + owned.damageBonus / 100.0f);
 }
 
 uint32 BonkRun::GetWeaponCooldown(OwnedWeapon const& owned) const
 {
-    float const levelBonus = 1.0f - BONK_HASTE_PER_LEVEL * (owned.level - 1);
-    // Haste is a rate, so it never brings the cooldown to nothing; a Mastery
-    // cooldown bonus for the spell counts as more Haste.
+    // Haste is a rate, so it never brings the cooldown to nothing; the
+    // spell's own faster ranks and a Mastery cooldown bonus count as more.
     float mastery = 0.0f;
     auto itr = m_mastery.spellCooldown.find(GetRootWeapon(owned.weapon));
     if (itr != m_mastery.spellCooldown.end())
         mastery = itr->second;
-    float const rate = GetHasteRate() + mastery / 100.0f;
-    return std::max(200u, uint32(owned.weapon.cooldownMs * levelBonus / rate));
+    float const rate = GetHasteRate() + (owned.hasteBonus + mastery) / 100.0f;
+    return std::max(200u, uint32(owned.weapon.cooldownMs / rate));
 }
 
 void BonkRun::UpdateWeapons(uint32 diff)
@@ -1695,27 +1689,16 @@ void BonkRun::UpdateWeapons(uint32 diff)
 
 float BonkRun::GetWeaponArea(OwnedWeapon const& owned) const
 {
-    BonkWeapon const& weapon = owned.weapon;
-    bool const grows = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_GROUND ||
-        weapon.behavior == BONK_BEHAVIOR_CLEAVE;
-    float const level = grows ? 1.0f + BONK_AREA_GROWTH * (owned.level - 1) : 1.0f;
-    return level * (1.0f + GetPassiveTotal(BONK_PASSIVE_AREA) / 100.0f);
+    return std::max(0.1f, 1.0f + (owned.areaBonus + GetPassiveTotal(BONK_PASSIVE_AREA)) / 100.0f);
 }
 
 uint32 BonkRun::GetWeaponTargets(OwnedWeapon const& owned) const
 {
-    uint32 const every = owned.weapon.targetEvery;
     uint32 mastery = 0;
     auto itr = m_mastery.spellTargets.find(GetRootWeapon(owned.weapon));
     if (itr != m_mastery.spellTargets.end())
         mastery = itr->second;
-    return 1 + (every ? (owned.level - 1) / every : 0) + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT)) + mastery;
-}
-
-uint32 BonkRun::GetWeaponChainBonus(OwnedWeapon const& owned) const
-{
-    uint32 const every = owned.weapon.chainEvery;
-    return every ? (owned.level - 1) / every : 0;
+    return 1 + owned.extraTargets + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT)) + mastery;
 }
 
 void BonkRun::GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInfo, float damageShare, optional<int32>* basePoints) const
@@ -1778,14 +1761,14 @@ void BonkRun::SpreadFrom(Creature const* dead)
         bool const carried = int32(carrier->second - now) > 0;
         owned.carriers.erase(carrier);
 
-        // Only at max level, or once evolved.
-        if (!carried || (owned.level < weapon.maxLevel && !weapon.evolvesFrom))
+        // Only from BONK_EVOLVE_RANK on, or once evolved.
+        if (!carried || (owned.rank < BONK_EVOLVE_RANK && !weapon.evolvesFrom))
             continue;
         SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
         if (!spellInfo)
             continue;
 
-        uint32 const jumps = uint32(weapon.behaviorValue) + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT));
+        uint32 const jumps = uint32(weapon.behaviorValue) + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT)) + owned.extraJumps;
         uint32 spread = 0;
         for (Creature* next : GetMobsInRange(BONK_SPREAD_RADIUS * GetWeaponArea(owned), dead))
         {
@@ -1812,9 +1795,9 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     float const areaScale = GetWeaponArea(owned);
     BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(weapon.spellId);
     tweak.areaScale = areaScale;
-    tweak.chainBonus = weapon.behavior == BONK_BEHAVIOR_CLEAVE ? 0 : GetWeaponChainBonus(owned);
+    tweak.chainBonus = weapon.chains ? owned.extraJumps : 0;
     tweak.durationMs = weapon.durationMs;
-    tweak.durationScale = 1.0f + GetPassiveTotal(BONK_PASSIVE_DURATION) / 100.0f;
+    tweak.durationScale = std::max(0.1f, 1.0f + (GetPassiveTotal(BONK_PASSIVE_DURATION) + owned.durationBonus) / 100.0f);
     tweak.weaponDamage = weapon.weaponDamage ? std::max(1, int32(GetWeaponDamage(owned))) : 0;
     tweak.tickMs = weapon.tickMs;
     tweak.tickScale = 1.0f / GetHasteRate();
@@ -1822,7 +1805,8 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     // Area weapons and melee reach grow; a ground weapon's range is where it
     // can aim, not its area.
     bool const reachGrows = weapon.target == BONK_TARGET_SELF_AREA || weapon.behavior == BONK_BEHAVIOR_CLEAVE;
-    std::vector<Creature*> mobs = GetMobsInRange(reachGrows ? weapon.range * areaScale : weapon.range);
+    float const range = weapon.range * (reachGrows ? areaScale : 1.0f + owned.rangeBonus / 100.0f);
+    std::vector<Creature*> mobs = GetMobsInRange(range);
 
     // Damage over time wants a fresh enemy each cast: casting again on one
     // that has it restarts its ticks, so with few enemies around they never
@@ -1863,7 +1847,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             return !m_player->IsWithinLOSInMap(mob);
         }), mobs.end());
 
-        uint32 const drops = 1 + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT));
+        uint32 const drops = 1 + owned.extraTargets + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT));
         std::vector<Creature*> const spots = PickGroundSpots(mobs, weapon.groundRadius * areaScale, drops);
         if (spots.empty())
         {
@@ -1906,22 +1890,29 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         uint32 const fired = uint32(struck.size());
 
         // A cleave also hits the enemies next to each target, for a share
-        // of the damage; every enemy is hit once.
-        if (weapon.behavior == BONK_BEHAVIOR_CLEAVE)
+        // of the damage; an aimed spell's pierces hit them in full. Every
+        // enemy is hit once.
+        bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
+        bool const pierce = weapon.IsAimed() && !weapon.chains && weapon.behavior != BONK_BEHAVIOR_SPREAD;
+        uint32 const victims = cleave ? 1 + owned.extraJumps : pierce ? owned.extraJumps : 0;
+        if (victims)
         {
-            uint32 const victims = 1 + GetWeaponChainBonus(owned);
+            float const share = cleave ? weapon.behaviorValue : 1.0f;
+            float const radius = BONK_CLEAVE_RADIUS * (cleave ? areaScale : 1.0f);
             for (size_t i = 0; i < fired; ++i)
             {
-                uint32 cleaved = 0;
-                for (Creature* next : GetMobsInRange(BONK_CLEAVE_RADIUS * areaScale, struck[i]))
+                uint32 hit = 0;
+                for (Creature* next : GetMobsInRange(radius, struck[i]))
                 {
-                    if (cleaved >= victims)
+                    if (hit >= victims)
                         break;
                     if (std::find(struck.begin(), struck.end(), next) != struck.end())
                         continue;
-                    StrikeWith(owned, spellInfo, next, weapon.behaviorValue);
+                    StrikeWith(owned, spellInfo, next, share);
+                    if (weapon.target == BONK_TARGET_RANDOM)
+                        owned.recentTargets[next->GetObjectGuid()] = now;
                     struck.push_back(next);
-                    ++cleaved;
+                    ++hit;
                 }
             }
             // The next swing hits for full damage again.
@@ -1967,7 +1958,6 @@ void BonkRun::AddWeapon(BonkWeapon const& weapon)
 {
     OwnedWeapon owned;
     owned.weapon = weapon;
-    owned.level = 1;
     owned.timer = 500;
     m_weapons.push_back(owned);
 }
@@ -2356,7 +2346,220 @@ void BonkRun::OnMobStrayed(Creature* mob, BonkSpawnKind kind)
         mob->NearTeleportTo(x, y, z, mob->GetOrientation());
 }
 
-bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid)
+BonkRun::OwnedWeapon* BonkRun::FindOwned(uint32 weaponId)
+{
+    auto itr = std::find_if(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned) { return owned.weapon.id == weaponId; });
+    return itr != m_weapons.end() ? &*itr : nullptr;
+}
+
+BonkRun::OwnedWeapon const* BonkRun::FindOwned(uint32 weaponId) const
+{
+    auto itr = std::find_if(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned) { return owned.weapon.id == weaponId; });
+    return itr != m_weapons.end() ? &*itr : nullptr;
+}
+
+bool BonkRun::CanEvolve(OwnedWeapon const& owned) const
+{
+    if (owned.weapon.evolvesFrom)
+        return false;
+    BonkWeapon const* evolved = sBonkMgr.GetEvolution(owned.weapon.id);
+    return evolved && !sBonkQuests.IsLocked(m_player->GetSession()->GetAccountId(), BONK_REWARD_WEAPON, evolved->id);
+}
+
+float BonkRun::GetLegendaryChance(OwnedWeapon const& owned) const
+{
+    if (owned.rank < BONK_EVOLVE_RANK)
+        return 0.0f;
+    if (owned.rank >= BONK_EVOLVE_PITY_RANK && CanEvolve(owned))
+        return 100.0f;
+    return BONK_LEGENDARY_BASE_CHANCE + BONK_LEGENDARY_CHANCE_PER_RANK * (owned.rank - BONK_EVOLVE_RANK) +
+        BONK_LEGENDARY_CHANCE_PER_LUCK * std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_LUCK));
+}
+
+BonkRarity BonkRun::RollRarity(BonkRarity minimum) const
+{
+    // Luck raises the weights of the better rarities, the best the most.
+    float const luck = std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_LUCK));
+    float weights[BONK_RARITY_LEGENDARY];
+    float total = 0.0f;
+    for (uint8 rarity = 0; rarity < BONK_RARITY_LEGENDARY; ++rarity)
+    {
+        weights[rarity] = rarity < minimum ? 0.0f : BONK_RARITY_WEIGHT[rarity] * (1.0f + BONK_RARITY_LUCK[rarity] * luck / 100.0f);
+        total += weights[rarity];
+    }
+
+    float roll = frand(0.0f, total);
+    for (uint8 rarity = 0; rarity < BONK_RARITY_LEGENDARY; ++rarity)
+    {
+        if (weights[rarity] > 0.0f && roll < weights[rarity])
+            return BonkRarity(rarity);
+        roll -= weights[rarity];
+    }
+    return BONK_RARITY_EPIC;
+}
+
+BonkRankStep BonkRun::RollStep(OwnedWeapon const& owned, BonkRarity rarity) const
+{
+    BonkWeapon const& weapon = owned.weapon;
+    bool const area = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_GROUND;
+    std::vector<BonkRankStep> options;
+    switch (rarity)
+    {
+        case BONK_RARITY_LEGENDARY:
+            return CanEvolve(owned) ? BONK_STEP_EVOLVE : BONK_STEP_LEGENDARY_DAMAGE;
+        case BONK_RARITY_EPIC:
+            // Spells around the hero have no target to add.
+            if (owned.epicSteps < BONK_MAX_EPIC_STEPS && weapon.target != BONK_TARGET_SELF_AREA)
+                return BONK_STEP_TARGET;
+            return BONK_STEP_EPIC_DAMAGE;
+        case BONK_RARITY_RARE:
+            if (weapon.IsAimed())
+                options.push_back(BONK_STEP_RANGE);
+            if (!area && owned.extraJumps < BONK_MAX_JUMPS)
+                options.push_back(BONK_STEP_JUMP);
+            if (area)
+                options.push_back(BONK_STEP_WIDE);
+            break;
+        case BONK_RARITY_UNCOMMON:
+            options.push_back(BONK_STEP_COOLDOWN);
+            if (weapon.HasArea())
+                options.push_back(BONK_STEP_AREA);
+            if (weapon.lasting)
+                options.push_back(BONK_STEP_DURATION);
+            break;
+        default:
+            return BONK_STEP_DAMAGE;
+    }
+
+    if (options.empty())
+        return BONK_STEP_COOLDOWN;
+    return options[urand(0, uint32(options.size() - 1))];
+}
+
+BonkRun::Offer BonkRun::MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const
+{
+    Offer offer;
+    offer.id = owned.weapon.id;
+    offer.newLevel = owned.rank + 1;
+    float const legendary = GetLegendaryChance(owned);
+    offer.rarity = legendary > 0.0f && roll_chance_f(legendary) ? BONK_RARITY_LEGENDARY : RollRarity(minimum);
+    offer.step = RollStep(owned, offer.rarity);
+    return offer;
+}
+
+void BonkRun::ApplyStep(OwnedWeapon& owned, Offer const& offer)
+{
+    ++owned.rank;
+    switch (offer.step)
+    {
+        case BONK_STEP_DAMAGE:
+            owned.damageBonus += BONK_RANK_DAMAGE;
+            break;
+        case BONK_STEP_COOLDOWN:
+            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
+            owned.hasteBonus += BONK_RANK_HASTE;
+            break;
+        case BONK_STEP_AREA:
+            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
+            owned.areaBonus += BONK_RANK_AREA;
+            break;
+        case BONK_STEP_DURATION:
+            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
+            owned.durationBonus += BONK_RANK_DURATION;
+            break;
+        case BONK_STEP_RANGE:
+            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
+            owned.rangeBonus += BONK_RANK_RANGE;
+            break;
+        case BONK_STEP_JUMP:
+            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
+            ++owned.extraJumps;
+            break;
+        case BONK_STEP_WIDE:
+            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
+            owned.areaBonus += BONK_RANK_WIDE;
+            break;
+        case BONK_STEP_TARGET:
+            ++owned.extraTargets;
+            ++owned.epicSteps;
+            break;
+        case BONK_STEP_EPIC_DAMAGE:
+            owned.damageBonus += BONK_RANK_EPIC_DAMAGE;
+            break;
+        case BONK_STEP_EVOLVE:
+            if (BonkWeapon const* evolved = sBonkMgr.GetEvolution(owned.weapon.id))
+            {
+                // Ranks and what they added carry over.
+                std::string const from = owned.weapon.name;
+                owned.weapon = *evolved;
+                owned.timer = 500;
+                m_player->GetBonkPlayer()->Notify(from + " evolved into " + evolved->name + "!");
+            }
+            break;
+        case BONK_STEP_LEGENDARY_DAMAGE:
+            owned.damageBonus += BONK_RANK_LEGENDARY_DAMAGE;
+            break;
+        default:
+            break;
+    }
+}
+
+bool BonkRun::IsPassiveAllowed(BonkPassive const& passive) const
+{
+    for (auto const& itr : m_passiveRanks)
+    {
+        if (!itr.second || itr.first == passive.id)
+            continue;
+        BonkPassive const* owned = sBonkMgr.GetPassive(itr.first);
+        if (passive.excludes == itr.first || (owned && owned->excludes == passive.id))
+            return false;
+    }
+    return true;
+}
+
+bool BonkRun::RefreshKeptOffer(Offer& offer) const
+{
+    if (offer.isWeapon)
+    {
+        if (m_banished.count({ true, offer.id }))
+            return false;
+
+        OwnedWeapon const* owned = FindOwned(offer.id);
+        if (offer.step == BONK_STEP_NEW)
+            return !owned && m_weapons.size() < BONK_MAX_WEAPONS &&
+                std::none_of(m_weapons.begin(), m_weapons.end(), [&](OwnedWeapon const& w) { return w.weapon.evolvesFrom == offer.id; });
+        if (!owned)
+            return false;
+
+        // The rarity stays; what it adds is rolled again only if it no
+        // longer fits (evolved, Epic targets used up).
+        offer.newLevel = owned->rank + 1;
+        bool fits = true;
+        switch (offer.step)
+        {
+            case BONK_STEP_EVOLVE: fits = CanEvolve(*owned); break;
+            case BONK_STEP_TARGET: fits = owned->epicSteps < BONK_MAX_EPIC_STEPS; break;
+            case BONK_STEP_JUMP:   fits = owned->extraJumps < BONK_MAX_JUMPS; break;
+            default: break;
+        }
+        if (!fits)
+            offer.step = RollStep(*owned, offer.rarity);
+        return true;
+    }
+
+    BonkPassive const* passive = sBonkMgr.GetPassive(offer.id);
+    if (!passive || m_banished.count({ false, offer.id }) || !IsPassiveAllowed(*passive))
+        return false;
+    auto rank = m_passiveRanks.find(offer.id);
+    uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
+    size_t const ownedPassives = std::count_if(m_passiveRanks.begin(), m_passiveRanks.end(), [](auto const& itr) { return itr.second > 0; });
+    if (current >= passive->maxRank || (!current && ownedPassives >= BONK_MAX_PASSIVES))
+        return false;
+    offer.newLevel = current + 1;
+    return true;
+}
+
+bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid, std::vector<Offer> const* kept)
 {
     struct Candidate
     {
@@ -2364,50 +2567,64 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid)
         uint32 weight;
     };
     std::vector<Candidate> candidates;
+    BonkRarity const minimum = source == OFFER_CHEST ? BONK_CHEST_MIN_RARITY : BONK_LEVEL_MIN_RARITY;
 
-    // A maxed weapon whose paired passive is owned can evolve. Chests always
-    // offer that; level ups only favor it.
-    std::vector<Offer> evolutions;
+    // Locked cards stay: from this choice on a reroll or banish, or from the
+    // last chest.
+    std::vector<Offer> cards;
+    std::vector<Offer> carried;
+    if (kept)
+        carried = *kept;
+    else if (source == OFFER_CHEST)
+    {
+        carried = m_lockedOffers;
+        m_lockedOffers.clear();
+    }
+    for (Offer offer : carried)
+        if (cards.size() < BONK_OFFER_SIZE && RefreshKeptOffer(offer))
+        {
+            offer.locked = true;
+            cards.push_back(offer);
+        }
+    auto isCard = [&cards](bool isWeapon, uint32 id)
+    {
+        return std::any_of(cards.begin(), cards.end(), [&](Offer const& card) { return card.isWeapon == isWeapon && card.id == id; });
+    };
+
+    // A rank for every spell the hero has. One owed its Legendary rank
+    // (BONK_EVOLVE_PITY_RANK) always comes up.
     for (auto const& owned : m_weapons)
     {
-        if (owned.weapon.evolvesFrom || owned.level < owned.weapon.maxLevel)
+        if (m_banished.count({ true, owned.weapon.id }) || isCard(true, owned.weapon.id))
             continue;
-        BonkWeapon const* evolved = sBonkMgr.GetEvolution(owned.weapon.id);
-        if (!evolved || m_banished.count({ true, evolved->id }))
-            continue;
-        auto rank = m_passiveRanks.find(evolved->evolvePassive);
-        if (rank == m_passiveRanks.end() || !rank->second)
-            continue;
-
-        Offer offer;
-        offer.id = evolved->id;
-        offer.newLevel = owned.level;
-        offer.isEvolution = true;
-        if (source == OFFER_LEVEL)
-            candidates.push_back({ offer, 6 });
+        Offer const offer = MakeRankOffer(owned, BONK_RARITY_COMMON);
+        if (offer.step == BONK_STEP_EVOLVE && owned.rank >= BONK_EVOLVE_PITY_RANK && cards.size() < BONK_OFFER_SIZE)
+            cards.push_back(offer);
         else
-            evolutions.push_back(offer);
+            candidates.push_back({ offer, 3 });
     }
 
+    // New spells while a slot is free. An evolved spell's base counts as owned.
     uint32 const classMask = m_player->GetClassMask();
-    for (auto const& owned : m_weapons)
-        if (owned.level < owned.weapon.maxLevel && !m_banished.count({ true, owned.weapon.id }))
-            candidates.push_back({ { true, owned.weapon.id, uint8(owned.level + 1) }, 3 });
-
+    uint32 const account = m_player->GetSession()->GetAccountId();
     if (m_weapons.size() < BONK_MAX_WEAPONS)
         for (auto const& itr : sBonkMgr.GetWeapons())
         {
             BonkWeapon const& weapon = itr.second;
             if (weapon.evolvesFrom || (weapon.classMask && !(weapon.classMask & classMask)))
                 continue;
-            if (m_banished.count({ true, weapon.id }) || sBonkQuests.IsLocked(m_player->GetSession()->GetAccountId(), BONK_REWARD_WEAPON, weapon.id))
+            if (m_banished.count({ true, weapon.id }) || isCard(true, weapon.id) || sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, weapon.id))
                 continue;
-            if (std::any_of(m_weapons.begin(), m_weapons.end(), [&](OwnedWeapon const& owned) { return owned.weapon.id == weapon.id; }))
+            if (std::any_of(m_weapons.begin(), m_weapons.end(), [&](OwnedWeapon const& owned)
+                {
+                    return owned.weapon.id == weapon.id || owned.weapon.evolvesFrom == weapon.id;
+                }))
                 continue;
-            candidates.push_back({ { true, weapon.id, 1 }, 2 });
+            Offer offer;
+            offer.id = weapon.id;
+            candidates.push_back({ offer, 2 });
         }
 
-    uint32 const account = m_player->GetSession()->GetAccountId();
     size_t const ownedPassives = std::count_if(m_passiveRanks.begin(), m_passiveRanks.end(), [](auto const& itr) { return itr.second > 0; });
     for (auto const& itr : sBonkMgr.GetPassives())
     {
@@ -2415,9 +2632,15 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid)
         uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
         if (current >= itr.second.maxRank || (!current && ownedPassives >= BONK_MAX_PASSIVES))
             continue;
-        if (m_banished.count({ false, itr.first }) || sBonkQuests.IsLocked(account, BONK_REWARD_PASSIVE, itr.first))
+        if (m_banished.count({ false, itr.first }) || isCard(false, itr.first) || sBonkQuests.IsLocked(account, BONK_REWARD_PASSIVE, itr.first))
             continue;
-        candidates.push_back({ { false, itr.first, uint8(current + 1) }, 2 });
+        if (!IsPassiveAllowed(itr.second))
+            continue;
+        Offer offer;
+        offer.isWeapon = false;
+        offer.id = itr.first;
+        offer.newLevel = current + 1;
+        candidates.push_back({ offer, 2 });
     }
 
     // Cards to avoid are only drawn once the fresh ones run out.
@@ -2443,23 +2666,9 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid)
         }
     }
 
-    // A reroll can turn down an evolution: it then only comes back when
-    // nothing new is left.
-    m_offer.clear();
-    for (Offer const& offer : evolutions)
-    {
-        bool const shown = avoid && std::any_of(avoid->begin(), avoid->end(), [&](Offer const& previous)
-        {
-            return previous.isWeapon && previous.id == offer.id;
-        });
-        if (shown)
-            repeats.push_back({ offer, 6 });
-        else if (m_offer.size() < BONK_OFFER_SIZE)
-            m_offer.push_back(offer);
-    }
     for (std::vector<Candidate>* pool : { &candidates, &repeats })
     {
-        while (m_offer.size() < BONK_OFFER_SIZE && !pool->empty())
+        while (cards.size() < BONK_OFFER_SIZE && !pool->empty())
         {
             uint32 totalWeight = 0;
             for (auto const& candidate : *pool)
@@ -2473,22 +2682,46 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid)
                     roll -= itr->weight;
                     continue;
                 }
-                m_offer.push_back(itr->offer);
+                cards.push_back(itr->offer);
                 pool->erase(itr);
                 break;
             }
         }
     }
 
+    // Never only plain picks: one spell rank is at least `minimum` when
+    // there is a spell rank on offer.
+    bool met = false;
+    std::vector<size_t> raisable;
+    for (size_t i = 0; i < cards.size(); ++i)
+    {
+        if (!cards[i].isWeapon || cards[i].step == BONK_STEP_NEW)
+            continue;
+        if (cards[i].rarity >= minimum)
+            met = true;
+        else if (!cards[i].locked)
+            raisable.push_back(i);
+    }
+    if (!met && !raisable.empty())
+    {
+        Offer& card = cards[raisable[urand(0, uint32(raisable.size() - 1))]];
+        if (OwnedWeapon const* owned = FindOwned(card.id))
+        {
+            card.rarity = RollRarity(minimum);
+            card.step = RollStep(*owned, card.rarity);
+        }
+    }
+
+    m_offer = cards;
     if (m_offer.empty())
     {
-        // Everything is maxed out: a bag of gold instead.
+        // Nothing left to offer: a bag of gold instead.
         if (source == OFFER_CHEST)
             --m_pendingChests;
         else
             --m_pendingLevels;
         GiveGold(m_map.goldPerKill * 25);
-        m_player->GetBonkPlayer()->Notify("Everything is maxed - have some gold!");
+        m_player->GetBonkPlayer()->Notify("Nothing left to learn - have some gold!");
         return false;
     }
 
@@ -2498,17 +2731,18 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid)
     return true;
 }
 
-std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon, uint8* maxLevel) const
+std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon) const
 {
     if (offer.isWeapon)
     {
         BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id);
+        if (offer.step == BONK_STEP_EVOLVE)
+            if (BonkWeapon const* evolved = sBonkMgr.GetEvolution(offer.id))
+                weapon = evolved;
         if (!weapon)
             return "?";
         if (icon)
             *icon = weapon->icon;
-        if (maxLevel)
-            *maxLevel = weapon->maxLevel;
         return weapon->name;
     }
 
@@ -2517,9 +2751,75 @@ std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon, uint8*
         return "?";
     if (icon)
         *icon = passive->icon;
-    if (maxLevel)
-        *maxLevel = passive->maxRank;
     return passive->name;
+}
+
+std::string BonkRun::DescribeStep(Offer const& offer) const
+{
+    if (!offer.isWeapon)
+    {
+        BonkPassive const* passive = sBonkMgr.GetPassive(offer.id);
+        return passive ? sBonkMgr.DescribePassive(*passive) : "";
+    }
+
+    BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id);
+    if (!weapon)
+        return "";
+
+    std::string const minor = "+" + Percent(BONK_RANK_DAMAGE_MINOR) + " damage, ";
+    std::string text;
+    switch (offer.step)
+    {
+        case BONK_STEP_NEW:
+            return weapon->description + DescribeEvolution(*weapon);
+        case BONK_STEP_DAMAGE:
+            text = "+" + Percent(BONK_RANK_DAMAGE) + " damage";
+            break;
+        case BONK_STEP_COOLDOWN:
+            text = minor + "fires " + Percent(BONK_RANK_HASTE) + " more often";
+            break;
+        case BONK_STEP_AREA:
+            text = minor + "+" + Percent(BONK_RANK_AREA) + (weapon->behavior == BONK_BEHAVIOR_CLEAVE ? " reach" : " area");
+            break;
+        case BONK_STEP_DURATION:
+            text = minor + "lasts " + Percent(BONK_RANK_DURATION) + " longer";
+            break;
+        case BONK_STEP_RANGE:
+            text = minor + "+" + Percent(BONK_RANK_RANGE) + " range";
+            break;
+        case BONK_STEP_JUMP:
+            text = minor + DescribeJump(*weapon);
+            break;
+        case BONK_STEP_WIDE:
+            text = minor + "+" + Percent(BONK_RANK_WIDE) + " area";
+            break;
+        case BONK_STEP_TARGET:
+        {
+            OwnedWeapon const* owned = FindOwned(offer.id);
+            uint32 const used = (owned ? owned->epicSteps : 0) + 1;
+            text = std::string(weapon->target == BONK_TARGET_GROUND ? "+1 drop" : "+1 target") + " (" + std::to_string(used) + "/" +
+                std::to_string(BONK_MAX_EPIC_STEPS) + ")";
+            break;
+        }
+        case BONK_STEP_EPIC_DAMAGE:
+            text = "+" + Percent(BONK_RANK_EPIC_DAMAGE) + " damage";
+            break;
+        case BONK_STEP_EVOLVE:
+        {
+            BonkWeapon const* evolved = sBonkMgr.GetEvolution(offer.id);
+            return evolved ? "Evolves " + weapon->name + ": " + evolved->description : "";
+        }
+        case BONK_STEP_LEGENDARY_DAMAGE:
+            text = "+" + Percent(BONK_RANK_LEGENDARY_DAMAGE) + " damage";
+            break;
+        default:
+            break;
+    }
+
+    text += ".";
+    if (weapon->behavior == BONK_BEHAVIOR_SPREAD && !weapon->evolvesFrom && offer.newLevel == BONK_EVOLVE_RANK)
+        text += " Now spreads to nearby enemies when one carrying it dies.";
+    return text;
 }
 
 bool BonkRun::Pick(uint32 choice, std::string& error)
@@ -2539,33 +2839,32 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
     }
 
     Offer const offer = m_offer[choice - 1];
-    if (offer.isEvolution)
+    if (offer.isWeapon)
     {
-        BonkWeapon const* evolved = sBonkMgr.GetWeapon(offer.id);
-        auto owned = std::find_if(m_weapons.begin(), m_weapons.end(), [&](OwnedWeapon const& w)
-        {
-            return evolved && w.weapon.id == evolved->evolvesFrom;
-        });
-        if (owned != m_weapons.end())
-        {
-            std::string const from = owned->weapon.name;
-            owned->weapon = *evolved;
-            owned->timer = 500;
-            m_player->GetBonkPlayer()->Notify(from + " evolved into " + evolved->name + "!");
-        }
-    }
-    else if (offer.isWeapon)
-    {
-        auto owned = std::find_if(m_weapons.begin(), m_weapons.end(), [&](OwnedWeapon const& w) { return w.weapon.id == offer.id; });
-        if (owned != m_weapons.end())
-            owned->level = offer.newLevel;
+        if (OwnedWeapon* owned = FindOwned(offer.id))
+            ApplyStep(*owned, offer);
         else if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id))
             AddWeapon(*weapon);
     }
     else
     {
-        m_passiveRanks[offer.id] = offer.newLevel;
+        m_passiveRanks[offer.id] = uint8(offer.newLevel);
         ApplyPassives();
+    }
+
+    CloseOffer(choice - 1);
+    return true;
+}
+
+void BonkRun::CloseOffer(uint32 pickedIndex)
+{
+    // A chest's locked cards that were not taken wait for the next chest.
+    if (m_offerSource == OFFER_CHEST)
+    {
+        m_lockedOffers.clear();
+        for (size_t i = 0; i < m_offer.size(); ++i)
+            if (m_offer[i].locked && i != pickedIndex)
+                m_lockedOffers.push_back(m_offer[i]);
     }
 
     m_offer.clear();
@@ -2584,7 +2883,6 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
     // The next pending choice pauses again right away.
     SetPaused(false);
     UpdateOffers();
-    return true;
 }
 
 bool BonkRun::Reroll(std::string& error)
@@ -2605,8 +2903,12 @@ bool BonkRun::Reroll(std::string& error)
 
     --m_rerolls;
     std::vector<Offer> const previous = m_offer;
+    std::vector<Offer> kept;
+    for (Offer const& offer : previous)
+        if (offer.locked)
+            kept.push_back(offer);
     // Nothing left to offer turns into gold; close the choice then.
-    if (!OfferUpgrades(m_offerSource, &previous))
+    if (!OfferUpgrades(m_offerSource, &previous, &kept))
     {
         SetPaused(false);
         m_player->GetBonkPlayer()->SendAddon("picked");
@@ -2630,17 +2932,71 @@ bool BonkRun::Banish(uint32 choice, std::string& error)
         return false;
     }
 
-    Offer const& offer = m_offer[choice - 1];
+    Offer const offer = m_offer[choice - 1];
     m_banished.insert({ offer.isWeapon, offer.id });
-    m_player->GetBonkPlayer()->Notify(DescribeOffer(offer, nullptr, nullptr) + " is banished for this run.");
+    m_player->GetBonkPlayer()->Notify(DescribeOffer(offer, nullptr) + " is banished for this run.");
     --m_banishes;
 
+    std::vector<Offer> kept;
+    for (size_t i = 0; i < m_offer.size(); ++i)
+        if (m_offer[i].locked && i + 1 != choice)
+            kept.push_back(m_offer[i]);
     // Nothing left to offer turns into gold; close the choice then.
-    if (!OfferUpgrades(m_offerSource))
+    if (!OfferUpgrades(m_offerSource, nullptr, &kept))
     {
         SetPaused(false);
         m_player->GetBonkPlayer()->SendAddon("picked");
     }
+    return true;
+}
+
+bool BonkRun::Skip(std::string& error)
+{
+    if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
+    {
+        error = "There is nothing to skip right now.";
+        m_player->GetBonkPlayer()->SendAddon("picked");
+        return false;
+    }
+
+    if (!m_skips)
+    {
+        error = "No skips left.";
+        SendOffer();
+        return false;
+    }
+
+    --m_skips;
+    uint32 const coins = std::max(1u, uint32(GetChestCost() * BONK_SKIP_COINS));
+    m_coins += coins;
+    m_player->GetBonkPlayer()->Notify("Skipped: +" + std::to_string(coins) + " coins.");
+    CloseOffer(uint32(m_offer.size()));     // no card taken
+    SendState();
+    return true;
+}
+
+bool BonkRun::Lock(uint32 choice, std::string& error)
+{
+    if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
+    {
+        error = "There is nothing to lock right now.";
+        return false;
+    }
+
+    if (m_offerSource != OFFER_CHEST)
+    {
+        error = "Only chest choices can be locked.";
+        return false;
+    }
+
+    if (choice < 1 || choice > m_offer.size())
+    {
+        error = "Choose a number from 1 to " + std::to_string(m_offer.size()) + ".";
+        return false;
+    }
+
+    m_offer[choice - 1].locked = !m_offer[choice - 1].locked;
+    SendOffer();
     return true;
 }
 
@@ -2654,10 +3010,11 @@ void BonkRun::SendState() const
 
 void BonkRun::SendLoadout() const
 {
-    // w:<icon>:<level>:<max>,... then p:<icon>:<rank>:<max>,...
+    // w:<icon>:<rank>:0,... (e: for evolved) then p:<icon>:<rank>:<max>,...;
+    // spell ranks have no maximum.
     std::string line = "loadout~";
     for (auto const& owned : m_weapons)
-        line += std::string(owned.weapon.evolvesFrom ? "e:" : "w:") + owned.weapon.icon + ":" + std::to_string(owned.level) + ":" + std::to_string(owned.weapon.maxLevel) + ",";
+        line += std::string(owned.weapon.evolvesFrom ? "e:" : "w:") + owned.weapon.icon + ":" + std::to_string(owned.rank) + ":0,";
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             line += "p:" + passive->icon + ":" + std::to_string(itr.second) + ":" + std::to_string(passive->maxRank) + ",";
@@ -2669,45 +3026,27 @@ void BonkRun::SendOffer() const
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (bonk->IsAddonReady())
     {
+        // offer~level~cards~source~rerolls~banishes~skips, then for each card
+        // opt~index~kind~rank~maxRank~name~icon~description~rarity~locked:
+        // kind w (spell), e (evolution) or p (passive); maxRank 0 for spells;
+        // rarity empty for new spells and passives.
         bonk->SendAddon("offer~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_offer.size()) + "~" +
-            (m_offerSource == OFFER_CHEST ? "chest" : "level") + "~" + std::to_string(m_rerolls) + "~" + std::to_string(m_banishes));
+            (m_offerSource == OFFER_CHEST ? "chest" : "level") + "~" + std::to_string(m_rerolls) + "~" + std::to_string(m_banishes) + "~" +
+            std::to_string(m_skips));
         for (size_t i = 0; i < m_offer.size(); ++i)
         {
             Offer const& offer = m_offer[i];
             std::string icon;
-            uint8 maxLevel = 1;
-            std::string const name = DescribeOffer(offer, &icon, &maxLevel);
-            std::string description;
-            if (offer.isEvolution)
-            {
-                if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id))
-                {
-                    BonkWeapon const* from = sBonkMgr.GetWeapon(weapon->evolvesFrom);
-                    description = weapon->description + (from ? " Replaces " + from->name + "." : "");
-                }
-            }
-            else if (offer.isWeapon)
-            {
-                if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id))
-                {
-                    if (offer.newLevel == 1)
-                        description = weapon->description + DescribeEvolution(*weapon);
-                    else
-                        description = DescribeWeaponLevel(*weapon, offer.newLevel) + ".";
-                }
-            }
-            else if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
-            {
-                description = passive->description;
-                // Which of the hero's spells it would let evolve.
-                for (auto const& owned : m_weapons)
-                    if (BonkWeapon const* evolved = sBonkMgr.GetEvolution(owned.weapon.id))
-                        if (evolved->evolvePassive == passive->id && !owned.weapon.evolvesFrom)
-                            description += " Evolves " + owned.weapon.name + " at max level.";
-            }
+            std::string const name = DescribeOffer(offer, &icon);
+            uint32 maxRank = 0;
+            if (!offer.isWeapon)
+                if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
+                    maxRank = passive->maxRank;
+            bool const ranked = offer.isWeapon && offer.step != BONK_STEP_NEW;
 
-            bonk->SendAddon("opt~" + std::to_string(i + 1) + "~" + (offer.isEvolution ? "e" : offer.isWeapon ? "w" : "p") + "~" + std::to_string(offer.newLevel) + "~" +
-                std::to_string(maxLevel) + "~" + name + "~" + icon + "~" + description);
+            bonk->SendAddon("opt~" + std::to_string(i + 1) + "~" + (offer.step == BONK_STEP_EVOLVE ? "e" : offer.isWeapon ? "w" : "p") + "~" +
+                std::to_string(offer.newLevel) + "~" + std::to_string(maxRank) + "~" + name + "~" + icon + "~" + DescribeStep(offer) + "~" +
+                (ranked ? std::to_string(offer.rarity) : "") + "~" + (offer.locked ? "1" : "0"));
         }
         bonk->SendAddon("offerend");
         return;
@@ -2720,14 +3059,23 @@ void BonkRun::SendOffer() const
         handler.PSendSysMessage("Level %u! Choose an upgrade with .bonk pick <number>:", m_player->GetLevel());
     for (size_t i = 0; i < m_offer.size(); ++i)
     {
-        std::string const name = DescribeOffer(m_offer[i], nullptr, nullptr);
-        handler.PSendSysMessage("  %u) %s %s", uint32(i + 1), name.c_str(), m_offer[i].isEvolution ? "(evolution)" :
-            m_offer[i].newLevel == 1 ? "(new)" : ("(level " + std::to_string(m_offer[i].newLevel) + ")").c_str());
+        Offer const& offer = m_offer[i];
+        std::string const name = DescribeOffer(offer, nullptr);
+        std::string kind;
+        if (offer.isWeapon && offer.step == BONK_STEP_NEW)
+            kind = "new";
+        else if (offer.isWeapon)
+            kind = std::string(GetBonkRarityName(offer.rarity)) + " rank " + std::to_string(offer.newLevel);
+        else
+            kind = "rank " + std::to_string(offer.newLevel);
+        handler.PSendSysMessage("  %u) %s (%s): %s", uint32(i + 1), name.c_str(), kind.c_str(), DescribeStep(offer).c_str());
     }
     if (m_rerolls)
         handler.PSendSysMessage("  .bonk reroll for new choices (%u left)", m_rerolls);
     if (m_banishes)
         handler.PSendSysMessage("  .bonk banish <number> to remove one for this run (%u left)", m_banishes);
+    if (m_skips)
+        handler.PSendSysMessage("  .bonk pass to skip this choice for a few coins (%u left)", m_skips);
 }
 
 void BonkRun::Finish(bool wentHome)
@@ -2773,8 +3121,8 @@ void BonkRun::Finish(bool wentHome)
             weapon.spellId = owned.weapon.spellId;
             weapon.name = owned.weapon.name;
             weapon.icon = owned.weapon.icon;
-            weapon.level = owned.level;
-            weapon.maxLevel = owned.weapon.maxLevel;
+            weapon.level = owned.rank;
+            weapon.maxLevel = 0;      // spell ranks are uncapped
             weapon.evolved = owned.weapon.evolvesFrom != 0;
             weapons.push_back(weapon);
         }
