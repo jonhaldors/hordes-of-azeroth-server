@@ -63,6 +63,9 @@ class BonkPlayer
         bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
         bool BuyUpgrade(uint32 upgradeId, std::string& message);
         bool BuyTalent(uint32 talentId, std::string& message);
+        // Free full refunds: every upgrade's gold, every talent's shards.
+        bool ResetUpgrades(std::string& message);
+        bool ResetTalents(std::string& message);
         bool ToggleTalent(uint32 talentId, std::string& message);
         BonkRunBonuses GetRunBonuses() const;
 
@@ -84,8 +87,9 @@ class BonkPlayer
         void SendMasteryState() const;
 
         // Shop window (addon only): `npc` sells `shop`; the addon shows its
-        // trees and buys with `.bonk learn` and `.bonk toggle` (`.bonk respec`
-        // for Mastery) while the character stays near the NPC.
+        // trees and buys with `.bonk learn` and `.bonk toggle`, and refunds
+        // the whole shop with `.bonk respec`, while the character stays near
+        // the NPC.
         void OpenShop(BonkShop shop, Creature const* npc);
         void ShopLearn(uint32 id);
         void ShopToggle(uint32 id);

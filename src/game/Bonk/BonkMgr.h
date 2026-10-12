@@ -524,7 +524,7 @@ struct BonkUpgrade
     float valuePerRank = 5.0f;
     uint8 maxRank = 5;
     uint32 cost = 5000;             // copper for the first rank
-    float costGrowth = 1.0f;        // each rank owned makes the next cost this share of `cost` more
+    float costGrowth = 1.4f;        // each rank costs this many times the one before
     BonkShopNode layout;
 
     uint32 GetCost(uint8 ownedRanks) const;

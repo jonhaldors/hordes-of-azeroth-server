@@ -14,6 +14,7 @@
 #include "Policies/SingletonImp.h"
 #include "SpellMgr.h"
 
+#include <cmath>
 #include <tuple>
 
 INSTANTIATE_SINGLETON_1(BonkMgr);
@@ -705,7 +706,9 @@ char const* GetBonkRarityName(BonkRarity rarity)
 
 uint32 BonkUpgrade::GetCost(uint8 ownedRanks) const
 {
-    return uint32(cost * (1.0f + costGrowth * ownedRanks) + 0.5f);
+    // Each rank costs costGrowth times the one before, to the nearest silver.
+    uint32 const copper = uint32(cost * std::pow(costGrowth, float(ownedRanks)) + 0.5f);
+    return copper >= 100 ? (copper + 50) / 100 * 100 : copper;
 }
 
 uint32 BonkTalent::GetCost(uint8 ownedRanks) const

@@ -635,6 +635,63 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     return true;
 }
 
+bool BonkPlayer::ResetUpgrades(std::string& message)
+{
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    if (m_upgradeRanks.empty())
+    {
+        message = "You have not bought any upgrades.";
+        return false;
+    }
+
+    // Every rank back at what it costs now; prices only change with a
+    // migration, which refunds what was paid before.
+    uint32 refunded = 0;
+    for (auto const& itr : m_upgradeRanks)
+        if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(itr.first))
+            for (uint8 rank = 0; rank < itr.second; ++rank)
+                refunded += upgrade->GetCost(rank);
+
+    m_upgradeRanks.clear();
+    CharacterDatabase.PExecute("DELETE FROM `bonk_account_upgrade` WHERE `account` = %u", m_player->GetSession()->GetAccountId());
+    m_player->ModifyMoney(int32(refunded));
+    SaveGold();
+    message = "Upgrades refunded: " + FormatBonkMoney(refunded) + " back.";
+    return true;
+}
+
+bool BonkPlayer::ResetTalents(std::string& message)
+{
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+    if (m_talentRanks.empty())
+    {
+        message = "You have not learned any talents.";
+        return false;
+    }
+
+    uint32 refunded = 0;
+    for (auto const& itr : m_talentRanks)
+        if (BonkTalent const* talent = sBonkMgr.GetTalent(itr.first))
+            for (uint8 rank = 0; rank < itr.second; ++rank)
+                refunded += talent->GetCost(rank);
+
+    m_talentRanks.clear();
+    m_enabledTalents.clear();
+    CharacterDatabase.PExecute("DELETE FROM `bonk_account_talent` WHERE `account` = %u", m_player->GetSession()->GetAccountId());
+    AddShards(refunded);
+    message = "Talents refunded: " + FormatBonkShards(refunded) + " back.";
+    return true;
+}
+
 bool BonkPlayer::ToggleTalent(uint32 talentId, std::string& message)
 {
     BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
@@ -720,7 +777,7 @@ void BonkPlayer::ShopToggle(uint32 id)
 
 void BonkPlayer::ShopRespec()
 {
-    if (!IsAtShop() || m_shop != BONK_SHOP_MASTERY)
+    if (!IsAtShop())
     {
         Notify("You are too far from the trainer.");
         SendAddon("shopclose");
@@ -728,7 +785,12 @@ void BonkPlayer::ShopRespec()
     }
 
     std::string message;
-    ResetMastery(message);
+    if (m_shop == BONK_SHOP_UPGRADES)
+        ResetUpgrades(message);
+    else if (m_shop == BONK_SHOP_MASTERY)
+        ResetMastery(message);
+    else
+        ResetTalents(message);
     if (!message.empty())
         Notify(message);
     SendShop(false);
