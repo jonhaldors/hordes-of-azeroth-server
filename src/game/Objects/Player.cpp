@@ -2188,8 +2188,7 @@ void Player::ProcessDelayedOperations()
     if (m_delayedOperations & DELAYED_SPELL_CAST_DESERTER)
         CastSpell(this, 26013, true);               // Deserter
 
-    if (m_delayedOperations & DELAYED_CAST_HONORLESS_TARGET)
-        CastSpell(this, 2479, true);
+    // Vanilla Bonk: no world PvP, so no Honorless Target after a teleport.
 
     //we have executed ALL delayed ops, so clear the flag
     m_delayedOperations = 0;
