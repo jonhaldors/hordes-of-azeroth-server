@@ -344,15 +344,11 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
     if (!damage || victim == m_creature)
         return;
 
-    // Armor takes a flat amount off every hit and spell, then Defense its
-    // share of what is left.
+    // Armor takes its share off every hit and spell, then the Shield soaks
+    // what it can.
     if (victim->GetObjectGuid() == m_ownerGuid)
         if (BonkRun* run = static_cast<Player*>(victim)->GetBonkPlayer()->GetRun())
-        {
-            damage = run->ApplyArmor(damage);
-            if (float const defense = run->GetDefense())
-                damage = std::max(1u, uint32(damage * (1.0f - defense / 100.0f)));
-        }
+            damage = run->MitigateDamage(damage);
 
     if (HasAffix(AFFIX_VAMPIRIC))
         m_creature->ModifyHealth(int32(damage * BONK_VAMPIRIC_HEAL));

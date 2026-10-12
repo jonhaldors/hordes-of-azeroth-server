@@ -292,9 +292,10 @@ Aura::Aura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 *currentBas
 
     SetModifier(AuraType(spellproto->EffectApplyAuraName[eff]), damage, spellproto->EffectAmplitude[eff], spellproto->EffectMiscValue[eff]);
 
-    // Vanilla Bonk: a run weapon can tick its damage over time faster.
+    // Vanilla Bonk: a run weapon can tick its damage over time faster, and
+    // Haste speeds every tick up.
     if (caster && caster->IsPlayer() && m_modifier.periodictime)
-        if (uint32 tick = static_cast<Player*>(caster)->GetBonkPlayer()->GetTickInterval(spellproto->Id))
+        if (uint32 tick = static_cast<Player*>(caster)->GetBonkPlayer()->GetTickInterval(spellproto->Id, m_modifier.periodictime))
             m_modifier.periodictime = tick;
 
     CalculatePeriodic(caster ? caster->GetSpellModOwner() : nullptr, true);

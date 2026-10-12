@@ -147,6 +147,9 @@ struct BonkTier
     float shardChanceElite = 12.0f;     // % per elite
     uint32 shardsMiniboss = 1;          // every mini-boss drops this many
     uint32 shardsBoss = 2;              // every stage boss drops this many
+    // Chance elites dodge the hero's hits, %; mini-bosses and bosses dodge
+    // BONK_BOSS_EXTRA_DODGE more. Hit takes it off; normal enemies never dodge.
+    float eliteDodge = 0.0f;
     // Class Mastery experience for the class played.
     uint32 masteryXpMinute = 10;        // per minute survived
     uint32 masteryXpMiniboss = 15;      // per mini-boss killed
@@ -215,25 +218,39 @@ struct BonkWeapon
     bool weaponDamage = false;      // a melee or ranged attack: its damage replaces the weapon swing
 };
 
+// The hero's stats. Every source adds into one total per stat: worn gear,
+// camp upgrades, Class Mastery and in-run picks (passives).
 enum BonkPassiveEffect : uint8
 {
-    BONK_PASSIVE_MIGHT       = 0,   // + weapon damage, %
-    BONK_PASSIVE_COOLDOWN    = 1,   // - weapon cooldown, %
+    BONK_PASSIVE_POWER       = 0,   // + damage dealt, %
+    BONK_PASSIVE_HASTE       = 1,   // spells fire and tick more often: interval / (1 + Haste), %
     BONK_PASSIVE_AMOUNT      = 2,   // + projectiles
     BONK_PASSIVE_MOVE_SPEED  = 3,   // + run speed, %
     BONK_PASSIVE_MAX_HEALTH  = 4,   // + max health, %
     BONK_PASSIVE_RECOVERY    = 5,   // health regained per second, % of max
     BONK_PASSIVE_GREED       = 6,   // + gold, %
     BONK_PASSIVE_GROWTH      = 7,   // + experience, %
-    BONK_PASSIVE_MAGNET      = 8,   // + range experience orbs are pulled in from, %
+    BONK_PASSIVE_PICKUP      = 8,   // + range experience orbs and turkey legs are picked up from, %
     BONK_PASSIVE_LEECH       = 9,   // weapon damage dealt comes back as health, %
     BONK_PASSIVE_AREA        = 10,  // + area, reach and ground effect size, %
     BONK_PASSIVE_DURATION    = 11,  // + how long lasting spells (damage over time, ground effects) last, %
-    BONK_PASSIVE_DEFENSE     = 12,  // - damage taken, %; shares gear Defense's cap
-    BONK_PASSIVE_ARMOR       = 13,  // every enemy hit loses this % of a normal enemy's hit
-    BONK_PASSIVE_DODGE       = 14,  // + chance to dodge enemy melee, %
+    BONK_PASSIVE_ARMOR       = 12,  // - damage taken, %; capped at BONK_MAX_ARMOR
+    BONK_PASSIVE_HIT         = 13,  // - elite and boss dodge chance, %; capped at BONK_MAX_HIT
+    BONK_PASSIVE_DODGE       = 14,  // + chance to dodge enemy melee, %; capped at BONK_MAX_DODGE
+    BONK_PASSIVE_CRIT        = 15,  // + crit chance, %; past 100% a hit can crit twice
+    BONK_PASSIVE_CRIT_DAMAGE = 16,  // + crit bonus, %: on top of a spell crit's 50% and a weapon crit's 100%
+    BONK_PASSIVE_SHIELD      = 17,  // absorb before health, % of max health; refills after BONK_SHIELD_REGEN_DELAY_MS unhurt
+    BONK_PASSIVE_LUCK        = 18,  // better rarity on chests, shrines and level ups (points, not %)
     MAX_BONK_PASSIVE_EFFECT
 };
+
+// Stat caps and bases.
+float const BONK_MAX_ARMOR          = 60.0f;
+float const BONK_MAX_DODGE          = 60.0f;
+float const BONK_MAX_HIT            = 100.0f;   // past it Hit is wasted
+float const BONK_BASE_CRIT          = 5.0f;     // every hero's crit chance before stats
+float const BONK_BOSS_EXTRA_DODGE   = 5.0f;     // mini-bosses and bosses dodge this much more than elites
+uint32 const BONK_SHIELD_REGEN_DELAY_MS = 4000;
 
 struct BonkPassive
 {
@@ -241,7 +258,7 @@ struct BonkPassive
     std::string name;
     std::string icon;
     std::string description;
-    BonkPassiveEffect effect = BONK_PASSIVE_MIGHT;
+    BonkPassiveEffect effect = BONK_PASSIVE_POWER;
     float valuePerRank = 10.0f;
     uint8 maxRank = 5;
 };
@@ -325,7 +342,7 @@ struct BonkUpgrade
     uint32 id = 0;
     std::string name;
     std::string description;
-    BonkPassiveEffect effect = BONK_PASSIVE_MIGHT;
+    BonkPassiveEffect effect = BONK_PASSIVE_POWER;
     float valuePerRank = 5.0f;
     uint8 maxRank = 5;
     uint32 cost = 5000;             // copper for the first rank
@@ -383,23 +400,17 @@ struct BonkRunBonuses
     uint32 startCoins = 0;
 };
 
-// Camp gear: what one item adds while worn.
+// Camp gear: what one item adds to each stat while worn.
 struct BonkItemStat
 {
-    float power = 0.0f;             // + auto-weapon damage, %
-    float defense = 0.0f;           // - damage taken from enemies in a run, %
-    float armor = 0.0f;             // BONK_PASSIVE_ARMOR points
-    float dodge = 0.0f;             // + chance to dodge enemy melee, %
+    float stats[MAX_BONK_PASSIVE_EFFECT] = {};
     uint32 setId = 0;               // bonk_item_set, 0 = none
 };
 
 struct BonkItemSetBonus
 {
     uint8 pieces = 2;               // pieces worn to get it
-    float power = 0.0f;
-    float defense = 0.0f;
-    int32 passiveEffect = -1;       // BonkPassiveEffect it adds to, -1 = none
-    float passiveValue = 0.0f;
+    float stats[MAX_BONK_PASSIVE_EFFECT] = {};
     std::string description;
 };
 
@@ -414,8 +425,6 @@ struct BonkItemSet
 // Everything a player's worn gear adds up to, set bonuses included.
 struct BonkGearTotals
 {
-    float power = 0.0f;
-    float defense = 0.0f;
     float passives[MAX_BONK_PASSIVE_EFFECT] = {};
 };
 

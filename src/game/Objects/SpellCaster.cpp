@@ -462,6 +462,25 @@ void SpellCaster::RollMeleeOutcomeAgainst(MeleeHitOutcome& outHitOutcome, uint32
         return;
     }
 
+    // Vanilla Bonk: a hero's attacks on run enemies always land, except
+    // that elites and bosses dodge, and crit by the hero's Crit.
+    if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
+    {
+        if (run->RollDodge(pVictim))
+        {
+            outHitInfo |= HITINFO_ROLLED_DODGE;
+            outHitOutcome = MELEE_HIT_DODGE;
+        }
+        else if (canCrit && roll_chance_f(run->GetCritChance()))
+        {
+            outHitInfo |= HITINFO_CRITICALHIT;
+            outHitOutcome = MELEE_HIT_CRIT;
+        }
+        else
+            outHitOutcome = MELEE_HIT_NORMAL;
+        return;
+    }
+
     int32 attackerMaxSkillValueForLevel = GetSkillMaxForLevel(pVictim);
     int32 victimMaxSkillValueForLevel = pVictim->GetSkillMaxForLevel(this);
 
@@ -794,6 +813,10 @@ SpellMissInfo SpellCaster::MagicSpellHitResult(Unit const* pVictim, SpellEntry c
     if (!pVictim->IsAlive())
         return SPELL_MISS_NONE;
 
+    // Vanilla Bonk: a hero's spells never miss run enemies; elites and bosses dodge.
+    if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
+        return run->RollDodge(pVictim) ? SPELL_MISS_DODGE : SPELL_MISS_NONE;
+
     // Spell cannot be resisted (not exist on dbc, custom flag)
     if (pSpellEntry->AttributesEx4 & SPELL_ATTR_EX4_IGNORE_RESISTANCES)
         return SPELL_MISS_NONE;
@@ -976,6 +999,13 @@ void SpellCaster::SendSpellOrDamageImmune(Unit const* target, uint32 spellId) co
 
 uint32 SpellCaster::SpellCriticalDamageBonus(SpellEntry const* spellProto, uint32 damage, Unit const* pVictim, Spell* spell)
 {
+    // Vanilla Bonk: Crit Damage, and a second crit past 100% crit chance.
+    if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
+    {
+        bool const weaponAttack = spellProto->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_RANGED;
+        return uint32(damage * run->RollCritMultiplier(weaponAttack));
+    }
+
     // Calculate critical bonus
     int32 crit_bonus;
     switch (spellProto->DmgClass)

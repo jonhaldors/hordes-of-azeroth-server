@@ -42,6 +42,16 @@ namespace
         return buffer;
     }
 
+    // "0:3,12:4.5": the stats that are not zero, by BonkPassiveEffect.
+    std::string FormatStatList(float const* stats)
+    {
+        std::string list;
+        for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+            if (stats[effect] != 0.0f)
+                list += (list.empty() ? "" : ",") + std::to_string(effect) + ":" + FormatStat(stats[effect]);
+        return list;
+    }
+
     // The quest that still has to unlock this, if any.
     BonkQuest const* GetLockingQuest(Player* player, BonkQuestReward type, uint32 id)
     {
@@ -689,6 +699,7 @@ void BonkPlayer::ShopLearn(uint32 id)
     if (!message.empty())
         Notify(message);
     SendShop(false);
+    SendStats();
 }
 
 void BonkPlayer::ShopToggle(uint32 id)
@@ -721,6 +732,7 @@ void BonkPlayer::ShopRespec()
     if (!message.empty())
         Notify(message);
     SendShop(false);
+    SendStats();
 }
 
 void BonkPlayer::SendShop(bool open) const
@@ -869,7 +881,10 @@ void BonkPlayer::Update(uint32 diff)
     {
         m_run->Update(diff);
         if (m_run->IsFinished())
+        {
             m_run.reset();
+            SendStats();
+        }
         else
             BonkStats::UpdateBossBar(m_player, diff);
     }
@@ -1011,10 +1026,10 @@ void BonkPlayer::Notify(std::string const& text) const
 
 void BonkPlayer::SendGearInfo() const
 {
-    // What camp gear adds, for the addon's tooltips and character sheet.
+    // What camp gear adds, for the addon's tooltips and character sheet:
+    // gear~entry~set~stats.
     for (auto const& itr : sBonkMgr.GetItemStats())
-        SendAddon("gear~" + std::to_string(itr.first) + "~" + FormatStat(itr.second.power) + "~" + FormatStat(itr.second.defense) + "~" +
-            std::to_string(itr.second.setId) + "~" + FormatStat(itr.second.armor) + "~" + FormatStat(itr.second.dodge));
+        SendAddon("gear~" + std::to_string(itr.first) + "~" + std::to_string(itr.second.setId) + "~" + FormatStatList(itr.second.stats));
 
     for (auto const& itr : sBonkMgr.GetItemSets())
     {
@@ -1026,11 +1041,37 @@ void BonkPlayer::SendGearInfo() const
         SendAddon("set~" + std::to_string(set.id) + "~" + set.name + "~" + pieces);
 
         for (BonkItemSetBonus const& bonus : set.bonuses)
-            SendAddon("setbonus~" + std::to_string(set.id) + "~" + std::to_string(bonus.pieces) + "~" + FormatStat(bonus.power) + "~" +
-                FormatStat(bonus.defense) + "~" + bonus.description);
+            SendAddon("setbonus~" + std::to_string(set.id) + "~" + std::to_string(bonus.pieces) + "~" + FormatStatList(bonus.stats) + "~" +
+                bonus.description);
     }
 
     SendAddon("gearend");
+    SendStats();
+}
+
+void BonkPlayer::SendStats() const
+{
+    if (m_run)
+    {
+        m_run->SendStats();
+        return;
+    }
+
+    BonkRunBonuses const bonuses = GetRunBonuses();
+    SendStatTotals(bonuses.passives, false);
+}
+
+void BonkPlayer::SendStatTotals(float const* totals, bool inRun) const
+{
+    std::string line = "stats~" + std::string(inRun ? "1" : "0") + "~";
+    for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+    {
+        float value = totals[effect];
+        if (effect == BONK_PASSIVE_CRIT)
+            value += BONK_BASE_CRIT;
+        line += (effect ? "," : "") + FormatStat(value);
+    }
+    SendAddon(line);
 }
 
 void BonkPlayer::SendTierList() const

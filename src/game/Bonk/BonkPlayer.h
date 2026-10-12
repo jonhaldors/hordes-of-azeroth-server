@@ -12,6 +12,7 @@
 #include "Common.h"
 #include "ObjectGuid.h"
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <set>
@@ -104,6 +105,7 @@ class BonkPlayer
             float durationScale = 1.0f; // then multiplies it
             int32 weaponDamage = 0;     // replaces a weapon-damage spell's swing, 0 = keep it
             uint32 tickMs = 0;          // damage over time ticks this often, 0 = the spell's own rate
+            float tickScale = 1.0f;     // then multiplies the tick interval (Haste)
         };
         SpellTweak& TweakSpell(uint32 spellId) { return m_spellTweaks[spellId]; }
         void ClearSpellTweaks() { m_spellTweaks.clear(); }
@@ -124,10 +126,15 @@ class BonkPlayer
                 return duration;
             return int32((tweak->durationMs ? tweak->durationMs : duration) * tweak->durationScale);
         }
-        uint32 GetTickInterval(uint32 spellId) const
+        // How often a periodic aura of the spell ticks instead of `amplitude`,
+        // 0 = unchanged.
+        uint32 GetTickInterval(uint32 spellId, uint32 amplitude) const
         {
             SpellTweak const* tweak = FindSpellTweak(spellId);
-            return tweak ? tweak->tickMs : 0;
+            if (!tweak)
+                return 0;
+            uint32 const tick = tweak->tickMs ? tweak->tickMs : amplitude;
+            return std::max(100u, uint32(tick * tweak->tickScale));
         }
         int32 GetWeaponDamage(uint32 spellId) const
         {
@@ -151,6 +158,10 @@ class BonkPlayer
         void SendTierList() const;
         // Item stats and sets, for the addon's tooltips and character sheet.
         void SendGearInfo() const;
+        // stats~inRun~total,...: every stat without worn gear (the addon adds
+        // gear itself), from the run when in one and from camp otherwise.
+        void SendStats() const;
+        void SendStatTotals(float const* totals, bool inRun) const;
         // Arena window (addon only), shown in place of the run master's gossip.
         void OpenArena(Creature const* npc) const;
 

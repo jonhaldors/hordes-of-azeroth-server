@@ -32,6 +32,7 @@
 class Creature;
 class GameObject;
 class Player;
+class SpellCaster;
 class Unit;
 
 class BonkRun
@@ -59,16 +60,31 @@ class BonkRun
         void OnMobStuck(Creature* mob);
         // Damage the player's weapons took off an enemy, for Leech.
         void OnWeaponDamage(uint32 damage);
-        // Gear Defense: % less damage taken from enemies, capped.
-        float GetDefense() const;
-        // An enemy's hit on the hero after Armor: a flat amount off, so weak
-        // hits shrink the most; never below a quarter of the hit.
-        uint32 ApplyArmor(uint32 damage) const;
-        // Might and gear Power, and the class's Mastery bonuses for `spell`
-        // (null for melee swings) against `victim`: applies to all damage
-        // the player deals (SpellCaster::SpellDamageBonusDone and
+        // An enemy's hit on the hero: Armor takes its share off, then the
+        // Shield soaks what it can. Returns what is left for health.
+        uint32 MitigateDamage(uint32 damage);
+        // Power and the class's Mastery bonuses for `spell` (null for melee
+        // swings) against `victim`, added up: applies to all damage the
+        // player deals (SpellCaster::SpellDamageBonusDone and
         // MeleeDamageBonusDone).
         float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) const;
+
+        // The run whose hero, or the hero's pet, attacks one of that run's
+        // enemies; null for every other fight. Such attacks skip the normal
+        // hit tables: they always land, except that elites and bosses dodge
+        // (RollDodge), and they crit by the hero's Crit (GetCritChance).
+        static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
+        // Elites and bosses dodge by the tier's chance, less the hero's Hit.
+        bool RollDodge(Unit const* victim) const;
+        float GetCritChance() const;
+        // Damage times this on a crit: a spell crit adds 50%, a weapon crit
+        // 100%, plus Crit Damage. Past 100% crit chance, the rest is the
+        // chance the hit crits a second time.
+        float RollCritMultiplier(bool weaponAttack) const;
+
+        // Stat totals without worn gear (the addon adds gear itself), for
+        // the character sheet.
+        void SendStats() const;
         bool Pick(uint32 choice, std::string& error);
         bool Reroll(std::string& error);
         bool Banish(uint32 choice, std::string& error);
@@ -142,6 +158,10 @@ class BonkRun
         void UpdateBoundary(uint32 diff);
         void UpdateNatives(uint32 diff);
         void UpdateRecovery(uint32 diff);
+        // Refills the Shield after a while unhurt and keeps its look and the
+        // addon's bar in step.
+        void UpdateShield(uint32 diff);
+        uint32 GetMaxShield() const;
         void RunEvent(BonkMapEvent const& event);
         void OpenPortal(Creature* boss);
         void PlacePortal(float x, float y, float baseZ);
@@ -173,6 +193,10 @@ class BonkRun
         // Minutes fought this run, over all stages: what enemies scale with.
         float GetRunMinutes() const { return m_totalMs / float(MINUTE * IN_MILLISECONDS); }
         float GetPassiveTotal(BonkPassiveEffect effect) const;
+        // The total after its cap (Armor, Dodge, Hit).
+        float GetStat(BonkPassiveEffect effect) const;
+        // 1 + Haste: how many times as often spells fire and tick.
+        float GetHasteRate() const;
         float GetWeaponDamage(OwnedWeapon const& owned) const;
         uint32 GetWeaponCooldown(OwnedWeapon const& owned) const;
         // How much its area, reach and spreading grow: level and the Area passive.
@@ -216,8 +240,6 @@ class BonkRun
         // heals. Magnet widens the reach.
         void DropHeal(Creature const* mob, BonkSpawnKind kind);
         void UpdateHeals(uint32 diff);
-        // A normal enemy's hit right now, what Armor is measured against.
-        float GetNormalHit() const;
         void GiveShards(uint32 count);
 
         // `avoid`: cards just shown, kept out of a reroll when others are left.
@@ -296,6 +318,11 @@ class BonkRun
         uint32 m_shardsEarned = 0;
         uint32 m_coins = 0;
         float m_leechCarry = 0.0f;          // Leech healing not yet given
+        uint32 m_shield = 0;                // absorb left
+        uint32 m_shieldIdleMs = 0;          // since the hero last took damage
+        uint32 m_shieldSendTimer = 0;
+        uint32 m_shieldSent = 0;            // what the addon last heard
+        uint32 m_shieldMaxSent = 0;
         uint32 m_chestsBought = 0;
         uint32 m_lastLevel = 1;
         uint32 m_pendingLevels = 0;

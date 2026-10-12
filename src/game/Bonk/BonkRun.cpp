@@ -110,14 +110,15 @@ namespace
     size_t const BONK_MAX_HEAL_DROPS     = 20;
     // Each level gained heals this share of max health.
     float const BONK_LEVEL_UP_HEAL       = 0.10f;
-    // Armor never takes a hit below this share of itself.
-    float const BONK_MIN_HIT_AFTER_ARMOR = 0.25f;
     // A few seconds safe from melee after a revive.
     uint32 const BONK_SPELL_REVIVE_SHIELD = 1022;   // Blessing of Protection, rank 1
     float const BONK_REVIVE_CLEAR_RADIUS  = 15.0f;
 
-    // Gear Defense never takes off more than this share of a hit, %.
-    float const BONK_MAX_DEFENSE = 60.0f;
+    // The Shield's look while it holds: Barrier of Light, a dummy aura with
+    // Power Word: Shield's bubble. The run does the absorbing itself.
+    uint32 const BONK_SPELL_SHIELD_VISUAL = 16051;
+    // The addon hears about Shield changes at most this often.
+    uint32 const BONK_SHIELD_SEND_MS      = 250;
 
     // Class Mastery: what counts as an enemy at full and at low health, the
     // most Soul Siphon heals per second (% of max health), and how soon a
@@ -431,6 +432,7 @@ void BonkRun::Update(uint32 diff)
             UpdateOffers();
             UpdateBoundary(diff);
             UpdateNatives(diff);
+            UpdateShield(diff);
             UpdatePowerups(diff, false);
             UpdateOrbs(diff);
             UpdateShards(diff);
@@ -519,8 +521,12 @@ void BonkRun::StartStage()
         m_player->SetPower(POWER_MANA, m_player->GetMaxPower(POWER_MANA));
     }
 
-    // Worn gear adds Power, Defense and set bonuses; checked again every second.
+    // Worn gear adds its stats and set bonuses; checked again every second.
     UpdateGear();
+
+    // Every stage starts behind a full Shield.
+    m_shield = GetMaxShield();
+    m_shieldIdleMs = 0;
 
     m_player->GetBonkPlayer()->RecordStage(m_tier.id, m_stage);
 
@@ -560,6 +566,7 @@ void BonkRun::UpdateRunning(uint32 diff)
 
     UpdateBoundary(diff);
     UpdateRecovery(diff);
+    UpdateShield(diff);
     UpdatePowerups(diff, true);
     UpdateOrbs(diff);
     UpdateShards(diff);
@@ -1000,38 +1007,117 @@ void BonkRun::UpdateGear()
         ApplyPassives();
 }
 
-uint32 BonkRun::ApplyArmor(uint32 damage) const
+uint32 BonkRun::MitigateDamage(uint32 damage)
 {
-    float const armor = GetPassiveTotal(BONK_PASSIVE_ARMOR);
-    if (armor <= 0.0f || !damage)
-        return damage;
+    if (!damage)
+        return 0;
 
-    float const reduced = damage - GetNormalHit() * armor / 100.0f;
-    return std::max(1u, uint32(std::max(reduced, damage * BONK_MIN_HIT_AFTER_ARMOR)));
+    if (float const armor = GetStat(BONK_PASSIVE_ARMOR))
+        damage = std::max(1u, uint32(damage * (1.0f - armor / 100.0f)));
+
+    m_shieldIdleMs = 0;
+    if (m_shield)
+    {
+        uint32 const absorbed = std::min(m_shield, damage);
+        m_shield -= absorbed;
+        damage -= absorbed;
+        if (!m_shield)
+            m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
+    }
+    return damage;
 }
 
-float BonkRun::GetNormalHit() const
+uint32 BonkRun::GetMaxShield() const
 {
-    CreatureClassLevelStats const* stats = sObjectMgr.GetCreatureClassLevelStats(CLASS_WARRIOR, GetMobLevel());
-    if (!stats)
-        return 0.0f;
-    return stats->melee_damage * GetStageDamageMultiplier() * m_map.damageMultiplier * (1.0f + m_map.damageGrowthPerMinute * GetRunMinutes());
+    float const shield = GetPassiveTotal(BONK_PASSIVE_SHIELD);
+    return shield > 0.0f ? uint32(m_player->GetMaxHealth() * shield / 100.0f) : 0;
 }
 
-float BonkRun::GetDefense() const
+void BonkRun::UpdateShield(uint32 diff)
 {
-    return std::min(m_gear.defense + GetPassiveTotal(BONK_PASSIVE_DEFENSE), BONK_MAX_DEFENSE);
+    uint32 const max = GetMaxShield();
+    if (m_shield > max)
+        m_shield = max;
+    else if (m_shield < max)
+    {
+        // Refills all at once after a few seconds without a hit.
+        m_shieldIdleMs += diff;
+        if (m_shieldIdleMs >= BONK_SHIELD_REGEN_DELAY_MS)
+            m_shield = max;
+    }
+
+    if (m_player->IsAlive())
+    {
+        bool const shown = m_player->HasAura(BONK_SPELL_SHIELD_VISUAL);
+        if (m_shield && !shown)
+            m_player->AddAura(BONK_SPELL_SHIELD_VISUAL, ADD_AURA_PERMANENT);
+        else if (!m_shield && shown)
+            m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
+    }
+
+    m_shieldSendTimer += diff;
+    if ((m_shield != m_shieldSent || max != m_shieldMaxSent) && m_shieldSendTimer >= BONK_SHIELD_SEND_MS)
+    {
+        m_shieldSendTimer = 0;
+        m_shieldSent = m_shield;
+        m_shieldMaxSent = max;
+        m_player->GetBonkPlayer()->SendAddon("shield~" + std::to_string(m_shield) + "~" + std::to_string(max));
+    }
+}
+
+BonkRun* BonkRun::FromAttack(SpellCaster const* attacker, Unit const* victim)
+{
+    Unit const* unit = attacker ? attacker->ToUnit() : nullptr;
+    if (!unit || !victim || !victim->IsCreature())
+        return nullptr;
+
+    Player const* player = unit->GetCharmerOrOwnerPlayerOrPlayerItself();
+    if (!player)
+        return nullptr;
+
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(victim->AI());
+    if (!ai || ai->GetOwnerGuid() != player->GetObjectGuid())
+        return nullptr;
+    return player->GetBonkPlayer()->GetRun();
+}
+
+bool BonkRun::RollDodge(Unit const* victim) const
+{
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(victim->AI());
+    if (!ai || ai->GetKind() == BONK_SPAWN_NORMAL)
+        return false;
+
+    float chance = m_tier.eliteDodge - GetStat(BONK_PASSIVE_HIT);
+    if (ai->GetKind() != BONK_SPAWN_ELITE)
+        chance += BONK_BOSS_EXTRA_DODGE;
+    return chance > 0.0f && roll_chance_f(chance);
+}
+
+float BonkRun::GetCritChance() const
+{
+    return BONK_BASE_CRIT + GetPassiveTotal(BONK_PASSIVE_CRIT);
+}
+
+float BonkRun::RollCritMultiplier(bool weaponAttack) const
+{
+    float const bonus = (weaponAttack ? 1.0f : 0.5f) + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_CRIT_DAMAGE)) / 100.0f;
+    float multiplier = 1.0f + bonus;
+
+    float const overcrit = GetCritChance() - 100.0f;
+    if (overcrit > 0.0f && roll_chance_f(overcrit))
+        multiplier *= 1.0f + bonus;
+    return multiplier;
 }
 
 float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) const
 {
-    float const might = 1.0f + (GetPassiveTotal(BONK_PASSIVE_MIGHT) + m_gear.power) / 100.0f;
+    // Power and Mastery add up rather than multiply.
+    float percent = GetPassiveTotal(BONK_PASSIVE_POWER);
     if (!spell)
-        return might;
+        return std::max(0.0f, 1.0f + percent / 100.0f);
 
     // Class Mastery: the spell itself, its school, and the state of the enemy.
     uint32 const school = spell->GetSpellSchoolMask();
-    float percent = 0.0f;
     auto root = m_spellRoots.find(spell->Id);
     if (root != m_spellRoots.end())
     {
@@ -1059,7 +1145,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) 
                     percent += bonus.second;
     }
 
-    return might * (1.0f + percent / 100.0f);
+    return std::max(0.0f, 1.0f + percent / 100.0f);
 }
 
 uint32 BonkRun::GetRootWeapon(BonkWeapon const& weapon) const
@@ -1549,9 +1635,34 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     return total;
 }
 
+float BonkRun::GetStat(BonkPassiveEffect effect) const
+{
+    float const total = GetPassiveTotal(effect);
+    switch (effect)
+    {
+        case BONK_PASSIVE_ARMOR: return std::min(total, BONK_MAX_ARMOR);
+        case BONK_PASSIVE_DODGE: return std::min(total, BONK_MAX_DODGE);
+        case BONK_PASSIVE_HIT:   return std::min(total, BONK_MAX_HIT);
+        default:                 return total;
+    }
+}
+
+float BonkRun::GetHasteRate() const
+{
+    return 1.0f + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_HASTE)) / 100.0f;
+}
+
+void BonkRun::SendStats() const
+{
+    float totals[MAX_BONK_PASSIVE_EFFECT];
+    for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+        totals[effect] = GetPassiveTotal(BonkPassiveEffect(effect)) - m_gear.passives[effect];
+    m_player->GetBonkPlayer()->SendStatTotals(totals, true);
+}
+
 float BonkRun::GetWeaponDamage(OwnedWeapon const& owned) const
 {
-    // Might is not in here: GetDamageMultiplier applies it to every hit.
+    // Power is not in here: GetDamageMultiplier applies it to every hit.
     float const levelBonus = 1.0f + BONK_DAMAGE_PER_LEVEL * (owned.level - 1);
     return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * levelBonus;
 }
@@ -1559,12 +1670,14 @@ float BonkRun::GetWeaponDamage(OwnedWeapon const& owned) const
 uint32 BonkRun::GetWeaponCooldown(OwnedWeapon const& owned) const
 {
     float const levelBonus = 1.0f - BONK_HASTE_PER_LEVEL * (owned.level - 1);
+    // Haste is a rate, so it never brings the cooldown to nothing; a Mastery
+    // cooldown bonus for the spell counts as more Haste.
     float mastery = 0.0f;
     auto itr = m_mastery.spellCooldown.find(GetRootWeapon(owned.weapon));
     if (itr != m_mastery.spellCooldown.end())
         mastery = itr->second;
-    float const passive = std::max(0.3f, 1.0f - (GetPassiveTotal(BONK_PASSIVE_COOLDOWN) + mastery) / 100.0f);
-    return std::max(200u, uint32(owned.weapon.cooldownMs * levelBonus * passive));
+    float const rate = GetHasteRate() + mastery / 100.0f;
+    return std::max(200u, uint32(owned.weapon.cooldownMs * levelBonus / rate));
 }
 
 void BonkRun::UpdateWeapons(uint32 diff)
@@ -1704,6 +1817,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     tweak.durationScale = 1.0f + GetPassiveTotal(BONK_PASSIVE_DURATION) / 100.0f;
     tweak.weaponDamage = weapon.weaponDamage ? std::max(1, int32(GetWeaponDamage(owned))) : 0;
     tweak.tickMs = weapon.tickMs;
+    tweak.tickScale = 1.0f / GetHasteRate();
 
     // Area weapons and melee reach grow; a ground weapon's range is where it
     // can aim, not its area.
@@ -1870,8 +1984,10 @@ void BonkRun::ApplyPassives()
 
     // A real dodge chance, so enemy swings show "Dodge".
     m_player->RemoveAurasDueToSpell(BONK_SPELL_DODGE);
-    if (int32 const dodge = int32(GetPassiveTotal(BONK_PASSIVE_DODGE) + 0.5f))
+    if (int32 const dodge = int32(GetStat(BONK_PASSIVE_DODGE) + 0.5f))
         m_player->CastCustomSpell(m_player, BONK_SPELL_DODGE, dodge, {}, {}, true);
+
+    SendStats();
 }
 
 void BonkRun::GiveExperience(uint32 xp)
@@ -1956,7 +2072,7 @@ void BonkRun::UpdateOrbs(uint32 diff)
         return;
     m_orbTimer = 0;
 
-    float const magnet = BONK_ORB_MAGNET_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_MAGNET) / 100.0f);
+    float const magnet = BONK_ORB_MAGNET_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_PICKUP) / 100.0f);
     Map* map = m_player->GetMap();
     uint32 collected = 0;
     for (auto itr = m_orbs.begin(); itr != m_orbs.end();)
@@ -2143,7 +2259,7 @@ void BonkRun::UpdateHeals(uint32 diff)
 
     // Left lying while the hero is unhurt: one may be needed later.
     bool hurt = m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth();
-    float const range = BONK_HEAL_PICKUP_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_MAGNET) / 100.0f);
+    float const range = BONK_HEAL_PICKUP_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_PICKUP) / 100.0f);
     Map* map = m_player->GetMap();
     for (auto itr = m_healDrops.begin(); itr != m_healDrops.end();)
     {
@@ -2713,6 +2829,9 @@ void BonkRun::CleanUp()
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
     m_player->RemoveAurasDueToSpell(BONK_SPELL_DODGE);
+    m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
+    m_shield = 0;
+    m_player->GetBonkPlayer()->SendAddon("shield~0~0");
     SetMovementImmunity(m_player, false);
 }
 

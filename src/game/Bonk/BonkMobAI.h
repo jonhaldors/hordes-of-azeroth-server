@@ -32,6 +32,7 @@ class BonkMobAI : public CreatureAI
         // While a choice is open: stop, root, and drop the fight.
         void SetFrozen(bool frozen);
         BonkSpawnKind GetKind() const { return m_kind; }
+        ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
 
         void MoveInLineOfSight(Unit*) override {}
         void AttackStart(Unit* victim) override;

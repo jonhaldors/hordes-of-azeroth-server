@@ -20,6 +20,28 @@ INSTANTIATE_SINGLETON_1(BonkMgr);
 
 namespace
 {
+    // bonk_item_stat: the column for each stat camp gear can carry.
+    struct GearColumn
+    {
+        char const* name;
+        BonkPassiveEffect effect;
+    };
+    GearColumn const BONK_GEAR_COLUMNS[] =
+    {
+        { "power",        BONK_PASSIVE_POWER },
+        { "armor",        BONK_PASSIVE_ARMOR },
+        { "dodge",        BONK_PASSIVE_DODGE },
+        { "hit",          BONK_PASSIVE_HIT },
+        { "crit",         BONK_PASSIVE_CRIT },
+        { "crit_damage",  BONK_PASSIVE_CRIT_DAMAGE },
+        { "shield",       BONK_PASSIVE_SHIELD },
+        { "haste",        BONK_PASSIVE_HASTE },
+        { "area",         BONK_PASSIVE_AREA },
+        { "pickup_range", BONK_PASSIVE_PICKUP },
+        { "luck",         BONK_PASSIVE_LUCK },
+    };
+    size_t const BONK_GEAR_COLUMN_COUNT = sizeof(BONK_GEAR_COLUMNS) / sizeof(BONK_GEAR_COLUMNS[0]);
+
     // The effect whose base points carry a spell's damage: direct damage
     // first, damage over time otherwise, -1 for none.
     int32 FindDamageEffect(SpellEntry const* spellInfo)
@@ -100,7 +122,7 @@ void BonkMgr::LoadTiers()
         "SELECT `id`, `key`, `name`, `health_multiplier`, `damage_multiplier`, `stage_health_growth`, `stage_damage_growth`, "
         "`stage_spawn_growth`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
-        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss` FROM `bonk_tier`"));
+        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -134,6 +156,7 @@ void BonkMgr::LoadTiers()
         tier.masteryXpMinute = fields[18].GetUInt32();
         tier.masteryXpMiniboss = fields[19].GetUInt32();
         tier.masteryXpBoss = fields[20].GetUInt32();
+        tier.eliteDodge = fields[21].GetFloat();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -754,7 +777,10 @@ void BonkMgr::LoadItemStats()
         } while (result->NextRow());
     }
 
-    result = std::unique_ptr<QueryResult>(WorldDatabase.Query("SELECT `entry`, `power`, `defense`, `set_id`, `armor`, `dodge` FROM `bonk_item_stat` ORDER BY `entry`"));
+    std::string columns;
+    for (auto const& column : BONK_GEAR_COLUMNS)
+        columns += ", `" + std::string(column.name) + "`";
+    result = std::unique_ptr<QueryResult>(WorldDatabase.Query(("SELECT `entry`, `set_id`" + columns + " FROM `bonk_item_stat` ORDER BY `entry`").c_str()));
     if (result)
     {
         do
@@ -768,11 +794,9 @@ void BonkMgr::LoadItemStats()
             }
 
             BonkItemStat stat;
-            stat.power = fields[1].GetFloat();
-            stat.defense = fields[2].GetFloat();
-            stat.setId = fields[3].GetUInt32();
-            stat.armor = fields[4].GetFloat();
-            stat.dodge = fields[5].GetFloat();
+            stat.setId = fields[1].GetUInt32();
+            for (size_t i = 0; i < BONK_GEAR_COLUMN_COUNT; ++i)
+                stat.stats[BONK_GEAR_COLUMNS[i].effect] = fields[2 + i].GetFloat();
             if (stat.setId)
             {
                 auto set = m_itemSets.find(stat.setId);
@@ -788,7 +812,7 @@ void BonkMgr::LoadItemStats()
         } while (result->NextRow());
     }
 
-    result = std::unique_ptr<QueryResult>(WorldDatabase.Query("SELECT `set_id`, `pieces`, `power`, `defense`, `passive_effect`, `passive_value`, `description` "
+    result = std::unique_ptr<QueryResult>(WorldDatabase.Query("SELECT `set_id`, `pieces`, `power`, `armor`, `passive_effect`, `passive_value`, `description` "
         "FROM `bonk_item_set_bonus` ORDER BY `set_id`, `pieces`"));
     if (result)
     {
@@ -805,14 +829,11 @@ void BonkMgr::LoadItemStats()
 
             BonkItemSetBonus bonus;
             bonus.pieces = std::max<uint8>(1, fields[1].GetUInt8());
-            bonus.power = fields[2].GetFloat();
-            bonus.defense = fields[3].GetFloat();
+            bonus.stats[BONK_PASSIVE_POWER] += fields[2].GetFloat();
+            bonus.stats[BONK_PASSIVE_ARMOR] += fields[3].GetFloat();
             uint8 const effect = fields[4].GetUInt8();
             if (effect < MAX_BONK_PASSIVE_EFFECT)
-            {
-                bonus.passiveEffect = effect;
-                bonus.passiveValue = fields[5].GetFloat();
-            }
+                bonus.stats[effect] += fields[5].GetFloat();
             else if (effect != 255)
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_set_bonus`: set %u has unknown passive effect %u, ignored.", setId, effect);
             bonus.description = fields[6].GetCppString();
@@ -856,10 +877,8 @@ BonkGearTotals BonkMgr::EvaluateGear(Player const* player) const
         if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             if (BonkItemStat const* stat = GetItemStat(item->GetEntry()))
             {
-                totals.power += stat->power;
-                totals.defense += stat->defense;
-                totals.passives[BONK_PASSIVE_ARMOR] += stat->armor;
-                totals.passives[BONK_PASSIVE_DODGE] += stat->dodge;
+                for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+                    totals.passives[effect] += stat->stats[effect];
                 if (stat->setId)
                     ++setPieces[stat->setId];
             }
@@ -870,10 +889,8 @@ BonkGearTotals BonkMgr::EvaluateGear(Player const* player) const
             {
                 if (itr.second < bonus.pieces)
                     continue;
-                totals.power += bonus.power;
-                totals.defense += bonus.defense;
-                if (bonus.passiveEffect >= 0)
-                    totals.passives[bonus.passiveEffect] += bonus.passiveValue;
+                for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+                    totals.passives[effect] += bonus.stats[effect];
             }
 
     return totals;

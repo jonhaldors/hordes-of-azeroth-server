@@ -60,6 +60,7 @@
 #include "Errors.h"
 #include "Utilities/Random.h"
 #include "Bonk/BonkPlayer.h"
+#include "Bonk/BonkRun.h"
 #include "Bonk/BonkRunStats.h"
 
 #include <limits>
@@ -1444,10 +1445,14 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
 
             uint32 creatureTypeMask = damageInfo->target->GetCreatureTypeMask();
             int32 mod = GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_CRIT_PERCENT_VERSUS, creatureTypeMask);
-            damageInfo->totalDamage = uint32((damageInfo->totalDamage) * float((200.0f + mod) / 100.0f));
+            float multiplier = (200.0f + mod) / 100.0f;
+            // Vanilla Bonk: Crit Damage, and a second crit past 100% crit chance.
+            if (BonkRun const* run = BonkRun::FromAttack(this, damageInfo->target))
+                multiplier = run->RollCritMultiplier(true);
+            damageInfo->totalDamage = uint32((damageInfo->totalDamage) * multiplier);
 
             for (uint8 i = 0; i < m_weaponDamageCount[damageInfo->attackType]; i++)
-                damageInfo->subDamage[i].damage = uint32((damageInfo->subDamage[i].damage) * float((200.0f + mod) / 100.0f));
+                damageInfo->subDamage[i].damage = uint32((damageInfo->subDamage[i].damage) * multiplier);
 
             break;
         }
@@ -1959,7 +1964,12 @@ void Unit::CalculateDamageAbsorbAndResist(SpellCaster* pCaster, SpellSchoolMask 
     else if (spellProto && spellProto->AttributesEx4 & SPELL_ATTR_EX4_IGNORE_RESISTANCES)
         canResist = false;
 
-    float const resistanceChance = pCaster->GetSpellResistChance(this, schoolMask, true);
+    // Vanilla Bonk: a hero's damage on run enemies is never partly resisted.
+    bool const bonkAttack = BonkRun::FromAttack(pCaster, this) != nullptr;
+    if (bonkAttack)
+        canResist = false;
+
+    float const resistanceChance = bonkAttack ? 0.0f : pCaster->GetSpellResistChance(this, schoolMask, true);
 
     if (canResist || (resistanceChance < 0))
     {
@@ -5333,6 +5343,10 @@ float Unit::GetSpellCritChance(Unit const* pVictim, SpellEntry const* spellProto
 
 bool Unit::IsSpellCrit(Unit const* pVictim, SpellEntry const* spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType, Spell* spell) const
 {
+    // Vanilla Bonk: a hero's spells crit run enemies by the hero's Crit.
+    if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
+        return spellProto->CanCrit() && roll_chance_f(run->GetCritChance());
+
     float critChance = GetSpellCritChance(pVictim, spellProto, schoolMask, attackType, spell);
     return roll_chance_f(critChance);
 }
