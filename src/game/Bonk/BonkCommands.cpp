@@ -12,6 +12,9 @@
 #include "Player.h"
 #include "WorldSession.h"
 
+#include <algorithm>
+#include <cmath>
+
 bool ChatHandler::HandleBonkStartCommand(char* args)
 {
     Player* player = m_session->GetPlayer();
@@ -286,5 +289,54 @@ bool ChatHandler::HandleBonkReloadCommand(char* /*args*/)
 
     sBonkMgr.Load();
     SendSysMessage("Bonk tables reloaded.");
+    return true;
+}
+
+bool ChatHandler::HandleBonkTelegraphCommand(char* args)
+{
+    // GM testing aid: a ground warning in front of you. In a run it fires
+    // (a burst of fire, no damage); anywhere else it just fills and goes.
+    // .bonk telegraph circle|cone|line|ring [size in yards] [seconds]
+    char* shapeArg = ExtractArg(&args);
+    BonkTelegraphShape shape;
+    if (!shapeArg || !ParseBonkTelegraphShape(shapeArg, shape))
+    {
+        SendSysMessage("Usage: .bonk telegraph circle|cone|line|ring [size] [seconds]");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    float size = shape == BONK_TELEGRAPH_LINE ? 20.0f : shape == BONK_TELEGRAPH_CONE ? 10.0f : 5.0f;
+    float seconds = 2.0f;
+    ExtractFloat(&args, size);
+    ExtractFloat(&args, seconds);
+    size = std::max(0.5f, std::min(size, 60.0f));
+    uint32 const durationMs = uint32(std::max(0.2f, std::min(seconds, 30.0f)) * IN_MILLISECONDS);
+
+    // Circles and rings a little ahead; cones and lines from your feet, the way you face.
+    Player* player = m_session->GetPlayer();
+    float const o = player->GetOrientation();
+    float x = player->GetPositionX(), y = player->GetPositionY();
+    if (shape == BONK_TELEGRAPH_CIRCLE || shape == BONK_TELEGRAPH_RING)
+    {
+        x += (size + 2.0f) * std::cos(o);
+        y += (size + 2.0f) * std::sin(o);
+    }
+    float const z = player->GetPositionZ();
+
+    if (BonkRun* run = player->GetBonkPlayer()->GetRun())
+    {
+        if (!run->IsActive() || run->IsPaused())
+        {
+            SendSysMessage("Not while the run is paused or over.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        run->AddTelegraph(shape, x, y, z, o, size, durationMs, [run, x, y, z]() { run->Erupt(ObjectGuid(), x, y, z, 0.0f, 0); });
+    }
+    else
+        BonkTelegraphs::Preview(player->GetMap(), shape, x, y, z, o, size, durationMs);
+
+    PSendSysMessage("A %s of %.1f yards, %.1f seconds.", GetBonkTelegraphShapeName(shape), size, durationMs / float(IN_MILLISECONDS));
     return true;
 }

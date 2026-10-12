@@ -108,6 +108,31 @@ void BonkTelegraphs::Add(Map* map, BonkTelegraphShape shape, float x, float y, f
     m_telegraphs.push_back(std::move(telegraph));
 }
 
+void BonkTelegraphs::Preview(Map* map, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs)
+{
+    if (shape >= MAX_BONK_TELEGRAPH_SHAPE || size <= 0.0f)
+        return;
+
+    Telegraph telegraph;
+    telegraph.shape = shape;
+    telegraph.x = x;
+    telegraph.y = y;
+    float const ground = map->GetHeight(x, y, z + 2.0f, true, 10.0f);
+    telegraph.z = ground > INVALID_HEIGHT ? ground : z;
+    telegraph.orientation = orientation;
+    telegraph.size = size;
+
+    // Both at once, gone a moment after the fill is full.
+    uint32 fill = 0;
+    for (uint32 i = 0; i < BONK_TELEGRAPH_FILL_COUNT; ++i)
+        if (BONK_TELEGRAPH_FILL_MS[i] <= durationMs)
+            fill = i;
+    uint32 const firstDisplay = BONK_TELEGRAPH_FIRST_DISPLAY + uint32(shape) * (1 + BONK_TELEGRAPH_FILL_COUNT);
+    uint32 const lifetime = BONK_TELEGRAPH_FILL_MS[fill] + IN_MILLISECONDS;
+    Place(map, firstDisplay, telegraph, lifetime);
+    Place(map, firstDisplay + 1 + fill, telegraph, lifetime);
+}
+
 void BonkTelegraphs::Update(Map* map, uint32 diff)
 {
     if (m_telegraphs.empty())

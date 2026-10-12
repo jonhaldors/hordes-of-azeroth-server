@@ -48,6 +48,10 @@ class BonkTelegraphs
         void Clear(Map* map);
         size_t Count() const { return m_telegraphs.size(); }
 
+        // A warning that nothing follows and that goes away on its own, to
+        // look at outside a run.
+        static void Preview(Map* map, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);
+
     private:
         struct Telegraph
         {

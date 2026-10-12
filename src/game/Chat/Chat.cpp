@@ -274,6 +274,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "shards",         SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkShardsCommand,          "", nullptr },
         { "skip",           SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSkipCommand,            "", nullptr },
         { "god",            SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkGodCommand,             "", nullptr },
+        { "telegraph",      SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkTelegraphCommand,       "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 
