@@ -1478,6 +1478,10 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
             for (uint8 i = 0; i < m_weaponDamageCount[damageInfo->attackType]; i++)
                 damageInfo->subDamage[i].damage = 0;
 
+            // Vanilla Bonk: a hero's dodge sets off Revenge.
+            if (Player* hero = damageInfo->target->ToPlayer())
+                if (BonkRun* run = hero->GetBonkPlayer()->GetRun())
+                    run->OnHeroDodge();
             break;
         }
         case MELEE_HIT_BLOCK:
@@ -5345,7 +5349,7 @@ bool Unit::IsSpellCrit(Unit const* pVictim, SpellEntry const* spellProto, SpellS
 {
     // Vanilla Bonk: a hero's spells crit run enemies by the hero's Crit.
     if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
-        return spellProto->CanCrit() && roll_chance_f(run->GetCritChance());
+        return spellProto->CanCrit() && roll_chance_f(run->GetCritChance(spellProto));
 
     float critChance = GetSpellCritChance(pVictim, spellProto, schoolMask, attackType, spell);
     return roll_chance_f(critChance);

@@ -434,7 +434,8 @@ void BonkMgr::LoadWeapons()
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
         "`class_mask`, `starter_class_mask`, `evolves_from`, `heal_pct`, `duration_ms`, "
-        "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage` FROM `bonk_weapon`"));
+        "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage`, `base_jumps`, `kill_below_pct`, `flags` "
+        "FROM `bonk_weapon`"));
 
     if (!result)
     {
@@ -452,7 +453,7 @@ void BonkMgr::LoadWeapons()
         weapon.icon = fields[2].GetCppString();
         weapon.description = fields[3].GetCppString();
         weapon.spellId = fields[4].GetUInt32();
-        weapon.target = BonkWeaponTarget(std::min<uint8>(fields[5].GetUInt8(), BONK_TARGET_GROUND));
+        weapon.target = BonkWeaponTarget(std::min<uint8>(fields[5].GetUInt8(), MAX_BONK_TARGET - 1));
         weapon.cooldownMs = std::max(200u, fields[6].GetUInt32());
         weapon.range = fields[7].GetFloat();
         weapon.damageFraction = fields[8].GetFloat();
@@ -469,6 +470,9 @@ void BonkMgr::LoadWeapons()
         weapon.altSpellId = fields[19].GetUInt32();
         weapon.altEvery = fields[20].GetUInt8();
         weapon.altDamage = fields[21].GetFloat();
+        weapon.baseJumps = fields[22].GetUInt8();
+        weapon.killBelowPct = fields[23].GetFloat();
+        weapon.flags = fields[24].GetUInt32();
 
         if (weapon.altSpellId && !sSpellMgr.GetSpellEntry(weapon.altSpellId))
         {
@@ -485,9 +489,23 @@ void BonkMgr::LoadWeapons()
 
         weapon.damageEffectIndex = FindDamageEffect(spellInfo);
         weapon.weaponDamage = weapon.damageEffectIndex < 0 && HasWeaponDamage(spellInfo);
-        // Shield spells cast nothing at enemies; the rest need a damage effect.
-        bool const shields = weapon.behavior == BONK_BEHAVIOR_SHIELD || weapon.behavior == BONK_BEHAVIOR_WARD;
-        if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage && !shields)
+        // Shields, marks, shouts, buffs and beasts deal no damage of their
+        // own (their ranks make them stronger); the rest need a damage effect.
+        bool damageless = false;
+        switch (weapon.behavior)
+        {
+            case BONK_BEHAVIOR_SHIELD:
+            case BONK_BEHAVIOR_WARD:
+            case BONK_BEHAVIOR_MARK:
+            case BONK_BEHAVIOR_DEMORALIZE:
+            case BONK_BEHAVIOR_BUFF:
+            case BONK_BEHAVIOR_PET:
+                damageless = true;
+                break;
+            default:
+                break;
+        }
+        if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage && !damageless)
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: spell %u of weapon %u has no damage effect; it will use its own values.", weapon.spellId, weapon.id);
 
         weapon.tickEffectIndex = FindTickEffect(spellInfo, weapon.damageEffectIndex);
@@ -497,6 +515,16 @@ void BonkMgr::LoadWeapons()
                 weapon.groundRadius = Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i]));
                 break;
             }
+        // A trap's radius is its range, whatever its spell's own.
+        if (weapon.behavior == BONK_BEHAVIOR_TRAP)
+        {
+            weapon.groundRadius = weapon.range;
+            if (!sObjectMgr.GetGameObjectTemplate(uint32(weapon.behaviorValue)))
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: trap %u uses unknown gameobject %u; skipped.", weapon.id, uint32(weapon.behaviorValue));
+                continue;
+            }
+        }
         if (weapon.target == BONK_TARGET_GROUND && weapon.groundRadius <= 0.0f)
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: ground weapon %u uses spell %u, which has no damaging ground effect; skipped.", weapon.id, weapon.spellId);

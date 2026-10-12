@@ -214,6 +214,22 @@ enum BonkWeaponTarget : uint8
     BONK_TARGET_SELF_AREA = 1,      // area spell around the player
     BONK_TARGET_RANDOM    = 2,      // fire at random enemies in range
     BONK_TARGET_GROUND    = 3,      // ground effect dropped where the most enemies stand
+    BONK_TARGET_STRONGEST = 4,      // fire at the strongest enemies in range: bosses, then elites, then the most health
+    BONK_TARGET_FARTHEST  = 5,      // fire at the farthest enemies in range
+    BONK_TARGET_CONE      = 6,      // every enemy in a cone towards the nearest one
+    BONK_TARGET_SELF      = 7,      // the hero: a buff, a trap at their feet, a pet
+    MAX_BONK_TARGET
+};
+
+// Extra traits of a weapon (bonk_weapon.flags).
+enum BonkWeaponFlags : uint32
+{
+    BONK_WEAPON_FLAG_RESET_ON_KILL    = 0x01,  // a kill with kill_below_pct makes it ready again at once
+    BONK_WEAPON_FLAG_ALWAYS_CRIT      = 0x02,  // its hits always crit
+    BONK_WEAPON_FLAG_REFRESH_DOTS     = 0x04,  // its hits renew the hero's damage over time on the enemy
+    BONK_WEAPON_FLAG_KNOCKBACK        = 0x08,  // knocks the enemies it hits away from the hero
+    BONK_WEAPON_FLAG_EXPLODE_ON_DEATH = 0x10,  // MARK: alt bursts where a marked enemy dies, and the mark moves on
+    BONK_WEAPON_FLAG_KILL_WITH_ALT    = 0x20,  // kill_below_pct kills are cast with alt
 };
 
 float const BONK_CLEAVE_RADIUS    = 6.0f;   // a cleave or pierce hits enemies this close to its target
@@ -292,6 +308,15 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_WARD          = 9,    // like SHIELD, and alt bursts around the hero when that Shield breaks
     BONK_BEHAVIOR_VULNERABLE    = 10,   // alt (a stacking debuff) on every enemy it hits
     BONK_BEHAVIOR_EXECUTE       = 11,   // alt_damage times the damage on enemies below value % health
+    BONK_BEHAVIOR_SPIN          = 12,   // around the hero: pulses again every value ms for duration_ms, wherever the hero goes
+    BONK_BEHAVIOR_LEECH         = 13,   // its damage over time heals the hero value % of the damage
+    BONK_BEHAVIOR_MARK          = 14,   // enemies it hits take value % more damage from everything for duration_ms; alt is a look on them
+    BONK_BEHAVIOR_DEMORALIZE    = 15,   // enemies wearing its spell deal value % less damage
+    BONK_BEHAVIOR_BUFF          = 16,   // casts its spell on the hero: value % more Power for duration_ms
+    BONK_BEHAVIOR_REVENGE       = 17,   // +value % Dodge; fires only after the hero dodges; duration_ms: hits taken that long after strike back
+    BONK_BEHAVIOR_BURST         = 18,   // value more shots at each target, quickly after the first
+    BONK_BEHAVIOR_TRAP          = 19,   // a trap (value: its gameobject) that goes off when an enemy steps on it; range is its radius
+    BONK_BEHAVIOR_PET           = 20,   // beasts that fight for the hero: a hit's damage every tick_ms, value their size
     MAX_BONK_BEHAVIOR
 };
 
@@ -325,6 +350,9 @@ struct BonkWeapon
     uint32 altSpellId = 0;
     uint8 altEvery = 0;
     float altDamage = 1.0f;
+    uint8 baseJumps = 0;            // pierces, bounces or cleaved enemies before ranks add more
+    float killBelowPct = 0.0f;      // normal enemies below this % health die at once
+    uint32 flags = 0;               // BonkWeaponFlags
 
     int32 damageEffectIndex = -1;   // effect whose base points carry the damage
     int32 tickEffectIndex = -1;     // damage over time besides damageEffectIndex (a hit that burns on)
@@ -332,10 +360,39 @@ struct BonkWeapon
     bool weaponDamage = false;      // a melee or ranged attack: its damage replaces the weapon swing
     bool lasting = false;           // damage over time or a ground effect: ranks can make it last longer
 
+    bool HasFlag(BonkWeaponFlags flag) const { return (flags & flag) != 0; }
     // Aimed at enemies one by one rather than an area around the hero or on the ground.
-    bool IsAimed() const { return (target == BONK_TARGET_NEAREST || target == BONK_TARGET_RANDOM) && behavior != BONK_BEHAVIOR_CLEAVE; }
-    // Area spells, ground spells and cleaves grow in area or reach.
-    bool HasArea() const { return target == BONK_TARGET_SELF_AREA || target == BONK_TARGET_GROUND || behavior == BONK_BEHAVIOR_CLEAVE; }
+    bool IsAimed() const
+    {
+        return (target == BONK_TARGET_NEAREST || target == BONK_TARGET_RANDOM || target == BONK_TARGET_STRONGEST || target == BONK_TARGET_FARTHEST) &&
+            behavior != BONK_BEHAVIOR_CLEAVE;
+    }
+    // Area spells, ground spells, cones, cleaves and traps grow in area or reach.
+    bool HasArea() const
+    {
+        return target == BONK_TARGET_SELF_AREA || target == BONK_TARGET_GROUND || target == BONK_TARGET_CONE ||
+            behavior == BONK_BEHAVIOR_CLEAVE || behavior == BONK_BEHAVIOR_TRAP;
+    }
+    // Rare ranks widen it rather than hitting one more enemy.
+    bool IsWide() const { return HasArea() && behavior != BONK_BEHAVIOR_CLEAVE; }
+    // Rare ranks can add a pierce, bounce, spread or cleaved enemy.
+    bool HasJumps() const { return IsAimed() || behavior == BONK_BEHAVIOR_CLEAVE; }
+    // Epic ranks can add a target, a ground drop, a trap or a beast.
+    bool HasTargets() const
+    {
+        if (target == BONK_TARGET_SELF)
+            return behavior == BONK_BEHAVIOR_TRAP || behavior == BONK_BEHAVIOR_PET;
+        return target != BONK_TARGET_SELF_AREA && target != BONK_TARGET_CONE;
+    }
+    // What an Epic rank adds one of.
+    char const* GetTargetNoun() const
+    {
+        if (behavior == BONK_BEHAVIOR_TRAP)
+            return "trap";
+        if (behavior == BONK_BEHAVIOR_PET)
+            return "beast";
+        return target == BONK_TARGET_GROUND ? "drop" : "target";
+    }
 };
 
 // The hero's stats. Every source adds into one total per stat: worn gear,

@@ -10,6 +10,8 @@
 #include "CellImpl.h"
 #include "Chat.h"
 #include "Creature.h"
+#include "CreatureAI.h"
+#include "DBCStores.h"
 #include "GameObject.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
@@ -119,6 +121,32 @@ namespace
     float const BONK_WEAPON_ORB_SCALE      = 1.2f;
     float const BONK_WEAPON_ORB_SPEED      = 0.35f;    // times a running hero's speed
     float const BONK_PLAYER_RUN_SPEED      = 7.0f;     // yards a second
+    float const BONK_CONE_ARC              = M_PI_F / 2.0f;    // a cone's width before Area; never wider than half a circle
+    float const BONK_KNOCKBACK_DISTANCE    = 6.0f;
+    float const BONK_KNOCKBACK_SPEED       = 18.0f;
+    float const BONK_KNOCKBACK_HEIGHT      = 2.0f;
+    uint32 const BONK_BURST_INTERVAL_MS    = 150;      // between a burst's shots
+    float const BONK_MAX_MARK              = 100.0f;   // % more damage a mark can add
+    float const BONK_MAX_DEMORALIZE        = 60.0f;    // % less damage a shout can take off
+    float const BONK_MARK_JUMP_RANGE       = 15.0f;    // a mark moves on to an enemy this close to the one that died
+    // Traps: how near an enemy sets one off, how soon after it lands, how
+    // long it lies, how many one spell can have out, and how near an enemy
+    // must be before the hero drops any.
+    float const BONK_TRAP_TRIGGER_RADIUS   = 2.5f;
+    int32 const BONK_TRAP_ARM_MS           = 500;
+    int32 const BONK_TRAP_LIFETIME_MS      = 30000;
+    size_t const BONK_MAX_TRAPS            = 8;
+    float const BONK_TRAP_AWARE_RANGE      = 25.0f;
+    float const BONK_TRAP_SPACING          = 3.0f;     // between traps dropped together
+    uint32 const BONK_TRAP_CHECK_MS        = 100;
+    // Beasts: their creature, how near the hero they look for prey, how far
+    // they may stray before they are brought back, and how often they look.
+    uint32 const BONK_PET_ENTRY            = 900112;
+    float const BONK_PET_HUNT_RANGE        = 25.0f;
+    float const BONK_PET_LEASH_RANGE       = 40.0f;
+    float const BONK_PET_SPEED             = 1.4f;     // times a creature's run speed: keeps up with the hero
+    uint32 const BONK_PET_CHECK_MS         = 250;
+    uint32 const BONK_SPELL_BLEED_HEAL     = 23881;    // Bloodthirst: names Bloodthirst's heal in combat text
 
     // Elites drop a chest by chance (%), better with every affix and every
     // point of Luck; after this many elites without one, the next drops one.
@@ -258,6 +286,53 @@ namespace
         orb->RemoveAllAuras();
         orb->SetDisplayId(BONK_DISPLAY_INVISIBLE);
         orb->DespawnOrUnsummon(BONK_ORB_FADE_MS);
+    }
+
+    // A hunter's beast: the run picks its prey (BonkRun::UpdatePetTargets);
+    // it only bites. Run enemies never fight back, they fight the hero.
+    class BonkPetAI : public CreatureAI
+    {
+        public:
+            explicit BonkPetAI(Creature* creature) : CreatureAI(creature) {}
+
+            void MoveInLineOfSight(Unit*) override {}
+            void AttackedBy(Unit*) override {}
+            void EnterEvadeMode() override {}
+            void UpdateAI(uint32 const /*diff*/) override
+            {
+                Unit* victim = m_creature->GetVictim();
+                if (victim && victim->IsAlive())
+                    DoMeleeAttackIfReady();
+            }
+    };
+
+    void InstallPetAI(Creature* creature)
+    {
+        creature->GetMotionMaster()->Initialize();
+        creature->SetAI(new BonkPetAI(creature));
+    }
+
+    // Its biggest effect radius, 0 for none.
+    float GetSpellRadiusOf(SpellEntry const* spellInfo)
+    {
+        float radius = 0.0f;
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (spellInfo->EffectRadiusIndex[i])
+                radius = std::max(radius, Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i])));
+        return radius;
+    }
+
+    // Bosses rank above mini-bosses, above elites, above normal enemies.
+    uint32 GetKindRank(Creature const* mob)
+    {
+        BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+        switch (ai ? ai->GetKind() : BONK_SPAWN_NORMAL)
+        {
+            case BONK_SPAWN_BOSS:     return 3;
+            case BONK_SPAWN_MINIBOSS: return 2;
+            case BONK_SPAWN_ELITE:    return 1;
+            default:                  return 0;
+        }
     }
 
     // Weapon casts made while this is alive take no ammo (Spell::TakeAmmo).
@@ -600,6 +675,14 @@ void BonkRun::StartStage()
     DespawnPools();
     DespawnWeaponOrbs();
     m_pendingCasts.clear();
+    DespawnTraps();
+    DespawnPets();
+    m_marks.clear();
+    m_buffs.clear();
+    m_retaliations.clear();
+    m_retaliateUntil = 0;
+    m_dodged = false;
+    m_bleedHeal = 0.0f;
     m_player->GetBonkPlayer()->SendAddon("mobclear");
 
     m_player->GetBonkPlayer()->RecordStage(m_tier.id, m_stage);
@@ -660,6 +743,8 @@ void BonkRun::UpdateRunning(uint32 diff)
         return;
     UpdatePendingCasts(diff);
     UpdateWeaponOrbs(diff);
+    UpdateTraps(diff);
+    UpdatePetTargets(diff);
     if (m_state != STATE_RUNNING)
         return;
 
@@ -762,6 +847,18 @@ void BonkRun::UpdateRecovery(uint32 diff)
 
     if (heal && m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth())
         m_player->ModifyHealth(int32(ReduceHealing(heal)));
+
+    // Bloodthirst: what the bleeds took this second, as one heal.
+    uint32 const bleedHeal = uint32(m_bleedHeal);
+    m_bleedHeal = 0.0f;
+    if (bleedHeal && m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth())
+    {
+        uint32 const amount = ReduceHealing(bleedHeal);
+        if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_BLEED_HEAL))
+            m_player->DealHeal(m_player, amount, spellInfo);
+        else
+            m_player->ModifyHealth(int32(amount));
+    }
 }
 
 void BonkRun::UpdateEvents()
@@ -1435,9 +1532,16 @@ bool BonkRun::RollDodge(Unit const* victim) const
     return chance > 0.0f && roll_chance_f(chance);
 }
 
-float BonkRun::GetCritChance() const
+float BonkRun::GetCritChance(SpellEntry const* spell) const
 {
-    return BONK_BASE_CRIT + GetPassiveTotal(BONK_PASSIVE_CRIT);
+    float const chance = BONK_BASE_CRIT + GetPassiveTotal(BONK_PASSIVE_CRIT);
+    if (IsReckless())
+        return std::max(100.0f, chance);
+    if (spell)
+        for (OwnedWeapon const& owned : m_weapons)
+            if (owned.weapon.spellId == spell->Id && owned.weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT))
+                return std::max(100.0f, chance);
+    return chance;
 }
 
 float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
@@ -1455,10 +1559,12 @@ float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
 
 float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) const
 {
-    // Power and Mastery add up rather than multiply.
-    float percent = GetPassiveTotal(BONK_PASSIVE_POWER);
+    // Power, a shout's Power and Mastery add up rather than multiply; a
+    // mark on the enemy multiplies everything.
+    float percent = GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower();
+    float const mark = 1.0f + GetMarkBonus(victim) / 100.0f;
     if (!spell)
-        return std::max(0.0f, 1.0f + percent / 100.0f);
+        return std::max(0.0f, 1.0f + percent / 100.0f) * mark;
 
     // Class Mastery: the spell itself, its school, and the state of the enemy.
     uint32 const school = spell->GetSpellSchoolMask();
@@ -1489,7 +1595,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) 
                     percent += bonus.second;
     }
 
-    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f);
+    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f) * mark;
 
     // An executing spell hits enemies low on health many times as hard.
     if (victim)
@@ -1975,6 +2081,8 @@ void BonkRun::EnterNextStage()
     DespawnObjects();
     DespawnMobs();
     DespawnOrbs();
+    DespawnTraps();
+    DespawnPets();
 
     std::string error;
     if (!TeleportToStage(*next, error))
@@ -2038,6 +2146,11 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             if (passive->effect == effect)
                 total += passive->valuePerRank * itr.second;
+    // Revenge needs dodges, so it brings some.
+    if (effect == BONK_PASSIVE_DODGE)
+        for (OwnedWeapon const& owned : m_weapons)
+            if (owned.weapon.behavior == BONK_BEHAVIOR_REVENGE)
+                total += owned.weapon.behaviorValue;
     return total;
 }
 
@@ -2148,9 +2261,20 @@ void BonkRun::GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInf
     }
 }
 
-void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare)
+void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare, bool followUp)
 {
     BonkWeapon const& weapon = owned.weapon;
+
+    // An enemy low enough dies to this hit: it hits for more than is left.
+    if (CanKill(weapon, target))
+    {
+        if (weapon.HasFlag(BONK_WEAPON_FLAG_KILL_WITH_ALT) && weapon.altSpellId)
+            if (SpellEntry const* killInfo = sSpellMgr.GetSpellEntry(weapon.altSpellId))
+                spellInfo = killInfo;
+        damageShare = std::max(damageShare, 2.0f * target->GetHealth() / std::max(1.0f, GetWeaponDamage(owned)));
+        owned.killed = true;
+    }
+
     optional<int32> basePoints[MAX_EFFECT_INDEX];
     GetBasePoints(owned, spellInfo, damageShare, basePoints);
     if (weapon.weaponDamage)
@@ -2158,10 +2282,14 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
 
     m_player->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], true);
 
+    if (followUp)
+        return;
+
+    uint32 const now = WorldTimer::getMSTime();
     if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
     {
         int32 const duration = m_player->GetBonkPlayer()->AdjustDuration(weapon.spellId, spellInfo->GetDuration());
-        owned.carriers[target->GetObjectGuid()] = WorldTimer::getMSTime() + uint32(std::max(0, duration));
+        owned.carriers[target->GetObjectGuid()] = now + uint32(std::max(0, duration));
     }
 
     // A stacking debuff on everything it hits.
@@ -2181,6 +2309,175 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
         burst.z = target->GetPositionZ();
         m_pendingCasts.push_back(burst);
     }
+
+    // A mark: the enemy takes more damage from everything for a while.
+    if (weapon.behavior == BONK_BEHAVIOR_MARK)
+    {
+        Mark& mark = m_marks[target->GetObjectGuid()];
+        mark.weaponId = weapon.id;
+        mark.untilMs = now + uint32(weapon.durationMs * m_player->GetBonkPlayer()->TweakSpell(weapon.spellId).durationScale);
+        if (weapon.altSpellId && !weapon.HasFlag(BONK_WEAPON_FLAG_EXPLODE_ON_DEATH))
+            m_player->CastSpell(target, weapon.altSpellId, true);
+    }
+
+    // More shots at the same enemy, quickly after the first.
+    if (weapon.behavior == BONK_BEHAVIOR_BURST)
+        for (uint32 shot = 1; shot <= uint32(weapon.behaviorValue); ++shot)
+        {
+            PendingCast follow;
+            follow.weaponId = weapon.id;
+            follow.spellId = spellInfo->Id;
+            follow.leftMs = int32(shot * BONK_BURST_INTERVAL_MS);
+            follow.target = target->GetObjectGuid();
+            follow.strike = true;
+            follow.share = damageShare;
+            m_pendingCasts.push_back(follow);
+        }
+
+    if (weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
+        KnockBack(target);
+
+    // The hero's damage over time on the enemy starts over.
+    if (weapon.HasFlag(BONK_WEAPON_FLAG_REFRESH_DOTS))
+        for (OwnedWeapon& other : m_weapons)
+            if (&other != &owned && other.weapon.lasting && other.weapon.IsAimed() && target->HasAura(other.weapon.spellId))
+                if (SpellEntry const* otherInfo = sSpellMgr.GetSpellEntry(other.weapon.spellId))
+                    StrikeWith(other, otherInfo, target, 1.0f, true);
+}
+
+bool BonkRun::CanKill(BonkWeapon const& weapon, Creature const* target) const
+{
+    if (weapon.killBelowPct <= 0.0f || !target->IsAlive() || target->GetHealthPercent() >= weapon.killBelowPct)
+        return false;
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(target->AI());
+    return ai && ai->GetKind() == BONK_SPAWN_NORMAL;
+}
+
+void BonkRun::SortStrongestFirst(std::vector<Creature*>& mobs) const
+{
+    std::stable_sort(mobs.begin(), mobs.end(), [](Creature const* a, Creature const* b)
+    {
+        uint32 const rankA = GetKindRank(a);
+        uint32 const rankB = GetKindRank(b);
+        if (rankA != rankB)
+            return rankA > rankB;
+        return a->GetHealth() > b->GetHealth();
+    });
+}
+
+std::vector<Creature*> BonkRun::GetMobsInCone(OwnedWeapon const& owned, float range) const
+{
+    std::vector<Creature*> mobs = GetMobsInRange(range);
+    mobs.erase(std::remove_if(mobs.begin(), mobs.end(), [&](Creature* mob) { return !m_player->IsWithinLOSInMap(mob); }), mobs.end());
+    if (mobs.empty())
+        return mobs;
+
+    // Aimed at the nearest enemy, whichever way the hero faces.
+    float const aim = m_player->GetAngle(mobs.front());
+    float const halfArc = std::min(M_PI_F, BONK_CONE_ARC * GetWeaponArea(owned)) / 2.0f;
+    mobs.erase(std::remove_if(mobs.begin(), mobs.end(), [&](Creature* mob)
+    {
+        float diff = std::fabs(m_player->GetAngle(mob) - aim);
+        if (diff > M_PI_F)
+            diff = 2.0f * M_PI_F - diff;
+        return diff > halfArc;
+    }), mobs.end());
+    return mobs;
+}
+
+void BonkRun::KnockBack(Creature* mob)
+{
+    // Bosses stand their ground; held enemies stay held.
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+    if (!ai || ai->GetKind() == BONK_SPAWN_BOSS || ai->GetKind() == BONK_SPAWN_MINIBOSS || !mob->IsAlive() ||
+        mob->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED))
+        return;
+
+    float const angle = m_player->GetAngle(mob);
+    float x = mob->GetPositionX() + BONK_KNOCKBACK_DISTANCE * std::cos(angle);
+    float y = mob->GetPositionY() + BONK_KNOCKBACK_DISTANCE * std::sin(angle);
+    float z = mob->GetPositionZ();
+    mob->GetMap()->GetWalkHitPosition(nullptr, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), x, y, z);
+    mob->GetMotionMaster()->MoveJump(x, y, z, BONK_KNOCKBACK_SPEED, BONK_KNOCKBACK_HEIGHT);
+}
+
+float BonkRun::GetMarkBonus(Unit const* victim) const
+{
+    if (!victim)
+        return 0.0f;
+    auto itr = m_marks.find(victim->GetObjectGuid());
+    if (itr == m_marks.end() || int32(itr->second.untilMs - WorldTimer::getMSTime()) <= 0)
+        return 0.0f;
+    OwnedWeapon const* owned = FindOwned(itr->second.weaponId);
+    if (!owned)
+        return 0.0f;
+
+    // A mark that deals no damage of its own grows with its damage ranks.
+    float bonus = owned->weapon.behaviorValue;
+    if (owned->weapon.damageEffectIndex < 0 && !owned->weapon.weaponDamage)
+        bonus *= 1.0f + owned->damageBonus / 100.0f;
+    return std::min(bonus, BONK_MAX_MARK);
+}
+
+void BonkRun::OnMarkedDeath(Creature const* mob)
+{
+    auto itr = m_marks.find(mob->GetObjectGuid());
+    if (itr == m_marks.end())
+        return;
+    Mark const mark = itr->second;
+    m_marks.erase(itr);
+
+    OwnedWeapon* owned = FindOwned(mark.weaponId);
+    if (!owned || int32(mark.untilMs - WorldTimer::getMSTime()) <= 0 || !owned->weapon.HasFlag(BONK_WEAPON_FLAG_EXPLODE_ON_DEATH))
+        return;
+
+    // It blows up where it fell...
+    if (owned->weapon.altSpellId)
+    {
+        PendingCast blast;
+        blast.weaponId = owned->weapon.id;
+        blast.spellId = owned->weapon.altSpellId;
+        blast.x = mob->GetPositionX();
+        blast.y = mob->GetPositionY();
+        blast.z = mob->GetPositionZ();
+        m_pendingCasts.push_back(blast);
+    }
+
+    // ...and the mark moves on to the strongest enemy nearby without one.
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(owned->weapon.spellId);
+    if (!spellInfo)
+        return;
+    std::vector<Creature*> mobs = GetMobsInRange(BONK_MARK_JUMP_RANGE, mob);
+    SortStrongestFirst(mobs);
+    for (Creature* next : mobs)
+        if (GetMarkBonus(next) <= 0.0f)
+        {
+            FiringWeapon firing(m_player->GetBonkPlayer());
+            StrikeWith(*owned, spellInfo, next, 1.0f);
+            break;
+        }
+}
+
+float BonkRun::GetBuffPower() const
+{
+    float power = 0.0f;
+    uint32 const now = WorldTimer::getMSTime();
+    for (auto const& itr : m_buffs)
+        if (int32(itr.second - now) > 0)
+            if (OwnedWeapon const* owned = FindOwned(itr.first))
+                power += owned->weapon.behaviorValue * (1.0f + owned->damageBonus / 100.0f);
+    return power;
+}
+
+bool BonkRun::IsReckless() const
+{
+    uint32 const now = WorldTimer::getMSTime();
+    for (auto const& itr : m_buffs)
+        if (int32(itr.second - now) > 0)
+            if (OwnedWeapon const* owned = FindOwned(itr.first))
+                if (owned->weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT))
+                    return true;
+    return false;
 }
 
 void BonkRun::SpreadFrom(Creature const* dead)
@@ -2227,6 +2524,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
     if (!spellInfo)
         return;
+    owned.killed = false;
 
     // Shield spells cast nothing at enemies: the hero gets a spell Shield,
     // bigger with every damage rank.
@@ -2255,17 +2553,68 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         tweak.tickScale = 1.0f / GetHasteRate();
     }
     BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(weapon.spellId);
+    uint32 const now = WorldTimer::getMSTime();
 
-    // Area weapons and melee reach grow; a ground weapon's range is where it
-    // can aim, not its area.
-    bool const reachGrows = weapon.target == BONK_TARGET_SELF_AREA || weapon.behavior == BONK_BEHAVIOR_CLEAVE;
+    // A shout on the hero: more Power while it lasts.
+    if (weapon.behavior == BONK_BEHAVIOR_BUFF)
+    {
+        if (m_player->IsAlive())
+        {
+            FiringWeapon firing(m_player->GetBonkPlayer());
+            m_player->CastSpell(m_player, spellInfo, true);
+            m_buffs[weapon.id] = now + uint32(weapon.durationMs * tweak.durationScale);
+        }
+        owned.timer = GetWeaponCooldown(owned);
+        return;
+    }
+
+    // Beasts are called, brought back and kept up to strength.
+    if (weapon.behavior == BONK_BEHAVIOR_PET)
+    {
+        UpdatePets(owned);
+        owned.timer = GetWeaponCooldown(owned);
+        return;
+    }
+
+    // Traps at the hero's feet, once enemies are about.
+    if (weapon.behavior == BONK_BEHAVIOR_TRAP && weapon.target == BONK_TARGET_SELF)
+    {
+        if (GetMobsInRange(BONK_TRAP_AWARE_RANGE).empty())
+        {
+            owned.timer = 250;
+            return;
+        }
+        DropTraps(owned);
+        owned.timer = GetWeaponCooldown(owned);
+        return;
+    }
+
+    // Revenge answers a dodge, and only a dodge.
+    if (weapon.behavior == BONK_BEHAVIOR_REVENGE && !m_dodged)
+    {
+        owned.timer = 100;
+        return;
+    }
+
+    // Marks that ran out are forgotten.
+    if (weapon.behavior == BONK_BEHAVIOR_MARK)
+        for (auto itr = m_marks.begin(); itr != m_marks.end();)
+        {
+            if (int32(itr->second.untilMs - now) <= 0)
+                itr = m_marks.erase(itr);
+            else
+                ++itr;
+        }
+
+    // Area weapons, cones and melee reach grow; a ground weapon's range is
+    // where it can aim, not its area.
+    bool const reachGrows = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE || weapon.behavior == BONK_BEHAVIOR_CLEAVE;
     float const range = weapon.range * (reachGrows ? areaScale : 1.0f + owned.rangeBonus / 100.0f);
     std::vector<Creature*> mobs = GetMobsInRange(range);
 
     // Damage over time wants a fresh enemy each cast: casting again on one
     // that has it restarts its ticks, so with few enemies around they never
     // came.
-    uint32 const now = WorldTimer::getMSTime();
     if (weapon.target == BONK_TARGET_RANDOM)
     {
         for (auto itr = owned.recentTargets.begin(); itr != owned.recentTargets.end();)
@@ -2280,12 +2629,22 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             return mob->HasAura(weapon.spellId) || owned.recentTargets.count(mob->GetObjectGuid());
         }), mobs.end());
     }
+    else if (weapon.target == BONK_TARGET_STRONGEST)
+        SortStrongestFirst(mobs);
+    else if (weapon.target == BONK_TARGET_FARTHEST)
+        std::reverse(mobs.begin(), mobs.end());
+
+    // A killing shot goes for the enemies it can finish first.
+    if (weapon.killBelowPct > 0.0f)
+        std::stable_partition(mobs.begin(), mobs.end(), [&](Creature* mob) { return CanKill(weapon, mob); });
 
     if (mobs.empty())
     {
         owned.timer = 250;      // look again soon
         return;
     }
+    if (weapon.behavior == BONK_BEHAVIOR_REVENGE)
+        m_dodged = false;
 
     // An orb sets off towards where the hero faces and does the casting.
     if (weapon.behavior == BONK_BEHAVIOR_ORB)
@@ -2325,6 +2684,34 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             m_pendingCasts.push_back(echo);
         }
 
+        // A spin: the same pulse again and again while it lasts, wherever
+        // the hero has got to.
+        if (weapon.behavior == BONK_BEHAVIOR_SPIN && weapon.behaviorValue >= 100.0f)
+        {
+            uint32 const every = uint32(weapon.behaviorValue);
+            uint32 const length = uint32(weapon.durationMs * tweak.durationScale);
+            for (uint32 at = every; at <= length; at += every)
+            {
+                PendingCast pulse;
+                pulse.weaponId = weapon.id;
+                pulse.spellId = castInfo->Id;
+                pulse.leftMs = int32(at);
+                pulse.selfArea = true;
+                m_pendingCasts.push_back(pulse);
+            }
+        }
+
+        // Something more goes off around the hero a moment later.
+        if (weapon.behavior == BONK_BEHAVIOR_DELAYED && weapon.altSpellId)
+        {
+            PendingCast wave;
+            wave.weaponId = weapon.id;
+            wave.spellId = weapon.altSpellId;
+            wave.leftMs = int32(weapon.behaviorValue);
+            wave.selfArea = true;
+            m_pendingCasts.push_back(wave);
+        }
+
         // A spell Shield for every enemy in reach.
         if (weapon.behavior == BONK_BEHAVIOR_SHIELD_PER_HIT && m_player->IsAlive())
             AddSpellShield(uint32(m_player->GetMaxHealth() * weapon.behaviorValue / 100.0f * mobs.size()));
@@ -2334,6 +2721,17 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             for (Creature* mob : mobs)
                 if (m_player->HasInArc(mob, BONK_FREEZE_ARC))
                     m_player->CastSpell(mob, weapon.altSpellId, true);
+    }
+    else if (weapon.target == BONK_TARGET_CONE)
+    {
+        std::vector<Creature*> const cone = GetMobsInCone(owned, range);
+        for (Creature* mob : cone)
+            StrikeWith(owned, castInfo, mob, castShare);
+        if (cone.empty())
+        {
+            owned.timer = 250;
+            return;
+        }
     }
     else if (weapon.target == BONK_TARGET_GROUND)
     {
@@ -2401,11 +2799,11 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         uint32 const fired = uint32(struck.size());
 
         // A cleave also hits the enemies next to each target, for a share
-        // of the damage; an aimed spell's pierces hit them in full. Every
-        // enemy is hit once.
+        // of the damage; an aimed spell's pierces and bounces hit them in
+        // full. Every enemy is hit once.
         bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
         bool const pierce = weapon.IsAimed() && !weapon.chains && weapon.behavior != BONK_BEHAVIOR_SPREAD;
-        uint32 const victims = cleave ? 1 + owned.extraJumps : pierce ? owned.extraJumps : 0;
+        uint32 const victims = cleave ? 1 + weapon.baseJumps + owned.extraJumps : pierce ? weapon.baseJumps + owned.extraJumps : 0;
         if (victims)
         {
             float const share = cleave ? weapon.behaviorValue : 1.0f;
@@ -2444,8 +2842,10 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
 
     owned.timer = GetWeaponCooldown(owned);
 
-    // Class Mastery: now and then a spell is ready again at once.
-    if (m_mastery.clearcasting > 0.0f && roll_chance_f(m_mastery.clearcasting))
+    // Class Mastery: now and then a spell is ready again at once; a killing
+    // shot that resets is too.
+    if ((m_mastery.clearcasting > 0.0f && roll_chance_f(m_mastery.clearcasting)) ||
+        (owned.killed && weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL)))
         owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_DELAY_MS);
 }
 
@@ -2456,10 +2856,21 @@ bool BonkRun::HasBehavior(BonkWeaponBehavior behavior) const
 
 void BonkRun::CastSelfArea(OwnedWeapon& owned, SpellEntry const* spellInfo, float areaScale)
 {
+    float const share = spellInfo->Id == owned.weapon.spellId ? 1.0f : owned.weapon.altDamage;
+    FiringWeapon firing(m_player->GetBonkPlayer());
+
+    // A spell for one enemy (Revenge): every enemy in reach.
+    if (spellInfo->EffectImplicitTargetA[EFFECT_INDEX_0] == TARGET_UNIT_ENEMY)
+    {
+        for (Creature* mob : GetMobsInRange(owned.weapon.range * areaScale))
+            if (m_player->IsWithinLOSInMap(mob))
+                StrikeWith(owned, spellInfo, mob, share);
+        return;
+    }
+
     m_player->GetBonkPlayer()->TweakSpell(spellInfo->Id).areaScale = areaScale;
     optional<int32> basePoints[MAX_EFFECT_INDEX];
-    GetBasePoints(owned, spellInfo, spellInfo->Id == owned.weapon.spellId ? 1.0f : owned.weapon.altDamage, basePoints);
-    FiringWeapon firing(m_player->GetBonkPlayer());
+    GetBasePoints(owned, spellInfo, share, basePoints);
     m_player->CastCustomSpell(m_player, spellInfo, basePoints[0], basePoints[1], basePoints[2], true);
 }
 
@@ -2467,6 +2878,12 @@ void BonkRun::AddSpellShield(uint32 amount)
 {
     uint32 const cap = uint32(m_player->GetMaxHealth() * BONK_SPELL_SHIELD_CAP);
     m_spellShield = std::min(m_spellShield + amount, cap);
+}
+
+void BonkRun::ScaleRadius(SpellEntry const* spellInfo, float radius)
+{
+    float const own = GetSpellRadiusOf(spellInfo);
+    m_player->GetBonkPlayer()->TweakSpell(spellInfo->Id).areaScale = own > 0.0f ? radius / own : 1.0f;
 }
 
 void BonkRun::UpdatePendingCasts(uint32 diff)
@@ -2481,10 +2898,31 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
                     CastSelfArea(owned, info, GetWeaponArea(owned));
     }
 
+    Map* map = m_player->GetMap();
+
+    // Retaliation: every enemy that hit the hero is struck back.
+    if (!m_retaliations.empty())
+    {
+        std::vector<ObjectGuid> const attackers = std::move(m_retaliations);
+        m_retaliations.clear();
+        for (OwnedWeapon& owned : m_weapons)
+        {
+            if (owned.weapon.behavior != BONK_BEHAVIOR_REVENGE || !m_player->IsAlive())
+                continue;
+            SpellEntry const* info = sSpellMgr.GetSpellEntry(owned.weapon.spellId);
+            if (!info)
+                continue;
+            FiringWeapon firing(m_player->GetBonkPlayer());
+            for (ObjectGuid const& guid : attackers)
+                if (Creature* mob = map->GetCreature(guid))
+                    if (mob->IsAlive())
+                        StrikeWith(owned, info, mob, 1.0f, true);
+        }
+    }
+
     if (m_pendingCasts.empty())
         return;
 
-    Map* map = m_player->GetMap();
     std::vector<PendingCast> due;
     for (auto itr = m_pendingCasts.begin(); itr != m_pendingCasts.end();)
     {
@@ -2509,6 +2947,35 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
         if (cast.echo)
         {
             CastSelfArea(*owned, info, GetWeaponArea(*owned) * BONK_ECHO_AREA);
+            continue;
+        }
+
+        // Around the hero again: a spin's next pulse, or a wave half again
+        // as wide as the spell that sent it.
+        if (cast.selfArea)
+        {
+            float scale = GetWeaponArea(*owned);
+            if (info->Id != owned->weapon.spellId)
+                if (float const own = GetSpellRadiusOf(info))
+                    scale *= owned->weapon.range * BONK_ECHO_AREA / own;
+            CastSelfArea(*owned, info, scale);
+            continue;
+        }
+
+        // A burst's later shot: at the same enemy, or the nearest if it fell.
+        if (cast.strike)
+        {
+            Creature* target = map->GetCreature(cast.target);
+            if (!target || !target->IsAlive())
+            {
+                std::vector<Creature*> const mobs = GetMobsInRange(owned->weapon.range * (1.0f + owned->rangeBonus / 100.0f));
+                target = mobs.empty() ? nullptr : mobs.front();
+            }
+            if (target)
+            {
+                FiringWeapon firing(m_player->GetBonkPlayer());
+                StrikeWith(*owned, info, target, cast.share, true);
+            }
             continue;
         }
 
@@ -2628,6 +3095,300 @@ void BonkRun::DespawnWeaponOrbs()
     m_weaponOrbs.clear();
 }
 
+float BonkRun::GetMobDamageMultiplier(Creature const* mob) const
+{
+    // The strongest shout the enemy hears counts.
+    float reduction = 0.0f;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.behavior == BONK_BEHAVIOR_DEMORALIZE && mob->HasAura(owned.weapon.spellId))
+            reduction = std::max(reduction, owned.weapon.behaviorValue * (1.0f + owned.damageBonus / 100.0f));
+    return 1.0f - std::min(reduction, BONK_MAX_DEMORALIZE) / 100.0f;
+}
+
+void BonkRun::OnHeroDodge()
+{
+    if (m_state != STATE_RUNNING)
+        return;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.behavior == BONK_BEHAVIOR_REVENGE)
+        {
+            m_dodged = true;
+            // Retaliation: for a while, every hit taken strikes back.
+            if (owned.weapon.durationMs)
+            {
+                float const scale = std::max(0.1f, 1.0f + (GetPassiveTotal(BONK_PASSIVE_DURATION) + owned.durationBonus) / 100.0f);
+                m_retaliateUntil = WorldTimer::getMSTime() + uint32(owned.weapon.durationMs * scale);
+            }
+        }
+}
+
+void BonkRun::OnHeroStruck(Creature* attacker)
+{
+    if (m_state != STATE_RUNNING || int32(m_retaliateUntil - WorldTimer::getMSTime()) <= 0)
+        return;
+    if (std::find(m_retaliations.begin(), m_retaliations.end(), attacker->GetObjectGuid()) == m_retaliations.end())
+        m_retaliations.push_back(attacker->GetObjectGuid());
+}
+
+void BonkRun::OnPeriodicDamage(uint32 spellId, uint32 damage)
+{
+    if (m_state != STATE_RUNNING)
+        return;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.behavior == BONK_BEHAVIOR_LEECH && owned.weapon.spellId == spellId)
+            m_bleedHeal += damage * owned.weapon.behaviorValue / 100.0f;
+}
+
+void BonkRun::DropTraps(OwnedWeapon& owned)
+{
+    BonkWeapon const& weapon = owned.weapon;
+    uint32 const count = 1 + owned.extraTargets + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT));
+    float const startAngle = frand(0.0f, 2.0f * M_PI_F);
+    for (uint32 i = 0; i < count; ++i)
+    {
+        // The first at the hero's feet, the rest in a ring around them.
+        float x = m_player->GetPositionX();
+        float y = m_player->GetPositionY();
+        float z = m_player->GetPositionZ();
+        if (i)
+        {
+            float const angle = startAngle + 2.0f * M_PI_F * i / count;
+            float dx = x + BONK_TRAP_SPACING * std::cos(angle);
+            float dy = y + BONK_TRAP_SPACING * std::sin(angle);
+            float dz = z;
+            m_player->GetMap()->GetWalkHitPosition(nullptr, x, y, z, dx, dy, dz);
+            x = dx;
+            y = dy;
+            z = dz;
+        }
+
+        // The oldest goes once a spell has too many out.
+        size_t out = 0;
+        for (Trap const& trap : m_traps)
+            if (trap.weaponId == weapon.id)
+                ++out;
+        if (out >= BONK_MAX_TRAPS)
+            for (auto itr = m_traps.begin(); itr != m_traps.end(); ++itr)
+                if (itr->weaponId == weapon.id)
+                {
+                    if (GameObject* go = m_player->GetMap()->GetGameObject(itr->object))
+                        go->Delete();
+                    m_traps.erase(itr);
+                    break;
+                }
+
+        Trap trap;
+        trap.weaponId = weapon.id;
+        trap.x = x;
+        trap.y = y;
+        trap.z = z;
+        trap.armMs = BONK_TRAP_ARM_MS;
+        trap.leftMs = BONK_TRAP_LIFETIME_MS;
+        if (GameObject* go = PlaceObject(uint32(weapon.behaviorValue), x, y, z, BONK_TRAP_LIFETIME_MS / IN_MILLISECONDS + 5))
+            trap.object = go->GetObjectGuid();
+        m_traps.push_back(trap);
+    }
+}
+
+void BonkRun::UpdateTraps(uint32 diff)
+{
+    m_trapTimer += diff;
+    if (m_trapTimer < BONK_TRAP_CHECK_MS || m_traps.empty())
+        return;
+    int32 const elapsed = int32(m_trapTimer);
+    m_trapTimer = 0;
+
+    Map* map = m_player->GetMap();
+    std::vector<Trap> sprung;
+    for (auto itr = m_traps.begin(); itr != m_traps.end();)
+    {
+        itr->armMs -= elapsed;
+        itr->leftMs -= elapsed;
+        bool remove = itr->leftMs <= 0 || !FindOwned(itr->weaponId);
+        if (!remove && itr->armMs <= 0)
+            for (ObjectGuid const& guid : m_mobs)
+                if (Creature* mob = map->GetCreature(guid))
+                    if (mob->IsAlive() && mob->GetDistance2d(itr->x, itr->y) <= BONK_TRAP_TRIGGER_RADIUS)
+                    {
+                        sprung.push_back(*itr);
+                        remove = true;
+                        break;
+                    }
+        if (!remove)
+        {
+            ++itr;
+            continue;
+        }
+        if (GameObject* go = map->GetGameObject(itr->object))
+            go->Delete();
+        itr = m_traps.erase(itr);
+    }
+
+    for (Trap const& trap : sprung)
+        if (OwnedWeapon* owned = FindOwned(trap.weaponId))
+            SpringTrap(*owned, trap.x, trap.y, trap.z);
+}
+
+void BonkRun::SpringTrap(OwnedWeapon& owned, float x, float y, float z)
+{
+    BonkWeapon const& weapon = owned.weapon;
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
+    if (!spellInfo || !m_player->IsAlive())
+        return;
+
+    FiringWeapon firing(m_player->GetBonkPlayer());
+    float const radius = weapon.range * GetWeaponArea(owned);
+    ScaleRadius(spellInfo, radius);
+    optional<int32> basePoints[MAX_EFFECT_INDEX];
+    GetBasePoints(owned, spellInfo, 1.0f, basePoints);
+    CastAtGround(m_player, spellInfo, basePoints, x, y, z);
+
+    // A second effect where it went off: a patch of ice, or a hold on every
+    // enemy in reach.
+    SpellEntry const* altInfo = weapon.altSpellId ? sSpellMgr.GetSpellEntry(weapon.altSpellId) : nullptr;
+    if (!altInfo)
+        return;
+    if (altInfo->EffectImplicitTargetA[EFFECT_INDEX_0] == TARGET_UNIT_ENEMY)
+    {
+        Map* map = m_player->GetMap();
+        for (ObjectGuid const& guid : m_mobs)
+            if (Creature* mob = map->GetCreature(guid))
+                if (mob->IsAlive() && mob->GetDistance2d(x, y) <= radius)
+                    m_player->CastSpell(mob, altInfo, true);
+        return;
+    }
+    ScaleRadius(altInfo, radius);
+    optional<int32> altPoints[MAX_EFFECT_INDEX];
+    GetBasePoints(owned, altInfo, weapon.altDamage, altPoints);
+    CastAtGround(m_player, altInfo, altPoints, x, y, z);
+}
+
+void BonkRun::DespawnTraps()
+{
+    if (Map* map = m_player->FindMap())
+        for (Trap const& trap : m_traps)
+            if (GameObject* go = map->GetGameObject(trap.object))
+                go->Delete();
+    m_traps.clear();
+}
+
+void BonkRun::UpdatePets(OwnedWeapon& owned)
+{
+    BonkWeapon const& weapon = owned.weapon;
+    Map* map = m_player->GetMap();
+    owned.pets.erase(std::remove_if(owned.pets.begin(), owned.pets.end(), [map](ObjectGuid const& guid)
+    {
+        Creature* pet = map->GetCreature(guid);
+        return !pet || !pet->IsAlive();
+    }), owned.pets.end());
+
+    // One more each call until there are enough, so a lost one comes back.
+    uint32 const wanted = GetWeaponTargets(owned);
+    if (owned.pets.size() < wanted && m_player->IsAlive())
+    {
+        float const angle = frand(0.0f, 2.0f * M_PI_F);
+        float x = m_player->GetPositionX() + 2.0f * std::cos(angle);
+        float y = m_player->GetPositionY() + 2.0f * std::sin(angle);
+        float z = m_player->GetPositionZ();
+        m_player->GetMap()->GetWalkHitPosition(nullptr, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), x, y, z);
+        if (Creature* pet = m_player->SummonCreature(BONK_PET_ENTRY, x, y, z, m_player->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN,
+            BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, false, 0, &InstallPetAI))
+        {
+            // The hero's: their crit and Power, and run enemies ignore it.
+            pet->SetOwnerGuid(m_player->GetObjectGuid());
+            pet->SetFactionTemplateId(m_player->GetFactionTemplateId());
+            pet->SetLevel(m_player->GetLevel());
+            pet->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+            pet->SetSpeedRate(MOVE_RUN, BONK_PET_SPEED);
+            pet->GetMotionMaster()->MoveFollow(m_player, 2.0f, angle);
+            owned.pets.push_back(pet->GetObjectGuid());
+        }
+    }
+    while (owned.pets.size() > wanted)
+    {
+        if (Creature* pet = map->GetCreature(owned.pets.back()))
+            pet->DespawnOrUnsummon();
+        owned.pets.pop_back();
+    }
+
+    // Their bite is the spell's damage; Haste and faster ranks make them
+    // bite more often, the evolution makes them bigger and frenzied.
+    float const damage = GetWeaponDamage(owned);
+    float const pace = GetWeaponCooldown(owned) / float(std::max(1u, weapon.cooldownMs));
+    uint32 const swing = std::max(300u, uint32(std::max(500u, weapon.tickMs) * pace));
+    float const scale = weapon.behaviorValue > 0.0f ? weapon.behaviorValue : 1.0f;
+    for (ObjectGuid const& guid : owned.pets)
+        if (Creature* pet = map->GetCreature(guid))
+        {
+            pet->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, damage * 0.9f);
+            pet->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, damage * 1.1f);
+            pet->UpdateDamagePhysical(BASE_ATTACK);
+            pet->SetAttackTime(BASE_ATTACK, swing);
+            if (pet->GetObjectScale() != scale)
+                pet->SetObjectScale(scale);
+            if (weapon.altSpellId && !pet->HasAura(weapon.altSpellId))
+                pet->AddAura(weapon.altSpellId, ADD_AURA_PERMANENT);
+        }
+}
+
+void BonkRun::UpdatePetTargets(uint32 diff)
+{
+    m_petTimer += diff;
+    if (m_petTimer < BONK_PET_CHECK_MS)
+        return;
+    m_petTimer = 0;
+
+    Map* map = m_player->GetMap();
+    for (OwnedWeapon& owned : m_weapons)
+        for (ObjectGuid const& guid : owned.pets)
+        {
+            Creature* pet = map->GetCreature(guid);
+            if (!pet || !pet->IsAlive())
+                continue;
+
+            // Too far behind: back to the hero's side.
+            if (!pet->IsWithinDistInMap(m_player, BONK_PET_LEASH_RANGE))
+            {
+                pet->AttackStop();
+                pet->NearTeleportTo(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), m_player->GetOrientation());
+                continue;
+            }
+
+            // Its prey stays its prey while it lives and stays near the hero.
+            Unit* victim = pet->GetVictim();
+            if (victim && victim->IsAlive() && victim->IsWithinDistInMap(m_player, BONK_PET_HUNT_RANGE))
+                continue;
+
+            // Else the enemy nearest the hero.
+            std::vector<Creature*> const prey = GetMobsInRange(BONK_PET_HUNT_RANGE);
+            if (!prey.empty())
+            {
+                pet->AI()->AttackStart(prey.front());
+                continue;
+            }
+            // Nothing to hunt: at the hero's heel.
+            if (victim || pet->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+            {
+                pet->AttackStop();
+                pet->GetMotionMaster()->Clear(false);
+                pet->GetMotionMaster()->MoveFollow(m_player, 2.0f, frand(0.0f, 2.0f * M_PI_F));
+            }
+        }
+}
+
+void BonkRun::DespawnPets()
+{
+    Map* map = m_player->FindMap();
+    for (OwnedWeapon& owned : m_weapons)
+    {
+        if (map)
+            for (ObjectGuid const& guid : owned.pets)
+                if (Creature* pet = map->GetCreature(guid))
+                    pet->DespawnOrUnsummon();
+        owned.pets.clear();
+    }
+}
+
 void BonkRun::OnWeaponDamage(uint32 damage)
 {
     if (m_state != STATE_RUNNING || !m_player->IsAlive())
@@ -2650,6 +3411,9 @@ void BonkRun::AddWeapon(BonkWeapon const& weapon)
     owned.weapon = weapon;
     owned.timer = 500;
     m_weapons.push_back(owned);
+    // Revenge brings its own Dodge.
+    if (weapon.behavior == BONK_BEHAVIOR_REVENGE)
+        ApplyPassives();
 }
 
 void BonkRun::ApplyPassives()
@@ -3018,6 +3782,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
 
     ++m_kills;
     SpreadFrom(mob);
+    OnMarkedDeath(mob);
     uint32 const killingSpell = BonkStats::CountKill(m_player->GetObjectGuid(), mob->GetObjectGuid(), kind);
     sBonkQuests.OnKill(m_player, kind, killingSpell);
     SoulSiphon(killingSpell);
@@ -3135,24 +3900,26 @@ BonkRarity BonkRun::RollRarity(BonkRarity minimum) const
 BonkRankStep BonkRun::RollStep(OwnedWeapon const& owned, BonkRarity rarity) const
 {
     BonkWeapon const& weapon = owned.weapon;
-    bool const area = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_GROUND;
     std::vector<BonkRankStep> options;
     switch (rarity)
     {
         case BONK_RARITY_LEGENDARY:
             return CanEvolve(owned) ? BONK_STEP_EVOLVE : BONK_STEP_LEGENDARY_DAMAGE;
         case BONK_RARITY_EPIC:
-            // Spells around the hero have no target to add.
-            if (owned.epicSteps < BONK_MAX_EPIC_STEPS && weapon.target != BONK_TARGET_SELF_AREA)
+            // Spells around the hero, cones and buffs have no target to add.
+            if (owned.epicSteps < BONK_MAX_EPIC_STEPS && weapon.HasTargets())
                 return BONK_STEP_TARGET;
             return BONK_STEP_EPIC_DAMAGE;
         case BONK_RARITY_RARE:
             if (weapon.IsAimed())
                 options.push_back(BONK_STEP_RANGE);
-            if (!area && owned.extraJumps < BONK_MAX_JUMPS)
+            if (weapon.HasJumps() && owned.extraJumps < BONK_MAX_JUMPS)
                 options.push_back(BONK_STEP_JUMP);
-            if (area)
+            if (weapon.IsWide())
                 options.push_back(BONK_STEP_WIDE);
+            // A buff or a beast: it lasts longer instead.
+            if (options.empty() && weapon.lasting)
+                options.push_back(BONK_STEP_DURATION);
             break;
         case BONK_RARITY_UNCOMMON:
             options.push_back(BONK_STEP_COOLDOWN);
@@ -3534,8 +4301,7 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
         {
             OwnedWeapon const* owned = FindOwned(offer.id);
             uint32 const used = (owned ? owned->epicSteps : 0) + 1;
-            text = std::string(weapon->target == BONK_TARGET_GROUND ? "+1 drop" : "+1 target") + " (" + std::to_string(used) + "/" +
-                std::to_string(BONK_MAX_EPIC_STEPS) + ")";
+            text = std::string("+1 ") + weapon->GetTargetNoun() + " (" + std::to_string(used) + "/" + std::to_string(BONK_MAX_EPIC_STEPS) + ")";
             break;
         }
         case BONK_STEP_EPIC_DAMAGE:
@@ -3884,10 +4650,26 @@ void BonkRun::SetPaused(bool paused)
     m_player->SetTimeFrozen(paused);
 
     if (Map* map = m_player->FindMap())
+    {
         for (ObjectGuid const& guid : m_mobs)
             if (Creature* mob = map->GetCreature(guid))
                 if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
                     ai->SetFrozen(paused);
+
+        // Beasts hold still too; they find their prey again after.
+        for (OwnedWeapon const& owned : m_weapons)
+            for (ObjectGuid const& guid : owned.pets)
+                if (Creature* pet = map->GetCreature(guid))
+                {
+                    if (paused)
+                    {
+                        pet->AttackStop();
+                        pet->GetMotionMaster()->Clear(false);
+                        pet->GetMotionMaster()->MoveIdle();
+                    }
+                    pet->SetTimeFrozen(paused && pet->IsAlive());
+                }
+    }
 }
 
 void BonkRun::OnMobStuck(Creature* mob)
@@ -3921,6 +4703,14 @@ void BonkRun::CleanUp()
     DespawnPools();
     DespawnWeaponOrbs();
     m_pendingCasts.clear();
+    DespawnTraps();
+    DespawnPets();
+    m_marks.clear();
+    m_buffs.clear();
+    m_retaliations.clear();
+    m_retaliateUntil = 0;
+    m_dodged = false;
+    m_bleedHeal = 0.0f;
     m_spellShield = 0;
     m_chestChoices.clear();
     m_player->GetBonkPlayer()->SendAddon("mobclear");

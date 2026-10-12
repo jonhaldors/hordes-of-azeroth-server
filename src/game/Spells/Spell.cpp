@@ -2567,6 +2567,14 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             break;
         case TARGET_LOCATION_CASTER_SRC:
         {
+            // Vanilla Bonk: a run weapon aimed at a spot goes off there (a
+            // trap, an explosion where an enemy died).
+            if (Player const* bonkCaster = m_caster->ToPlayer())
+                if (bonkCaster->GetBonkPlayer()->IsFiringWeapon() && (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION))
+                {
+                    m_targets.setSource(m_targets.m_destX, m_targets.m_destY, m_targets.m_destZ);
+                    break;
+                }
             // Check original caster is GO - set its coordinates as src cast
             if (SpellCaster* caster = GetCastingObject())
                 m_targets.setSource(caster->GetPositionX(), caster->GetPositionY(), caster->GetPositionZ());

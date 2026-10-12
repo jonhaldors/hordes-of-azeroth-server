@@ -471,7 +471,7 @@ void SpellCaster::RollMeleeOutcomeAgainst(MeleeHitOutcome& outHitOutcome, uint32
             outHitInfo |= HITINFO_ROLLED_DODGE;
             outHitOutcome = MELEE_HIT_DODGE;
         }
-        else if (canCrit && roll_chance_f(run->GetCritChance()))
+        else if (canCrit && roll_chance_f(run->GetCritChance(pSpellEntry)))
         {
             outHitInfo |= HITINFO_CRITICALHIT;
             outHitOutcome = MELEE_HIT_CRIT;

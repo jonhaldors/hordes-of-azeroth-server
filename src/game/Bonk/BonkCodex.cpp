@@ -50,7 +50,7 @@ namespace
     std::string DescribeGrowth(BonkWeapon const& weapon)
     {
         bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
-        bool const area = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_GROUND;
+        bool const damageless = weapon.damageEffectIndex < 0 && !weapon.weaponDamage;
         std::string const minor = "+" + Points(BONK_RANK_DAMAGE_MINOR) + " damage and ";
 
         std::string text = "Ranks have no cap; each card's rarity decides what it adds. Common: +" + Points(BONK_RANK_DAMAGE) + " damage.";
@@ -62,10 +62,11 @@ namespace
             uncommon.push_back("lasts " + Points(BONK_RANK_DURATION) + " longer");
         text += " Uncommon: " + minor + JoinOr(uncommon) + ".";
 
+        // The same choices as BonkRun::RollStep.
         std::vector<std::string> rare;
         if (weapon.IsAimed())
             rare.push_back("+" + Points(BONK_RANK_RANGE) + " range");
-        if (!area)
+        if (weapon.HasJumps())
         {
             if (cleave)
                 rare.push_back("cleaves 1 more enemy");
@@ -74,15 +75,17 @@ namespace
             else
                 rare.push_back("hits 1 more enemy");
         }
-        else
+        if (weapon.IsWide())
             rare.push_back("+" + Points(BONK_RANK_WIDE) + " area");
+        if (rare.empty())
+            rare.push_back(weapon.lasting ? "lasts " + Points(BONK_RANK_DURATION) + " longer" : "fires " + Points(BONK_RANK_HASTE) + " more often");
         text += " Rare: " + minor + JoinOr(rare) + ".";
 
-        if (weapon.target == BONK_TARGET_SELF_AREA)
+        if (!weapon.HasTargets())
             text += " Epic: +" + Points(BONK_RANK_EPIC_DAMAGE) + " damage.";
         else
-            text += std::string(" Epic: +1 ") + (weapon.target == BONK_TARGET_GROUND ? "drop" : "target") + " (up to " +
-                std::to_string(BONK_MAX_EPIC_STEPS) + "), then +" + Points(BONK_RANK_EPIC_DAMAGE) + " damage.";
+            text += std::string(" Epic: +1 ") + weapon.GetTargetNoun() + " (up to " + std::to_string(BONK_MAX_EPIC_STEPS) + "), then +" +
+                Points(BONK_RANK_EPIC_DAMAGE) + " damage.";
 
         BonkWeapon const* evolved = weapon.evolvesFrom ? nullptr : sBonkMgr.GetEvolution(weapon.id);
         if (evolved)
@@ -98,6 +101,28 @@ namespace
             text += (weapon.evolvesFrom ? std::string(" Spreads") : " From rank " + std::to_string(BONK_EVOLVE_RANK) + " it spreads") + " to " +
                 std::to_string(uint32(weapon.behaviorValue)) + " enemies within " + std::to_string(uint32(BONK_SPREAD_RADIUS)) +
                 " yards when one carrying it dies.";
+        // What "damage" means for a spell that deals none of its own.
+        switch (weapon.behavior)
+        {
+            case BONK_BEHAVIOR_BUFF:
+                text += " Damage ranks raise the Power it gives.";
+                break;
+            case BONK_BEHAVIOR_DEMORALIZE:
+                text += " Damage ranks make enemies weaker still.";
+                break;
+            case BONK_BEHAVIOR_MARK:
+                if (damageless)
+                    text += " Damage ranks make the mark stronger.";
+                break;
+            case BONK_BEHAVIOR_PET:
+                text += " Beasts bite for the spell's damage; faster ranks make them bite more often.";
+                break;
+            case BONK_BEHAVIOR_REVENGE:
+                text += " Gives " + Percent(weapon.behaviorValue) + " Dodge while you have it.";
+                break;
+            default:
+                break;
+        }
         if (weapon.target == BONK_TARGET_GROUND)
             text += " Lands on the biggest pack of enemies.";
         if (weapon.durationMs)

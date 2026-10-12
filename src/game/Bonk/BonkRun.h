@@ -79,7 +79,16 @@ class BonkRun
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
         // Elites and bosses dodge by the tier's chance, less the hero's Hit.
         bool RollDodge(Unit const* victim) const;
-        float GetCritChance() const;
+        // `spell` (null for a swing): some spells always crit, and so does
+        // everything during Recklessness.
+        float GetCritChance(SpellEntry const* spell = nullptr) const;
+        // Times an enemy's damage to the hero: shouts make it weaker.
+        float GetMobDamageMultiplier(Creature const* mob) const;
+        // The hero dodged a swing (Revenge), or took a hit (Retaliation).
+        void OnHeroDodge();
+        void OnHeroStruck(Creature* attacker);
+        // A hero's damage over time ticked on an enemy (Bloodthirst).
+        void OnPeriodicDamage(uint32 spellId, uint32 damage);
         // Damage times this on a crit: a spell crit adds 50%, a weapon crit
         // 100%, plus Crit Damage, and 50% more on rooted enemies with a
         // freezing spell. Past 100% crit chance, the rest is the chance the
@@ -141,6 +150,8 @@ class BonkRun
             int32 timer = 0;
             std::map<ObjectGuid, uint32> recentTargets;     // random-target weapons: enemy -> ms hit
             std::map<ObjectGuid, uint32> carriers;          // spreading weapons: enemy -> ms its spell wears off
+            std::vector<ObjectGuid> pets;                   // beasts it called
+            bool killed = false;                            // a kill this cast, for RESET_ON_KILL
         };
 
         struct Offer
@@ -262,7 +273,32 @@ class BonkRun
         // as hard as the strike; a hit's burn adds up to one more hit.
         void GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInfo, float damageShare, nonstd::optional<int32>* basePoints) const;
         // Casts the weapon's spell on `target` for `damageShare` of its damage.
-        void StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare);
+        // A follow-up (a burst's later shots) sets nothing else off.
+        void StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare, bool followUp = false);
+        // Normal enemies below the weapon's kill_below_pct die to its hit.
+        bool CanKill(BonkWeapon const& weapon, Creature const* target) const;
+        // Bosses first, then mini-bosses and elites, then the most health.
+        void SortStrongestFirst(std::vector<Creature*>& mobs) const;
+        // Enemies in a cone of `range` towards the nearest one.
+        std::vector<Creature*> GetMobsInCone(OwnedWeapon const& owned, float range) const;
+        void KnockBack(Creature* mob);
+        // Marks: the extra damage an enemy takes, and what happens when one dies.
+        float GetMarkBonus(Unit const* victim) const;
+        void OnMarkedDeath(Creature const* mob);
+        // Battle Shout and the like: Power while it lasts, and Recklessness.
+        float GetBuffPower() const;
+        bool IsReckless() const;
+        // Traps lie where they were dropped until an enemy steps on one.
+        void DropTraps(OwnedWeapon& owned);
+        void UpdateTraps(uint32 diff);
+        void SpringTrap(OwnedWeapon& owned, float x, float y, float z);
+        void DespawnTraps();
+        // Beasts fight beside the hero for as long as the spell is held.
+        void UpdatePets(OwnedWeapon& owned);
+        void UpdatePetTargets(uint32 diff);
+        void DespawnPets();
+        // A spell's area scaled so its radius comes to `radius`.
+        void ScaleRadius(SpellEntry const* spellInfo, float radius);
         // A spreading weapon's spell jumps from an enemy that died carrying it.
         void SpreadFrom(Creature const* dead);
         bool HasBehavior(BonkWeaponBehavior behavior) const;
@@ -433,6 +469,9 @@ class BonkRun
             uint32 spellId = 0;
             int32 leftMs = 0;
             bool echo = false;
+            bool selfArea = false;      // the spell again around the hero (a spin, a shockwave)
+            bool strike = false;        // a burst's later shot at `target`
+            float share = 1.0f;         // of the weapon's damage
             ObjectGuid target;
             float x = 0.0f, y = 0.0f, z = 0.0f;
         };
@@ -447,6 +486,28 @@ class BonkRun
         std::vector<WeaponOrb> m_weaponOrbs;
         uint32 m_spellShield = 0;           // from Shield spells, soaked before the stat Shield
         bool m_wardBurst = false;           // a ward's Shield just broke
+        struct Mark
+        {
+            uint32 weaponId = 0;
+            uint32 untilMs = 0;
+        };
+        std::map<ObjectGuid, Mark> m_marks;             // enemy -> the mark it wears
+        std::map<uint32, uint32> m_buffs;               // weapon -> ms its buff runs out
+        struct Trap
+        {
+            uint32 weaponId = 0;
+            ObjectGuid object;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            int32 armMs = 0;            // goes off from when this runs out
+            int32 leftMs = 0;
+        };
+        std::vector<Trap> m_traps;
+        uint32 m_trapTimer = 0;
+        uint32 m_petTimer = 0;
+        bool m_dodged = false;              // a dodge Revenge has not answered yet
+        uint32 m_retaliateUntil = 0;        // ms: hits taken until then strike back
+        std::vector<ObjectGuid> m_retaliations;     // enemies that hit the hero meanwhile
+        float m_bleedHeal = 0.0f;           // Bloodthirst healing not yet given
         uint32 m_shield = 0;                // absorb left
         uint32 m_shieldIdleMs = 0;          // since the hero last took damage
         uint32 m_shieldSendTimer = 0;

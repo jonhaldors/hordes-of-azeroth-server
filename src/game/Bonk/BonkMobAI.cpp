@@ -468,14 +468,16 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
     if (!damage || victim == m_creature)
         return;
 
-    // Bolstered and enraged enemies hit harder; then Armor takes its share
+    // Bolstered and enraged enemies hit harder, shouted-at ones softer (and a
+    // hit can be struck back); then Armor takes its share
     // off every hit and spell, and the Shield soaks what it can.
     if (victim->GetObjectGuid() == m_ownerGuid)
         if (BonkRun* run = static_cast<Player*>(victim)->GetBonkPlayer()->GetRun())
         {
-            float multiplier = 1.0f + BONK_BOLSTER_BONUS * m_bolsterStacks;
+            float multiplier = (1.0f + BONK_BOLSTER_BONUS * m_bolsterStacks) * run->GetMobDamageMultiplier(m_creature);
             if (m_enraged)
                 multiplier *= BONK_RAGING_DAMAGE;
+            run->OnHeroStruck(m_creature);
             damage = std::max(1u, uint32(damage * multiplier));
             if (HasAffix(AFFIX_NECROTIC))
                 run->AddNecroticStack();
