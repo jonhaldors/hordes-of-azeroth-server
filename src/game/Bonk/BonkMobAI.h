@@ -19,7 +19,9 @@
 
 #include <vector>
 
+class BonkRun;
 class Player;
+class SpellEntry;
 
 class BonkMobAI : public CreatureAI
 {
@@ -85,6 +87,9 @@ class BonkMobAI : public CreatureAI
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);
         void Explode(Player* owner);
+        // Casters: a bolt at where the player stands, under a red circle.
+        void AimBolt(BonkMobAbility const& ability, SpellEntry const* spellInfo, Player* owner, BonkRun* run);
+        void LaunchBolt();
         // Chargers: stop, warn with a red line, dash along it.
         bool UpdateCharge(uint32 diff, Player* owner);
         void StartCharge(Player* owner);
@@ -111,6 +116,9 @@ class BonkMobAI : public CreatureAI
         float m_chargeX = 0.0f, m_chargeY = 0.0f, m_chargeZ = 0.0f;    // where the dash starts
         float m_chargeAngle = 0.0f, m_chargeLength = 0.0f;
         float m_dashX = 0.0f, m_dashY = 0.0f, m_dashZ = 0.0f;          // where it ends
+        ObjectGuid m_boltTarget;            // an aimed bolt waiting to be cast at it
+        uint32 m_boltSpell = 0;
+        int32 m_boltDelay = 0;
 };
 
 #endif

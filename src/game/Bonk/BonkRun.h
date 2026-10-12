@@ -98,6 +98,12 @@ class BonkRun
         // Volcanic: fire bursts up where a warning was, and the enemy that
         // called it hits the hero for `damage` if they are still inside.
         void Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius, uint32 damage);
+        // Casters' bolts fly at a spot, not at the hero: an invisible
+        // target there for the enemy's spell (it takes the hit, the hero
+        // never sees it), and the bolt landing: `damage` from `spellId` if
+        // the hero is still within `radius`.
+        ObjectGuid PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs);
+        void LandBolt(ObjectGuid mobGuid, ObjectGuid targetGuid, uint32 spellId, float x, float y, float radius, uint32 damage);
         // Damage times this on a crit: a spell crit adds 50%, a weapon crit
         // 100%, plus Crit Damage, and 50% more on rooted enemies with a
         // freezing spell. Past 100% crit chance, the rest is the chance the

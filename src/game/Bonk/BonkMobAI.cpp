@@ -56,6 +56,12 @@ namespace
     float const BONK_CHARGE_SPEED       = 30.0f;    // yards a second
     float const BONK_CHARGE_DAMAGE      = 2.0f;     // melee hits
     uint32 const BONK_SPELL_CHARGE_HIT  = 24257;    // Jeklik's Crushing Blow: a plain physical hit
+
+    // Casters' bolts: a circle this big where the player stood, warning at
+    // least this long, and the bolt's target lingering a little after.
+    float const BONK_BOLT_RADIUS        = 2.0f;
+    uint32 const BONK_BOLT_MIN_WARN_MS  = 900;
+    uint32 const BONK_BOLT_TARGET_LINGER_MS = 3000;
     float const BONK_VAMPIRIC_HEAL      = 0.5f;     // share of damage dealt
     float const BONK_FRENZIED_SPEED     = 1.5f;     // times the enemy's attack speed
     float const BONK_FORTIFIED_HEALTH   = 1.5f;
@@ -371,12 +377,14 @@ void BonkMobAI::SetFrozen(bool frozen)
 
     if (frozen)
     {
-        // A charge's warning is dropped by the pause; it starts over after.
+        // A charge's or a bolt's warning is dropped by the pause; a charge
+        // starts over after, a bolt waiting for its moment is not cast.
         if (m_chargeState != CHARGE_NONE)
         {
             m_chargeState = CHARGE_NONE;
             m_chargeTimer = BONK_CHARGE_INTERVAL / 2;
         }
+        m_boltTarget.Clear();
         m_creature->InterruptNonMeleeSpells(false);
         m_creature->AttackStop();
         m_creature->GetMotionMaster()->Clear(false);
@@ -399,6 +407,16 @@ void BonkMobAI::Cast(BonkMobAbility const& ability, Player* owner, bool triggere
     if (!spellInfo)
         return;
 
+    // A bolt that flies flies at where the player stands, not at the
+    // player: a red circle warns, and only a player still in it is hit.
+    if (ability.target == BONK_ABILITY_PLAYER && spellInfo->speed > 0.0f && ability.damageEffectIndex >= 0 &&
+        spellInfo->Effect[ability.damageEffectIndex] == SPELL_EFFECT_SCHOOL_DAMAGE)
+        if (BonkRun* run = owner->GetBonkPlayer()->GetRun())
+        {
+            AimBolt(ability, spellInfo, owner, run);
+            return;
+        }
+
     Unit* target = ability.target == BONK_ABILITY_SELF ? static_cast<Unit*>(m_creature) : owner;
 
     // Spell damage follows the enemy's own hits, so it scales with the stage.
@@ -411,6 +429,46 @@ void BonkMobAI::Cast(BonkMobAbility const& ability, Player* owner, bool triggere
     m_creature->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], triggered);
 }
 
+void BonkMobAI::AimBolt(BonkMobAbility const& ability, SpellEntry const* spellInfo, Player* owner, BonkRun* run)
+{
+    float const x = owner->GetPositionX(), y = owner->GetPositionY(), z = owner->GetPositionZ();
+
+    // The warning lasts the cast and the flight, as the core times them;
+    // a quick shot waits a little first, so it can be stepped out of.
+    float const distance = std::max(5.0f, m_creature->GetDistance(x, y, z));
+    uint32 const flight = uint32(distance / spellInfo->speed * IN_MILLISECONDS);
+    uint32 const castTime = spellInfo->GetCastTime(m_creature);
+    uint32 const warn = std::max(BONK_BOLT_MIN_WARN_MS, castTime + flight);
+
+    ObjectGuid const target = run->PlaceBoltTarget(x, y, z, warn + BONK_BOLT_TARGET_LINGER_MS);
+    if (target.IsEmpty())
+        return;
+
+    ObjectGuid const guid = m_creature->GetObjectGuid();
+    uint32 const spellId = spellInfo->Id;
+    uint32 const damage = uint32(std::max(1.0f, GetMeleeHit() * ability.damage));
+    run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_BOLT_RADIUS, warn,
+        [run, guid, target, spellId, x, y, damage]() { run->LandBolt(guid, target, spellId, x, y, BONK_BOLT_RADIUS, damage); });
+
+    m_boltTarget = target;
+    m_boltSpell = spellId;
+    m_boltDelay = int32(warn - castTime - flight);
+    if (m_boltDelay <= 0)
+        LaunchBolt();
+}
+
+void BonkMobAI::LaunchBolt()
+{
+    Creature* target = m_creature->GetMap()->GetCreature(m_boltTarget);
+    m_boltTarget.Clear();
+    if (!target)
+        return;
+    // Its real cast, so the bolt is seen to fly; the damage is the run's
+    // (BonkRun::LandBolt), the target only soaks a token hit.
+    m_creature->SetFacingToObject(target);
+    m_creature->CastCustomSpell(target, m_boltSpell, 1, 1, 1, false);
+}
+
 void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
 {
     if (!m_mob)
@@ -418,6 +476,15 @@ void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
 
     for (int32& timer : m_abilityTimers)
         timer -= int32(diff);
+
+    // An aimed shot waiting for its moment.
+    if (!m_boltTarget.IsEmpty())
+    {
+        m_boltDelay -= int32(diff);
+        if (m_boltDelay <= 0)
+            LaunchBolt();
+        return;
+    }
 
     if (m_creature->IsNonMeleeSpellCasted(false))
         return;

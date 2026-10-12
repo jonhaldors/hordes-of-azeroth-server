@@ -3138,6 +3138,41 @@ void BonkRun::Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius,
     mob->CastCustomSpell(m_player, BONK_SPELL_ERUPTION_HIT, int32(std::max(1u, damage)), {}, {}, true);
 }
 
+ObjectGuid BonkRun::PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs)
+{
+    Creature* target = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, lifetimeMs, false, 0, &InstallOrbAI);
+    if (!target)
+        return ObjectGuid();
+
+    // On the hero's side, so enemies may cast at it (a target they cannot
+    // select would stop the cast) and the hero's spells leave it be; it
+    // soaks the bolt.
+    target->SetFactionTemplateId(m_player->GetFactionTemplateId());
+    target->SetMaxHealth(1000000);
+    target->SetHealth(1000000);
+    return target->GetObjectGuid();
+}
+
+void BonkRun::LandBolt(ObjectGuid mobGuid, ObjectGuid targetGuid, uint32 spellId, float x, float y, float radius, uint32 damage)
+{
+    Map* map = m_player->GetMap();
+    if (Creature* target = map->GetCreature(targetGuid))
+        target->DespawnOrUnsummon(500);
+
+    Creature* mob = map->GetCreature(mobGuid);
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
+    if (!mob || !mob->IsAlive() || !spellInfo || !m_player->IsAlive() || m_player->GetDistance2d(x, y) > radius)
+        return;
+
+    // As a spell hit: the enemy's damage hook (affixes, Armor, the Shield),
+    // the combat log, then the damage.
+    SpellNonMeleeDamage hit(mob, m_player, spellId, SpellSchools(spellInfo->School));
+    hit.damage = std::max(1u, damage);
+    mob->DealDamageMods(m_player, hit.damage, &hit.absorb);
+    mob->SendSpellNonMeleeDamageLog(&hit);
+    mob->DealSpellDamage(&hit, false);
+}
+
 void BonkRun::OnHeroDodge()
 {
     if (m_state != STATE_RUNNING)
