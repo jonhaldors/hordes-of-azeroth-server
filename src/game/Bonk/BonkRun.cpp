@@ -96,8 +96,6 @@ namespace
     float const BONK_ORB_FLY_SPEED         = 28.0f;
     float const BONK_ORB_REAIM_DISTANCE    = 1.0f;
     uint32 const BONK_ORB_FACTION          = 35;       // friendly: enemies and area spells leave it be
-    uint32 const BONK_SPELL_ORB_GREEN      = 22577;    // Glowy (Green): bruiser orbs
-    uint32 const BONK_SPELL_ORB_RED        = 22518;    // Glowy (Red): elite, boss and overflow orbs
     // Orbs the run lost track of (cleanup off the map) still go away eventually.
     uint32 const BONK_ORB_LIFETIME_MS      = 30 * MINUTE * IN_MILLISECONDS;
 
@@ -3564,11 +3562,9 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
     }
 
     orb->SetFactionTemplateId(BONK_ORB_FACTION);
+    // The colour is the orb's own model (bonk orb templates), never a glow:
+    // the Glowy auras are what affixed elites wear.
     orb->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
-    if (colour == BONK_ORB_GREEN)
-        orb->AddAura(BONK_SPELL_ORB_GREEN);
-    else if (colour == BONK_ORB_RED)
-        orb->AddAura(BONK_SPELL_ORB_RED);
 
     Orb dropped;
     dropped.guid = orb->GetObjectGuid();
