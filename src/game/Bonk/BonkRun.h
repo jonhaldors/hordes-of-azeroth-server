@@ -101,7 +101,7 @@ class BonkRun
         bool Pick(uint32 choice, std::string& error);
         bool Reroll(std::string& error);
         bool Banish(uint32 choice, std::string& error);
-        // Turns the choice down for a few coins.
+        // Turns the choice down for a little Valor.
         bool Skip(std::string& error);
         // Chests: a locked card comes back at the next chest if not picked.
         bool Lock(uint32 choice, std::string& error);
@@ -446,7 +446,7 @@ class BonkRun
         uint32 m_kills = 0;
         uint32 m_goldEarned = 0;
         uint32 m_shardsEarned = 0;
-        uint32 m_coins = 0;
+        uint32 m_coins = 0;                 // Valor: the run's currency for chests (coins in code and data)
         float m_leechCarry = 0.0f;          // Leech healing not yet given
         uint32 m_necroticStacks = 0;
         uint32 m_necroticCheckMs = 0;

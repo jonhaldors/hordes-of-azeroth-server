@@ -27,7 +27,7 @@ class Player;
 WorldLocation const BONK_CAMP_LOCATION(1, 16226.2f, 16257.0f, 13.2022f, 1.65007f);
 
 // Gameobjects a run places in the arena (world database ids).
-uint32 const BONK_GO_CHEST      = 900001;   // costs coins to open
+uint32 const BONK_GO_CHEST      = 900001;   // costs Valor to open
 uint32 const BONK_GO_CHEST_FREE = 900002;   // dropped by elites and bosses
 uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
 uint32 const BONK_GO_SHARD      = 900007;   // a dropped Talent Shard, taken by walking over it
@@ -57,7 +57,7 @@ enum BonkEventType : uint8
     BONK_EVENT_MINIBOSS = 0,    // `count` mini-bosses
     BONK_EVENT_ELITES   = 1,    // `count` elites
     BONK_EVENT_SWARM    = 2,    // `count` normal enemies at once
-    BONK_EVENT_CHESTS   = 3,    // `count` chests that cost coins
+    BONK_EVENT_CHESTS   = 3,    // `count` chests that cost Valor
     BONK_EVENT_RING     = 4,    // `count` normal enemies in a ring closing in on the player
     BONK_EVENT_RUSH     = 5,    // `count` normal enemies charging in from one side
     MAX_BONK_EVENT
@@ -149,7 +149,7 @@ struct BonkMap
     uint32 minibossSecond = 0;      // its first mini-boss event, 0 = none
     uint32 goldPerKill = 10;        // copper
     uint32 stageGold = 5000;        // copper for the stage boss, times the stage number
-    uint32 coinsPerKill = 1;        // in-run currency for chests
+    uint32 coinsPerKill = 1;        // Valor, the in-run currency for chests
     uint32 powerupIntervalSeconds = 40; // a new power-up appears this often, 0 = none
     uint32 powerupMax = 3;          // most power-ups lying around at once
 
@@ -186,7 +186,7 @@ struct BonkTier
     uint32 maxAlive = 200;
     uint32 maxBruisers = 8;
     uint32 firstEliteSecond = 150;      // into a stage
-    uint32 chestCost = 10;              // coins for the first chest of a run
+    uint32 chestCost = 10;              // Valor for the first chest of a run
     float chestCostGrowth = 0.5f;       // price increase per chest bought
     uint32 unlockTierId = 0;            // reach unlockStage on this tier to unlock, 0 = always open
     uint32 unlockStage = 0;
@@ -541,8 +541,8 @@ enum BonkTalentEffect : uint8
     BONK_TALENT_REROLL       = 4,   // rerolls of an upgrade choice per run
     BONK_TALENT_BANISH       = 5,   // upgrades that can be banished per run
     BONK_TALENT_REVIVE       = 6,   // revives per run
-    BONK_TALENT_START_COINS  = 7,   // coins at the start of a run
-    BONK_TALENT_SKIP         = 8,   // upgrade choices that can be skipped per run, for a few coins
+    BONK_TALENT_START_COINS  = 7,   // Valor at the start of a run
+    BONK_TALENT_SKIP         = 8,   // upgrade choices that can be skipped per run, for a little Valor
     MAX_BONK_TALENT_EFFECT
 };
 

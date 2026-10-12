@@ -107,7 +107,7 @@ namespace
     // Every choice has at least one spell rank of this rarity or better.
     BonkRarity const BONK_LEVEL_MIN_RARITY = BONK_RARITY_UNCOMMON;
     BonkRarity const BONK_CHEST_MIN_RARITY = BONK_RARITY_RARE;
-    // A skipped choice pays this share of the next chest's price in coins.
+    // A skipped choice pays this share of the next chest's price in Valor.
     float const BONK_SKIP_COINS = 0.25f;
     // An elite chest offers one more card per affix, up to this many.
     size_t const BONK_MAX_OFFER_SIZE = 6;
@@ -240,7 +240,7 @@ namespace
         }
     }
 
-    // Gold, coins and experience, in normal kills.
+    // Gold, Valor and experience, in normal kills.
     uint32 GetKindReward(BonkSpawnKind kind)
     {
         switch (kind)
@@ -1983,7 +1983,7 @@ void BonkRun::UseChest(GameObject* chest)
         uint32 const cost = GetChestCost();
         if (m_coins < cost)
         {
-            bonk->Notify("This chest costs " + std::to_string(cost) + " coins. You have " + std::to_string(m_coins) + ".");
+            bonk->Notify("This chest costs " + std::to_string(cost) + " Valor. You have " + std::to_string(m_coins) + ".");
             return;
         }
         m_coins -= cost;
@@ -4472,7 +4472,7 @@ bool BonkRun::Skip(std::string& error)
     --m_skips;
     uint32 const coins = std::max(1u, uint32(GetChestCost() * BONK_SKIP_COINS));
     m_coins += coins;
-    m_player->GetBonkPlayer()->Notify("Skipped: +" + std::to_string(coins) + " coins.");
+    m_player->GetBonkPlayer()->Notify("Skipped: +" + std::to_string(coins) + " Valor.");
     CloseOffer(uint32(m_offer.size()));     // no card taken
     SendState();
     return true;
@@ -4578,7 +4578,7 @@ void BonkRun::SendOffer() const
     if (m_banishes)
         handler.PSendSysMessage("  .bonk banish <number> to remove one for this run (%u left)", m_banishes);
     if (m_skips)
-        handler.PSendSysMessage("  .bonk pass to skip this choice for a few coins (%u left)", m_skips);
+        handler.PSendSysMessage("  .bonk pass to skip this choice for a little Valor (%u left)", m_skips);
 }
 
 void BonkRun::Finish(bool wentHome)

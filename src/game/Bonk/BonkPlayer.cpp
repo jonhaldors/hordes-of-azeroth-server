@@ -1169,7 +1169,7 @@ void BonkPlayer::SendArena(std::string const& npc) const
         if (bonuses.revives)
             perks.push_back(bonuses.revives == 1 ? "a revive" : std::to_string(bonuses.revives) + " revives");
         if (bonuses.startCoins)
-            perks.push_back("+" + std::to_string(bonuses.startCoins) + " coins");
+            perks.push_back("+" + std::to_string(bonuses.startCoins) + " Valor");
         std::string perkText;
         for (std::string const& perk : perks)
             perkText += (perkText.empty() ? "" : ", ") + perk;
