@@ -764,7 +764,7 @@ void BonkPlayer::SendShop(bool open) const
             std::ostringstream line;
             line << "node~" << node.tree << '~' << node.id << '~' << uint32(node.row) << '~' << uint32(node.column) << '~' << node.icon
                  << '~' << uint32(rank) << '~' << uint32(node.maxRank) << '~' << (rank < node.maxRank ? 1 : 0)
-                 << '~' << node.requiredId << '~' << uint32(node.requiredRank) << "~0~0~" << node.name << '~' << node.description << "~0~";
+                 << '~' << node.requiredId << '~' << uint32(node.requiredRank) << "~0~0~" << node.name << '~' << node.description << "~0~~" << FormatStat(node.valuePerRank);
             SendAddon(line.str());
         }
 
@@ -781,10 +781,11 @@ void BonkPlayer::SendShop(bool open) const
         if (itr.second.shop == m_shop)
             SendAddon("tree~" + std::to_string(itr.first) + "~" + itr.second.name + "~" + itr.second.background);
 
-    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description~locked~quest
+    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description~locked~quest~valuePerRank:
+    // the description states one rank's value, the addon shows it for the ranks learned and the next.
     BonkQuestReward const lockType = m_shop == BONK_SHOP_UPGRADES ? BONK_REWARD_UPGRADE : BONK_REWARD_TALENT;
     auto sendNode = [this, lockType](uint32 id, BonkShopNode const& layout, uint8 rank, uint8 maxRank, uint32 nextCost, bool toggle, bool enabled,
-        std::string const& name, std::string const& description)
+        std::string const& name, std::string const& description, float valuePerRank)
     {
         if (!layout.tree)
             return;
@@ -796,7 +797,7 @@ void BonkPlayer::SendShop(bool open) const
         line << "node~" << layout.tree << '~' << id << '~' << uint32(layout.row) << '~' << uint32(layout.column) << '~' << layout.icon
              << '~' << uint32(rank) << '~' << uint32(maxRank) << '~' << (rank < maxRank ? nextCost : 0)
              << '~' << layout.requiredId << '~' << uint32(layout.requiredRank) << '~' << (toggle ? 1 : 0) << '~' << (enabled ? 1 : 0)
-             << '~' << name << '~' << description << '~' << (lock ? 1 : 0) << '~' << (lock ? lock->name : "");
+             << '~' << name << '~' << description << '~' << (lock ? 1 : 0) << '~' << (lock ? lock->name : "") << '~' << FormatStat(valuePerRank);
         SendAddon(line.str());
     };
 
@@ -806,7 +807,8 @@ void BonkPlayer::SendShop(bool open) const
         {
             BonkUpgrade const& upgrade = itr.second;
             uint8 const rank = GetUpgradeRank(upgrade.id);
-            sendNode(upgrade.id, upgrade.layout, rank, upgrade.maxRank, upgrade.GetCost(rank), false, false, upgrade.name, upgrade.description);
+            sendNode(upgrade.id, upgrade.layout, rank, upgrade.maxRank, upgrade.GetCost(rank), false, false, upgrade.name, upgrade.description,
+                upgrade.valuePerRank);
         }
     }
     else if (m_shop == BONK_SHOP_TALENTS)
@@ -816,7 +818,7 @@ void BonkPlayer::SendShop(bool open) const
             BonkTalent const& talent = itr.second;
             uint8 const rank = GetTalentRank(talent.id);
             sendNode(talent.id, talent.layout, rank, talent.maxRank, talent.GetCost(rank), talent.IsToggle(), IsTalentEnabled(talent.id),
-                talent.name, talent.description);
+                talent.name, talent.description, talent.valuePerRank);
         }
     }
 
