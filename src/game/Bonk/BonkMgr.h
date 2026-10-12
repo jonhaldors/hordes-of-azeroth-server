@@ -128,6 +128,16 @@ struct BonkMapCreature
 };
 
 // One stage of a run: an arena map from a tier's pool.
+// What kind of ground a map is (feature plan, Map types): smaller maps are
+// harder to move in and will pay more (Phase 2).
+enum BonkMapType : uint8
+{
+    BONK_MAP_OPEN     = 0,          // an open zone (Westfall)
+    BONK_MAP_ENCLOSED = 1,          // an enclosed raid (Molten Core)
+    BONK_MAP_ARENA    = 2,          // an arena (a dungeon's large open room)
+    MAX_BONK_MAP_TYPE
+};
+
 struct BonkMap
 {
     uint32 id = 0;
@@ -135,6 +145,7 @@ struct BonkMap
     std::string name;
     std::string icon;               // Interface\Icons file name, for the arena window
     uint32 tierId = 0;              // the tier whose pool it belongs to
+    BonkMapType type = BONK_MAP_OPEN;
     uint32 mapId = 0;
     uint32 zoneId = 0;              // arena boundary; 0 = the whole map
     float x = 0.0f, y = 0.0f, z = 0.0f, o = 0.0f;

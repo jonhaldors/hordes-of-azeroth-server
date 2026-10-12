@@ -196,7 +196,7 @@ void BonkMgr::LoadMaps()
         "SELECT `id`, `key`, `name`, `tier`, `map_id`, `zone_id`, `position_x`, `position_y`, `position_z`, `orientation`, "
         "`duration_sec`, `level_offset`, `health_multiplier`, `damage_multiplier`, `health_growth_per_min`, "
         "`gold_per_kill`, `stage_gold`, `coins_per_kill`, `powerup_interval_sec`, `powerup_max`, "
-        "`spawn_min_distance`, `spawn_max_distance`, `icon`, `damage_growth_per_min` FROM `bonk_map`"));
+        "`spawn_min_distance`, `spawn_max_distance`, `icon`, `damage_growth_per_min`, `map_type` FROM `bonk_map`"));
 
     if (!result)
     {
@@ -233,6 +233,7 @@ void BonkMgr::LoadMaps()
         map.spawnMaxDistance = std::max(map.spawnMinDistance, fields[21].GetFloat());
         map.icon = fields[22].GetCppString();
         map.damageGrowthPerMinute = fields[23].GetFloat();
+        map.type = BonkMapType(std::min<uint8>(fields[24].GetUInt8(), MAX_BONK_MAP_TYPE - 1));
 
         if (!sMapStorage.LookupEntry<MapEntry>(map.mapId))
         {
