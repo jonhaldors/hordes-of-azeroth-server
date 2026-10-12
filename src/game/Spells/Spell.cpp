@@ -286,12 +286,18 @@ void Spell::FillTargetMap()
                     case TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC:
                     case TARGET_ENUM_UNITS_ENEMY_AOE_AT_DYNOBJ_LOC:
                     case TARGET_ENUM_UNITS_FRIEND_AOE_AT_DEST_LOC:
+                    {
                         // triggered spells get dest point from default target set, ignore it
-                        if (!(m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION) || m_IsTriggeredSpell)
+                        // Vanilla Bonk: unless a run weapon aimed it (a thrown cloud).
+                        Player const* bonkCaster = m_caster->ToPlayer();
+                        bool const aimed = bonkCaster && bonkCaster->GetBonkPlayer()->IsFiringWeapon() &&
+                            (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION);
+                        if (!aimed && (!(m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION) || m_IsTriggeredSpell))
                             if (SpellCaster* castObject = GetCastingObject())
                                 m_targets.setDestination(castObject->GetPositionX(), castObject->GetPositionY(), castObject->GetPositionZ());
                         SetTargetMap(SpellEffectIndex(i), m_spellInfo->EffectImplicitTargetB[i], tmpUnitMap);
                         break;
+                    }
                     // target pre-selection required
                     case TARGET_LOCATION_CASTER_HOME_BIND:
                     case TARGET_LOCATION_DATABASE:
@@ -2061,6 +2067,13 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
         {
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RADIUS, radius, this);
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_JUMP_TARGETS, EffectChainTarget, this);
+
+            // Vanilla Bonk: area weapons grow with their level, and spells
+            // that jump reach more enemies.
+            if (m_spellInfo->EffectRadiusIndex[effIndex])
+                radius *= modOwner->GetBonkPlayer()->GetAreaScale(m_spellInfo->Id);
+            if (EffectChainTarget > 1)
+                EffectChainTarget += modOwner->GetBonkPlayer()->GetChainBonus(m_spellInfo->Id);
         }
     }
 
@@ -3437,6 +3450,10 @@ SpellCastResult Spell::prepare(Aura* triggeredByAura, uint32 chance)
                 m_casttime = 0;
 
         m_duration = m_spellInfo->CalculateDuration(m_caster);
+
+        // Vanilla Bonk: a weapon can set how long its spell lasts.
+        if (Player* pPlayerCaster = m_caster->ToPlayer())
+            m_duration = pPlayerCaster->GetBonkPlayer()->AdjustDuration(m_spellInfo->Id, m_duration);
 
         // set timer base at cast time
         ReSetTimer();
@@ -5055,8 +5072,13 @@ void Spell::TakePower()
         return;
 
     if (Player* pPlayer = m_casterUnit->ToPlayer())
+    {
         if (pPlayer->HasCheatOption(PLAYER_CHEAT_NO_POWER))
             return;
+        // Vanilla Bonk: run weapons cost nothing (players cast nothing else).
+        if (pPlayer->GetBonkPlayer()->GetRun())
+            return;
+    }
 
     // health as power used
     if (m_spellInfo->powerType == POWER_HEALTH)

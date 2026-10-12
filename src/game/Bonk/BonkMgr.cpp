@@ -3,10 +3,14 @@
  */
 
 #include "BonkMgr.h"
+#include "BonkMastery.h"
+#include "BonkQuests.h"
 #include "Database/DatabaseEnv.h"
+#include "DBCStores.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectMgr.h"
+#include "Player.h"
 #include "Policies/SingletonImp.h"
 #include "SpellMgr.h"
 
@@ -31,6 +35,34 @@ namespace
 
         return -1;
     }
+
+    // Whether the spell's damage comes from the weapon swing.
+    bool HasWeaponDamage(SpellEntry const* spellInfo)
+    {
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            switch (spellInfo->Effect[i])
+            {
+                case SPELL_EFFECT_WEAPON_DAMAGE:
+                case SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL:
+                case SPELL_EFFECT_NORMALIZED_WEAPON_DMG:
+                case SPELL_EFFECT_WEAPON_PERCENT_DAMAGE:
+                    return true;
+                default:
+                    break;
+            }
+        return false;
+    }
+
+    // Damage over time, on the target or on the ground, other than effect
+    // `except`: the effect index, -1 for none.
+    int32 FindTickEffect(SpellEntry const* spellInfo, int32 except)
+    {
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (int32(i) != except && (spellInfo->Effect[i] == SPELL_EFFECT_APPLY_AURA || spellInfo->Effect[i] == SPELL_EFFECT_PERSISTENT_AREA_AURA) &&
+                spellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
+                return int32(i);
+        return -1;
+    }
 }
 
 void BonkMgr::Load()
@@ -45,8 +77,11 @@ void BonkMgr::Load()
     LoadShopTrees();
     LoadUpgrades();
     LoadTalents();
-    LoadItemPower();
+    LoadItemStats();
     LoadMobs();
+    // Quests check the weapons, passives, talents and upgrades they unlock.
+    sBonkQuests.Load();
+    sBonkMastery.Load();
 
     for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL, BONK_GO_SHARD })
         if (!sObjectMgr.GetGameObjectTemplate(entry))
@@ -64,7 +99,8 @@ void BonkMgr::LoadTiers()
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `key`, `name`, `health_multiplier`, `damage_multiplier`, `stage_health_growth`, `stage_damage_growth`, "
         "`stage_spawn_growth`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
-        "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss` FROM `bonk_tier`"));
+        "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
+        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -93,6 +129,11 @@ void BonkMgr::LoadTiers()
         tier.shardChanceElite = fields[13].GetFloat();
         tier.shardsMiniboss = fields[14].GetUInt32();
         tier.shardsBoss = fields[15].GetUInt32();
+        tier.description = fields[16].GetCppString();
+        tier.art = fields[17].GetCppString();
+        tier.masteryXpMinute = fields[18].GetUInt32();
+        tier.masteryXpMiniboss = fields[19].GetUInt32();
+        tier.masteryXpBoss = fields[20].GetUInt32();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -120,7 +161,7 @@ void BonkMgr::LoadMaps()
         "`duration_sec`, `level_offset`, `health_multiplier`, `damage_multiplier`, `health_growth_per_min`, "
         "`spawn_interval_ms`, `spawn_batch`, `spawn_batch_growth_per_min`, `max_alive`, `elite_interval_sec`, "
         "`gold_per_kill`, `stage_gold`, `coins_per_kill`, `powerup_interval_sec`, `powerup_max`, "
-        "`spawn_min_distance`, `spawn_max_distance` FROM `bonk_map`"));
+        "`spawn_min_distance`, `spawn_max_distance`, `icon`, `damage_growth_per_min`, `max_alive_start`, `max_alive_ramp_sec` FROM `bonk_map`"));
 
     if (!result)
     {
@@ -160,6 +201,10 @@ void BonkMgr::LoadMaps()
         map.powerupMax = fields[24].GetUInt32();
         map.spawnMinDistance = std::max(5.0f, fields[25].GetFloat());
         map.spawnMaxDistance = std::max(map.spawnMinDistance, fields[26].GetFloat());
+        map.icon = fields[27].GetCppString();
+        map.damageGrowthPerMinute = fields[28].GetFloat();
+        map.maxAliveStart = fields[29].GetUInt32();
+        map.maxAliveRampSeconds = fields[30].GetUInt32();
 
         if (!sMapStorage.LookupEntry<MapEntry>(map.mapId))
         {
@@ -183,7 +228,7 @@ void BonkMgr::LoadMaps()
 void BonkMgr::LoadMapCreatures()
 {
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `bonk_map_id`, `entry`, `kind`, `min_sec`, `max_sec`, `weight`, `health_multiplier`, `damage_multiplier`, `speed`, `scale` "
+        "SELECT `bonk_map_id`, `entry`, `kind`, `min_sec`, `max_sec`, `weight`, `health_multiplier`, `damage_multiplier`, `speed`, `scale`, `max_alive` "
         "FROM `bonk_map_creature`"));
 
     if (!result)
@@ -215,6 +260,7 @@ void BonkMgr::LoadMapCreatures()
         creature.damageMultiplier = fields[7].GetFloat();
         creature.speed = fields[8].GetFloat();
         creature.scale = fields[9].GetFloat();
+        creature.maxAlive = fields[10].GetUInt32();
 
         if (kind >= MAX_BONK_SPAWN_KIND)
         {
@@ -285,7 +331,8 @@ void BonkMgr::LoadWeapons()
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
-        "`class_mask`, `starter_class_mask`, `max_level`, `evolves_from`, `evolve_passive` FROM `bonk_weapon`"));
+        "`class_mask`, `starter_class_mask`, `max_level`, `evolves_from`, `evolve_passive`, `heal_pct`, `duration_ms`, "
+        "`target_every`, `chain_every`, `behavior`, `behavior_value`, `tick_ms` FROM `bonk_weapon`"));
 
     if (!result)
     {
@@ -303,7 +350,7 @@ void BonkMgr::LoadWeapons()
         weapon.icon = fields[2].GetCppString();
         weapon.description = fields[3].GetCppString();
         weapon.spellId = fields[4].GetUInt32();
-        weapon.target = BonkWeaponTarget(std::min<uint8>(fields[5].GetUInt8(), BONK_TARGET_RANDOM));
+        weapon.target = BonkWeaponTarget(std::min<uint8>(fields[5].GetUInt8(), BONK_TARGET_GROUND));
         weapon.cooldownMs = std::max(200u, fields[6].GetUInt32());
         weapon.range = fields[7].GetFloat();
         weapon.damageFraction = fields[8].GetFloat();
@@ -312,6 +359,13 @@ void BonkMgr::LoadWeapons()
         weapon.maxLevel = std::max<uint8>(1, fields[11].GetUInt8());
         weapon.evolvesFrom = fields[12].GetUInt32();
         weapon.evolvePassive = fields[13].GetUInt32();
+        weapon.healPct = fields[14].GetFloat();
+        weapon.durationMs = fields[15].GetUInt32();
+        weapon.targetEvery = fields[16].GetUInt8();
+        weapon.chainEvery = fields[17].GetUInt8();
+        weapon.behavior = BonkWeaponBehavior(std::min<uint8>(fields[18].GetUInt8(), MAX_BONK_BEHAVIOR - 1));
+        weapon.behaviorValue = fields[19].GetFloat();
+        weapon.tickMs = fields[20].GetUInt32();
 
         SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
         if (!spellInfo)
@@ -321,8 +375,22 @@ void BonkMgr::LoadWeapons()
         }
 
         weapon.damageEffectIndex = FindDamageEffect(spellInfo);
-        if (weapon.damageEffectIndex < 0)
+        weapon.weaponDamage = weapon.damageEffectIndex < 0 && HasWeaponDamage(spellInfo);
+        if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: spell %u of weapon %u has no damage effect; it will use its own values.", weapon.spellId, weapon.id);
+
+        weapon.tickEffectIndex = FindTickEffect(spellInfo, weapon.damageEffectIndex);
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (spellInfo->Effect[i] == SPELL_EFFECT_PERSISTENT_AREA_AURA && spellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
+            {
+                weapon.groundRadius = Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i]));
+                break;
+            }
+        if (weapon.target == BONK_TARGET_GROUND && weapon.groundRadius <= 0.0f)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: ground weapon %u uses spell %u, which has no damaging ground effect; skipped.", weapon.id, weapon.spellId);
+            continue;
+        }
 
         m_weapons[weapon.id] = std::move(weapon);
     } while (result->NextRow());
@@ -668,30 +736,91 @@ void BonkMgr::LoadTalents()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk talents", uint32(m_talents.size()));
 }
 
-void BonkMgr::LoadItemPower()
+void BonkMgr::LoadItemStats()
 {
-    m_itemPower.clear();
+    m_itemStats.clear();
+    m_itemSets.clear();
 
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `power` FROM `bonk_item_power`"));
-    if (!result)
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `id`, `name` FROM `bonk_item_set`"));
+    if (result)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk gear items.");
-        return;
+        do
+        {
+            Field* fields = result->Fetch();
+            BonkItemSet set;
+            set.id = fields[0].GetUInt32();
+            set.name = fields[1].GetCppString();
+            m_itemSets[set.id] = std::move(set);
+        } while (result->NextRow());
     }
 
-    do
+    result = std::unique_ptr<QueryResult>(WorldDatabase.Query("SELECT `entry`, `power`, `defense`, `set_id`, `armor`, `dodge` FROM `bonk_item_stat` ORDER BY `entry`"));
+    if (result)
     {
-        Field* fields = result->Fetch();
-        uint32 const entry = fields[0].GetUInt32();
-        if (!sObjectMgr.GetItemPrototype(entry))
+        do
         {
-            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_power`: item %u does not exist, skipped.", entry);
-            continue;
-        }
-        m_itemPower[entry] = fields[1].GetFloat();
-    } while (result->NextRow());
+            Field* fields = result->Fetch();
+            uint32 const entry = fields[0].GetUInt32();
+            if (!sObjectMgr.GetItemPrototype(entry))
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_stat`: item %u does not exist, skipped.", entry);
+                continue;
+            }
 
-    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk gear items", uint32(m_itemPower.size()));
+            BonkItemStat stat;
+            stat.power = fields[1].GetFloat();
+            stat.defense = fields[2].GetFloat();
+            stat.setId = fields[3].GetUInt32();
+            stat.armor = fields[4].GetFloat();
+            stat.dodge = fields[5].GetFloat();
+            if (stat.setId)
+            {
+                auto set = m_itemSets.find(stat.setId);
+                if (set == m_itemSets.end())
+                {
+                    sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_stat`: item %u is in unknown set %u, set ignored.", entry, stat.setId);
+                    stat.setId = 0;
+                }
+                else
+                    set->second.items.push_back(entry);
+            }
+            m_itemStats[entry] = stat;
+        } while (result->NextRow());
+    }
+
+    result = std::unique_ptr<QueryResult>(WorldDatabase.Query("SELECT `set_id`, `pieces`, `power`, `defense`, `passive_effect`, `passive_value`, `description` "
+        "FROM `bonk_item_set_bonus` ORDER BY `set_id`, `pieces`"));
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 const setId = fields[0].GetUInt32();
+            auto set = m_itemSets.find(setId);
+            if (set == m_itemSets.end())
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_set_bonus`: unknown set %u, skipped.", setId);
+                continue;
+            }
+
+            BonkItemSetBonus bonus;
+            bonus.pieces = std::max<uint8>(1, fields[1].GetUInt8());
+            bonus.power = fields[2].GetFloat();
+            bonus.defense = fields[3].GetFloat();
+            uint8 const effect = fields[4].GetUInt8();
+            if (effect < MAX_BONK_PASSIVE_EFFECT)
+            {
+                bonus.passiveEffect = effect;
+                bonus.passiveValue = fields[5].GetFloat();
+            }
+            else if (effect != 255)
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_set_bonus`: set %u has unknown passive effect %u, ignored.", setId, effect);
+            bonus.description = fields[6].GetCppString();
+            set->second.bonuses.push_back(std::move(bonus));
+        } while (result->NextRow());
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk gear items in %u sets", uint32(m_itemStats.size()), uint32(m_itemSets.size()));
 }
 
 BonkUpgrade const* BonkMgr::GetUpgrade(uint32 id) const
@@ -706,10 +835,48 @@ BonkTalent const* BonkMgr::GetTalent(uint32 id) const
     return itr != m_talents.end() ? &itr->second : nullptr;
 }
 
-float BonkMgr::GetItemPower(uint32 itemEntry) const
+BonkItemStat const* BonkMgr::GetItemStat(uint32 itemEntry) const
 {
-    auto itr = m_itemPower.find(itemEntry);
-    return itr != m_itemPower.end() ? itr->second : 0.0f;
+    auto itr = m_itemStats.find(itemEntry);
+    return itr != m_itemStats.end() ? &itr->second : nullptr;
+}
+
+BonkItemSet const* BonkMgr::GetItemSet(uint32 id) const
+{
+    auto itr = m_itemSets.find(id);
+    return itr != m_itemSets.end() ? &itr->second : nullptr;
+}
+
+BonkGearTotals BonkMgr::EvaluateGear(Player const* player) const
+{
+    BonkGearTotals totals;
+    std::map<uint32, uint32> setPieces;
+
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            if (BonkItemStat const* stat = GetItemStat(item->GetEntry()))
+            {
+                totals.power += stat->power;
+                totals.defense += stat->defense;
+                totals.passives[BONK_PASSIVE_ARMOR] += stat->armor;
+                totals.passives[BONK_PASSIVE_DODGE] += stat->dodge;
+                if (stat->setId)
+                    ++setPieces[stat->setId];
+            }
+
+    for (auto const& itr : setPieces)
+        if (BonkItemSet const* set = GetItemSet(itr.first))
+            for (BonkItemSetBonus const& bonus : set->bonuses)
+            {
+                if (itr.second < bonus.pieces)
+                    continue;
+                totals.power += bonus.power;
+                totals.defense += bonus.defense;
+                if (bonus.passiveEffect >= 0)
+                    totals.passives[bonus.passiveEffect] += bonus.passiveValue;
+            }
+
+    return totals;
 }
 
 BonkTier const* BonkMgr::GetTier(uint32 id) const

@@ -29,6 +29,8 @@ class BonkMobAI : public CreatureAI
 
         // Called by the run once the enemy's level, health, damage and speed are set.
         void Setup(BonkSpawnKind kind);
+        // While a choice is open: stop, root, and drop the fight.
+        void SetFrozen(bool frozen);
         BonkSpawnKind GetKind() const { return m_kind; }
 
         void MoveInLineOfSight(Unit*) override {}
@@ -36,16 +38,17 @@ class BonkMobAI : public CreatureAI
         void EnterEvadeMode() override;
         void UpdateAI(uint32 const diff) override;
         void DamageDeal(Unit* victim, uint32& damage) override;
+        void DamageTaken(Unit* attacker, uint32& damage) override;
         void JustDied(Unit* killer) override;
 
     private:
         enum Affix : uint8
         {
             AFFIX_SWIFT,        // moves faster
-            AFFIX_BULWARK,      // keeps a damage shield up
+            AFFIX_BULWARK,      // shields itself again a while after a shield breaks
             AFFIX_MOLTEN,       // burns the player when close
             AFFIX_VAMPIRIC,     // heals from the damage it deals
-            AFFIX_FROZEN,       // hits slow the player
+            AFFIX_FRENZIED,     // attacks faster
             MAX_AFFIX
         };
 

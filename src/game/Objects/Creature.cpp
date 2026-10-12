@@ -54,6 +54,15 @@
 #include "TemporarySummon.h"
 #include "GuardMgr.h"
 #include "Utilities/Random.h"
+#include "Bonk/BonkMobAI.h"
+
+namespace
+{
+    bool IsBonkRunEnemy(Creature const* creature)
+    {
+        return dynamic_cast<BonkMobAI const*>(creature->AI()) != nullptr;
+    }
+}
 
 uint32 CreatureData::GetRandomRespawnTime() const
 {
@@ -2442,7 +2451,10 @@ bool Creature::IsImmuneToSpell(SpellEntry const* spellInfo, bool castOnSelf) con
 
     if (!castOnSelf)
     {
-        if (spellInfo->Mechanic && GetCreatureInfo()->mechanic_immune_mask & (1 << (spellInfo->Mechanic - 1)))
+        // Vanilla Bonk: on run enemies the spell's mechanic only blocks its
+        // auras (see IsImmuneToSpellEffect), so a stun-immune boss still
+        // takes the damage of a spell that also stuns.
+        if (spellInfo->Mechanic && GetCreatureInfo()->mechanic_immune_mask & (1 << (spellInfo->Mechanic - 1)) && !IsBonkRunEnemy(this))
             return true;
 
         if ((GetCreatureInfo()->school_immune_mask & (1 << spellInfo->School)) && !spellInfo->IsPositiveSpell())
@@ -2468,7 +2480,11 @@ bool Creature::IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectInd
     if (spellInfo->IsIgnoringCasterAndTargetRestrictions())
         return false;
 
-    if (!castOnSelf && spellInfo->EffectMechanic[index] && GetCreatureInfo()->mechanic_immune_mask & (1 << (spellInfo->EffectMechanic[index] - 1)))
+    uint32 mechanic = spellInfo->EffectMechanic[index];
+    if (!mechanic && spellInfo->EffectApplyAuraName[index] && IsBonkRunEnemy(this))
+        mechanic = spellInfo->Mechanic;
+
+    if (!castOnSelf && mechanic && GetCreatureInfo()->mechanic_immune_mask & (1 << (mechanic - 1)))
         return true;
 
     return Unit::IsImmuneToSpellEffect(spellInfo, index, castOnSelf);

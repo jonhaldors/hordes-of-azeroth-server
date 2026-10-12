@@ -31,6 +31,7 @@ uint32 const BONK_GO_CHEST      = 900001;   // costs coins to open
 uint32 const BONK_GO_CHEST_FREE = 900002;   // dropped by elites and bosses
 uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
 uint32 const BONK_GO_SHARD      = 900007;   // a dropped Talent Shard, taken by walking over it
+uint32 const BONK_GO_HEAL       = 900008;   // a dropped Turkey Leg, eaten by walking over it while hurt
 
 // Experience orbs dropped by kills (creature templates, only their looks are used).
 uint32 const BONK_ORB_SMALL = 900100;     // normal enemies
@@ -71,6 +72,7 @@ struct BonkMapCreature
     uint32 minSecond = 0;           // first second of the run it can spawn
     uint32 maxSecond = 0;           // last second it can spawn, 0 = until the end
     uint32 weight = 1;
+    uint32 maxAlive = 0;            // most of this enemy alive at once, 0 = no limit
     float healthMultiplier = 1.0f;
     float damageMultiplier = 1.0f;
     float speed = 0.7f;             // run speed rate, the player runs at 1.0
@@ -83,6 +85,7 @@ struct BonkMap
     uint32 id = 0;
     std::string key;
     std::string name;
+    std::string icon;               // Interface\Icons file name, for the arena window
     uint32 tierId = 0;              // the tier whose pool it belongs to
     uint32 mapId = 0;
     uint32 zoneId = 0;              // arena boundary; 0 = the whole map
@@ -92,10 +95,15 @@ struct BonkMap
     float healthMultiplier = 1.0f;
     float damageMultiplier = 1.0f;
     float healthGrowthPerMinute = 0.1f;
+    float damageGrowthPerMinute = 0.0f;
     uint32 spawnIntervalMs = 2000;
     float spawnBatch = 2.0f;
     float spawnBatchGrowthPerMinute = 0.5f;
     uint32 maxAlive = 80;
+    // Most enemies alive at once when a stage starts; the cap grows to
+    // maxAlive over maxAliveRampSeconds. 0 = maxAlive from the start.
+    uint32 maxAliveStart = 0;
+    uint32 maxAliveRampSeconds = 0;
     float spawnMinDistance = 38.0f; // enemies appear this far from the player
     float spawnMaxDistance = 48.0f;
     uint32 eliteIntervalSeconds = 90;
@@ -123,6 +131,8 @@ struct BonkTier
     uint32 id = 0;
     std::string key;                // short name used by `.bonk start`
     std::string name;
+    std::string description;        // for the arena window
+    std::string art;                // texture shown on its card in the arena window
     float healthMultiplier = 1.0f;
     float damageMultiplier = 1.0f;
     float stageHealthGrowth = 0.75f;    // extra enemy health per stage after the first
@@ -137,6 +147,10 @@ struct BonkTier
     float shardChanceElite = 12.0f;     // % per elite
     uint32 shardsMiniboss = 1;          // every mini-boss drops this many
     uint32 shardsBoss = 2;              // every stage boss drops this many
+    // Class Mastery experience for the class played.
+    uint32 masteryXpMinute = 10;        // per minute survived
+    uint32 masteryXpMiniboss = 15;      // per mini-boss killed
+    uint32 masteryXpBoss = 40;          // per stage boss killed
 
     std::vector<uint32> mapIds;     // the pool, bonk_map ids
 };
@@ -146,6 +160,23 @@ enum BonkWeaponTarget : uint8
     BONK_TARGET_NEAREST   = 0,      // fire at the closest enemies
     BONK_TARGET_SELF_AREA = 1,      // area spell around the player
     BONK_TARGET_RANDOM    = 2,      // fire at random enemies in range
+    BONK_TARGET_GROUND    = 3,      // ground effect dropped where the most enemies stand
+};
+
+// How weapons grow with their level: BonkRun's math and the spellbook's text.
+float const BONK_DAMAGE_PER_LEVEL = 0.25f;  // + damage per level
+float const BONK_HASTE_PER_LEVEL  = 0.05f;  // - cooldown per level
+float const BONK_AREA_GROWTH      = 0.12f;  // area spells and melee reach: + radius per level
+float const BONK_CLEAVE_RADIUS    = 6.0f;   // a cleave hits enemies this close to its target
+float const BONK_SPREAD_RADIUS    = 10.0f;  // a spread reaches enemies this close to the one that died
+
+// What a weapon does beyond casting its spell.
+enum BonkWeaponBehavior : uint8
+{
+    BONK_BEHAVIOR_NONE   = 0,
+    BONK_BEHAVIOR_CLEAVE = 1,       // melee: each hit also strikes enemies next to its target; reach grows with level
+    BONK_BEHAVIOR_SPREAD = 2,       // at max level, or once evolved: jumps to nearby enemies when one carrying it dies
+    MAX_BONK_BEHAVIOR
 };
 
 struct BonkWeapon
@@ -166,8 +197,22 @@ struct BonkWeapon
     // the player has the passive `evolvePassive`; it is never offered otherwise.
     uint32 evolvesFrom = 0;
     uint32 evolvePassive = 0;
+    float healPct = 0.0f;           // heals the player this % of max health per cast
+    uint32 durationMs = 0;          // how long its spell lasts, 0 = the spell's own duration
+    // Damage over time ticks this often instead of the spell's own rate, and
+    // damageFraction is then its damage per second. 0 = keep the spell's.
+    uint32 tickMs = 0;
+    uint8 targetEvery = 3;          // +1 target every this many levels, 0 = never
+    uint8 chainEvery = 0;           // +1 jump, or cleave victim, every this many levels, 0 = never
+    BonkWeaponBehavior behavior = BONK_BEHAVIOR_NONE;
+    // Cleave: share of the damage the enemies next to the target take.
+    // Spread: how many enemies it jumps to.
+    float behaviorValue = 0.0f;
 
     int32 damageEffectIndex = -1;   // effect whose base points carry the damage
+    int32 tickEffectIndex = -1;     // damage over time besides damageEffectIndex (a hit that burns on)
+    float groundRadius = 0.0f;      // radius of its ground effect, if it has one
+    bool weaponDamage = false;      // a melee or ranged attack: its damage replaces the weapon swing
 };
 
 enum BonkPassiveEffect : uint8
@@ -181,6 +226,12 @@ enum BonkPassiveEffect : uint8
     BONK_PASSIVE_GREED       = 6,   // + gold, %
     BONK_PASSIVE_GROWTH      = 7,   // + experience, %
     BONK_PASSIVE_MAGNET      = 8,   // + range experience orbs are pulled in from, %
+    BONK_PASSIVE_LEECH       = 9,   // weapon damage dealt comes back as health, %
+    BONK_PASSIVE_AREA        = 10,  // + area, reach and ground effect size, %
+    BONK_PASSIVE_DURATION    = 11,  // + how long lasting spells (damage over time, ground effects) last, %
+    BONK_PASSIVE_DEFENSE     = 12,  // - damage taken, %; shares gear Defense's cap
+    BONK_PASSIVE_ARMOR       = 13,  // every enemy hit loses this % of a normal enemy's hit
+    BONK_PASSIVE_DODGE       = 14,  // + chance to dodge enemy melee, %
     MAX_BONK_PASSIVE_EFFECT
 };
 
@@ -242,6 +293,7 @@ enum BonkShop : uint8
     BONK_SHOP_NONE     = 0,
     BONK_SHOP_UPGRADES = 1,         // quartermaster: bonk_upgrade
     BONK_SHOP_TALENTS  = 2,         // talent trainer: bonk_talent
+    BONK_SHOP_MASTERY  = 3,         // mastery trainer: bonk_mastery, the hero's class only
 };
 
 uint8 const BONK_SHOP_ROWS    = 7;
@@ -331,6 +383,42 @@ struct BonkRunBonuses
     uint32 startCoins = 0;
 };
 
+// Camp gear: what one item adds while worn.
+struct BonkItemStat
+{
+    float power = 0.0f;             // + auto-weapon damage, %
+    float defense = 0.0f;           // - damage taken from enemies in a run, %
+    float armor = 0.0f;             // BONK_PASSIVE_ARMOR points
+    float dodge = 0.0f;             // + chance to dodge enemy melee, %
+    uint32 setId = 0;               // bonk_item_set, 0 = none
+};
+
+struct BonkItemSetBonus
+{
+    uint8 pieces = 2;               // pieces worn to get it
+    float power = 0.0f;
+    float defense = 0.0f;
+    int32 passiveEffect = -1;       // BonkPassiveEffect it adds to, -1 = none
+    float passiveValue = 0.0f;
+    std::string description;
+};
+
+struct BonkItemSet
+{
+    uint32 id = 0;
+    std::string name;
+    std::vector<uint32> items;              // its pieces
+    std::vector<BonkItemSetBonus> bonuses;  // fewest pieces first
+};
+
+// Everything a player's worn gear adds up to, set bonuses included.
+struct BonkGearTotals
+{
+    float power = 0.0f;
+    float defense = 0.0f;
+    float passives[MAX_BONK_PASSIVE_EFFECT] = {};
+};
+
 class BonkMgr
 {
     public:
@@ -363,8 +451,12 @@ class BonkMgr
         BonkTalent const* GetTalent(uint32 id) const;
         std::map<uint32, BonkTalent> const& GetTalents() const { return m_talents; }
 
-        // Camp gear: extra auto-weapon damage, %, for wearing this item.
-        float GetItemPower(uint32 itemEntry) const;
+        // Camp gear: what an item adds while worn, and the sets it belongs to.
+        BonkItemStat const* GetItemStat(uint32 itemEntry) const;
+        std::map<uint32, BonkItemStat> const& GetItemStats() const { return m_itemStats; }
+        BonkItemSet const* GetItemSet(uint32 id) const;
+        std::map<uint32, BonkItemSet> const& GetItemSets() const { return m_itemSets; }
+        BonkGearTotals EvaluateGear(Player const* player) const;
 
         // Arena maps start empty: the run spawns every enemy itself.
         bool IsStaticCreatureSuppressed(Map const* map, uint32 dbGuid) const;
@@ -381,7 +473,7 @@ class BonkMgr
         void LoadShopTrees();
         void LoadUpgrades();
         void LoadTalents();
-        void LoadItemPower();
+        void LoadItemStats();
         void LoadMobs();
 
         // Drops tree slots and requirements that don't fit, with a log line each.
@@ -396,7 +488,8 @@ class BonkMgr
         std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;
         std::map<uint32, BonkTalent> m_talents;
-        std::map<uint32, float> m_itemPower;
+        std::map<uint32, BonkItemStat> m_itemStats;
+        std::map<uint32, BonkItemSet> m_itemSets;
         std::map<uint32, BonkMob> m_mobs;
         std::map<uint32, std::set<uint32>> m_arenaZonesByMap;   // zone 0 = whole map
 };

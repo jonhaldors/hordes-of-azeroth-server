@@ -199,6 +199,10 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
     SpellAuraHolder* holder = target->GetSpellAuraHolder(spellInfo->Id, i_dynobject.GetCasterGuid());
     bool existing = false;
 
+    // The cast's own base points, which may be custom (Vanilla Bonk's weapons).
+    int32 basePoints = 0;
+    int32* currentBasePoints = i_dynobject.GetBasePoints(basePoints) ? &basePoints : nullptr;
+
     if (holder)
     {
         holder->SetInUse(true);
@@ -206,7 +210,7 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
         {
             Unit* pCasterUnit = i_dynobject.GetUnitCaster();
 
-            PersistentAreaAura* Aur = new PersistentAreaAura(i_dynobject.GetObjectGuid(), spellInfo, eff_index, holder, target, pCasterUnit);
+            PersistentAreaAura* Aur = new PersistentAreaAura(i_dynobject.GetObjectGuid(), spellInfo, eff_index, holder, target, pCasterUnit, currentBasePoints);
             holder->AddAura(Aur, eff_index);
             
             target->AddAuraToModList(Aur);
@@ -228,7 +232,7 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
         Unit* pCasterUnit = i_dynobject.GetUnitCaster();
 
         holder = CreateSpellAuraHolder(spellInfo, target, pCasterUnit, pCaster);
-        PersistentAreaAura* Aur = new PersistentAreaAura(i_dynobject.GetObjectGuid(), spellInfo, eff_index, holder, target, pCasterUnit);
+        PersistentAreaAura* Aur = new PersistentAreaAura(i_dynobject.GetObjectGuid(), spellInfo, eff_index, holder, target, pCasterUnit, currentBasePoints);
         holder->AddAura(Aur, eff_index);
 
         // Debuff slots may be full, in which case holder is deleted or holder is not able to

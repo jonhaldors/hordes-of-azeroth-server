@@ -182,6 +182,11 @@ void DynamicObject::Update(uint32 update_diff, uint32 p_time)
     if (m_deleted)
         return;
 
+    // Vanilla Bonk: a ground spell stands still while its caster's time does.
+    if (Unit* unitCaster = caster->ToUnit())
+        if (unitCaster->IsTimeFrozen())
+            return;
+
     // If this object is from the current channeled spell, do not delete it. Otherwise
     // we can lose the last tick of the effect due to differeng updates. The spell
     // itself will call for the object to be removed at the end of the cast

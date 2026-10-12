@@ -14794,6 +14794,19 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
         _SaveBGData();
     }
 
+    // Vanilla Bonk: heroes enter the world at camp. Game masters (worked out
+    // as the GM state below does) stay where they logged out.
+    {
+        uint32 const gmLoginState = sWorld.getConfig(CONFIG_UINT32_GM_LOGIN_STATE);
+        bool const gameMaster = GetSession()->GetSecurity() > SEC_MODERATOR &&
+            (gmLoginState == 1 || (gmLoginState == 2 && (fields[33].GetUInt32() & PLAYER_EXTRA_GM_ON)));
+        if (m_bonkPlayer->MoveToCampBeforeLogin(gameMaster))
+        {
+            transGUID = 0;
+            m_movementInfo.ClearTransportData();
+        }
+    }
+
     // load the player's map here if it's not already loaded
     if (GetMapId() <= MAX_CONTINENT_ID)
         SetLocationInstanceId(sMapMgr.GetContinentInstanceId(GetMapId(), GetPositionX(), GetPositionY()));

@@ -19,12 +19,16 @@ set (game_SRCS
     AccountMgr.cpp
     AuraRemovalMgr.cpp
     AutoBroadCastMgr.cpp
+    Bonk/BonkCodex.cpp
     Bonk/BonkCommands.cpp
+    Bonk/BonkMastery.cpp
     Bonk/BonkMgr.cpp
     Bonk/BonkMobAI.cpp
     Bonk/BonkNpcs.cpp
     Bonk/BonkPlayer.cpp
+    Bonk/BonkQuests.cpp
     Bonk/BonkRun.cpp
+    Bonk/BonkRunStats.cpp
     Camera.cpp
     Conditions.cpp
     CreatureGroups.cpp
@@ -258,10 +262,14 @@ set (game_SRCS
     AccountMgr.h
     AuraRemovalMgr.h
     AutoBroadCastMgr.h
+    Bonk/BonkCodex.h
+    Bonk/BonkMastery.h
     Bonk/BonkMgr.h
     Bonk/BonkMobAI.h
     Bonk/BonkPlayer.h
+    Bonk/BonkQuests.h
     Bonk/BonkRun.h
+    Bonk/BonkRunStats.h
     Camera.h
     ClientDefines.h
     Conditions.h

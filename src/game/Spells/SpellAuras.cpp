@@ -28,6 +28,7 @@
 #include "ObjectMgr.h"
 #include "SpellMgr.h"
 #include "Player.h"
+#include "Bonk/BonkPlayer.h"
 #include "PlayerAI.h"
 #include "UpdateMask.h"
 #include "Spell.h"
@@ -290,6 +291,12 @@ Aura::Aura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 *currentBas
     DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST, "Aura: construct Spellid : %u, Aura : %u Target : %d Damage : %d", spellproto->Id, spellproto->EffectApplyAuraName[eff], spellproto->EffectImplicitTargetA[eff], damage);
 
     SetModifier(AuraType(spellproto->EffectApplyAuraName[eff]), damage, spellproto->EffectAmplitude[eff], spellproto->EffectMiscValue[eff]);
+
+    // Vanilla Bonk: a run weapon can tick its damage over time faster.
+    if (caster && caster->IsPlayer() && m_modifier.periodictime)
+        if (uint32 tick = static_cast<Player*>(caster)->GetBonkPlayer()->GetTickInterval(spellproto->Id))
+            m_modifier.periodictime = tick;
+
     CalculatePeriodic(caster ? caster->GetSpellModOwner() : nullptr, true);
     ComputeExclusive();
     if (IsLastAuraOnHolder())
@@ -462,11 +469,23 @@ AreaAura::~AreaAura()
 {
 }
 
-PersistentAreaAura::PersistentAreaAura(ObjectGuid dynObjectGuid, SpellEntry const* spellproto, SpellEffectIndex eff, SpellAuraHolder* holder, Unit* target, Unit* caster) :
-    Aura(spellproto, eff, nullptr, holder, target, caster, nullptr), m_dynObjectGuid(dynObjectGuid)
+// Vanilla Bonk: a ground effect from a hero's run weapon.
+static bool IsBonkRunEffect(Unit const* caster)
+{
+    return caster && caster->IsPlayer() && static_cast<Player const*>(caster)->GetBonkPlayer()->GetRun();
+}
+
+PersistentAreaAura::PersistentAreaAura(ObjectGuid dynObjectGuid, SpellEntry const* spellproto, SpellEffectIndex eff, SpellAuraHolder* holder, Unit* target, Unit* caster, int32* currentBasePoints) :
+    Aura(spellproto, eff, currentBasePoints, holder, target, caster, nullptr), m_dynObjectGuid(dynObjectGuid)
 {
     m_isPersistent = true;
+
+    // Vanilla Bonk: a run's ground effects hit as soon as an enemy steps in;
+    // enemies chasing the hero cross them faster than one tick.
+    if (IsBonkRunEffect(caster))
+        m_periodicTimer = 0;
 }
+
 
 PersistentAreaAura::~PersistentAreaAura()
 {
@@ -904,7 +923,9 @@ void PersistentAreaAura::Update(uint32 diff)
         {
             if (pTarget->IsWithinDistInMap(pDynObject, pDynObject->GetRadius()))
                 remove = false;
-            else
+            // Vanilla Bonk: those hit on entry, so stepping out and back in
+            // waits out the refresh time instead of hitting again at once.
+            else if (!IsBonkRunEffect(GetCaster()))
                 pDynObject->RemoveAffected(pTarget);           // let later reapply if target return to range
         }
     }
@@ -6674,6 +6695,10 @@ SpellAuraHolder::SpellAuraHolder(SpellEntry const* spellproto, Unit* target, Uni
     Unit* unitCaster = caster && caster->IsType(TYPEMASK_UNIT) ? (Unit*)caster : nullptr;
 
     m_duration = m_maxDuration = spellproto->CalculateDuration(unitCaster, target, m_auraScript);
+
+    // Vanilla Bonk: a run weapon can change how long its spell lasts.
+    if (Player* pPlayerCaster = unitCaster ? unitCaster->ToPlayer() : nullptr)
+        m_duration = m_maxDuration = pPlayerCaster->GetBonkPlayer()->AdjustDuration(GetId(), m_maxDuration);
 
     // Checking visual because of The Green Tower shield equip effect and Natural Shapeshifter talent.
     if (m_maxDuration == -1 || (m_isPassive && (spellproto->DurationIndex == 0 || !spellproto->SpellVisual)))

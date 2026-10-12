@@ -616,7 +616,7 @@ class AreaAura : public Aura
 class PersistentAreaAura : public Aura
 {
     public:
-        PersistentAreaAura(ObjectGuid dynObjectGuid, SpellEntry const* spellproto, SpellEffectIndex eff, SpellAuraHolder* holder, Unit* target, Unit* caster = nullptr);
+        PersistentAreaAura(ObjectGuid dynObjectGuid, SpellEntry const* spellproto, SpellEffectIndex eff, SpellAuraHolder* holder, Unit* target, Unit* caster = nullptr, int32* currentBasePoints = nullptr);
         ~PersistentAreaAura() override;
         DynamicObject* GetDynObject() const;
     protected:

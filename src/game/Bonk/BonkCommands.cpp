@@ -3,8 +3,10 @@
  * too, so they are all available to players.
  */
 
+#include "BonkCodex.h"
 #include "BonkMgr.h"
 #include "BonkPlayer.h"
+#include "BonkQuests.h"
 #include "BonkRun.h"
 #include "Chat.h"
 #include "Player.h"
@@ -105,6 +107,12 @@ bool ChatHandler::HandleBonkLearnCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkRespecCommand(char* /*args*/)
+{
+    m_session->GetPlayer()->GetBonkPlayer()->ShopRespec();
+    return true;
+}
+
 bool ChatHandler::HandleBonkToggleCommand(char* args)
 {
     uint32 id;
@@ -131,6 +139,75 @@ bool ChatHandler::HandleBonkShardsCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkSkipCommand(char* args)
+{
+    // GM testing aid: jump the stage clock forward, by default straight to
+    // the stage boss.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+    {
+        SendSysMessage("You are not in a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 seconds = 0;
+    if (*args && !ExtractUInt32(&args, seconds))
+        return false;
+
+    std::string error;
+    if (!run->SkipTime(seconds, error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    SendSysMessage(seconds ? "Skipped ahead." : "Skipped to the boss.");
+    return true;
+}
+
+bool ChatHandler::HandleBonkGodCommand(char* /*args*/)
+{
+    // GM testing aid: toggle god mode (damage stops at 1 health). It stays on
+    // through run starts until toggled off or the character logs out.
+    Player* player = m_session->GetPlayer();
+    BonkPlayer* bonk = player->GetBonkPlayer();
+    bool const on = !bonk->IsTestGod();
+    bonk->SetTestGod(on);
+    player->SetCheatGod(on);
+    SendSysMessage(on ? "God mode on: damage stops at 1 health." : "God mode off.");
+    return true;
+}
+
+bool ChatHandler::HandleBonkQuestsCommand(char* /*args*/)
+{
+    Player* player = m_session->GetPlayer();
+    if (player->GetBonkPlayer()->IsAddonReady())
+    {
+        sBonkQuests.SendLog(player, "");
+        return true;
+    }
+
+    SendSysMessage("Quests:");
+    for (std::string const& line : sBonkQuests.DescribeAll(player))
+        PSendSysMessage("  %s", line.c_str());
+    return true;
+}
+
+bool ChatHandler::HandleBonkCodexCommand(char* /*args*/)
+{
+    // The spellbook is an addon window only.
+    Player* player = m_session->GetPlayer();
+    if (!player->GetBonkPlayer()->IsAddonReady())
+    {
+        SendSysMessage("The spellbook needs the Vanilla Bonk addon.");
+        return true;
+    }
+    BonkCodex::Send(player, "");
+    return true;
+}
+
 bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
 {
     // The addon announces itself; from now on it gets protocol lines.
@@ -138,6 +215,9 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     bonk->SetAddonReady();
     bonk->SendAddon("hello~1");
     bonk->SendTierList();
+    bonk->SendGearInfo();
+    bonk->SendMasteryState();
+    sBonkQuests.SendLog(m_session->GetPlayer(), "");
     if (BonkRun* run = bonk->GetRun())
         run->SendFullState();
     return true;

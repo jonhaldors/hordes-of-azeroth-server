@@ -3,12 +3,16 @@
  */
 
 #include "BonkPlayer.h"
+#include "BonkMastery.h"
 #include "BonkMgr.h"
+#include "BonkQuests.h"
 #include "BonkRun.h"
+#include "BonkRunStats.h"
 #include "Chat.h"
 #include "Config/Config.h"
 #include "Creature.h"
 #include "Database/DatabaseEnv.h"
+#include "DBCStores.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectMgr.h"
@@ -29,6 +33,22 @@ namespace
     // The shop window works this close to the NPC it was opened at. The
     // client closes it a little sooner.
     float const BONK_SHOP_RANGE = 15.0f;
+
+    // 3, 2.5 or 0.25: no trailing zeros for the addon to strip.
+    std::string FormatStat(float value)
+    {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%g", value);
+        return buffer;
+    }
+
+    // The quest that still has to unlock this, if any.
+    BonkQuest const* GetLockingQuest(Player* player, BonkQuestReward type, uint32 id)
+    {
+        if (!sBonkQuests.IsLocked(player->GetSession()->GetAccountId(), type, id))
+            return nullptr;
+        return sBonkQuests.GetUnlockingQuest(type, id);
+    }
 
     std::string RequirementText(std::string const& name, uint8 ranks, uint8 maxRank)
     {
@@ -80,6 +100,8 @@ void BonkPlayer::OnLogin()
     }
 
     LoadPurchases();
+    LoadMastery();
+    sBonkQuests.OnLogin(m_player);
 
     // Runs never survive a logout.
     ResetCharacter();
@@ -88,10 +110,11 @@ void BonkPlayer::OnLogin()
 
 void BonkPlayer::LoadPurchases()
 {
-    uint32 const guid = m_player->GetGUIDLow();
+    // Every hero on the account shares them.
+    uint32 const accountId = m_player->GetSession()->GetAccountId();
 
     m_upgradeRanks.clear();
-    std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `upgrade`, `rank` FROM `bonk_character_upgrade` WHERE `guid` = %u", guid);
+    std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `upgrade`, `rank` FROM `bonk_account_upgrade` WHERE `account` = %u", accountId);
     if (result)
     {
         do
@@ -102,13 +125,13 @@ void BonkPlayer::LoadPurchases()
     }
 
     m_shards = 0;
-    result = CharacterDatabase.PQuery("SELECT `shards` FROM `bonk_character_shards` WHERE `guid` = %u", guid);
+    result = CharacterDatabase.PQuery("SELECT `shards` FROM `bonk_account` WHERE `account` = %u", accountId);
     if (result)
         m_shards = result->Fetch()[0].GetUInt32();
 
     m_talentRanks.clear();
     m_enabledTalents.clear();
-    result = CharacterDatabase.PQuery("SELECT `talent`, `rank`, `enabled` FROM `bonk_character_talent` WHERE `guid` = %u", guid);
+    result = CharacterDatabase.PQuery("SELECT `talent`, `rank`, `enabled` FROM `bonk_account_talent` WHERE `account` = %u", accountId);
     if (result)
     {
         do
@@ -122,6 +145,185 @@ void BonkPlayer::LoadPurchases()
     }
 }
 
+void BonkPlayer::LoadMastery()
+{
+    uint32 const accountId = m_player->GetSession()->GetAccountId();
+    uint8 const classId = m_player->GetClass();
+
+    m_masteryXp = 0;
+    std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `xp` FROM `bonk_account_mastery` WHERE `account` = %u AND `class` = %u",
+        accountId, uint32(classId));
+    if (result)
+        m_masteryXp = result->Fetch()[0].GetUInt32();
+
+    // Nodes are of one class each; only this hero's class counts.
+    m_masteryRanks.clear();
+    result = CharacterDatabase.PQuery("SELECT `node`, `rank` FROM `bonk_account_mastery_node` WHERE `account` = %u", accountId);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            BonkMasteryNode const* node = sBonkMastery.GetNode(fields[0].GetUInt32());
+            if (node && node->classId == classId && fields[1].GetUInt8())
+                m_masteryRanks[node->id] = std::min(fields[1].GetUInt8(), node->maxRank);
+        } while (result->NextRow());
+    }
+}
+
+std::string BonkPlayer::GetClassName() const
+{
+    if (ChrClassesEntry const* entry = sChrClassesStore.LookupEntry(m_player->GetClass()))
+        if (char const* name = entry->name[sWorld.GetDefaultDbcLocale()])
+            return name;
+    return "Hero";
+}
+
+uint32 BonkPlayer::GetMasteryLevel() const
+{
+    return BonkMastery::GetLevel(m_masteryXp);
+}
+
+uint32 BonkPlayer::GetMasteryPoints() const
+{
+    return GetMasteryLevel() + sBonkQuests.GetMasteryPoints(m_player->GetSession()->GetAccountId(), m_player->GetClass());
+}
+
+uint32 BonkPlayer::GetMasterySpent() const
+{
+    uint32 spent = 0;
+    for (auto const& itr : m_masteryRanks)
+        spent += itr.second;
+    return spent;
+}
+
+uint32 BonkPlayer::GetMasterySpentInTree(uint32 treeId) const
+{
+    uint32 spent = 0;
+    for (auto const& itr : m_masteryRanks)
+        if (BonkMasteryNode const* node = sBonkMastery.GetNode(itr.first))
+            if (node->tree == treeId)
+                spent += itr.second;
+    return spent;
+}
+
+uint8 BonkPlayer::GetMasteryRank(uint32 nodeId) const
+{
+    auto itr = m_masteryRanks.find(nodeId);
+    return itr != m_masteryRanks.end() ? itr->second : 0;
+}
+
+BonkMasteryBonuses BonkPlayer::GetMasteryBonuses() const
+{
+    return sBonkMastery.Evaluate(m_masteryRanks);
+}
+
+void BonkPlayer::SendMasteryState() const
+{
+    uint32 const level = GetMasteryLevel();
+    uint32 const earned = GetMasteryPoints();
+    uint32 const spent = GetMasterySpent();
+    SendAddon("mastery~" + GetClassName() + "~" + std::to_string(level) + "~" + std::to_string(BonkMastery::GetXpIntoLevel(m_masteryXp)) + "~" +
+        std::to_string(level < BONK_MASTERY_MAX_LEVEL ? BonkMastery::GetXpForLevel(level + 1) : 0) + "~" +
+        std::to_string(BONK_MASTERY_MAX_LEVEL) + "~" + std::to_string(earned > spent ? earned - spent : 0) + "~" +
+        (sBonkMastery.HasTrees(m_player->GetClass()) ? "1" : "0"));
+}
+
+void BonkPlayer::AddMasteryXp(uint32 xp)
+{
+    if (!xp)
+        return;
+
+    // Banked for every class, even one whose trees are not out yet.
+    uint32 const before = GetMasteryLevel();
+    m_masteryXp += xp;
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_mastery` (`account`, `class`, `xp`) VALUES (%u, %u, %u)",
+        m_player->GetSession()->GetAccountId(), uint32(m_player->GetClass()), m_masteryXp);
+
+    uint32 const after = GetMasteryLevel();
+    std::string const name = GetClassName() + " Mastery";
+    if (after > before)
+        Notify(name + " " + std::to_string(after) + "! +" + std::to_string(after - before) +
+            (after - before == 1 ? " Mastery Point" : " Mastery Points") + " to spend at camp.");
+    else if (after < BONK_MASTERY_MAX_LEVEL)
+        Notify("+" + std::to_string(xp) + " " + name + " experience (" + std::to_string(BonkMastery::GetXpIntoLevel(m_masteryXp)) + "/" +
+            std::to_string(BonkMastery::GetXpForLevel(after + 1)) + ").");
+    SendMasteryState();
+}
+
+bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
+{
+    BonkMasteryNode const* node = sBonkMastery.GetNode(nodeId);
+    if (!node || node->classId != m_player->GetClass())
+        return false;
+
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+
+    uint8 const rank = GetMasteryRank(nodeId);
+    if (rank >= node->maxRank)
+    {
+        message = node->name + " is already at its highest rank.";
+        return false;
+    }
+
+    uint32 const treePoints = (node->row - 1) * BONK_MASTERY_POINTS_PER_ROW;
+    if (GetMasterySpentInTree(node->tree) < treePoints)
+    {
+        message = "Requires " + std::to_string(treePoints) + " points in this tree.";
+        return false;
+    }
+
+    BonkMasteryNode const* required = sBonkMastery.GetNode(node->requiredId);
+    if (required && GetMasteryRank(required->id) < node->requiredRank)
+    {
+        message = RequirementText(required->name, node->requiredRank, required->maxRank);
+        return false;
+    }
+
+    if (GetMasterySpent() >= GetMasteryPoints())
+    {
+        message = "No Mastery Points left: level your Mastery or finish class quests.";
+        return false;
+    }
+
+    m_masteryRanks[nodeId] = rank + 1;
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_mastery_node` (`account`, `node`, `rank`) VALUES (%u, %u, %u)",
+        m_player->GetSession()->GetAccountId(), nodeId, uint32(rank + 1));
+    message = node->name + (node->maxRank > 1 ? " rank " + std::to_string(rank + 1) + "!" : " learned!");
+    SendMasteryState();
+    return true;
+}
+
+bool BonkPlayer::ResetMastery(std::string& message)
+{
+    if (m_run)
+    {
+        message = "Not during a run.";
+        return false;
+    }
+    if (m_masteryRanks.empty())
+    {
+        message = "You have not spent any Mastery Points.";
+        return false;
+    }
+
+    std::string nodes;
+    for (auto const& itr : m_masteryRanks)
+        nodes += (nodes.empty() ? "" : ",") + std::to_string(itr.first);
+    CharacterDatabase.PExecute("DELETE FROM `bonk_account_mastery_node` WHERE `account` = %u AND `node` IN (%s)",
+        m_player->GetSession()->GetAccountId(), nodes.c_str());
+
+    uint32 const refunded = GetMasterySpent();
+    m_masteryRanks.clear();
+    message = std::to_string(refunded) + (refunded == 1 ? " Mastery Point" : " Mastery Points") + " refunded.";
+    SendMasteryState();
+    return true;
+}
+
 void BonkPlayer::OnLogout()
 {
     if (m_run)
@@ -130,6 +332,7 @@ void BonkPlayer::OnLogout()
         m_run.reset();
     }
     m_addonReady = false;
+    sBonkQuests.Save(m_player->GetSession()->GetAccountId());
 
     // The hero screen is loaded again right after this, so it shows this logout.
     WriteHeroScreenStats();
@@ -273,6 +476,7 @@ void BonkPlayer::WriteHeroScreenStats() const
 void BonkPlayer::OnSave()
 {
     SaveGold();
+    sBonkQuests.Save(m_player->GetSession()->GetAccountId());
 }
 
 void BonkPlayer::SaveGold() const
@@ -281,7 +485,7 @@ void BonkPlayer::SaveGold() const
     if (!m_goldLoaded)
         return;
 
-    CharacterDatabase.PExecute("REPLACE INTO `bonk_account` (`account`, `gold`) VALUES (%u, %u)",
+    CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `gold`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `gold` = VALUES(`gold`)",
         m_player->GetSession()->GetAccountId(), m_player->GetMoney());
 }
 
@@ -343,7 +547,8 @@ void BonkPlayer::AddShards(uint32 count)
 
 void BonkPlayer::SaveShards() const
 {
-    CharacterDatabase.PExecute("REPLACE INTO `bonk_character_shards` (`guid`, `shards`) VALUES (%u, %u)", m_player->GetGUIDLow(), m_shards);
+    CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `shards`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `shards` = VALUES(`shards`)",
+        m_player->GetSession()->GetAccountId(), m_shards);
 }
 
 bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
@@ -359,6 +564,12 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
         return false;
     }
 
+    if (BonkQuest const* quest = GetLockingQuest(m_player, BONK_REWARD_UPGRADE, upgradeId))
+    {
+        message = "Finish the quest " + quest->name + " to unlock " + upgrade->name + ".";
+        return false;
+    }
+
     BonkUpgrade const* required = sBonkMgr.GetUpgrade(upgrade->layout.requiredId);
     if (required && GetUpgradeRank(required->id) < upgrade->layout.requiredRank)
     {
@@ -370,8 +581,8 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
         return false;
 
     m_upgradeRanks[upgradeId] = rank + 1;
-    CharacterDatabase.PExecute("REPLACE INTO `bonk_character_upgrade` (`guid`, `upgrade`, `rank`) VALUES (%u, %u, %u)",
-        m_player->GetGUIDLow(), upgradeId, uint32(rank + 1));
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_upgrade` (`account`, `upgrade`, `rank`) VALUES (%u, %u, %u)",
+        m_player->GetSession()->GetAccountId(), upgradeId, uint32(rank + 1));
     message = upgrade->name + " rank " + std::to_string(rank + 1) + "!";
     return true;
 }
@@ -386,6 +597,12 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     if (rank >= talent->maxRank)
     {
         message = talent->name + " is already learned.";
+        return false;
+    }
+
+    if (BonkQuest const* quest = GetLockingQuest(m_player, BONK_REWARD_TALENT, talentId))
+    {
+        message = "Finish the quest " + quest->name + " to unlock " + talent->name + ".";
         return false;
     }
 
@@ -432,8 +649,8 @@ bool BonkPlayer::ToggleTalent(uint32 talentId, std::string& message)
 
 void BonkPlayer::SaveTalent(uint32 talentId) const
 {
-    CharacterDatabase.PExecute("REPLACE INTO `bonk_character_talent` (`guid`, `talent`, `rank`, `enabled`) VALUES (%u, %u, %u, %u)",
-        m_player->GetGUIDLow(), talentId, uint32(GetTalentRank(talentId)), IsTalentEnabled(talentId) ? 1u : 0u);
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_talent` (`account`, `talent`, `rank`, `enabled`) VALUES (%u, %u, %u, %u)",
+        m_player->GetSession()->GetAccountId(), talentId, uint32(GetTalentRank(talentId)), IsTalentEnabled(talentId) ? 1u : 0u);
 }
 
 void BonkPlayer::OpenShop(BonkShop shop, Creature const* npc)
@@ -465,6 +682,8 @@ void BonkPlayer::ShopLearn(uint32 id)
     std::string message;
     if (m_shop == BONK_SHOP_UPGRADES)
         BuyUpgrade(id, message);
+    else if (m_shop == BONK_SHOP_MASTERY)
+        LearnMastery(id, message);
     else
         BuyTalent(id, message);
     if (!message.empty())
@@ -488,8 +707,59 @@ void BonkPlayer::ShopToggle(uint32 id)
     SendShop(false);
 }
 
+void BonkPlayer::ShopRespec()
+{
+    if (!IsAtShop() || m_shop != BONK_SHOP_MASTERY)
+    {
+        Notify("You are too far from the trainer.");
+        SendAddon("shopclose");
+        return;
+    }
+
+    std::string message;
+    ResetMastery(message);
+    if (!message.empty())
+        Notify(message);
+    SendShop(false);
+}
+
 void BonkPlayer::SendShop(bool open) const
 {
+    // shop~3~open~npc~points~unspent~level~xpIntoLevel~xpForNext~maxLevel~earned~fromQuests~class~pointsPerRow:
+    // the hero's own class trees; every rank costs one Mastery Point.
+    if (m_shop == BONK_SHOP_MASTERY)
+    {
+        uint8 const classId = m_player->GetClass();
+        uint32 const level = GetMasteryLevel();
+        uint32 const earned = GetMasteryPoints();
+        uint32 const spent = GetMasterySpent();
+        SendAddon("shop~" + std::to_string(uint32(m_shop)) + "~" + (open ? "1" : "0") + "~" + m_shopNpcName + "~points~" +
+            std::to_string(earned > spent ? earned - spent : 0) + "~" + std::to_string(level) + "~" +
+            std::to_string(BonkMastery::GetXpIntoLevel(m_masteryXp)) + "~" +
+            std::to_string(level < BONK_MASTERY_MAX_LEVEL ? BonkMastery::GetXpForLevel(level + 1) : 0) + "~" +
+            std::to_string(BONK_MASTERY_MAX_LEVEL) + "~" + std::to_string(earned) + "~" + std::to_string(earned - level) + "~" +
+            GetClassName() + "~" + std::to_string(BONK_MASTERY_POINTS_PER_ROW));
+
+        for (BonkMasteryTree const* tree : sBonkMastery.GetTrees(classId))
+            SendAddon("tree~" + std::to_string(tree->id) + "~" + tree->name + "~" + tree->background);
+
+        for (auto const& itr : sBonkMastery.GetNodes())
+        {
+            BonkMasteryNode const& node = itr.second;
+            if (node.classId != classId)
+                continue;
+            uint8 const rank = GetMasteryRank(node.id);
+            std::ostringstream line;
+            line << "node~" << node.tree << '~' << node.id << '~' << uint32(node.row) << '~' << uint32(node.column) << '~' << node.icon
+                 << '~' << uint32(rank) << '~' << uint32(node.maxRank) << '~' << (rank < node.maxRank ? 1 : 0)
+                 << '~' << node.requiredId << '~' << uint32(node.requiredRank) << "~0~0~" << node.name << '~' << node.description << "~0~";
+            SendAddon(line.str());
+        }
+
+        SendAddon("shopend");
+        return;
+    }
+
     // shop~kind~open~npc~currency~balance: upgrades cost gold, talents Talent Shards.
     bool const shards = m_shop == BONK_SHOP_TALENTS;
     SendAddon("shop~" + std::to_string(uint32(m_shop)) + "~" + (open ? "1" : "0") + "~" + m_shopNpcName + "~" +
@@ -499,19 +769,22 @@ void BonkPlayer::SendShop(bool open) const
         if (itr.second.shop == m_shop)
             SendAddon("tree~" + std::to_string(itr.first) + "~" + itr.second.name + "~" + itr.second.background);
 
-    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description
-    auto sendNode = [this](uint32 id, BonkShopNode const& layout, uint8 rank, uint8 maxRank, uint32 nextCost, bool toggle, bool enabled,
+    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description~locked~quest
+    BonkQuestReward const lockType = m_shop == BONK_SHOP_UPGRADES ? BONK_REWARD_UPGRADE : BONK_REWARD_TALENT;
+    auto sendNode = [this, lockType](uint32 id, BonkShopNode const& layout, uint8 rank, uint8 maxRank, uint32 nextCost, bool toggle, bool enabled,
         std::string const& name, std::string const& description)
     {
         if (!layout.tree)
             return;
+
+        BonkQuest const* lock = GetLockingQuest(m_player, lockType, id);
 
         rank = std::min(rank, maxRank);
         std::ostringstream line;
         line << "node~" << layout.tree << '~' << id << '~' << uint32(layout.row) << '~' << uint32(layout.column) << '~' << layout.icon
              << '~' << uint32(rank) << '~' << uint32(maxRank) << '~' << (rank < maxRank ? nextCost : 0)
              << '~' << layout.requiredId << '~' << uint32(layout.requiredRank) << '~' << (toggle ? 1 : 0) << '~' << (enabled ? 1 : 0)
-             << '~' << name << '~' << description;
+             << '~' << name << '~' << description << '~' << (lock ? 1 : 0) << '~' << (lock ? lock->name : "");
         SendAddon(line.str());
     };
 
@@ -545,6 +818,11 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
     for (auto const& itr : m_upgradeRanks)
         if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(itr.first))
             bonuses.passives[upgrade->effect] += upgrade->valuePerRank * std::min(itr.second, upgrade->maxRank);
+
+    // Class Mastery nodes that add to a passive count like camp upgrades.
+    BonkMasteryBonuses const mastery = GetMasteryBonuses();
+    for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+        bonuses.passives[effect] += mastery.passives[effect];
 
     for (auto const& itr : m_talentRanks)
     {
@@ -592,6 +870,17 @@ void BonkPlayer::Update(uint32 diff)
         m_run->Update(diff);
         if (m_run->IsFinished())
             m_run.reset();
+        else
+            BonkStats::UpdateBossBar(m_player, diff);
+    }
+
+    // Mana plays no part: the bar stays full, whatever drains it or a level
+    // up raises.
+    if (m_player->GetPowerType() == POWER_MANA)
+    {
+        uint32 const maxMana = m_player->GetMaxPower(POWER_MANA);
+        if (m_player->GetPower(POWER_MANA) < maxMana)
+            m_player->SetPower(POWER_MANA, maxMana);
     }
 }
 
@@ -636,6 +925,34 @@ void BonkPlayer::StopRun()
         m_run->Surrender();
 }
 
+std::vector<BonkTier const*> BonkPlayer::GetTiersInOrder()
+{
+    std::map<uint32, BonkTier> const& tiers = sBonkMgr.GetTiers();
+    std::vector<BonkTier const*> ordered;
+    std::set<uint32> placed;
+
+    // Each pass adds the tiers whose unlocking tier is already listed.
+    for (bool added = true; added;)
+    {
+        added = false;
+        for (auto const& itr : tiers)
+        {
+            BonkTier const& tier = itr.second;
+            if (placed.count(tier.id) || (tier.unlockTierId && !placed.count(tier.unlockTierId)))
+                continue;
+            ordered.push_back(&tier);
+            placed.insert(tier.id);
+            added = true;
+        }
+    }
+
+    // Tiers that unlock each other in a loop go last.
+    for (auto const& itr : tiers)
+        if (!placed.count(itr.first))
+            ordered.push_back(&itr.second);
+    return ordered;
+}
+
 uint32 BonkPlayer::GetBestStage(uint32 tierId) const
 {
     auto itr = m_bestStages.find(tierId);
@@ -657,6 +974,8 @@ std::string BonkPlayer::GetUnlockHint(BonkTier const& tier) const
 
 void BonkPlayer::RecordStage(uint32 tierId, uint32 stage)
 {
+    sBonkQuests.OnStage(m_player, tierId, stage);
+
     if (stage <= GetBestStage(tierId))
         return;
 
@@ -690,16 +1009,84 @@ void BonkPlayer::Notify(std::string const& text) const
         ChatHandler(m_player).SendSysMessage(text.c_str());
 }
 
+void BonkPlayer::SendGearInfo() const
+{
+    // What camp gear adds, for the addon's tooltips and character sheet.
+    for (auto const& itr : sBonkMgr.GetItemStats())
+        SendAddon("gear~" + std::to_string(itr.first) + "~" + FormatStat(itr.second.power) + "~" + FormatStat(itr.second.defense) + "~" +
+            std::to_string(itr.second.setId) + "~" + FormatStat(itr.second.armor) + "~" + FormatStat(itr.second.dodge));
+
+    for (auto const& itr : sBonkMgr.GetItemSets())
+    {
+        BonkItemSet const& set = itr.second;
+        std::string pieces;
+        for (uint32 entry : set.items)
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry))
+                pieces += (pieces.empty() ? "" : ",") + std::to_string(entry) + ":" + proto->Name1;
+        SendAddon("set~" + std::to_string(set.id) + "~" + set.name + "~" + pieces);
+
+        for (BonkItemSetBonus const& bonus : set.bonuses)
+            SendAddon("setbonus~" + std::to_string(set.id) + "~" + std::to_string(bonus.pieces) + "~" + FormatStat(bonus.power) + "~" +
+                FormatStat(bonus.defense) + "~" + bonus.description);
+    }
+
+    SendAddon("gearend");
+}
+
 void BonkPlayer::SendTierList() const
 {
-    for (auto const& itr : sBonkMgr.GetTiers())
+    SendArena("");
+}
+
+void BonkPlayer::OpenArena(Creature const* npc) const
+{
+    SendArena(npc->GetName());
+}
+
+void BonkPlayer::SendArena(std::string const& npc) const
+{
+    // arena~open~npc~goldBonus~challenges~perks: what the character brings.
+    if (m_addonReady)
     {
-        BonkTier const& tier = itr.second;
+        BonkRunBonuses const bonuses = GetRunBonuses();
+
+        std::string challenges;
+        for (auto const& itr : sBonkMgr.GetTalents())
+            if (itr.second.IsToggle() && GetTalentRank(itr.first) && IsTalentEnabled(itr.first))
+                challenges += (challenges.empty() ? "" : ", ") + itr.second.name;
+
+        std::vector<std::string> perks;
+        if (bonuses.rerolls)
+            perks.push_back(std::to_string(bonuses.rerolls) + (bonuses.rerolls == 1 ? " reroll" : " rerolls"));
+        if (bonuses.banishes)
+            perks.push_back(std::to_string(bonuses.banishes) + (bonuses.banishes == 1 ? " banish" : " banishes"));
+        if (bonuses.revives)
+            perks.push_back(bonuses.revives == 1 ? "a revive" : std::to_string(bonuses.revives) + " revives");
+        if (bonuses.startCoins)
+            perks.push_back("+" + std::to_string(bonuses.startCoins) + " coins");
+        std::string perkText;
+        for (std::string const& perk : perks)
+            perkText += (perkText.empty() ? "" : ", ") + perk;
+
+        SendAddon("arena~" + std::string(npc.empty() ? "0" : "1") + "~" + npc + "~" + std::to_string(uint32(bonuses.goldBonus + 0.5f)) + "~" +
+            challenges + "~" + perkText);
+    }
+
+    // tier~id~key~name~unlocked~hint~best~description~art~maps, maps as icon:name,...
+    for (BonkTier const* tierPtr : GetTiersInOrder())
+    {
+        BonkTier const& tier = *tierPtr;
         bool const unlocked = IsTierUnlocked(tier);
         uint32 const best = GetBestStage(tier.id);
         if (m_addonReady)
+        {
+            std::string maps;
+            for (uint32 mapId : tier.mapIds)
+                if (BonkMap const* map = sBonkMgr.GetMap(mapId))
+                    maps += (maps.empty() ? "" : ",") + map->icon + ":" + map->name;
             SendAddon("tier~" + std::to_string(tier.id) + "~" + tier.key + "~" + tier.name + "~" + (unlocked ? "1" : "0") + "~" +
-                (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best));
+                (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best) + "~" + tier.description + "~" + tier.art + "~" + maps);
+        }
         else if (unlocked)
             ChatHandler(m_player).PSendSysMessage("  %s (best: stage %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());
         else
@@ -736,4 +1123,18 @@ bool BonkPlayer::IsAtCamp() const
 void BonkPlayer::TeleportToCamp()
 {
     m_player->TeleportTo(BONK_CAMP_LOCATION);
+}
+
+// Teleporting a hero to camp right after login sends the client to a second
+// map while it is still loading the first; its creature queries get lost on
+// the way and every NPC shows as "Unknown" until the next login. Entering
+// the world at camp in the first place avoids the teleport.
+bool BonkPlayer::MoveToCampBeforeLogin(bool gameMaster)
+{
+    if (gameMaster || IsAtCamp())
+        return false;
+
+    m_player->SetLocationMapId(BONK_CAMP_LOCATION.mapId);
+    m_player->Relocate(BONK_CAMP_LOCATION.x, BONK_CAMP_LOCATION.y, BONK_CAMP_LOCATION.z, BONK_CAMP_LOCATION.o);
+    return true;
 }

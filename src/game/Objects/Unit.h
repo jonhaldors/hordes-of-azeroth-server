@@ -626,11 +626,17 @@ class Unit : public SpellCaster
         uint32 m_lastManaUseSpellId;
         uint32 m_lastManaUseTimer;
         uint32 m_spellUpdateTimeBuffer;
+        bool m_timeFrozen = false;
 
         void _UpdateSpells(uint32 time);
         void _UpdateAutoRepeatSpell();
 
     public:
+        // Vanilla Bonk: while a run waits on a level-up choice, the hero's
+        // and the enemies' auras, casts and ground spells stand still.
+        void SetTimeFrozen(bool frozen);
+        bool IsTimeFrozen() const { return m_timeFrozen; }
+
         /**
          * Gets the current DiminishingLevels for the given group
          * @param group The group that you would like to know the current diminishing return level for

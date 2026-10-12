@@ -51,6 +51,7 @@
 #include "Utilities/Random.h"
 #include "ScriptMgr.h"
 #include "SocialMgr.h"
+#include "Bonk/BonkPlayer.h"
 
 using namespace Spells;
 using ExecuteLogInfo = WorldPackets::Spell::SpellLogExecute::ExecuteLogInfo;
@@ -2002,7 +2003,11 @@ void Spell::EffectPersistentAA(SpellEffectIndex effIdx)
     if (Unit* pUnit = pCaster->ToUnit())
     {
         if (Player* modOwner = pUnit->GetSpellModOwner())
+        {
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RADIUS, radius);
+            // Vanilla Bonk: area weapons (Consecration) grow with their level.
+            radius *= modOwner->GetBonkPlayer()->GetAreaScale(m_spellInfo->Id);
+        }
     }
 
     DynamicObject* dynObj = new DynamicObject;
@@ -2012,6 +2017,8 @@ void Spell::EffectPersistentAA(SpellEffectIndex effIdx)
         delete dynObj;
         return;
     }
+    // Custom base points carry over to the aura it applies.
+    dynObj->SetBasePoints(m_currentBasePoints[effIdx]);
 
     pCaster->AddDynObject(dynObj);
     pCaster->GetMap()->Add(dynObj);
@@ -3487,6 +3494,11 @@ void Spell::EffectWeaponDmg(SpellEffectIndex effIdx)
 
         bonus += m_casterUnit->CalculateDamage(m_attackType, normalized, i) * weaponDamagePercentMod;
     }
+
+    // Vanilla Bonk: a run weapon's damage replaces the weapon swing.
+    if (Player* pPlayer = m_casterUnit->ToPlayer())
+        if (int32 const weaponDamage = pPlayer->GetBonkPlayer()->GetWeaponDamage(m_spellInfo->Id))
+            bonus = float(weaponDamage);
 
     // Seal of Command
     if (m_spellInfo->School == SPELL_SCHOOL_HOLY)

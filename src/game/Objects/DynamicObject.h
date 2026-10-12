@@ -60,6 +60,10 @@ class DynamicObject : public WorldObject
         bool IsChanneled() const { return m_channeled; }
         void AddAffected(Unit* unit);
         void RemoveAffected(Unit* unit);
+        // Base points of the cast that placed it, which may be custom; the
+        // persistent aura it applies uses them instead of the spell's own.
+        void SetBasePoints(int32 basePoints) { m_basePoints = basePoints; m_hasBasePoints = true; }
+        bool GetBasePoints(int32& basePoints) const { basePoints = m_basePoints; return m_hasBasePoints; }
         void Delay(int32 delaytime);
         char const* GetName() const final { return "DynamicObject"; }
 
@@ -83,6 +87,8 @@ class DynamicObject : public WorldObject
         float m_radius;                                     // radius apply persistent effect, 0 = no persistent effect
         bool m_positive;
         bool m_channeled;
+        int32 m_basePoints = 0;
+        bool m_hasBasePoints = false;
         AffectedMap m_affected;
     private:
         GridReference<DynamicObject> m_gridRef;

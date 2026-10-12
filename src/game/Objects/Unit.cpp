@@ -59,6 +59,8 @@
 #include "MovementPacketSender.h"
 #include "Errors.h"
 #include "Utilities/Random.h"
+#include "Bonk/BonkPlayer.h"
+#include "Bonk/BonkRunStats.h"
 
 #include <limits>
 
@@ -205,6 +207,19 @@ Unit::~Unit()
     MANGOS_ASSERT(!m_needUpdateVisibility);
 }
 
+void Unit::SetTimeFrozen(bool frozen)
+{
+    if (m_timeFrozen == frozen)
+        return;
+    m_timeFrozen = frozen;
+    m_spellUpdateTimeBuffer = 0;
+
+    // The client counted the hero's own aura timers down all along.
+    if (!frozen && IsPlayer())
+        for (auto const& itr : m_spellAuraHolders)
+            itr.second->UpdateAuraDuration();
+}
+
 void Unit::Update(uint32 update_diff, uint32 p_time)
 {
     if (!IsInWorld())
@@ -213,7 +228,8 @@ void Unit::Update(uint32 update_diff, uint32 p_time)
     // Buffer spell system update time to save on performance when players are updated twice per
     // world update. We do not need to update spells when the interval is only a few ms (~10ms)
     UpdateCooldowns(GetMap()->GetCurrentClockTime());
-    m_spellUpdateTimeBuffer += update_diff;
+    // Frozen time is not made up afterwards: auras and casts just stand still.
+    m_spellUpdateTimeBuffer = m_timeFrozen ? 0 : m_spellUpdateTimeBuffer + update_diff;
     if (m_spellUpdateTimeBuffer >= UNIT_SPELL_UPDATE_TIME_BUFFER)
     {
         // WARNING! Order of execution here is important, do not change.
@@ -778,6 +794,9 @@ uint32 Unit::DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDa
         duel_hasEnded = true;
     }
 
+    // Vanilla Bonk: weapon damage, killing blows and damage taken in runs.
+    BonkOnDamage(this, pVictim, damage, spellProto);
+
     // Enter combat or extend leash timer.
     if (ShouldEnterCombat())
     {
@@ -1084,11 +1103,9 @@ void Unit::Kill(Unit* pVictim, SpellEntry const* spellProto, bool durabilityLoss
         if (pCreatureVictim)
         {
             // in this case loot is generated on spawn, when there is no player, so we need to fill in remaining conditional loot
-            if (pCreatureVictim->HasStaticFlag(CREATURE_STATIC_FLAG_CAN_WIELD_LOOT) && !pCreatureVictim->loot.empty() &&
-                !pCreatureVictim->lootForPickPocketed && !pCreatureVictim->lootForBody && !pCreatureVictim->lootForSkin)
-                pCreatureVictim->GeneratePlayerDependentLoot(looter, pGroupTap);
-            else
-                pCreatureVictim->GenerateLootForBody(looter, pGroupTap);
+            // Vanilla Bonk: bodies carry nothing, not even coins; every kill
+            // pays out directly instead (BonkRun::OnMobKilled).
+            pCreatureVictim->loot.clear();
         }
 
         if (pGroupTap)
@@ -1212,9 +1229,7 @@ void Unit::Kill(Unit* pVictim, SpellEntry const* spellProto, bool durabilityLoss
             pCreatureVictim->UpdateCombatWithZoneState(false);
 
             pCreatureVictim->DeleteThreatList();
-            if (CreatureInfo const* cinfo = pCreatureVictim->GetCreatureInfo())
-                if (cinfo->loot_id || cinfo->gold_max > 0)
-                    pCreatureVictim->SetFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE);
+            // Vanilla Bonk: bodies are never lootable (see GenerateLootForBody below).
 
             if (pPlayerTap && (pCreatureVictim->IsGuard() || pCreatureVictim->HasStaticFlag(CREATURE_STATIC_FLAG_PVP_ENABLING)))
                 pCreatureVictim->SendZoneUnderAttackMessage(pPlayerTap);
@@ -1659,7 +1674,8 @@ void Unit::RollDazeOutcome(CalcDamageInfo* damageInfo)
     // If this is a creature and it attacks from behind it has a probability to daze it's victim
     if (damageInfo->totalDamage && !IsPlayer() &&
         !GetCharmerOrOwnerGuid() && !pVictim->HasInArc(this) &&
-        !(pVictim->IsPlayer() && pVictim->GetInvincibilityHpThreshold())) // dont daze player in god mode
+        !(pVictim->IsPlayer() && pVictim->GetInvincibilityHpThreshold()) && // dont daze player in god mode
+        !(pVictim->IsPlayer() && static_cast<Player*>(pVictim)->GetBonkPlayer()->GetRun())) // Vanilla Bonk: nor in a run
     {
         // -probability is between 0% and 40%
         // 20% base chance

@@ -7,8 +7,9 @@
  * timer runs out its boss arrives; killing it stops the spawns and opens a
  * portal to the next, harder stage. The run is endless: it ends when the
  * character dies or goes home through a portal. Gold earned is kept either
- * way. What the character bought at camp (upgrades, talents, gear) is
- * applied for the whole run.
+ * way. What the character bought at camp (upgrades, talents, gear) and its
+ * class's Mastery are applied for the whole run, which in turn earns that
+ * class Mastery experience.
  *
  * Kills drop experience orbs that fly to the player once they are close;
  * a maxed weapon whose paired passive is owned can evolve into a stronger
@@ -18,8 +19,10 @@
 #ifndef MANGOS_BONKRUN_H
 #define MANGOS_BONKRUN_H
 
+#include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "ObjectGuid.h"
+#include "nonstd/optional.hpp"
 
 #include <map>
 #include <set>
@@ -29,6 +32,7 @@
 class Creature;
 class GameObject;
 class Player;
+class Unit;
 
 class BonkRun
 {
@@ -39,6 +43,7 @@ class BonkRun
         void Update(uint32 diff);
         void Abort();       // logout: clean up without moving the player
         void Surrender();   // `.bonk stop`
+        bool SkipTime(uint32 seconds, std::string& error);  // `.bonk skip`, GM testing
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool IsPaused() const { return m_paused; }
@@ -50,6 +55,20 @@ class BonkRun
 
         void OnMobKilled(Creature* mob, BonkSpawnKind kind);
         void OnMobStrayed(Creature* mob, BonkSpawnKind kind);
+        // The enemy cannot walk to the player (spawned in a tree, on a roof).
+        void OnMobStuck(Creature* mob);
+        // Damage the player's weapons took off an enemy, for Leech.
+        void OnWeaponDamage(uint32 damage);
+        // Gear Defense: % less damage taken from enemies, capped.
+        float GetDefense() const;
+        // An enemy's hit on the hero after Armor: a flat amount off, so weak
+        // hits shrink the most; never below a quarter of the hit.
+        uint32 ApplyArmor(uint32 damage) const;
+        // Might and gear Power, and the class's Mastery bonuses for `spell`
+        // (null for melee swings) against `victim`: applies to all damage
+        // the player deals (SpellCaster::SpellDamageBonusDone and
+        // MeleeDamageBonusDone).
+        float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) const;
         bool Pick(uint32 choice, std::string& error);
         bool Reroll(std::string& error);
         bool Banish(uint32 choice, std::string& error);
@@ -85,6 +104,8 @@ class BonkRun
             BonkWeapon weapon;
             uint8 level = 1;
             int32 timer = 0;
+            std::map<ObjectGuid, uint32> recentTargets;     // random-target weapons: enemy -> ms hit
+            std::map<ObjectGuid, uint32> carriers;          // spreading weapons: enemy -> ms its spell wears off
         };
 
         struct Offer
@@ -100,6 +121,7 @@ class BonkRun
             ObjectGuid guid;
             uint32 experience = 0;
             bool pulled = false;        // flying to the player
+            float aimX = 0.0f, aimY = 0.0f, aimZ = 0.0f;    // where it is flying
         };
 
         // Talent Shards lying where an enemy died.
@@ -126,12 +148,14 @@ class BonkRun
 
         void PruneMobs();
         BonkMapCreature const* PickCreature(BonkSpawnKind kind) const;
+        uint32 CountAlive(uint32 entry) const;
         bool FindSpawnPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const;
         bool FindSpawnPositionAt(float angle, float distance, float& x, float& y, float& z) const;
         Creature* SpawnMob(BonkMapCreature const& creature);
         Creature* SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z);
         uint32 SpawnFormation(BonkMapEvent const& event);
-        std::vector<Creature*> GetMobsInRange(float range) const;
+        // Alive enemies within `range` of `center` (the player if none), nearest first.
+        std::vector<Creature*> GetMobsInRange(float range, WorldObject const* center = nullptr) const;
         void DespawnMobs();
 
         GameObject* PlaceObject(uint32 entry, float x, float y, float z, uint32 lifetimeSeconds);
@@ -146,12 +170,34 @@ class BonkRun
         float GetMobHealth(uint32 level) const;
         float GetStageHealthMultiplier() const;
         float GetStageDamageMultiplier() const;
+        // Minutes fought this run, over all stages: what enemies scale with.
+        float GetRunMinutes() const { return m_totalMs / float(MINUTE * IN_MILLISECONDS); }
         float GetPassiveTotal(BonkPassiveEffect effect) const;
         float GetWeaponDamage(OwnedWeapon const& owned) const;
         uint32 GetWeaponCooldown(OwnedWeapon const& owned) const;
+        // How much its area, reach and spreading grow: level and the Area passive.
+        float GetWeaponArea(OwnedWeapon const& owned) const;
+        // Enemies it fires at (projectiles, melee targets, damage over time).
+        uint32 GetWeaponTargets(OwnedWeapon const& owned) const;
+        // Extra jumps, or extra enemies a cleave hits.
+        uint32 GetWeaponChainBonus(OwnedWeapon const& owned) const;
         void FireWeapon(OwnedWeapon& owned);
+        // Base points for `damageShare` of the weapon's damage. Ground ticks hit
+        // as hard as the strike; a hit's burn adds up to one more hit.
+        void GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInfo, float damageShare, nonstd::optional<int32>* basePoints) const;
+        // Casts the weapon's spell on `target` for `damageShare` of its damage.
+        void StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare);
+        // A spreading weapon's spell jumps from an enemy that died carrying it.
+        void SpreadFrom(Creature const* dead);
         void AddWeapon(BonkWeapon const& weapon);
         void ApplyPassives();
+
+        // Class Mastery: per-spell bonuses by root weapon (evolutions count
+        // as the weapon they grew from), Soul Siphon, and the experience the
+        // run earns, handed over once when it ends.
+        uint32 GetRootWeapon(BonkWeapon const& weapon) const;
+        void SoulSiphon(uint32 killingSpell);
+        void AwardMastery();
 
         void GiveExperience(uint32 xp);
         void GiveGold(uint32 copper);
@@ -166,6 +212,12 @@ class BonkRun
         void DropShards(Creature const* mob, BonkSpawnKind kind);
         void UpdateShards(uint32 diff);
         void CollectAllShards();
+        // Turkey legs: a few enemies drop one; walking over it while hurt
+        // heals. Magnet widens the reach.
+        void DropHeal(Creature const* mob, BonkSpawnKind kind);
+        void UpdateHeals(uint32 diff);
+        // A normal enemy's hit right now, what Armor is measured against.
+        float GetNormalHit() const;
         void GiveShards(uint32 count);
 
         // `avoid`: cards just shown, kept out of a reroll when others are left.
@@ -177,8 +229,14 @@ class BonkRun
         void SendOffer() const;
 
         void Revive();
-        float GetGearPower() const;
+        void UpdateGear();
         uint32 GetEliteIntervalMs() const;
+        // Most enemies alive at once right now: low as a stage starts, so the
+        // player is not overrun before their weapons level up.
+        uint32 GetAliveCap() const;
+
+        // A choice is open: the player and every enemy stand still.
+        void SetPaused(bool paused);
 
         void Finish(bool wentHome);
         void Exit();
@@ -187,7 +245,13 @@ class BonkRun
         Player* m_player;
         BonkTier const m_tier;
         BonkRunBonuses const m_bonuses;     // from camp, fixed for the run
-        float m_gearPower = 0.0f;           // % auto-weapon damage from worn gear
+        BonkMasteryBonuses const m_mastery; // the class's Mastery, fixed for the run
+        std::map<uint32, uint32> m_spellRoots;  // spell id -> root weapon id
+        uint32 m_masteryXp = 0;             // from kills; minutes are added at the end
+        bool m_masteryAwarded = false;
+        uint32 m_siphonWindow = 0;          // start of the second Soul Siphon is capped in
+        float m_siphonHealed = 0.0f;        // % of max health healed in it
+        BonkGearTotals m_gear;              // what worn gear adds, set bonuses included
         uint32 m_rerolls = 0;
         uint32 m_banishes = 0;
         uint32 m_revives = 0;
@@ -220,6 +284,8 @@ class BonkRun
         std::vector<Orb> m_orbs;
         uint32 m_orbTimer = 0;
         std::vector<ShardDrop> m_shardDrops;
+        std::vector<ObjectGuid> m_healDrops;
+        uint32 m_healTimer = 0;
         uint32 m_shardTimer = 0;
         ObjectGuid m_portalGuid;
         int32 m_powerupSpawnTimer = 0;
@@ -229,6 +295,7 @@ class BonkRun
         uint32 m_goldEarned = 0;
         uint32 m_shardsEarned = 0;
         uint32 m_coins = 0;
+        float m_leechCarry = 0.0f;          // Leech healing not yet given
         uint32 m_chestsBought = 0;
         uint32 m_lastLevel = 1;
         uint32 m_pendingLevels = 0;

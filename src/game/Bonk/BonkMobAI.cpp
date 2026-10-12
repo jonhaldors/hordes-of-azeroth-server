@@ -19,22 +19,26 @@ namespace
     float const BONK_STRAY_DISTANCE = 70.0f;
     uint32 const BONK_STRAY_DESPAWN_MS = 5000;
 
+    // An enemy that cannot walk to the player this long is moved: the core
+    // would make it evade (and take no damage) after 3 seconds.
+    uint32 const BONK_UNREACHABLE_MS = 1500;
+
     // Most creature templates are warriors without mana; casters get plenty.
     uint32 const BONK_CASTER_MANA = 1000000;
 
     // Affixes.
     float const BONK_SWIFT_SPEED        = 1.5f;     // times the enemy's speed
     uint32 const BONK_SPELL_SHIELD      = 17;       // Power Word: Shield
-    float const BONK_SHIELD_HEALTH      = 0.25f;    // absorbs this share of max health
-    uint32 const BONK_SHIELD_INTERVAL   = 16000;    // after Weakened Soul wears off
+    float const BONK_SHIELD_HEALTH      = 0.15f;    // absorbs this share of max health
+    uint32 const BONK_SHIELD_INTERVAL   = 15000;    // after the last shield broke or ran out
     uint32 const BONK_SPELL_BURN        = 20602;    // Fire Nova, 10 yards around the enemy
     float const BONK_BURN_RANGE         = 9.0f;
     float const BONK_BURN_DAMAGE        = 0.5f;     // melee hits
     uint32 const BONK_BURN_INTERVAL     = 3000;
     float const BONK_VAMPIRIC_HEAL      = 0.5f;     // share of damage dealt
-    uint32 const BONK_SPELL_CHILL       = 7321;     // Chilled: slower movement and attacks
+    float const BONK_FRENZIED_SPEED     = 1.5f;     // times the enemy's attack speed
 
-    char const* const BONK_AFFIX_NAMES[] = { "Swift", "Bulwark", "Molten", "Vampiric", "Frozen" };
+    char const* const BONK_AFFIX_NAMES[] = { "Swift", "Bulwark", "Molten", "Vampiric", "Frenzied" };
 }
 
 BonkMobAI::BonkMobAI(Creature* creature) : CreatureAI(creature)
@@ -71,6 +75,18 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
         m_creature->SetPower(POWER_MANA, BONK_CASTER_MANA);
     }
 
+    // Elites and bosses shrug off stuns and other crowd control; slows still
+    // work. Spells that stun still deal their damage.
+    if (kind != BONK_SPAWN_NORMAL)
+    {
+        for (AuraType aura : { SPELL_AURA_MOD_STUN, SPELL_AURA_MOD_ROOT, SPELL_AURA_MOD_FEAR, SPELL_AURA_MOD_CONFUSE, SPELL_AURA_MOD_CHARM })
+        {
+            m_creature->ApplySpellImmune(0, IMMUNITY_STATE, aura, true);
+            m_creature->RemoveSpellsCausingAura(aura);
+        }
+        m_creature->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+    }
+
     if (kind == BONK_SPAWN_ELITE)
         RollAffixes(1);
     else if (kind == BONK_SPAWN_MINIBOSS)
@@ -98,6 +114,9 @@ void BonkMobAI::RollAffixes(uint32 count)
         m_creature->SetSpeedRate(MOVE_WALK, m_creature->GetSpeedRate(MOVE_WALK) * BONK_SWIFT_SPEED);
         m_creature->SetSpeedRate(MOVE_RUN, m_creature->GetSpeedRate(MOVE_RUN) * BONK_SWIFT_SPEED);
     }
+
+    if (HasAffix(AFFIX_FRENZIED))
+        m_creature->SetAttackTime(BASE_ATTACK, uint32(m_creature->GetAttackTime(BASE_ATTACK) / BONK_FRENZIED_SPEED));
 
     if (!names.empty())
         if (Player* owner = GetOwner())
@@ -149,27 +168,25 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         return;
     }
 
+    // The run freezes every enemy when it pauses; this catches any it missed.
     if (run->IsPaused())
     {
-        if (!m_frozen)
-        {
-            m_frozen = true;
-            m_creature->InterruptNonMeleeSpells(false);
-            m_creature->AttackStop();
-            m_creature->GetMotionMaster()->Clear(false);
-            m_creature->GetMotionMaster()->MoveIdle();
-            m_creature->StopMoving();
-        }
+        SetFrozen(true);
         return;
     }
+    SetFrozen(false);
 
     // Leashing is measured from where combat started, so keep that under the mob.
     m_creature->SetCombatStartPosition(m_creature->GetPositionX(), m_creature->GetPositionY(), m_creature->GetPositionZ());
 
-    if (m_frozen || m_creature->GetVictim() != owner)
-    {
-        m_frozen = false;
+    if (m_creature->GetVictim() != owner)
         AttackStart(owner);
+
+    // Spawned in a tree or up on a roof: move it before it starts to evade.
+    if (m_creature->m_targetNotReachableTimer > BONK_UNREACHABLE_MS)
+    {
+        m_creature->m_targetNotReachableTimer = 0;
+        run->OnMobStuck(m_creature);
     }
 
     if (!m_creature->IsWithinDistInMap(owner, BONK_STRAY_DISTANCE))
@@ -201,6 +218,32 @@ void BonkMobAI::UpdateAI(uint32 const diff)
     UpdateAffixes(diff, owner);
     UpdateAbilities(diff, owner);
     DoMeleeAttackIfReady();
+}
+
+void BonkMobAI::SetFrozen(bool frozen)
+{
+    if (m_frozen == frozen)
+        return;
+    m_frozen = frozen;
+    // Its auras (damage over time) and casts wait as well.
+    m_creature->SetTimeFrozen(frozen && m_creature->IsAlive());
+
+    if (frozen)
+    {
+        m_creature->InterruptNonMeleeSpells(false);
+        m_creature->AttackStop();
+        m_creature->GetMotionMaster()->Clear(false);
+        m_creature->GetMotionMaster()->MoveIdle();
+        // Rooted, so a chase path still being worked out cannot start it moving.
+        m_creature->AddUnitState(UNIT_STATE_ROOT);
+        m_creature->SetRooted(true);
+        return;
+    }
+
+    m_creature->ClearUnitState(UNIT_STATE_ROOT);
+    m_creature->SetRooted(false);
+    if (Player* owner = GetOwner())
+        AttackStart(owner);
 }
 
 void BonkMobAI::Cast(BonkMobAbility const& ability, Player* owner, bool triggered)
@@ -250,14 +293,21 @@ void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
 
 void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
 {
+    // The shield lasts longer than the wait, so the wait only starts once the
+    // old shield is gone; otherwise it never comes down.
     if (HasAffix(AFFIX_BULWARK))
     {
-        m_shieldTimer -= int32(diff);
-        if (m_shieldTimer <= 0)
-        {
+        if (m_creature->HasAura(BONK_SPELL_SHIELD))
             m_shieldTimer = BONK_SHIELD_INTERVAL;
-            int32 const absorb = std::max(1, int32(m_creature->GetMaxHealth() * BONK_SHIELD_HEALTH));
-            m_creature->CastCustomSpell(m_creature, BONK_SPELL_SHIELD, absorb, {}, {}, true);
+        else
+        {
+            m_shieldTimer -= int32(diff);
+            if (m_shieldTimer <= 0)
+            {
+                m_shieldTimer = BONK_SHIELD_INTERVAL;
+                int32 const absorb = std::max(1, int32(m_creature->GetMaxHealth() * BONK_SHIELD_HEALTH));
+                m_creature->CastCustomSpell(m_creature, BONK_SPELL_SHIELD, absorb, {}, {}, true);
+            }
         }
     }
 
@@ -294,15 +344,35 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
     if (!damage || victim == m_creature)
         return;
 
+    // Armor takes a flat amount off every hit and spell, then Defense its
+    // share of what is left.
+    if (victim->GetObjectGuid() == m_ownerGuid)
+        if (BonkRun* run = static_cast<Player*>(victim)->GetBonkPlayer()->GetRun())
+        {
+            damage = run->ApplyArmor(damage);
+            if (float const defense = run->GetDefense())
+                damage = std::max(1u, uint32(damage * (1.0f - defense / 100.0f)));
+        }
+
     if (HasAffix(AFFIX_VAMPIRIC))
         m_creature->ModifyHealth(int32(damage * BONK_VAMPIRIC_HEAL));
+}
 
-    if (HasAffix(AFFIX_FROZEN) && victim->IsPlayer())
-        m_creature->CastSpell(victim, BONK_SPELL_CHILL, true);
+void BonkMobAI::DamageTaken(Unit* attacker, uint32& damage)
+{
+    // Only what actually comes off the enemy counts towards Leech.
+    if (!damage || !attacker || attacker->GetObjectGuid() != m_ownerGuid)
+        return;
+
+    if (BonkRun* run = static_cast<Player*>(attacker)->GetBonkPlayer()->GetRun())
+        run->OnWeaponDamage(std::min(damage, m_creature->GetHealth()));
 }
 
 void BonkMobAI::JustDied(Unit* /*killer*/)
 {
+    // The corpse's despawn timer runs on its own clock.
+    m_creature->SetTimeFrozen(false);
+
     // An exploder that already blew up is not a kill.
     Player* owner = GetOwner();
     if (!owner || m_exploded)
