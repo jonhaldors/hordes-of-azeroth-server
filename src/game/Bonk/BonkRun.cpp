@@ -1255,7 +1255,11 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     mob->SetSpeedRate(MOVE_WALK, creature.speed);
     mob->SetSpeedRate(MOVE_RUN, creature.speed);
     if (creature.scale > 0.0f && creature.scale != 1.0f)
+    {
         mob->SetObjectScale(mob->GetObjectScale() * creature.scale);
+        // Melee reach and size follow the new scale.
+        mob->UpdateModelData();
+    }
     mob->SetNoXP();
 
     // Last, so abilities and affixes build on the final stats.
