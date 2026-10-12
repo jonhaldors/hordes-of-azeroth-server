@@ -72,6 +72,7 @@ class BonkMobAI : public CreatureAI
             AFFIX_FORTIFIED,    // bulk: more health
             AFFIX_FRENZIED,     // enrage: attacks faster
             AFFIX_RAGING,       // enrage: deals much more damage once below 30% health
+            AFFIX_VOLCANIC,     // pressure: now and then fire bursts up under the player, after a warning
             MAX_AFFIX
         };
 
@@ -93,6 +94,7 @@ class BonkMobAI : public CreatureAI
         uint32 m_affixes = 0;
         int32 m_shieldTimer = 0;
         int32 m_burnTimer = 0;
+        int32 m_eruptionTimer = 3000;       // the first comes a little after it appears
         uint32 m_bolsterStacks = 0;
         bool m_enraged = false;     // Raging, below its health mark
         bool m_frozen = false;

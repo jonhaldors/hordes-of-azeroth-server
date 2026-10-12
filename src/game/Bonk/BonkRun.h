@@ -22,6 +22,7 @@
 
 #include "BonkMastery.h"
 #include "BonkMgr.h"
+#include "BonkTelegraph.h"
 #include "ObjectGuid.h"
 #include "nonstd/optional.hpp"
 
@@ -89,6 +90,14 @@ class BonkRun
         void OnHeroStruck(Creature* attacker);
         // A hero's damage over time ticked on an enemy (Bloodthirst).
         void OnPeriodicDamage(uint32 spellId, uint32 damage);
+        // A red ground warning for an enemy ability; `onFire` runs when it
+        // fills. Warnings are dropped, unfired, when the run pauses or the
+        // stage ends.
+        void AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
+            std::function<void()> onFire = nullptr);
+        // Volcanic: fire bursts up where a warning was, and the enemy that
+        // called it hits the hero for `damage` if they are still inside.
+        void Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius, uint32 damage);
         // Damage times this on a crit: a spell crit adds 50%, a weapon crit
         // 100%, plus Crit Damage, and 50% more on rooted enemies with a
         // freezing spell. Past 100% crit chance, the rest is the chance the
@@ -508,6 +517,7 @@ class BonkRun
         uint32 m_retaliateUntil = 0;        // ms: hits taken until then strike back
         std::vector<ObjectGuid> m_retaliations;     // enemies that hit the hero meanwhile
         float m_bleedHeal = 0.0f;           // Bloodthirst healing not yet given
+        BonkTelegraphs m_telegraphs;
         uint32 m_shield = 0;                // absorb left
         uint32 m_shieldIdleMs = 0;          // since the hero last took damage
         uint32 m_shieldSendTimer = 0;

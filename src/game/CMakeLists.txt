@@ -29,6 +29,7 @@ set (game_SRCS
     Bonk/BonkQuests.cpp
     Bonk/BonkRun.cpp
     Bonk/BonkRunStats.cpp
+    Bonk/BonkTelegraph.cpp
     Camera.cpp
     Conditions.cpp
     CreatureGroups.cpp
@@ -270,6 +271,7 @@ set (game_SRCS
     Bonk/BonkQuests.h
     Bonk/BonkRun.h
     Bonk/BonkRunStats.h
+    Bonk/BonkTelegraph.h
     Camera.h
     ClientDefines.h
     Conditions.h

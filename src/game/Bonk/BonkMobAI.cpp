@@ -37,6 +37,11 @@ namespace
     float const BONK_BURN_RANGE         = 9.0f;
     float const BONK_BURN_DAMAGE        = 0.5f;     // melee hits
     uint32 const BONK_BURN_INTERVAL     = 3000;
+    float const BONK_ERUPTION_RANGE     = 40.0f;    // erupts under a player this close
+    float const BONK_ERUPTION_RADIUS    = 3.5f;
+    uint32 const BONK_ERUPTION_WARN_MS  = 1500;
+    uint32 const BONK_ERUPTION_INTERVAL = 6000;
+    float const BONK_ERUPTION_DAMAGE    = 1.5f;     // melee hits
     float const BONK_VAMPIRIC_HEAL      = 0.5f;     // share of damage dealt
     float const BONK_FRENZIED_SPEED     = 1.5f;     // times the enemy's attack speed
     float const BONK_FORTIFIED_HEALTH   = 1.5f;
@@ -81,6 +86,7 @@ namespace
         { "Fortified",  "Ability_Warrior_DefensiveStance",   AFFIX_BULK,     22576 },   // Glowy (Blue)
         { "Frenzied",   "Ability_GhoulFrenzy",               AFFIX_ENRAGE,   28126 },   // Spirit Particles (purple)
         { "Raging",     "Ability_Racial_BloodRage",          AFFIX_ENRAGE,   31309 },   // Spirit Particles (red, big)
+        { "Volcanic",   "Spell_Fire_Volcano",                AFFIX_PRESSURE, 22579 },   // Glowy (Orange), as Explosive: never both
     };
 }
 
@@ -436,6 +442,24 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
             m_burnTimer = BONK_BURN_INTERVAL;
             int32 const damage = std::max(1, int32(GetMeleeHit() * BONK_BURN_DAMAGE));
             m_creature->CastCustomSpell(m_creature, BONK_SPELL_BURN, damage, {}, {}, true);
+        }
+    }
+
+    // A red circle under the player; fire bursts up when it fills.
+    if (HasAffix(AFFIX_VOLCANIC))
+    {
+        m_eruptionTimer -= int32(diff);
+        if (m_eruptionTimer <= 0 && m_creature->IsWithinDistInMap(owner, BONK_ERUPTION_RANGE))
+        {
+            m_eruptionTimer = BONK_ERUPTION_INTERVAL;
+            if (BonkRun* run = owner->GetBonkPlayer()->GetRun())
+            {
+                float const x = owner->GetPositionX(), y = owner->GetPositionY(), z = owner->GetPositionZ();
+                ObjectGuid const guid = m_creature->GetObjectGuid();
+                uint32 const damage = uint32(std::max(1.0f, GetMeleeHit() * BONK_ERUPTION_DAMAGE));
+                run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_ERUPTION_RADIUS, BONK_ERUPTION_WARN_MS,
+                    [run, guid, x, y, z, damage]() { run->Erupt(guid, x, y, z, BONK_ERUPTION_RADIUS, damage); });
+            }
         }
     }
 

@@ -147,6 +147,11 @@ namespace
     float const BONK_PET_SPEED             = 1.4f;     // times a creature's run speed: keeps up with the hero
     uint32 const BONK_PET_CHECK_MS         = 250;
     uint32 const BONK_SPELL_BLEED_HEAL     = 23881;    // Bloodthirst: names Bloodthirst's heal in combat text
+    // Volcanic: the burst's look (a dummy, on an invisible marker), and the
+    // enemy's hit on a hero who stayed in it.
+    uint32 const BONK_SPELL_ERUPTION_LOOK  = 19823;    // Fire Nova Visual
+    uint32 const BONK_SPELL_ERUPTION_HIT   = 13339;    // Fire Blast
+    uint32 const BONK_ERUPTION_LOOK_MS     = 3000;
 
     // Elites drop a chest by chance (%), better with every affix and every
     // point of Luck; after this many elites without one, the next drops one.
@@ -675,6 +680,7 @@ void BonkRun::StartStage()
     DespawnPools();
     DespawnWeaponOrbs();
     m_pendingCasts.clear();
+    m_telegraphs.Clear(m_player->FindMap());
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
@@ -745,6 +751,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateWeaponOrbs(diff);
     UpdateTraps(diff);
     UpdatePetTargets(diff);
+    m_telegraphs.Update(m_player->GetMap(), diff);
     if (m_state != STATE_RUNNING)
         return;
 
@@ -2083,6 +2090,7 @@ void BonkRun::EnterNextStage()
     DespawnOrbs();
     DespawnTraps();
     DespawnPets();
+    m_telegraphs.Clear(m_player->FindMap());
 
     std::string error;
     if (!TeleportToStage(*next, error))
@@ -3103,6 +3111,31 @@ float BonkRun::GetMobDamageMultiplier(Creature const* mob) const
         if (owned.weapon.behavior == BONK_BEHAVIOR_DEMORALIZE && mob->HasAura(owned.weapon.spellId))
             reduction = std::max(reduction, owned.weapon.behaviorValue * (1.0f + owned.damageBonus / 100.0f));
     return 1.0f - std::min(reduction, BONK_MAX_DEMORALIZE) / 100.0f;
+}
+
+void BonkRun::AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
+    std::function<void()> onFire)
+{
+    if (m_state != STATE_RUNNING || m_paused)
+        return;
+    m_telegraphs.Add(m_player->GetMap(), shape, x, y, z, orientation, size, durationMs, std::move(onFire));
+}
+
+void BonkRun::Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius, uint32 damage)
+{
+    if (Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_ERUPTION_LOOK_MS,
+        false, 0, &InstallOrbAI))
+    {
+        marker->SetFactionTemplateId(BONK_ORB_FACTION);
+        marker->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+        marker->CastSpell(marker, BONK_SPELL_ERUPTION_LOOK, true);
+    }
+
+    // The enemy's own spell, so Armor, the Shield and its affixes count.
+    Creature* mob = m_player->GetMap()->GetCreature(mobGuid);
+    if (!mob || !mob->IsAlive() || !m_player->IsAlive() || m_player->GetDistance2d(x, y) > radius)
+        return;
+    mob->CastCustomSpell(m_player, BONK_SPELL_ERUPTION_HIT, int32(std::max(1u, damage)), {}, {}, true);
 }
 
 void BonkRun::OnHeroDodge()
@@ -4656,6 +4689,11 @@ void BonkRun::SetPaused(bool paused)
                 if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
                     ai->SetFrozen(paused);
 
+        // The client fills a warning on its own clock, so one held over a
+        // pause would look full long before it fired: drop them instead.
+        if (paused)
+            m_telegraphs.Clear(map);
+
         // Beasts hold still too; they find their prey again after.
         for (OwnedWeapon const& owned : m_weapons)
             for (ObjectGuid const& guid : owned.pets)
@@ -4703,6 +4741,7 @@ void BonkRun::CleanUp()
     DespawnPools();
     DespawnWeaponOrbs();
     m_pendingCasts.clear();
+    m_telegraphs.Clear(m_player->FindMap());
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
