@@ -173,19 +173,21 @@ namespace
     float const BONK_MAX_DEMORALIZE        = 60.0f;    // % less damage a shout can take off
     float const BONK_MARK_JUMP_RANGE       = 15.0f;    // a mark moves on to an enemy this close to the one that died
     // Traps: how near an enemy sets one off, how soon after it lands, how
-    // long it lies, how many one spell can have out, and how near an enemy
-    // must be before the hero drops any.
+    // long it lies (in its spell's cooldowns, longer with Duration; about two
+    // drops out at once), how many one spell can have out, and how near an
+    // enemy must be before the hero drops any.
     float const BONK_TRAP_TRIGGER_RADIUS   = 2.5f;
     int32 const BONK_TRAP_ARM_MS           = 500;
-    int32 const BONK_TRAP_LIFETIME_MS      = 30000;
+    float const BONK_TRAP_LIFETIME         = 2.0f;
     size_t const BONK_MAX_TRAPS            = 8;
     float const BONK_TRAP_AWARE_RANGE      = 25.0f;
     float const BONK_TRAP_SPACING          = 3.0f;     // between traps dropped together
     uint32 const BONK_TRAP_CHECK_MS        = 100;
-    // Beasts: their creature, how near the hero they look for prey, how far
-    // they may stray before they are brought back, and how often they look.
+    // Beasts: their creature, how near the hero they look for prey (summons
+    // stay within about 15 yd), how far they may stray before they are
+    // brought back, and how often they look.
     uint32 const BONK_PET_ENTRY            = 900112;
-    float const BONK_PET_HUNT_RANGE        = 25.0f;
+    float const BONK_PET_HUNT_RANGE        = 15.0f;
     float const BONK_PET_LEASH_RANGE       = 40.0f;
     float const BONK_PET_SPEED             = 1.4f;     // times a creature's run speed: keeps up with the hero
     uint32 const BONK_PET_CHECK_MS         = 250;
@@ -3526,6 +3528,7 @@ void BonkRun::DropTraps(OwnedWeapon& owned)
 {
     BonkWeapon const& weapon = owned.weapon;
     uint32 const count = 1 + owned.extraTargets + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT));
+    int32 const lifetime = int32(BONK_TRAP_LIFETIME * GetWeaponCooldown(owned) * m_player->GetBonkPlayer()->TweakSpell(weapon.spellId).durationScale);
     float const startAngle = frand(0.0f, 2.0f * M_PI_F);
     for (uint32 i = 0; i < count; ++i)
     {
@@ -3566,8 +3569,8 @@ void BonkRun::DropTraps(OwnedWeapon& owned)
         trap.y = y;
         trap.z = z;
         trap.armMs = BONK_TRAP_ARM_MS;
-        trap.leftMs = BONK_TRAP_LIFETIME_MS;
-        if (GameObject* go = PlaceObject(uint32(weapon.behaviorValue), x, y, z, BONK_TRAP_LIFETIME_MS / IN_MILLISECONDS + 5))
+        trap.leftMs = lifetime;
+        if (GameObject* go = PlaceObject(uint32(weapon.behaviorValue), x, y, z, lifetime / IN_MILLISECONDS + 5))
             trap.object = go->GetObjectGuid();
         m_traps.push_back(trap);
     }
@@ -3724,6 +3727,10 @@ void BonkRun::UpdatePetTargets(uint32 diff)
     m_petTimer = 0;
 
     Map* map = m_player->GetMap();
+    // A pet's prey stays its prey while it lives and stays near the hero;
+    // the others look for a new one.
+    std::vector<ObjectGuid> hunted;
+    std::vector<Creature*> seeking;
     for (OwnedWeapon& owned : m_weapons)
         for (ObjectGuid const& guid : owned.pets)
         {
@@ -3739,26 +3746,39 @@ void BonkRun::UpdatePetTargets(uint32 diff)
                 continue;
             }
 
-            // Its prey stays its prey while it lives and stays near the hero.
             Unit* victim = pet->GetVictim();
             if (victim && victim->IsAlive() && victim->IsWithinDistInMap(m_player, BONK_PET_HUNT_RANGE))
-                continue;
-
-            // Else the enemy nearest the hero.
-            std::vector<Creature*> const prey = GetMobsInRange(BONK_PET_HUNT_RANGE);
-            if (!prey.empty())
-            {
-                pet->AI()->AttackStart(prey.front());
-                continue;
-            }
-            // Nothing to hunt: at the hero's heel.
-            if (victim || pet->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
-            {
-                pet->AttackStop();
-                pet->GetMotionMaster()->Clear(false);
-                pet->GetMotionMaster()->MoveFollow(m_player, 2.0f, frand(0.0f, 2.0f * M_PI_F));
-            }
+                hunted.push_back(victim->GetObjectGuid());
+            else
+                seeking.push_back(pet);
         }
+    if (seeking.empty())
+        return;
+
+    // The enemy nearest the hero that no other pet is on, so several pets
+    // spread over the pack; once every one is taken, the nearest.
+    std::vector<Creature*> const prey = GetMobsInRange(BONK_PET_HUNT_RANGE);
+    for (Creature* pet : seeking)
+    {
+        if (!prey.empty())
+        {
+            auto itr = std::find_if(prey.begin(), prey.end(), [&hunted](Creature* mob)
+            {
+                return std::find(hunted.begin(), hunted.end(), mob->GetObjectGuid()) == hunted.end();
+            });
+            Creature* target = itr != prey.end() ? *itr : prey.front();
+            hunted.push_back(target->GetObjectGuid());
+            pet->AI()->AttackStart(target);
+            continue;
+        }
+        // Nothing to hunt: at the hero's heel.
+        if (pet->GetVictim() || pet->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+        {
+            pet->AttackStop();
+            pet->GetMotionMaster()->Clear(false);
+            pet->GetMotionMaster()->MoveFollow(m_player, 2.0f, frand(0.0f, 2.0f * M_PI_F));
+        }
+    }
 }
 
 void BonkRun::DespawnPets()
