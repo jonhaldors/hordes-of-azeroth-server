@@ -58,6 +58,52 @@ namespace
         float o;
         return target->ExtrapolateMovement(target->m_movementInfo, age + leadMs, x, y, z, o);
     }
+
+    // A chaser faces the way its path's current segment runs, so every new
+    // path would snap it round. Its path instead starts the way it already
+    // faces and curves round to the target in short steps: it turns at this
+    // rate, a few degrees a step. Only on a straight path (open ground).
+    float const BONK_TURN_RATE       = 270.0f * M_PI_F / 180.0f;     // radians a second
+    float const BONK_TURN_STEP       = 6.0f * M_PI_F / 180.0f;       // radians a step
+    uint32 const BONK_TURN_MAX_STEPS = 40;
+
+    bool BuildBonkTurnPath(Unit& owner, Movement::PointsArray const& path, Movement::PointsArray& out)
+    {
+        if (path.size() != 2)
+            return false;
+
+        // Where the client shows it now, and the way it faces.
+        G3D::Vector3 pos(owner.GetPositionX(), owner.GetPositionY(), owner.GetPositionZ());
+        float heading = owner.GetOrientation();
+        if (!owner.movespline->Finalized())
+        {
+            Movement::Location const loc = owner.movespline->ComputePosition();
+            pos = loc;
+            heading = loc.orientation;
+        }
+
+        G3D::Vector3 const& target = path.back();
+        float const step = std::max(0.5f, owner.GetSpeed(MOVE_RUN)) * BONK_TURN_STEP / BONK_TURN_RATE;
+        out.clear();
+        out.push_back(pos);
+        for (uint32 i = 0; i < BONK_TURN_MAX_STEPS; ++i)
+        {
+            float const dx = target.x - pos.x;
+            float const dy = target.y - pos.y;
+            float const turn = std::remainder(std::atan2(dy, dx) - heading, 2.0f * M_PI_F);
+            if (std::fabs(turn) <= BONK_TURN_STEP || dx * dx + dy * dy < 4.0f * step * step)
+                break;
+            heading += turn > 0.0f ? BONK_TURN_STEP : -BONK_TURN_STEP;
+            pos.x += step * std::cos(heading);
+            pos.y += step * std::sin(heading);
+            owner.UpdateAllowedPositionZ(pos.x, pos.y, pos.z);
+            out.push_back(pos);
+        }
+        if (out.size() == 1)
+            return false;   // already facing it: the plain path
+        out.push_back(target);
+        return true;
+    }
 }
 
 //-----------------------------------------------//
@@ -275,7 +321,12 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
     _addUnitStateMove(owner);
     m_bTargetReached = false;
 
-    init.Move(&path);
+    Movement::PointsArray turnPath;
+    Creature const* bonkEnemy = owner.ToCreature();
+    if (bonkEnemy && bonkEnemy->IsBonkEnemy() && BuildBonkTurnPath(owner, path.getPath(), turnPath))
+        init.MovebyPath(turnPath);
+    else
+        init.Move(&path);
     init.SetWalk(EnableWalking());
 
     // Make player face target he is chasing (player does not automatically face target like creature).

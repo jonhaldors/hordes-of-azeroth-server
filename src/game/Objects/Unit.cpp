@@ -7115,8 +7115,10 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced, float ratio)
         else
             speed *= DEFAULT_NPC_RUN_SPEED_RATE;  // normalized player pet runspeed
 
-        // Speed reduction at low health percentages
-        if (mtype == MOVE_RUN && !pCreature->IsPet() && !pCreature->IsWorldBoss() && !pCreature->HasStaticFlag(CREATURE_STATIC_FLAG_2_NO_WOUNDED_SLOWDOWN))
+        // Speed reduction at low health percentages (Vanilla Bonk: not for run
+        // enemies, whose speed is part of the game's balance)
+        if (mtype == MOVE_RUN && !pCreature->IsPet() && !pCreature->IsWorldBoss() && !pCreature->IsBonkEnemy() &&
+            !pCreature->HasStaticFlag(CREATURE_STATIC_FLAG_2_NO_WOUNDED_SLOWDOWN))
         {
             if (HasAuraState(AURA_STATE_HEALTHLESS_5_PERCENT))
                 speed *= SPEED_REDUCTION_HP_5;
