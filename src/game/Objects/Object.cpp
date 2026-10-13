@@ -761,6 +761,11 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                          (index >= PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE  && index <= (PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE + 6)) ||
                          (index >= PLAYER_FIELD_POSSTAT0    && index <= PLAYER_FIELD_POSSTAT4))
                     *data << uint32(m_floatValues[index]);
+                // Vanilla Bonk: a unit spells may target but players should
+                // not see as one (Creature::SetClientUnselectable).
+                else if (index == UNIT_FIELD_FLAGS && GetTypeId() == TYPEID_UNIT &&
+                    static_cast<Creature const*>(this)->IsClientUnselectable())
+                    *data << uint32(m_uint32Values[index] | UNIT_FLAG_NOT_SELECTABLE);
                 // Gamemasters should be always able to select units and view auras
                 else if (index == UNIT_FIELD_FLAGS && target->IsGameMaster())
                     *data << ((m_uint32Values[index] | UNIT_FLAG_AURAS_VISIBLE) & ~UNIT_FLAG_NOT_SELECTABLE);

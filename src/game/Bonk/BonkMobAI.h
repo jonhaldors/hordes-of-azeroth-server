@@ -95,6 +95,8 @@ class BonkMobAI : public CreatureAI
         void Explode(Player* owner);
         // Casters: a bolt at where the player stands, under a red circle.
         void AimBolt(BonkMobAbility const& ability, SpellEntry const* spellInfo, Player* owner, BonkRun* run);
+        void UpdateBolt(uint32 diff, Player* owner);
+        void AimBoltNow(Player* owner);
         void LaunchBolt();
         // Chargers: stop, warn with a red line, dash along it.
         bool UpdateCharge(uint32 diff, Player* owner);
@@ -122,9 +124,16 @@ class BonkMobAI : public CreatureAI
         float m_chargeX = 0.0f, m_chargeY = 0.0f, m_chargeZ = 0.0f;    // where the dash starts
         float m_chargeAngle = 0.0f, m_chargeLength = 0.0f;
         float m_dashX = 0.0f, m_dashY = 0.0f, m_dashZ = 0.0f;          // where it ends
-        ObjectGuid m_boltTarget;            // an aimed bolt waiting to be cast at it
+        // An aimed bolt (AimBolt): cast at a stand-in target, which moves to
+        // where the player will be as the cast ends.
+        ObjectGuid m_boltTarget;
         uint32 m_boltSpell = 0;
-        int32 m_boltDelay = 0;
+        uint32 m_boltDamage = 0;
+        uint32 m_boltLead = 0;              // ms between the aim and the cast's end
+        int32 m_boltStartTimer = 0;         // until the cast starts
+        int32 m_boltAimTimer = 0;           // until it aims
+        bool m_boltStarted = false;
+        bool m_boltAimed = false;
 
         // Install's nameplate number for the next summon; per thread, as maps
         // may update side by side.

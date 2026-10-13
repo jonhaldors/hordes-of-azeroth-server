@@ -336,6 +336,11 @@ class Creature : public Unit
         // where they are now (ChaseMovementGenerator).
         void SetBonkEnemy(bool enabled) { m_bonkEnemy = enabled; }
         bool IsBonkEnemy() const { return m_bonkEnemy; }
+        // Vanilla Bonk: sent to clients as not selectable (no nameplate, no
+        // click), while the server still lets spells target it. Set before
+        // it enters the world.
+        void SetClientUnselectable(bool enabled) { m_clientUnselectable = enabled; }
+        bool IsClientUnselectable() const { return m_clientUnselectable; }
         void MoveAwayFromTarget(Unit const* pTarget, float distance);
         void CallForHelp(float radius);
         void CallAssistance();
@@ -700,6 +705,7 @@ class Creature : public Unit
         float m_baseRunSpeedRate;
         uint32 m_plateId = 0;       // SetPlateId
         bool m_bonkEnemy = false;      // SetBonkEnemy
+        bool m_clientUnselectable = false;     // SetClientUnselectable
 
     private:
         GridReference<Creature> m_gridRef;

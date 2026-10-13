@@ -330,10 +330,37 @@ namespace
         }
     }
 
+    // Run helpers (orbs, markers): no AI, friendly to everyone and never
+    // selectable. Set here, before the map adds them (TemporarySummon::Summon),
+    // so the client's first sight of one already has it: set after the
+    // summon, the client had a selectable unit for an update and drew its
+    // name in green.
     void InstallOrbAI(Creature* creature)
     {
         creature->GetMotionMaster()->Initialize();
         creature->SetAI(new NullCreatureAI(creature));
+        creature->SetFactionTemplateId(BONK_ORB_FACTION);
+        creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    }
+
+    // A projectile: never selectable either, but it casts at enemies for the
+    // hero, so it is player controlled and not immune to them
+    // (BonkRun::LaunchProjectile gives it the hero's faction).
+    void InstallProjectileAI(Creature* creature)
+    {
+        creature->GetMotionMaster()->Initialize();
+        creature->SetAI(new NullCreatureAI(creature));
+        creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
+    }
+
+    // An enemy bolt's stand-in target: enemies must be able to cast at it, so
+    // it stays selectable here, but players get no nameplate or click on it.
+    void InstallBoltTargetAI(Creature* creature)
+    {
+        // Not InstallOrbAI: that makes a helper unselectable on the server too.
+        creature->GetMotionMaster()->Initialize();
+        creature->SetAI(new NullCreatureAI(creature));
+        creature->SetClientUnselectable(true);
     }
 
     void VanishOrb(Creature* orb)
@@ -1824,8 +1851,6 @@ void BonkRun::OnAffixedDeath(Creature* mob)
         if (Creature* marker = m_player->SummonCreature(BONK_SANGUINE_POOL, pool.x, pool.y, pool.z, 0.0f,
             TEMPSUMMON_TIMED_DESPAWN, BONK_SANGUINE_DURATION_MS * 2, false, 0, &InstallOrbAI))
         {
-            marker->SetFactionTemplateId(BONK_ORB_FACTION);
-            marker->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
             marker->AddAura(BONK_SPELL_SANGUINE);
             pool.marker = marker->GetObjectGuid();
         }
@@ -3469,8 +3494,6 @@ void BonkRun::LaunchOrb(OwnedWeapon& owned)
     Creature* orb = m_player->SummonCreature(BONK_ORB_SMALL, x, y, z + 1.0f, angle, TEMPSUMMON_TIMED_DESPAWN, lifetime + 2000, false, 0, &InstallOrbAI);
     if (!orb)
         return;
-    orb->SetFactionTemplateId(BONK_ORB_FACTION);
-    orb->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
     orb->SetObjectScale(BONK_WEAPON_ORB_SCALE);
     orb->AddAura(BONK_SPELL_WEAPON_ORB);
     orb->SetSpeedRate(MOVE_RUN, BONK_WEAPON_ORB_SPEED);
@@ -3606,7 +3629,7 @@ void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& inf
         return;
 
     uint32 const flightMs = uint32(flight / info.speed * IN_MILLISECONDS);
-    Creature* missile = m_player->SummonCreature(BONK_PROJECTILE, x, y, z, angle, TEMPSUMMON_TIMED_DESPAWN, flightMs + 2000, false, 0, &InstallOrbAI);
+    Creature* missile = m_player->SummonCreature(BONK_PROJECTILE, x, y, z, angle, TEMPSUMMON_TIMED_DESPAWN, flightMs + 2000, false, 0, &InstallProjectileAI);
     if (!missile)
         return;
     missile->SetDisplayId(info.displayId);
@@ -3615,7 +3638,6 @@ void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& inf
     // the hero's faction and player controlled, so its spells may hit what the
     // hero's may. Enemies can't pick it out (not selectable).
     missile->SetFactionTemplateId(m_player->GetFactionTemplateId());
-    missile->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
     // The hero's: the spells it casts deal the hero's damage (BonkRun::FromAttack).
     missile->SetOwnerGuid(m_player->GetObjectGuid());
     missile->SetLevel(m_player->GetLevel());
@@ -3748,8 +3770,6 @@ void BonkRun::Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius,
     if (Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_ERUPTION_LOOK_MS,
         false, 0, &InstallOrbAI))
     {
-        marker->SetFactionTemplateId(BONK_ORB_FACTION);
-        marker->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
         marker->CastSpell(marker, BONK_SPELL_ERUPTION_LOOK, true);
     }
 
@@ -3762,13 +3782,13 @@ void BonkRun::Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius,
 
 ObjectGuid BonkRun::PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs)
 {
-    Creature* target = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, lifetimeMs, false, 0, &InstallOrbAI);
+    Creature* target = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, lifetimeMs, false, 0, &InstallBoltTargetAI);
     if (!target)
         return ObjectGuid();
 
     // On the hero's side, so enemies may cast at it (a target they cannot
-    // select would stop the cast) and the hero's spells leave it be; it
-    // soaks the bolt.
+    // select would stop the cast; InstallBoltTargetAI hides it from players
+    // instead) and the hero's spells leave it be; it soaks the bolt.
     target->SetFactionTemplateId(m_player->GetFactionTemplateId());
     target->SetMaxHealth(1000000);
     target->SetHealth(1000000);
@@ -4194,6 +4214,8 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
     }
 
     uint32 const entry = colour == BONK_ORB_BLUE ? BONK_ORB_SMALL : colour == BONK_ORB_GREEN ? BONK_ORB_LARGE : BONK_ORB_HUGE;
+    // The colour is the orb's own model (bonk orb templates), never a glow:
+    // the Glowy auras are what affixed elites wear.
     Creature* orb = m_player->SummonCreature(entry, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), 0.0f,
         TEMPSUMMON_TIMED_DESPAWN, BONK_ORB_LIFETIME_MS, false, 0, &InstallOrbAI);
     if (!orb)
@@ -4201,11 +4223,6 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
         GiveExperience(experience);
         return;
     }
-
-    orb->SetFactionTemplateId(BONK_ORB_FACTION);
-    // The colour is the orb's own model (bonk orb templates), never a glow:
-    // the Glowy auras are what affixed elites wear.
-    orb->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
 
     Orb dropped;
     dropped.guid = orb->GetObjectGuid();
@@ -4458,8 +4475,6 @@ ObjectGuid BonkRun::PlaceMarker(GameObject const* go, uint32 spellId, float scal
     if (!marker)
         return ObjectGuid();
 
-    marker->SetFactionTemplateId(BONK_ORB_FACTION);
-    marker->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
     marker->SetObjectScale(scale);
     marker->AddAura(spellId, ADD_AURA_PERMANENT);
     return marker->GetObjectGuid();
