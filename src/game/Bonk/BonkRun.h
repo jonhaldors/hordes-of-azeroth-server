@@ -34,6 +34,7 @@
 class Creature;
 class GameObject;
 class Player;
+class SpellAuraHolder;
 class SpellCaster;
 class Unit;
 
@@ -89,6 +90,21 @@ class BonkRun
         void OnHeroStruck(Creature* attacker);
         // A hero's damage over time ticked on an enemy (Bloodthirst).
         void OnPeriodicDamage(uint32 spellId, uint32 damage);
+
+        // Keywords (BonkKeywords.cpp). A hit or tick of one of the hero's
+        // spells on an enemy (BonkOnDamage): the keyword the spell applies
+        // goes on it at the next update.
+        void OnWeaponHit(Unit* victim, SpellEntry const* spell);
+        // The hero's hit about to kill an enemy: its damage over time stacks
+        // are noted, as the core strips its debuffs before it counts as dead.
+        void OnKillingBlow(Unit* victim);
+        // Puts `stacks` of `keyword` on a run enemy (`.bonk keyword` too).
+        bool ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks);
+        uint32 GetKeywordStacks(Unit const* victim, BonkKeyword keyword) const;
+        // A hero's stun on a run enemy (Spell::DoSpellHitOnUnit): cut to at
+        // most BONK_MAX_HOLD_MS; false while the enemy is still immune after
+        // its last one.
+        bool LimitStun(Creature* mob, int32& duration);
         // A red ground warning for an enemy ability; `onFire` runs when it
         // fills. Warnings are dropped, unfired, when the run pauses or the
         // stage ends.
@@ -571,6 +587,42 @@ class BonkRun
         uint32 m_chestsBought = 0;
         uint32 m_lastLevel = 1;
         uint32 m_pendingLevels = 0;
+
+        // Keywords (BonkKeywords.cpp).
+        void UpdateKeywords();
+        void SpreadKeywords(Creature const* dead);
+        // Frozen: held for a moment, then immune for a while. Elites and
+        // bosses are never held but count as Frozen for Shatter crits.
+        bool Freeze(Creature* mob);
+        bool IsFrozen(Unit const* victim) const;
+        uint32 CountKeywords(Unit const* victim) const;
+        // Payoffs and Hunter's Mark, times the damage of `spell` (null for
+        // a swing) on `victim`; the vulnerabilities are debuffs the core reads.
+        float GetKeywordDamageMultiplier(SpellEntry const* spell, Unit const* victim) const;
+        SpellAuraHolder* AddKeywordAura(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs);
+        int32 GetKeywordPoints(BonkKeywordInfo const& info) const;
+        // Knockbacks: never elites or bosses, and once per enemy every while.
+        bool CanKnockBack(Creature const* mob);
+        void RebuildWeaponSpells();
+        OwnedWeapon const* FindOwnedBySpell(uint32 spellId) const;
+
+        struct PendingKeyword
+        {
+            ObjectGuid mob;
+            BonkKeyword keyword = BONK_KEYWORD_NONE;
+            uint8 stacks = 0;
+        };
+        std::vector<PendingKeyword> m_pendingKeywords;
+        std::map<ObjectGuid, std::map<uint8, uint32>> m_dyingKeywords;  // enemy dealt a killing blow -> damage over time stacks it had
+        struct CrowdControl
+        {
+            uint32 frozenImmuneUntil = 0;   // ms
+            uint32 stunImmuneUntil = 0;
+            uint32 knockImmuneUntil = 0;
+            uint32 shatterUntil = 0;        // counts as Frozen until then
+        };
+        std::map<ObjectGuid, CrowdControl> m_crowdControl;
+        std::map<uint32, uint32> m_weaponSpells;    // spell id -> the owned weapon that casts it
 
         std::vector<OwnedWeapon> m_weapons;
         std::map<uint32, uint8> m_passiveRanks;

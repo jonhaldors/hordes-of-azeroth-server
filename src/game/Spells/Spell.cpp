@@ -49,7 +49,7 @@
 #include "Anticheat.h"
 #include "Utilities/Random.h"
 #include "Bonk/BonkPlayer.h"
-#include "Bonk/BonkMobAI.h"
+#include "Bonk/BonkRun.h"
 
 using namespace Spells;
 
@@ -1744,15 +1744,6 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
 
     // Get Data Needed for Diminishing Returns, some effects may have multiple auras, so this must be done on spell hit, not aura add
     m_diminishGroup = m_spellInfo->GetDiminishingReturnsGroup(m_triggeredByAuraSpell);
-
-    // Vanilla Bonk: a hero's stuns on run enemies diminish like controlled
-    // stuns, also from creature spells made without a stun mechanic
-    // (Shockwave, Axe Flurry), so a weapon can't hold trash forever.
-    if (m_diminishGroup == DIMINISHING_NONE && m_spellInfo->HasAura(SPELL_AURA_MOD_STUN) && unit->IsCreature())
-        if (Player const* hero = pRealUnitCaster ? pRealUnitCaster->ToPlayer() : nullptr)
-            if (hero->GetBonkPlayer()->GetRun() && dynamic_cast<BonkMobAI const*>(static_cast<Creature*>(unit)->AI()))
-                m_diminishGroup = DIMINISHING_CONTROL_STUN;
-
     m_diminishLevel = unit->GetDiminishing(m_diminishGroup);
 
     if (m_spellInfo->IsSpellAppliesAura(effectMask))
@@ -1819,6 +1810,20 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
                     return;
                 }
             }
+
+            // Vanilla Bonk: a hero's stun on a run enemy holds it for a
+            // moment, and then that enemy can't be stunned for a while, so
+            // no spell keeps trash stunned (BonkRun::LimitStun). The spell's
+            // damage still lands.
+            if (duration != 0 && m_spellInfo->HasAura(SPELL_AURA_MOD_STUN) && unit->IsCreature())
+                if (Player* hero = pRealUnitCaster ? pRealUnitCaster->ToPlayer() : nullptr)
+                    if (BonkRun* run = hero->GetBonkPlayer()->GetRun())
+                        if (!run->LimitStun(static_cast<Creature*>(unit), duration))
+                        {
+                            delete m_spellAuraHolder;
+                            m_spellAuraHolder = nullptr;
+                            return;
+                        }
 
             if (duration != originalDuration)
             {

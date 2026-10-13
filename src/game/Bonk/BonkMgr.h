@@ -331,6 +331,46 @@ enum BonkWeaponBehavior : uint8
     MAX_BONK_BEHAVIOR
 };
 
+// Shared debuffs every class feeds and pays off (docs/Spells.md, Keywords):
+// one per keyword per enemy, carrying a stack count, always cast by the hero
+// so all of a hero's spells add to the same stack (bonk_keyword).
+enum BonkKeyword : uint8
+{
+    BONK_KEYWORD_NONE                 = 0,
+    BONK_KEYWORD_CHILL                = 1,      // slower per stack; at its most stacks the enemy is Frozen
+    BONK_KEYWORD_FROZEN               = 2,      // held in place; crits on it deal more (Shatter)
+    BONK_KEYWORD_BURNING              = 3,      // damage over time per stack; spreads when its carrier dies
+    BONK_KEYWORD_BLEED                = 4,
+    BONK_KEYWORD_POISON               = 5,
+    BONK_KEYWORD_FIRE_VULNERABILITY   = 6,      // more Fire damage taken per stack
+    BONK_KEYWORD_SUNDER_ARMOR         = 7,      // more Physical damage taken per stack
+    BONK_KEYWORD_SHADOW_VULNERABILITY = 8,      // more Shadow damage taken per stack
+    BONK_KEYWORD_HUNTERS_MARK         = 9,      // more damage taken from everything
+    BONK_KEYWORD_DAZED                = 10,     // slower
+    MAX_BONK_KEYWORD,
+    BONK_KEYWORD_VARIETY              = 255     // bonk_weapon.uses: every different keyword on the enemy counts
+};
+
+struct BonkKeywordInfo
+{
+    BonkKeyword id = BONK_KEYWORD_NONE;
+    std::string name;
+    std::string icon;               // Interface\Icons texture name, for the results screen
+    uint32 spellId = 0;             // the debuff that carries it: its icon, text and look on the enemy
+    uint8 maxStacks = 1;
+    // % slower or more damage taken a stack; damage over time: a stack's
+    // damage a second, as a share of a same-level enemy's health.
+    float valuePerStack = 0.0f;
+    uint32 tickMs = 0;              // damage over time: how often it ticks before Haste
+    uint32 durationMs = 0;          // how long it stays after it was last applied
+    bool spreadsOnDeath = false;    // half its stacks go to the nearest enemies when its carrier dies
+
+    bool IsDamageOverTime() const
+    {
+        return id == BONK_KEYWORD_BURNING || id == BONK_KEYWORD_BLEED || id == BONK_KEYWORD_POISON;
+    }
+};
+
 struct BonkWeapon
 {
     uint32 id = 0;
@@ -364,6 +404,12 @@ struct BonkWeapon
     uint8 baseJumps = 0;            // pierces, bounces or cleaved enemies before ranks add more
     float killBelowPct = 0.0f;      // normal enemies below this % health die at once
     uint32 flags = 0;               // BonkWeaponFlags
+    BonkKeyword applies = BONK_KEYWORD_NONE;    // put on every enemy each hit or tick strikes
+    uint8 applyStacks = 0;                      // stacks of it per hit or tick
+    // Pays off: usesPct % more damage for each stack of `uses` on the enemy,
+    // or for each different keyword on it (BONK_KEYWORD_VARIETY).
+    BonkKeyword uses = BONK_KEYWORD_NONE;
+    float usesPct = 0.0f;
 
     int32 damageEffectIndex = -1;   // effect whose base points carry the damage
     int32 tickEffectIndex = -1;     // damage over time besides damageEffectIndex (a hit that leaves it burning)
@@ -647,6 +693,11 @@ class BonkMgr
         // The weapon `weaponId` evolves into, if any.
         BonkWeapon const* GetEvolution(uint32 weaponId) const;
 
+        BonkKeywordInfo const* GetKeyword(BonkKeyword id) const;
+        // The keyword whose debuff is `spellId`, if any.
+        BonkKeywordInfo const* GetKeywordBySpell(uint32 spellId) const;
+        std::map<uint8, BonkKeywordInfo> const& GetKeywords() const { return m_keywords; }
+
         BonkMob const* GetMob(uint32 entry) const;
 
         BonkArchetypeInfo const& GetArchetype(BonkArchetype archetype) const { return m_archetypes[archetype]; }
@@ -684,6 +735,7 @@ class BonkMgr
         void LoadMaps();
         void LoadMapCreatures();
         void LoadMapEvents();
+        void LoadKeywords();
         void LoadWeapons();
         void LoadPassives();
         void LoadPowerups();
@@ -702,6 +754,7 @@ class BonkMgr
         std::map<uint32, BonkTier> m_tiers;
         std::map<uint32, BonkMap> m_maps;
         std::map<uint32, BonkWeapon> m_weapons;
+        std::map<uint8, BonkKeywordInfo> m_keywords;
         std::map<uint32, BonkPassive> m_passives;
         std::vector<BonkPowerup> m_powerups;
         std::map<uint32, BonkShopTree> m_shopTrees;

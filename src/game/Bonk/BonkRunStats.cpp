@@ -5,6 +5,7 @@
 #include "BonkRunStats.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
+#include "BonkRun.h"
 #include "CellImpl.h"
 #include "Creature.h"
 #include "GridNotifiers.h"
@@ -127,7 +128,8 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
             (weapon.evolved ? "1" : "0") + "~" + std::to_string(damage) + "~" + std::to_string(kills));
     }
 
-    // The hero's own weapon swings, then any other spell by its name.
+    // The hero's own weapon swings, keywords (Burning, Bleed, Poison) by
+    // their names, then any other spell by its name.
     for (auto const& itr : stats.bySpell)
     {
         if (sent.count(itr.first) || (!itr.second.damage && !itr.second.kills))
@@ -138,6 +140,11 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
         {
             icon = "INV_Sword_04";
             name = "Melee";
+        }
+        else if (BonkKeywordInfo const* keyword = sBonkMgr.GetKeywordBySpell(itr.first))
+        {
+            icon = keyword->icon.empty() ? icon : keyword->icon;
+            name = keyword->name;
         }
         else if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(itr.first))
             name = spellInfo->SpellName[0];
@@ -225,6 +232,14 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
     {
         if (!victim->IsCreature() || !InRun(player))
             return;
+
+        // Keywords: the spell's goes on the enemy; a killing blow notes its
+        // damage over time stacks, to spread when it dies.
+        BonkRun* run = player->GetBonkPlayer()->GetRun();
+        if (damage >= health)
+            run->OnKillingBlow(victim);
+        else
+            run->OnWeaponHit(victim, spellProto);
 
         uint32 const spellId = spellProto ? spellProto->Id : 0;
         std::lock_guard<std::mutex> guard(s_lock);

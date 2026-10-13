@@ -751,6 +751,9 @@ void BonkRun::StartStage()
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
+    m_pendingKeywords.clear();
+    m_dyingKeywords.clear();
+    m_crowdControl.clear();
     m_buffs.clear();
     m_retaliations.clear();
     m_retaliateUntil = 0;
@@ -821,6 +824,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateWeaponOrbs(diff);
     UpdateTraps(diff);
     UpdatePetTargets(diff);
+    UpdateKeywords();
     m_telegraphs.Update(m_player->GetMap(), diff);
     if (m_state != STATE_RUNNING)
         return;
@@ -1884,7 +1888,8 @@ float BonkRun::GetCritChance(SpellEntry const* spell) const
 float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
 {
     float bonus = (weaponAttack ? 1.0f : 0.5f) + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_CRIT_DAMAGE)) / 100.0f;
-    if (victim && victim->HasAuraType(SPELL_AURA_MOD_ROOT) && HasBehavior(BONK_BEHAVIOR_FREEZE))
+    // Shatter: crits on Frozen enemies, or on held ones with a freezing spell.
+    if (victim && (IsFrozen(victim) || (victim->HasAuraType(SPELL_AURA_MOD_ROOT) && HasBehavior(BONK_BEHAVIOR_FREEZE))))
         bonus += BONK_FROZEN_CRIT_BONUS;
     float multiplier = 1.0f + bonus;
 
@@ -1897,9 +1902,10 @@ float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
 float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) const
 {
     // Power, a shout's Power and Mastery add up rather than multiply; a
-    // mark on the enemy multiplies everything.
+    // mark on the enemy, Hunter's Mark and the spell's keyword payoff
+    // multiply everything.
     float percent = GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower();
-    float const mark = 1.0f + GetMarkBonus(victim) / 100.0f;
+    float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark;
 
@@ -2730,10 +2736,9 @@ std::vector<Creature*> BonkRun::GetMobsInCone(OwnedWeapon const& owned, float ra
 
 void BonkRun::KnockBack(Creature* mob)
 {
-    // Bosses stand their ground; held enemies stay held.
-    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
-    if (!ai || ai->GetKind() == BONK_SPAWN_BOSS || ai->GetKind() == BONK_SPAWN_MINIBOSS || !mob->IsAlive() ||
-        mob->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED))
+    // Held enemies stay held; elites and bosses stand their ground, and an
+    // enemy is knocked back once in a while (CanKnockBack).
+    if (!mob->IsAlive() || mob->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED) || !CanKnockBack(mob))
         return;
 
     float const angle = m_player->GetAngle(mob);
@@ -3834,6 +3839,7 @@ void BonkRun::AddWeapon(BonkWeapon const& weapon)
     owned.weapon = weapon;
     owned.timer = 500;
     m_weapons.push_back(owned);
+    RebuildWeaponSpells();
     // Revenge brings its own Dodge.
     if (weapon.behavior == BONK_BEHAVIOR_REVENGE)
         ApplyPassives();
@@ -4203,6 +4209,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
 
     ++m_kills;
     SpreadFrom(mob);
+    SpreadKeywords(mob);
     OnMarkedDeath(mob);
     uint32 const killingSpell = BonkStats::CountKill(m_player->GetObjectGuid(), mob->GetObjectGuid(), kind);
     sBonkQuests.OnKill(m_player, kind, killingSpell);
@@ -4401,6 +4408,7 @@ void BonkRun::ApplyStep(OwnedWeapon& owned, Offer const& offer)
                 std::string const from = owned.weapon.name;
                 owned.weapon = *evolved;
                 owned.timer = 500;
+                RebuildWeaponSpells();
                 m_player->GetBonkPlayer()->Notify(from + " evolved into " + evolved->name + "!");
             }
             break;
@@ -5192,6 +5200,9 @@ void BonkRun::CleanUp()
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
+    m_pendingKeywords.clear();
+    m_dyingKeywords.clear();
+    m_crowdControl.clear();
     m_buffs.clear();
     m_retaliations.clear();
     m_retaliateUntil = 0;

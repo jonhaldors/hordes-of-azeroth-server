@@ -223,6 +223,7 @@ class ChatHandler
         bool HandleBonkCampCommand(char* args);
         bool HandleBonkReloadCommand(char* args);
         bool HandleBonkTelegraphCommand(char* args);
+        bool HandleBonkKeywordCommand(char* args);
 
         //Cheats
         bool HandleCheatStatusCommand(char *);

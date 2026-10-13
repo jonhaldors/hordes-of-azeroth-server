@@ -21,6 +21,7 @@ set (game_SRCS
     AutoBroadCastMgr.cpp
     Bonk/BonkCodex.cpp
     Bonk/BonkCommands.cpp
+    Bonk/BonkKeywords.cpp
     Bonk/BonkMastery.cpp
     Bonk/BonkMgr.cpp
     Bonk/BonkMobAI.cpp

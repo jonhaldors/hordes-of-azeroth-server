@@ -351,3 +351,51 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
     PSendSysMessage("A %s of %.1f yards, %.1f seconds.", GetBonkTelegraphShapeName(shape), size, durationMs / float(IN_MILLISECONDS));
     return true;
 }
+
+bool ChatHandler::HandleBonkKeywordCommand(char* args)
+{
+    // GM testing aid: stacks of a keyword on the selected enemy of your run.
+    // .bonk keyword <name, or its start> [stacks]
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run || !run->IsActive())
+    {
+        SendSysMessage("You are not in a running stage.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    char* nameArg = ExtractArg(&args);
+    uint32 stacks = 1;
+    if (!nameArg || (*args && !ExtractUInt32(&args, stacks)))
+        return false;
+
+    std::string wanted = nameArg;
+    std::transform(wanted.begin(), wanted.end(), wanted.begin(), ::tolower);
+    BonkKeywordInfo const* keyword = nullptr;
+    std::string names;
+    for (auto const& itr : sBonkMgr.GetKeywords())
+    {
+        std::string name = itr.second.name;
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        if (!keyword && name.compare(0, wanted.size(), wanted) == 0)
+            keyword = &itr.second;
+        names += (names.empty() ? "" : ", ") + itr.second.name;
+    }
+    if (!keyword)
+    {
+        PSendSysMessage("No keyword starts with \"%s\". Keywords: %s.", nameArg, names.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    Creature* mob = GetSelectedCreature();
+    if (!mob || !run->ApplyKeyword(mob, keyword->id, stacks))
+    {
+        SendSysMessage("Select a living enemy of your run (one still immune after a hold can't be held again yet).");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    PSendSysMessage("%s: %u %s.", mob->GetName(), run->GetKeywordStacks(mob, keyword->id), keyword->name.c_str());
+    return true;
+}

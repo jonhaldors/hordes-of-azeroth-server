@@ -96,6 +96,8 @@ void BonkMgr::Load()
     LoadMaps();
     LoadMapCreatures();
     LoadMapEvents();
+    // Weapons name the keywords they apply and pay off.
+    LoadKeywords();
     LoadWeapons();
     LoadPassives();
     LoadPowerups();
@@ -429,6 +431,70 @@ void BonkMgr::LoadMapEvents()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk map events", count);
 }
 
+void BonkMgr::LoadKeywords()
+{
+    m_keywords.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `icon`, `spell_id`, `max_stacks`, `value_per_stack`, `tick_ms`, `duration_ms`, `spreads_on_death` FROM `bonk_keyword`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk keywords.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkKeywordInfo keyword;
+        uint8 const id = fields[0].GetUInt8();
+        keyword.id = BonkKeyword(id);
+        keyword.name = fields[1].GetCppString();
+        keyword.icon = fields[2].GetCppString();
+        keyword.spellId = fields[3].GetUInt32();
+        keyword.maxStacks = std::max<uint8>(1, fields[4].GetUInt8());
+        keyword.valuePerStack = fields[5].GetFloat();
+        keyword.tickMs = fields[6].GetUInt32();
+        keyword.durationMs = fields[7].GetUInt32();
+        keyword.spreadsOnDeath = fields[8].GetUInt8() != 0;
+
+        if (id == BONK_KEYWORD_NONE || id >= MAX_BONK_KEYWORD)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_keyword`: unknown keyword %u, skipped.", uint32(id));
+            continue;
+        }
+        SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(keyword.spellId);
+        if (!spellInfo || !spellInfo->IsSpellAppliesAura((1 << EFFECT_INDEX_0) | (1 << EFFECT_INDEX_1) | (1 << EFFECT_INDEX_2)))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_keyword`: keyword %u uses spell %u, which is missing or applies no aura; skipped.", uint32(id), keyword.spellId);
+            continue;
+        }
+        if (keyword.IsDamageOverTime() && !keyword.tickMs)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_keyword`: damage over time keyword %u has no tick_ms; it ticks every second.", uint32(id));
+            keyword.tickMs = IN_MILLISECONDS;
+        }
+        m_keywords[id] = std::move(keyword);
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk keywords", uint32(m_keywords.size()));
+}
+
+BonkKeywordInfo const* BonkMgr::GetKeyword(BonkKeyword id) const
+{
+    auto itr = m_keywords.find(uint8(id));
+    return itr != m_keywords.end() ? &itr->second : nullptr;
+}
+
+BonkKeywordInfo const* BonkMgr::GetKeywordBySpell(uint32 spellId) const
+{
+    for (auto const& itr : m_keywords)
+        if (itr.second.spellId == spellId)
+            return &itr.second;
+    return nullptr;
+}
+
 void BonkMgr::LoadWeapons()
 {
     m_weapons.clear();
@@ -436,7 +502,8 @@ void BonkMgr::LoadWeapons()
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
         "`class_mask`, `starter_class_mask`, `evolves_from`, `heal_pct`, `duration_ms`, "
-        "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage`, `base_jumps`, `kill_below_pct`, `flags` "
+        "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage`, `base_jumps`, `kill_below_pct`, `flags`, "
+        "`applies`, `apply_stacks`, `uses`, `uses_pct` "
         "FROM `bonk_weapon`"));
 
     if (!result)
@@ -475,6 +542,21 @@ void BonkMgr::LoadWeapons()
         weapon.baseJumps = fields[22].GetUInt8();
         weapon.killBelowPct = fields[23].GetFloat();
         weapon.flags = fields[24].GetUInt32();
+        weapon.applies = BonkKeyword(fields[25].GetUInt8());
+        weapon.applyStacks = fields[26].GetUInt8();
+        weapon.uses = BonkKeyword(fields[27].GetUInt8());
+        weapon.usesPct = fields[28].GetFloat();
+
+        if (weapon.applies != BONK_KEYWORD_NONE && !GetKeyword(weapon.applies))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u applies unknown keyword %u; it applies none.", weapon.id, uint32(weapon.applies));
+            weapon.applies = BONK_KEYWORD_NONE;
+        }
+        if (weapon.uses != BONK_KEYWORD_NONE && weapon.uses != BONK_KEYWORD_VARIETY && !GetKeyword(weapon.uses))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u pays off unknown keyword %u; it pays off none.", weapon.id, uint32(weapon.uses));
+            weapon.uses = BONK_KEYWORD_NONE;
+        }
 
         if (weapon.altSpellId && !sSpellMgr.GetSpellEntry(weapon.altSpellId))
         {

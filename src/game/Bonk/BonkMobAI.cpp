@@ -163,12 +163,15 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
         m_creature->ApplySpellImmune(0, IMMUNITY_DISPEL, dispel, false);
     m_creature->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_PERIODIC_LEECH, false);
 
-    // Elites and bosses shrug off stuns and other crowd control; slows still
-    // work. Spells that stun still deal their damage.
+    // Elites and bosses shrug off holds and other crowd control; slows still
+    // work, and elites can be stunned (briefly: BonkRun::LimitStun). Spells
+    // that stun still deal their damage.
     if (kind != BONK_SPAWN_NORMAL)
     {
         for (AuraType aura : { SPELL_AURA_MOD_STUN, SPELL_AURA_MOD_ROOT, SPELL_AURA_MOD_FEAR, SPELL_AURA_MOD_CONFUSE, SPELL_AURA_MOD_CHARM })
         {
+            if (aura == SPELL_AURA_MOD_STUN && kind == BONK_SPAWN_ELITE)
+                continue;
             m_creature->ApplySpellImmune(0, IMMUNITY_STATE, aura, true);
             m_creature->RemoveSpellsCausingAura(aura);
         }
