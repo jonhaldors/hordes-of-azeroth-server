@@ -5227,7 +5227,7 @@ void BonkRun::SendState() const
     m_player->GetBonkPlayer()->SendAddon("state~" + std::to_string(m_elapsedMs / IN_MILLISECONDS) + "~" + std::to_string(m_map.durationSeconds) + "~" +
         std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0") + "~" +
         std::to_string(m_coins) + "~" + std::to_string(GetChestCost()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0") + "~" +
-        std::to_string(m_shardsEarned) + "~" + DescribeWeaponStats());
+        std::to_string(m_shardsEarned) + "~" + DescribeWeaponStats() + "~" + std::to_string(m_totalMs / IN_MILLISECONDS));
 }
 
 std::string BonkRun::DescribeWeaponStats() const
