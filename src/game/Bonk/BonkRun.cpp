@@ -171,6 +171,9 @@ namespace
     float const BONK_PROJECTILE_HEIGHT     = 1.2f;
     float const BONK_PROJECTILE_FAN        = 0.17f;    // about 10 degrees
     float const BONK_PROJECTILE_Z_REACH    = 4.0f;     // enemies this far above or below its path are missed
+    // A running hero's last movement packet is carried forward at most this
+    // far to find where the client has them now (as run enemies chase).
+    uint32 const BONK_HERO_MAX_AGE_MS      = 1000;
     float const BONK_CONE_ARC              = M_PI_F / 2.0f;    // a cone's width before Area; never wider than half a circle
     float const BONK_KNOCKBACK_DISTANCE    = 6.0f;
     float const BONK_KNOCKBACK_SPEED       = 18.0f;
@@ -1909,7 +1912,24 @@ uint32 BonkRun::GetMissileDelay(SpellCaster const* caster, Unit const* target, f
     // its speed, and steers it onto the enemy however it runs (1.12.1
     // 0x61ceb0, 0x61e2a0): the hit lands then too. Unlike the core, a close
     // enemy isn't held to 5 yards, which the client doesn't do.
-    float const t = caster->GetDistance3dToCenter(target) / speed;
+    float x = caster->GetPositionX(), y = caster->GetPositionY(), z = caster->GetPositionZ();
+    // A running hero's client sends where they are only every 500 ms, so the
+    // server's copy trails them by a few yards; their client launches the
+    // missile from where they are now: the last packet carried forward by
+    // its age (Player::ExtrapolateMovement, as run enemies chase the hero).
+    if (Player const* hero = caster->ToPlayer())
+        if (hero->IsMoving())
+        {
+            uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(hero->m_movementInfo.stime), BONK_HERO_MAX_AGE_MS);
+            float px, py, pz, o;
+            if (hero->ExtrapolateMovement(hero->m_movementInfo, age, px, py, pz, o))
+            {
+                x = px;
+                y = py;
+                z = pz;
+            }
+        }
+    float const t = target->GetDistance3dToCenter(x, y, z) / speed;
     // Never 0: Spell::AddUnitTarget reads a 0 delay as none set yet.
     return std::max(1u, uint32(t * IN_MILLISECONDS));
 }
