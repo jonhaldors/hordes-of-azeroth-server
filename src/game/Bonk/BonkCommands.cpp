@@ -399,3 +399,19 @@ bool ChatHandler::HandleBonkKeywordCommand(char* args)
     PSendSysMessage("%s: %u %s.", mob->GetName(), run->GetKeywordStacks(mob, keyword->id), keyword->name.c_str());
     return true;
 }
+
+bool ChatHandler::HandleBonkScalingCommand(char* /*args*/)
+{
+    // GM tuning aid: enemy health right now against each spell's hit.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run || !run->IsActive())
+    {
+        SendSysMessage("You are not in a running stage.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    for (std::string const& line : run->DescribeScaling())
+        SendSysMessage(line.c_str());
+    return true;
+}

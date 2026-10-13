@@ -275,12 +275,6 @@ namespace
         }
     }
 
-    // Enemy health grows with the player's level as well as with time, the
-    // way Megabonk scales with XP gained and time: every level is one more
-    // upgrade, and an average upgrade adds about 5% to a run's damage (a rank
-    // is +15-20% on one of five or six spells; new spell slots run out early).
-    float const BONK_HEALTH_PER_LEVEL = 0.05f;
-
     float GetKindDamage(BonkSpawnKind kind)
     {
         switch (kind)
@@ -1611,6 +1605,43 @@ void BonkRun::MoveMob(Creature* mob, float x, float y, float z)
         ai->Arrive();
 }
 
+uint32 BonkRun::GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const
+{
+    // Spells deal a share of GetMobHealth at the player's level, so only these
+    // factors make enemies tougher relative to the player; levels themselves
+    // are pure power for the player. Normal enemies by their archetype; a
+    // crowd bigger than the tier's cap makes everything tougher instead.
+    uint32 const level = std::min(GetMobLevel() + GetKindLevelBonus(kind), 63u);
+    float const archetypeHealth = kind == BONK_SPAWN_NORMAL ? sBonkMgr.GetArchetype(archetype).healthMultiplier : 1.0f;
+    return std::max(1u, uint32(GetMobHealth(level) * GetStageHealthMultiplier() * m_map.healthMultiplier * creatureMultiplier * archetypeHealth *
+        GetCrowdOverflow() * GetKindHealth(kind) * (1.0f + m_map.healthGrowthPerMinute * GetRunMinutes())));
+}
+
+std::vector<std::string> BonkRun::DescribeScaling() const
+{
+    std::vector<std::string> lines;
+    char line[256];
+    uint32 const grunt = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f);
+    uint32 const bruiser = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_BRUISER, 1.0f);
+    uint32 const elite = GetSpawnHealth(BONK_SPAWN_ELITE, BONK_ARCHETYPE_GRUNT, 1.0f);
+    snprintf(line, sizeof(line), "Minute %.1f, level %u, stage %u: grunt %u health (x%.2f its level's base), bruiser %u, elite %u; %u alive, %u wanted.",
+        GetRunMinutes(), m_player->GetLevel(), m_stage, grunt, grunt / std::max(1.0f, GetMobHealth(GetMobLevel())), bruiser, elite,
+        uint32(m_mobs.size()), GetSpawnTarget());
+    lines.push_back(line);
+
+    // A spell's hit before crits and the enemy's own modifiers (marks, keywords).
+    for (OwnedWeapon const& owned : m_weapons)
+    {
+        SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(owned.weapon.spellId);
+        float const hit = std::max(1.0f, GetWeaponDamage(owned) * GetDamageMultiplier(spellInfo, nullptr));
+        snprintf(line, sizeof(line), "%s rank %u: %.0f a hit (+%.0f%% from ranks) every %.1f s; grunt %.0f hits, bruiser %.0f, elite %.0f.",
+            owned.weapon.name.c_str(), owned.rank, hit, owned.damageBonus, GetWeaponCooldown(owned) / float(IN_MILLISECONDS),
+            std::ceil(grunt / hit), std::ceil(bruiser / hit), std::ceil(elite / hit));
+        lines.push_back(line);
+    }
+    return lines;
+}
+
 uint32 BonkRun::GetMobLevel() const
 {
     int32 const level = int32(m_player->GetLevel()) + m_map.levelOffset;
@@ -2037,20 +2068,19 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     uint32 const level = std::min(GetMobLevel() + GetKindLevelBonus(creature.kind), 63u);
     mob->SetLevel(level);
     mob->InitStatsForLevel();
+    // No armor: spells deal a share of an enemy's health whatever their
+    // school, and armor would cut physical ones only (by ~28% from level 10).
+    // A total percent of 0 makes the core count no armor at all, its base
+    // and its agility included (Unit::GetTotalResistanceValue).
+    mob->SetModifierValue(UNIT_MOD_ARMOR, TOTAL_PCT, 0.0f);
+    mob->UpdateArmor();
 
-    // Stats are set once, at spawn, from the run's clock (not the stage's)
-    // and the player's level; spells deal a share of GetMobHealth, so only
-    // these factors make enemies tougher relative to the player.
+    // Stats are set once, at spawn, from the run's clock (not the stage's).
     float const minutes = GetRunMinutes();
-    float const levelGrowth = 1.0f + BONK_HEALTH_PER_LEVEL * (m_player->GetLevel() - 1);
-    // Normal enemies by their archetype; a crowd bigger than the tier's cap
-    // makes everything tougher instead.
     BonkArchetypeInfo const* archetype = creature.kind == BONK_SPAWN_NORMAL ? &sBonkMgr.GetArchetype(creature.archetype) : nullptr;
     float const overflow = GetCrowdOverflow();
-    float const archetypeHealth = archetype ? archetype->healthMultiplier : 1.0f;
     float const archetypeDamage = archetype ? archetype->damageMultiplier : 1.0f;
-    uint32 const health = std::max(1u, uint32(GetMobHealth(level) * GetStageHealthMultiplier() * m_map.healthMultiplier *
-        creature.healthMultiplier * archetypeHealth * overflow * GetKindHealth(creature.kind) * levelGrowth * (1.0f + m_map.healthGrowthPerMinute * minutes)));
+    uint32 const health = GetSpawnHealth(creature.kind, creature.archetype, creature.healthMultiplier);
     mob->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, float(health));
     mob->SetMaxHealth(health);
     mob->SetHealth(health);

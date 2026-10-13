@@ -224,6 +224,7 @@ class ChatHandler
         bool HandleBonkReloadCommand(char* args);
         bool HandleBonkTelegraphCommand(char* args);
         bool HandleBonkKeywordCommand(char* args);
+        bool HandleBonkScalingCommand(char* args);
 
         //Cheats
         bool HandleCheatStatusCommand(char *);

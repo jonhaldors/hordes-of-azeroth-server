@@ -128,6 +128,9 @@ class BonkRun
         // Stat totals without worn gear (the addon adds gear itself), for
         // the character sheet.
         void SendStats() const;
+        // `.bonk scaling`: enemy health right now, and how many hits each
+        // spell needs to kill a grunt, a bruiser and an elite.
+        std::vector<std::string> DescribeScaling() const;
         bool Pick(uint32 choice, std::string& error);
         bool Reroll(std::string& error);
         bool Banish(uint32 choice, std::string& error);
@@ -308,6 +311,8 @@ class BonkRun
         void DespawnObjects();
 
         uint32 GetMobLevel() const;
+        // What an enemy spawned now gets, before affixes.
+        uint32 GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const;
         float GetMobHealth(uint32 level) const;
         float GetStageHealthMultiplier() const;
         float GetStageDamageMultiplier() const;
