@@ -3560,8 +3560,11 @@ void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& inf
         return;
     missile->SetDisplayId(info.displayId);
     missile->SetObjectScale(info.scale);
-    missile->SetFactionTemplateId(BONK_ORB_FACTION);
-    missile->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    // The hero's, as a totem is its shaman's (Totem::SetOwner, Spell::EffectSummonTotem):
+    // the hero's faction and player controlled, so its spells may hit what the
+    // hero's may. Enemies can't pick it out (not selectable).
+    missile->SetFactionTemplateId(m_player->GetFactionTemplateId());
+    missile->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
     // The hero's: the spells it casts deal the hero's damage (BonkRun::FromAttack).
     missile->SetOwnerGuid(m_player->GetObjectGuid());
     missile->SetLevel(m_player->GetLevel());
