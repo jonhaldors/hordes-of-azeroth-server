@@ -28,8 +28,11 @@ class BonkMobAI : public CreatureAI
     public:
         explicit BonkMobAI(Creature* creature);
 
-        // CreatureAiSetter for WorldObject::SummonCreature.
+        // CreatureAiSetter for WorldObject::SummonCreature. Marks the creature
+        // a run enemy (Creature::SetBonkEnemy) with the nameplate number set
+        // by SetNextPlateId just before the summon.
         static void Install(Creature* creature);
+        static void SetNextPlateId(uint32 id) { s_nextPlateId = id; }
 
         // Called by the run once the enemy's level, health, damage and speed are set.
         void Setup(BonkSpawnKind kind);
@@ -122,6 +125,10 @@ class BonkMobAI : public CreatureAI
         ObjectGuid m_boltTarget;            // an aimed bolt waiting to be cast at it
         uint32 m_boltSpell = 0;
         int32 m_boltDelay = 0;
+
+        // Install's nameplate number for the next summon; per thread, as maps
+        // may update side by side.
+        static thread_local uint32 s_nextPlateId;
 };
 
 #endif

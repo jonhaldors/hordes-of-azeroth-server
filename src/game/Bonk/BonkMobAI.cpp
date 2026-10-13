@@ -116,8 +116,21 @@ BonkMobAI::BonkMobAI(Creature* creature) : CreatureAI(creature)
         m_ownerGuid = static_cast<TemporarySummon*>(creature)->GetSummonerGuid();
 }
 
+thread_local uint32 BonkMobAI::s_nextPlateId = 0;
+
 void BonkMobAI::Install(Creature* creature)
 {
+    // Before the enemy enters the world, so the client's first sight of it
+    // already has its health out of its nameplate number: a change from the
+    // usual percent later would leave the nameplate's bar empty until a hit.
+    creature->SetPlateId(s_nextPlateId);
+    s_nextPlateId = 0;
+    // It hits only what it touches, and chases until it does: with the core's
+    // melee leeway it would stop chasing 2.66 yards out of its swing and run
+    // past a hero on the move. It also chases where the hero is now, not where
+    // their last movement packet put them.
+    creature->SetBonkEnemy(true);
+
     creature->GetMotionMaster()->Initialize();
     creature->SetAI(new BonkMobAI(creature));
 }
