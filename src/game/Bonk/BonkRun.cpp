@@ -1900,6 +1900,36 @@ BonkRun* BonkRun::FromAttack(SpellCaster const* attacker, Unit const* victim)
     return player->GetBonkPlayer()->GetRun();
 }
 
+uint32 BonkRun::GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed)
+{
+    if (speed <= 0.0f || !caster || !FromAttack(caster, target))
+        return 0;
+
+    // Where the enemy is, centre to centre, and how it moves: on along its
+    // facing, as GetLeadAngle has it.
+    float const rx = target->GetPositionX() - caster->GetPositionX();
+    float const ry = target->GetPositionY() - caster->GetPositionY();
+    float const rz = target->GetPositionZ() - caster->GetPositionZ();
+    float vx = 0.0f, vy = 0.0f;
+    if (target->IsMoving())
+    {
+        float const run = target->GetSpeed(target->IsWalking() ? MOVE_WALK : MOVE_RUN);
+        vx = run * std::cos(target->GetOrientation());
+        vy = run * std::sin(target->GetOrientation());
+    }
+
+    // The client's missile follows the enemy, so it lands at the time t the
+    // two meet: |r + v t| = speed t. An enemy running at the hero is met
+    // sooner than its distance at the cast says; nor is a close one held to
+    // the core's 5 yards.
+    float const a = vx * vx + vy * vy - speed * speed;
+    float const b = 2.0f * (rx * vx + ry * vy);
+    float const c = rx * rx + ry * ry + rz * rz;
+    float const t = a < -0.01f ? (-b - std::sqrt(b * b - 4.0f * a * c)) / (2.0f * a) : std::sqrt(c) / speed;
+    // Never 0: Spell::AddUnitTarget reads a 0 delay as none set yet.
+    return std::max(1u, uint32(t * IN_MILLISECONDS));
+}
+
 bool BonkRun::RollDodge(Unit const* victim) const
 {
     BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(victim->AI());

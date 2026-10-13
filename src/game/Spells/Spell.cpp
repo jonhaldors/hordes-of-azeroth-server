@@ -955,6 +955,10 @@ void Spell::AddUnitTarget(Unit* pTarget, SpellEffectIndex effIndex)
         if (dist < 5.0f)
             dist = 5.0f;
         targetInfo.timeDelay = (uint64) floor(dist / m_spellInfo->speed * 1000.0f);
+        // Vanilla Bonk: a run spell lands when it meets the enemy running at
+        // the hero, as the client draws it.
+        if (uint32 const meet = BonkRun::GetMissileDelay(affectiveObject, pTarget, m_spellInfo->speed))
+            targetInfo.timeDelay = meet;
 
         // Calculate minimum incoming time
         if (m_delayMoment == 0 || m_delayMoment > targetInfo.timeDelay)

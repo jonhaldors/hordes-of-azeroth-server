@@ -78,6 +78,10 @@ class BonkRun
         // hit tables: they always land, except that elites and bosses dodge
         // (RollDodge), and they crit by the hero's Crit (GetCritChance).
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
+        // Milliseconds a spell flying at `speed` takes to meet one of the
+        // run's enemies, which runs on while it flies, as the client draws it;
+        // 0 for every other cast (Spell::AddUnitTarget keeps its own timing).
+        static uint32 GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed);
         // Elites and bosses dodge by the tier's chance, less the hero's Hit.
         bool RollDodge(Unit const* victim) const;
         // `spell` (null for a swing): some spells always crit, and so does
