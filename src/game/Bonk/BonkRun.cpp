@@ -467,6 +467,33 @@ namespace
         spell->prepare(std::move(targets));
     }
 
+    // Where the hero is now, as their client has them. A running hero's
+    // client sends where they are only every 500 ms, so the server's copy
+    // trails them by a few yards: the last movement packet carried forward
+    // by its age (Player::ExtrapolateMovement, as run enemies chase the
+    // hero), unless that would be through a wall.
+    void GetHeroPositionNow(Player const* hero, float& x, float& y, float& z)
+    {
+        hero->GetPosition(x, y, z);
+        if (!hero->IsMoving())
+            return;
+        uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(hero->m_movementInfo.stime), BONK_HERO_MAX_AGE_MS);
+        float px, py, pz, o;
+        if (!hero->ExtrapolateMovement(hero->m_movementInfo, age, px, py, pz, o) || !hero->IsWithinLOS(px, py, pz))
+            return;
+        hero->UpdateAllowedPositionZ(px, py, pz);
+        x = px;
+        y = py;
+        z = pz;
+    }
+
+    // How far `object` is from the hero at (x, y, z), less both their sizes
+    // (as WorldObject::GetDistance between the two).
+    float GetHeroDistance(Player const* hero, float x, float y, float z, WorldObject const* object)
+    {
+        return std::max(0.0f, object->GetDistance(x, y, z) - hero->GetObjectBoundingRadius());
+    }
+
     // Up to `count` spots for a ground effect of `radius`, each centred on the
     // enemy with the most others around it that no earlier spot covers.
     std::vector<Creature*> PickGroundSpots(std::vector<Creature*> const& mobs, float radius, uint32 count)
@@ -1912,23 +1939,10 @@ uint32 BonkRun::GetMissileDelay(SpellCaster const* caster, Unit const* target, f
     // its speed, and steers it onto the enemy however it runs (1.12.1
     // 0x61ceb0, 0x61e2a0): the hit lands then too. Unlike the core, a close
     // enemy isn't held to 5 yards, which the client doesn't do.
+    // The hero's client launches it from where the hero is now.
     float x = caster->GetPositionX(), y = caster->GetPositionY(), z = caster->GetPositionZ();
-    // A running hero's client sends where they are only every 500 ms, so the
-    // server's copy trails them by a few yards; their client launches the
-    // missile from where they are now: the last packet carried forward by
-    // its age (Player::ExtrapolateMovement, as run enemies chase the hero).
     if (Player const* hero = caster->ToPlayer())
-        if (hero->IsMoving())
-        {
-            uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(hero->m_movementInfo.stime), BONK_HERO_MAX_AGE_MS);
-            float px, py, pz, o;
-            if (hero->ExtrapolateMovement(hero->m_movementInfo, age, px, py, pz, o))
-            {
-                x = px;
-                y = py;
-                z = pz;
-            }
-        }
+        GetHeroPositionNow(hero, x, y, z);
     float const t = target->GetDistance3dToCenter(x, y, z) / speed;
     // Never 0: Spell::AddUnitTarget reads a 0 delay as none set yet.
     return std::max(1u, uint32(t * IN_MILLISECONDS));
@@ -2324,8 +2338,11 @@ void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
     uint32 const elapsed = m_powerupCheckTimer;
     m_powerupCheckTimer = 0;
 
-    // Walking over a power-up takes it; unclaimed ones expire on their own.
+    // Walking over a power-up takes it (where the hero is now); unclaimed
+    // ones expire on their own.
     Map* map = m_player->GetMap();
+    float heroX, heroY, heroZ;
+    GetHeroPositionNow(m_player, heroX, heroY, heroZ);
     for (auto itr = m_powerups.begin(); itr != m_powerups.end();)
     {
         GameObject* go = map->GetGameObject(*itr);
@@ -2335,7 +2352,7 @@ void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
             continue;
         }
 
-        if (m_player->GetDistance(go) > BONK_POWERUP_PICKUP_RANGE)
+        if (GetHeroDistance(m_player, heroX, heroY, heroZ, go) > BONK_POWERUP_PICKUP_RANGE)
         {
             ++itr;
             continue;
@@ -4207,11 +4224,15 @@ void BonkRun::UpdateOrbs(uint32 diff)
 
     float const magnet = BONK_ORB_MAGNET_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_PICKUP) / 100.0f);
     Map* map = m_player->GetMap();
+    // Orbs fly to, and are taken at, where the hero is now, not the server's
+    // copy that trails a running hero.
+    float heroX, heroY, heroZ;
+    GetHeroPositionNow(m_player, heroX, heroY, heroZ);
     uint32 collected = 0;
     for (auto itr = m_orbs.begin(); itr != m_orbs.end();)
     {
         Creature* orb = map->GetCreature(itr->guid);
-        float const distance = orb ? m_player->GetDistance(orb) : 0.0f;
+        float const distance = orb ? GetHeroDistance(m_player, heroX, heroY, heroZ, orb) : 0.0f;
 
         // Touching an orb takes it; one that vanished is not lost either.
         if (!orb || distance <= BONK_ORB_PICKUP_RANGE)
@@ -4226,9 +4247,9 @@ void BonkRun::UpdateOrbs(uint32 diff)
         // Pulled orbs fly in a straight line, not along a follow path: that
         // slows to a walk at the end and aims ahead of a running player, so
         // orbs would hover beside the player before being taken.
-        float const x = m_player->GetPositionX();
-        float const y = m_player->GetPositionY();
-        float const z = m_player->GetPositionZ() + 0.5f;
+        float const x = heroX;
+        float const y = heroY;
+        float const z = heroZ + 0.5f;
         if (!itr->pulled ? distance <= magnet :
             (x - itr->aimX) * (x - itr->aimX) + (y - itr->aimY) * (y - itr->aimY) + (z - itr->aimZ) * (z - itr->aimZ) >
                 BONK_ORB_REAIM_DISTANCE * BONK_ORB_REAIM_DISTANCE)
@@ -4315,11 +4336,13 @@ void BonkRun::UpdateShards(uint32 diff)
     m_shardTimer = 0;
 
     Map* map = m_player->GetMap();
+    float heroX, heroY, heroZ;
+    GetHeroPositionNow(m_player, heroX, heroY, heroZ);
     uint32 taken = 0;
     for (auto itr = m_shardDrops.begin(); itr != m_shardDrops.end();)
     {
         GameObject* go = map->GetGameObject(itr->guid);
-        if (go && go->isSpawned() && m_player->GetDistance(go) > BONK_SHARD_PICKUP_RANGE)
+        if (go && go->isSpawned() && GetHeroDistance(m_player, heroX, heroY, heroZ, go) > BONK_SHARD_PICKUP_RANGE)
         {
             ++itr;
             continue;
