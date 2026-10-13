@@ -320,6 +320,10 @@ class Creature : public Unit
         float GetFleeingSpeed() const;
         float GetBaseWalkSpeedRate() const;
         float GetBaseRunSpeedRate() const;
+        // Vanilla Bonk: replaces the walk or run base rate above (0 = back to
+        // the template's). Auras still modify it, and UpdateSpeed keeps it,
+        // where SetSpeedRate is lost on the next speed aura or follow.
+        void SetBaseSpeedRate(UnitMoveType mtype, float rate);
         void MoveAwayFromTarget(Unit const* pTarget, float distance);
         void CallForHelp(float radius);
         void CallAssistance();
@@ -680,6 +684,8 @@ class Creature : public Unit
         float m_callForHelpDist;
         float m_leashDistance;
         float m_detectionDistance;
+        float m_baseWalkSpeedRate;  // SetBaseSpeedRate, 0 = none
+        float m_baseRunSpeedRate;
 
     private:
         GridReference<Creature> m_gridRef;

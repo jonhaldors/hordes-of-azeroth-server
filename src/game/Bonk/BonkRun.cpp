@@ -1727,8 +1727,8 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     }
 
     mob->SetFactionTemplateId(BONK_ENEMY_FACTION);
-    mob->SetSpeedRate(MOVE_WALK, creature.speed);
-    mob->SetSpeedRate(MOVE_RUN, creature.speed);
+    mob->SetBaseSpeedRate(MOVE_WALK, creature.speed);
+    mob->SetBaseSpeedRate(MOVE_RUN, creature.speed);
     if (creature.scale > 0.0f && creature.scale != 1.0f)
     {
         mob->SetObjectScale(mob->GetObjectScale() * creature.scale);
@@ -3369,7 +3369,7 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
             pet->SetFactionTemplateId(m_player->GetFactionTemplateId());
             pet->SetLevel(m_player->GetLevel());
             pet->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
-            pet->SetSpeedRate(MOVE_RUN, BONK_PET_SPEED);
+            pet->SetBaseSpeedRate(MOVE_RUN, BONK_PET_SPEED);
             pet->GetMotionMaster()->MoveFollow(m_player, 2.0f, angle);
             owned.pets.push_back(pet->GetObjectGuid());
         }

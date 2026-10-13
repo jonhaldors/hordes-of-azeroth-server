@@ -267,7 +267,7 @@ Creature::Creature(CreatureSubtype subtype) :
     m_meleeDamageSchoolMask(SPELL_SCHOOL_MASK_NORMAL), m_originalEntry(0), m_creatureGroup(nullptr),
     m_combatStartX(0.0f), m_combatStartY(0.0f), m_combatStartZ(0.0f), m_reactState(REACT_DEFENSIVE),
     m_lastLeashExtensionTime(nullptr), m_playerDamageTaken(0), m_nonPlayerDamageTaken(0), m_creatureInfo(nullptr), m_creatureData(nullptr), m_creatureDataAddon(nullptr),
-    m_detectionDistance(20.0f), m_callForHelpTimer(0), m_callForHelpDist(5.0f), m_leashDistance(0.0f), m_mountId(0), m_isDeadByDefault(false),
+    m_detectionDistance(20.0f), m_callForHelpTimer(0), m_callForHelpDist(5.0f), m_leashDistance(0.0f), m_baseWalkSpeedRate(0.0f), m_baseRunSpeedRate(0.0f), m_mountId(0), m_isDeadByDefault(false),
     m_reputationId(-1), m_gossipMenuId(0), m_castingTargetGuid(0)
 {
     m_regenTimer = 200;
@@ -1245,6 +1245,9 @@ float Creature::GetFleeingSpeed() const
 
 float Creature::GetBaseWalkSpeedRate() const
 {
+    if (m_baseWalkSpeedRate > 0.0f)
+        return m_baseWalkSpeedRate;
+
     if (GetMountID())
     {
         if (CreatureDisplayInfoAddon const* displayAddon = sCreatureDisplayInfoAddonStorage.LookupEntry<CreatureDisplayInfoAddon>(GetMountID()))
@@ -1268,6 +1271,9 @@ float Creature::GetBaseWalkSpeedRate() const
 
 float Creature::GetBaseRunSpeedRate() const
 {
+    if (m_baseRunSpeedRate > 0.0f)
+        return m_baseRunSpeedRate;
+
     if (GetMountID())
     {
         if (CreatureDisplayInfoAddon const* displayAddon = sCreatureDisplayInfoAddonStorage.LookupEntry<CreatureDisplayInfoAddon>(GetMountID()))
@@ -1287,6 +1293,22 @@ float Creature::GetBaseRunSpeedRate() const
         return displayAddon->speed_run;
 
     return DEFAULT_NPC_RUN_SPEED_RATE;
+}
+
+void Creature::SetBaseSpeedRate(UnitMoveType mtype, float rate)
+{
+    switch (mtype)
+    {
+        case MOVE_WALK:
+            m_baseWalkSpeedRate = rate;
+            break;
+        case MOVE_RUN:
+            m_baseRunSpeedRate = rate;
+            break;
+        default:
+            return;
+    }
+    UpdateSpeed(mtype, false);
 }
 
 void Creature::MoveAwayFromTarget(Unit const* pTarget, float distance)

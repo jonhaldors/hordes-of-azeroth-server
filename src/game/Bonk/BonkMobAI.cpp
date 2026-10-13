@@ -201,8 +201,8 @@ void BonkMobAI::RollAffixes(uint32 count)
 
     if (HasAffix(AFFIX_SWIFT))
     {
-        m_creature->SetSpeedRate(MOVE_WALK, m_creature->GetSpeedRate(MOVE_WALK) * BONK_SWIFT_SPEED);
-        m_creature->SetSpeedRate(MOVE_RUN, m_creature->GetSpeedRate(MOVE_RUN) * BONK_SWIFT_SPEED);
+        m_creature->SetBaseSpeedRate(MOVE_WALK, m_creature->GetBaseWalkSpeedRate() * BONK_SWIFT_SPEED);
+        m_creature->SetBaseSpeedRate(MOVE_RUN, m_creature->GetBaseRunSpeedRate() * BONK_SWIFT_SPEED);
     }
 
     if (HasAffix(AFFIX_FRENZIED))
