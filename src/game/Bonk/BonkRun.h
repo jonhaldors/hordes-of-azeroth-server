@@ -57,7 +57,6 @@ class BonkRun
         uint32 GetStage() const { return m_stage; }
 
         void OnMobKilled(Creature* mob, BonkSpawnKind kind);
-        void OnMobStrayed(Creature* mob, BonkSpawnKind kind);
         // The enemy cannot walk to the player (spawned in a tree, on a roof).
         void OnMobStuck(Creature* mob);
         // Damage the player's weapons took off an enemy, for Leech.
@@ -248,6 +247,31 @@ class BonkRun
         uint32 CountAlive(uint32 entry) const;
         bool FindSpawnPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const;
         bool FindSpawnPositionAt(float angle, float distance, float& x, float& y, float& z) const;
+
+        // Where the player is heading: their movement over the last second or
+        // two, smoothed. False while they stand still.
+        void UpdateHeading(uint32 diff);
+        bool GetHeading(float& angle) const;
+        // The heading, or where the player faces while standing still.
+        float GetForwardAngle() const;
+        // "Ahead": in a cone around `forward`. Only so many enemies may be
+        // there at once (GetFrontCap); new ones go to the sides or behind.
+        bool IsAhead(float x, float y, float forward) const;
+        uint32 CountAhead(float forward) const;
+        uint32 GetFrontCap() const;
+        // A spot for an enemy that appears (spawned, or moved out of a
+        // tree): anywhere around the player while there is room ahead. Ahead
+        // it is far off, to walk in from the edge of sight; elsewhere it is
+        // `minDistance` to `maxDistance` away.
+        bool FindMobPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const;
+        // Enemies left far behind (whether or not they still move: the map
+        // stops updating those far enough away) come back ahead of the player
+        // in packs, spaced so there is a way between them; bosses alone. With
+        // no room ahead for a while, they come back at the player's side.
+        void UpdateStragglers(uint32 diff);
+        bool PlacePack(std::vector<Creature*> const& pack, float heading);
+        bool PlaceAside(Creature* mob, float heading);
+        void MoveMob(Creature* mob, float x, float y, float z);
         Creature* SpawnMob(BonkMapCreature const& creature);
         Creature* SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z);
         uint32 SpawnFormation(BonkMapEvent const& event);
@@ -442,6 +466,17 @@ class BonkRun
         bool m_bossSpawned = false;
         ObjectGuid m_bossGuid;
         std::vector<ObjectGuid> m_mobs;
+        float m_moveX = 0.0f, m_moveY = 0.0f;       // the player's smoothed movement, yards a second
+        float m_lastX = 0.0f, m_lastY = 0.0f;       // where they were at the last sample
+        uint32 m_headingTimer = 0;
+        std::map<ObjectGuid, uint32> m_farSince;    // enemy far from the player -> stage time it got there
+        uint32 m_stragglerTimer = 0;
+        struct PackSpot
+        {
+            float x = 0.0f, y = 0.0f;
+            uint32 untilMs = 0;         // stage time
+        };
+        std::vector<PackSpot> m_packSpots;          // where packs landed lately
         std::vector<ObjectGuid> m_chests;
         std::vector<ObjectGuid> m_powerups;
         std::vector<Orb> m_orbs;

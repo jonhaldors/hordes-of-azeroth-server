@@ -35,6 +35,9 @@ class BonkMobAI : public CreatureAI
         void Setup(BonkSpawnKind kind);
         // While a choice is open: stop, root, and drop the fight.
         void SetFrozen(bool frozen);
+        // The run just moved it (ahead of the player, or out of a tree): it
+        // stands a moment under a puff of smoke before it gives chase.
+        void Arrive();
         BonkSpawnKind GetKind() const { return m_kind; }
         ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
         // Normal enemies only: what it is in the crowd.
@@ -83,6 +86,8 @@ class BonkMobAI : public CreatureAI
         void RollAffixes(uint32 count);
         void ScaleHealth(float factor);
         float GetMeleeHit() const;
+        // Close enough to swing, without the core's melee leeway.
+        bool IsInReach(Unit const* victim) const;
         void Cast(BonkMobAbility const& ability, Player* owner, bool triggered);
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);
@@ -109,7 +114,7 @@ class BonkMobAI : public CreatureAI
         bool m_enraged = false;     // Raging, below its health mark
         bool m_frozen = false;
         bool m_exploded = false;
-        uint32 m_strayTimer = 0;
+        int32 m_arriveTimer = 0;           // standing where the run moved it
         enum ChargeState : uint8 { CHARGE_NONE, CHARGE_WINDUP, CHARGE_DASH };
         ChargeState m_chargeState = CHARGE_NONE;
         int32 m_chargeTimer = 2000;         // to the next charge, the dash, or its end

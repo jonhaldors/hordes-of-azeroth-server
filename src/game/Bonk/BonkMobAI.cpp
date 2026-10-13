@@ -18,9 +18,9 @@
 
 namespace
 {
-    // Enemies this far from the player for this long are recycled.
-    float const BONK_STRAY_DISTANCE = 70.0f;
-    uint32 const BONK_STRAY_DESPAWN_MS = 5000;
+    // An enemy the run moved stands this long under a puff of smoke.
+    uint32 const BONK_ARRIVE_MS = 750;
+    uint32 const BONK_SPELL_ARRIVE = 10389;     // Spawn Smoke
 
     // An enemy that cannot walk to the player this long is moved: the core
     // would make it evade (and take no damage) after 3 seconds.
@@ -271,11 +271,42 @@ float BonkMobAI::GetMeleeHit() const
     return (m_creature->GetFloatValue(UNIT_FIELD_MINDAMAGE) + m_creature->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2.0f;
 }
 
+bool BonkMobAI::IsInReach(Unit const* victim) const
+{
+    // The core lets a unit chasing a running player swing from 2.66 yards
+    // further (melee leeway): every enemy that came at the hero landed a hit.
+    float const reach = m_creature->GetCombatReachToTarget(victim, false, 0.0f, true);
+    float const dx = m_creature->GetPositionX() - victim->GetPositionX();
+    float const dy = m_creature->GetPositionY() - victim->GetPositionY();
+    return dx * dx + dy * dy < reach * reach;
+}
+
+void BonkMobAI::Arrive()
+{
+    m_arriveTimer = BONK_ARRIVE_MS;
+    m_creature->m_targetNotReachableTimer = 0;
+
+    // Whatever it was doing is dropped, as when the run pauses.
+    if (m_chargeState != CHARGE_NONE)
+    {
+        m_chargeState = CHARGE_NONE;
+        m_chargeTimer = BONK_CHARGE_INTERVAL / 2;
+    }
+    m_boltTarget.Clear();
+    m_creature->InterruptNonMeleeSpells(false);
+    m_creature->AttackStop();
+    m_creature->StopMoving();
+    m_creature->GetMotionMaster()->Clear(false);
+    m_creature->GetMotionMaster()->MoveIdle();
+    m_creature->CastSpell(m_creature, BONK_SPELL_ARRIVE, true);
+}
+
 void BonkMobAI::AttackStart(Unit* victim)
 {
-    // Only ever fight the player this run belongs to.
+    // Only ever fight the player this run belongs to, and not while it
+    // stands where the run moved it (a hit on it would start the chase).
     Player* owner = GetOwner();
-    if (!owner || victim != owner)
+    if (!owner || victim != owner || m_arriveTimer > 0)
         return;
 
     CreatureAI::AttackStart(victim);
@@ -322,6 +353,14 @@ void BonkMobAI::UpdateAI(uint32 const diff)
     // Leashing is measured from where combat started, so keep that under the mob.
     m_creature->SetCombatStartPosition(m_creature->GetPositionX(), m_creature->GetPositionY(), m_creature->GetPositionZ());
 
+    // Just moved by the run: it stands until the smoke clears.
+    if (m_arriveTimer > 0)
+    {
+        m_arriveTimer -= int32(diff);
+        if (m_arriveTimer > 0)
+            return;
+    }
+
     // A charger winding up or dashing does nothing else.
     if (UpdateCharge(diff, owner))
         return;
@@ -336,25 +375,6 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         run->OnMobStuck(m_creature);
     }
 
-    if (!m_creature->IsWithinDistInMap(owner, BONK_STRAY_DISTANCE))
-    {
-        m_strayTimer += diff;
-        if (m_strayTimer >= BONK_STRAY_DESPAWN_MS)
-        {
-            m_strayTimer = 0;
-            run->OnMobStrayed(m_creature, m_kind);
-
-            // Bosses are brought back instead of recycled.
-            if (m_kind != BONK_SPAWN_BOSS && m_kind != BONK_SPAWN_MINIBOSS)
-            {
-                m_creature->DespawnOrUnsummon();
-                return;
-            }
-        }
-    }
-    else
-        m_strayTimer = 0;
-
     if (m_mob && m_mob->role == BONK_ROLE_EXPLODER)
     {
         if (m_creature->IsWithinDistInMap(owner, m_mob->range))
@@ -364,7 +384,9 @@ void BonkMobAI::UpdateAI(uint32 const diff)
 
     UpdateAffixes(diff, owner);
     UpdateAbilities(diff, owner);
-    DoMeleeAttackIfReady();
+    if (Unit* victim = m_creature->GetVictim())
+        if (IsInReach(victim))
+            DoMeleeAttackIfReady();
 }
 
 void BonkMobAI::SetFrozen(bool frozen)

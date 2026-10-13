@@ -69,9 +69,6 @@ namespace
     uint32 const BONK_DOT_RETARGET_MS      = 4000;
     // Leech heals at most this % of max health a second for every 1% of Leech.
     float const BONK_LEECH_CAP_PER_PERCENT = 0.4f;
-    // A stuck enemy is moved to somewhere this far from the player first.
-    float const BONK_STUCK_MIN_DISTANCE    = 15.0f;
-    float const BONK_STUCK_MAX_DISTANCE    = 30.0f;
     float const BONK_SHARD_PICKUP_RANGE    = 3.0f;
     float const BONK_SHARD_SCATTER         = 2.0f;     // lands this far from where the enemy died
     uint32 const BONK_SHARD_CHECK_MS       = 250;
@@ -85,6 +82,54 @@ namespace
     float const BONK_BRUISER_MAX_GROWTH    = 2.5f;
     float const BONK_RING_DISTANCE         = 22.0f;    // a ring starts this close
     float const BONK_RUSH_WIDTH            = 0.6f;     // radians either side of a rush's direction
+
+    // Where the player is heading: where they moved, sampled this often and
+    // smoothed over about this long. Slower than this is standing still; a
+    // step this long between samples is a teleport, not a run.
+    uint32 const BONK_HEADING_SAMPLE_MS    = 250;
+    float const BONK_HEADING_SMOOTH_SEC    = 1.5f;
+    float const BONK_HEADING_MIN_SPEED     = 2.5f;     // yards a second
+    float const BONK_HEADING_MAX_STEP      = 20.0f;
+    // "Ahead of the player": this far either side of their heading and this
+    // close. At most this share of the enemies alive (and never fewer than
+    // the minimum) may be there; new ones go to the sides or behind.
+    float const BONK_FRONT_ARC             = M_PI_F / 3.0f;
+    float const BONK_FRONT_RANGE           = 95.0f;
+    float const BONK_FRONT_SHARE           = 0.3f;
+    uint32 const BONK_FRONT_MIN            = 5;
+    // Enemies ahead (on screen) appear this far off, just inside the 100
+    // yards the client is shown creatures from, and walk in from there; to
+    // the sides and behind, at the map's spawn distance. Where the ground
+    // ahead has no spot that far (indoors), the first tries give way to the
+    // map's distance.
+    float const BONK_FAR_MIN_DISTANCE      = 75.0f;
+    float const BONK_FAR_MAX_DISTANCE      = 90.0f;
+    uint32 const BONK_FAR_TRIES            = 6;
+    // Enemies this far from the player for this long, and not ahead of them,
+    // are left behind. They come back ahead of the player in packs of 3-5,
+    // as far off as new enemies ahead. A pack lands this far from packs that
+    // landed lately (centre to centre: about 15 yards between them) and from
+    // any enemy. Fewer than a pack go anyway after a while; with no room
+    // ahead for longer, they come back at the player's side instead.
+    uint32 const BONK_STRAGGLER_TICK_MS    = 500;
+    float const BONK_STRAY_DISTANCE        = 70.0f;
+    uint32 const BONK_STRAY_MS             = 5000;
+    uint32 const BONK_PACK_MIN             = 3;
+    uint32 const BONK_PACK_MAX             = 5;
+    float const BONK_PACK_RADIUS           = 3.0f;
+    float const BONK_PACK_SPACING          = 21.0f;
+    float const BONK_PACK_CLEARANCE        = 8.0f;
+    uint32 const BONK_PACK_SPOT_MS         = 4000;
+    uint32 const BONK_PACK_WAIT_MS         = 3000;
+    uint32 const BONK_STRAGGLER_SIDE_MS    = 5000;
+    float const BONK_SIDE_MIN_ANGLE        = M_PI_F / 3.0f;            // off the heading
+    float const BONK_SIDE_MAX_ANGLE        = 2.0f * M_PI_F / 3.0f;
+
+    // How far apart two directions are, 0 to pi.
+    float AngleBetween(float a, float b)
+    {
+        return std::fabs(std::remainder(a - b, 2.0f * M_PI_F));
+    }
 
     // Experience orbs.
     size_t const BONK_MAX_ORBS             = 300;      // past this, one red orb gathers the rest
@@ -626,6 +671,12 @@ void BonkRun::StartStage()
     m_safeX = m_player->GetPositionX();
     m_safeY = m_player->GetPositionY();
     m_safeZ = m_player->GetPositionZ();
+    m_lastX = m_safeX;
+    m_lastY = m_safeY;
+    m_moveX = m_moveY = 0.0f;
+    m_headingTimer = 0;
+    m_farSince.clear();
+    m_packSpots.clear();
 
     // The summon limit is stored per map, so set it once we are in the arena.
     m_player->SetCreatureSummonLimit(BONK_SUMMON_LIMIT);
@@ -727,6 +778,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     m_elapsedMs += diff;
     m_totalMs += diff;
 
+    UpdateHeading(diff);
     UpdateBoundary(diff);
     UpdateRecovery(diff);
     UpdateShield(diff);
@@ -743,6 +795,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateSpawns(diff);
     if (m_state != STATE_RUNNING)
         return;
+    UpdateStragglers(diff);
 
     UpdateWeapons(diff);
     if (m_state != STATE_RUNNING)
@@ -1277,6 +1330,266 @@ bool BonkRun::FindSpawnPositionAt(float angle, float distance, float& x, float& 
     return true;
 }
 
+void BonkRun::UpdateHeading(uint32 diff)
+{
+    m_headingTimer += diff;
+    if (m_headingTimer < BONK_HEADING_SAMPLE_MS)
+        return;
+    float const seconds = m_headingTimer / float(IN_MILLISECONDS);
+    m_headingTimer = 0;
+
+    float const x = m_player->GetPositionX();
+    float const y = m_player->GetPositionY();
+    float const dx = x - m_lastX;
+    float const dy = y - m_lastY;
+    m_lastX = x;
+    m_lastY = y;
+
+    if (dx * dx + dy * dy > BONK_HEADING_MAX_STEP * BONK_HEADING_MAX_STEP)
+    {
+        m_moveX = m_moveY = 0.0f;
+        return;
+    }
+
+    float const blend = std::min(1.0f, seconds / BONK_HEADING_SMOOTH_SEC);
+    m_moveX += (dx / seconds - m_moveX) * blend;
+    m_moveY += (dy / seconds - m_moveY) * blend;
+}
+
+bool BonkRun::GetHeading(float& angle) const
+{
+    if (m_moveX * m_moveX + m_moveY * m_moveY < BONK_HEADING_MIN_SPEED * BONK_HEADING_MIN_SPEED)
+        return false;
+    angle = std::atan2(m_moveY, m_moveX);
+    return true;
+}
+
+float BonkRun::GetForwardAngle() const
+{
+    float angle;
+    return GetHeading(angle) ? angle : m_player->GetOrientation();
+}
+
+bool BonkRun::IsAhead(float x, float y, float forward) const
+{
+    float const dx = x - m_player->GetPositionX();
+    float const dy = y - m_player->GetPositionY();
+    if (dx * dx + dy * dy > BONK_FRONT_RANGE * BONK_FRONT_RANGE)
+        return false;
+    return AngleBetween(std::atan2(dy, dx), forward) <= BONK_FRONT_ARC;
+}
+
+uint32 BonkRun::CountAhead(float forward) const
+{
+    Map* map = m_player->GetMap();
+    uint32 count = 0;
+    for (ObjectGuid const& guid : m_mobs)
+        if (Creature const* mob = map->GetCreature(guid))
+            if (mob->IsAlive() && !mob->HasCreatureState(CSTATE_DESPAWNING) && IsAhead(mob->GetPositionX(), mob->GetPositionY(), forward))
+                ++count;
+    return count;
+}
+
+uint32 BonkRun::GetFrontCap() const
+{
+    return std::max(BONK_FRONT_MIN, uint32(m_mobs.size() * BONK_FRONT_SHARE + 0.5f));
+}
+
+bool BonkRun::FindMobPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const
+{
+    float const forward = GetForwardAngle();
+    bool const frontFull = CountAhead(forward) >= GetFrontCap();
+    for (uint32 attempt = 0; attempt < 10; ++attempt)
+    {
+        // With the front full, anywhere outside the cone ahead.
+        float const angle = frontFull ? forward + BONK_FRONT_ARC + frand(0.0f, 2.0f * (M_PI_F - BONK_FRONT_ARC)) : frand(0.0f, 2.0f * M_PI_F);
+        bool const distant = attempt < BONK_FAR_TRIES && AngleBetween(angle, forward) <= BONK_FRONT_ARC;
+        float const distance = distant ? frand(BONK_FAR_MIN_DISTANCE, BONK_FAR_MAX_DISTANCE) : frand(minDistance, maxDistance);
+        if (FindSpawnPositionAt(angle, distance, x, y, z))
+            return true;
+    }
+    return false;
+}
+
+void BonkRun::UpdateStragglers(uint32 diff)
+{
+    m_stragglerTimer += diff;
+    if (m_stragglerTimer < BONK_STRAGGLER_TICK_MS)
+        return;
+    m_stragglerTimer = 0;
+
+    uint32 const now = m_elapsedMs;
+    m_packSpots.erase(std::remove_if(m_packSpots.begin(), m_packSpots.end(), [now](PackSpot const& spot) { return spot.untilMs <= now; }), m_packSpots.end());
+
+    // Who is far from the player, and since when; far long enough, they are
+    // left behind. Far ahead is still coming.
+    Map* map = m_player->GetMap();
+    float const forward = GetForwardAngle();
+    std::map<ObjectGuid, uint32> farSince;
+    std::vector<std::pair<Creature*, uint32>> bosses, waiting;    // with the stage time each was left behind
+    for (ObjectGuid const& guid : m_mobs)
+    {
+        Creature* mob = map->GetCreature(guid);
+        if (!mob || !mob->IsAlive() || mob->HasCreatureState(CSTATE_DESPAWNING) || mob->IsWithinDistInMap(m_player, BONK_STRAY_DISTANCE) ||
+            IsAhead(mob->GetPositionX(), mob->GetPositionY(), forward))
+            continue;
+        auto const itr = m_farSince.find(guid);
+        uint32 const since = itr != m_farSince.end() ? itr->second : now;
+        farSince[guid] = since;
+        if (now - since < BONK_STRAY_MS)
+            continue;
+
+        BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+        bool const boss = ai && (ai->GetKind() == BONK_SPAWN_BOSS || ai->GetKind() == BONK_SPAWN_MINIBOSS);
+        (boss ? bosses : waiting).emplace_back(mob, since + BONK_STRAY_MS);
+    }
+    m_farSince = std::move(farSince);
+    if (bosses.empty() && waiting.empty())
+        return;
+
+    // Standing still, they walk back on their own; ones still gone after a
+    // while (too far off for the map to move them) come back like new ones.
+    float heading;
+    if (!GetHeading(heading))
+    {
+        waiting.insert(waiting.end(), bosses.begin(), bosses.end());
+        for (auto const& itr : waiting)
+        {
+            float x, y, z;
+            if (now - itr.second >= BONK_STRAGGLER_SIDE_MS && FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
+                MoveMob(itr.first, x, y, z);
+        }
+        return;
+    }
+
+    uint32 ahead = CountAhead(heading);
+    uint32 const cap = GetFrontCap();
+
+    // Bosses and mini-bosses come back at once and alone: ahead if there is
+    // room, else at the side.
+    for (auto const& itr : bosses)
+    {
+        if (ahead < cap && PlacePack({ itr.first }, heading))
+            ++ahead;
+        else
+            PlaceAside(itr.first, heading);
+    }
+
+    // The rest in packs, oldest first, while there is room ahead; fewer than
+    // a pack once the oldest has waited a while.
+    std::stable_sort(waiting.begin(), waiting.end(), [](auto const& a, auto const& b) { return a.second < b.second; });
+    size_t next = 0;
+    while (next < waiting.size())
+    {
+        uint32 const room = cap > ahead ? cap - ahead : 0;
+        uint32 const left = uint32(waiting.size() - next);
+        uint32 const size = std::min({ urand(BONK_PACK_MIN, BONK_PACK_MAX), left, room });
+        bool const waitedLong = now - waiting[next].second >= BONK_PACK_WAIT_MS;
+        if (!size || (size < BONK_PACK_MIN && !waitedLong))
+            break;
+
+        std::vector<Creature*> pack;
+        for (uint32 i = 0; i < size; ++i)
+            pack.push_back(waiting[next + i].first);
+        if (!PlacePack(pack, heading))
+            break;
+        next += size;
+        ahead += size;
+    }
+
+    // No room ahead for too long: at the side instead.
+    for (size_t i = next; i < waiting.size(); ++i)
+        if (now - waiting[i].second >= BONK_STRAGGLER_SIDE_MS)
+            PlaceAside(waiting[i].first, heading);
+}
+
+bool BonkRun::PlacePack(std::vector<Creature*> const& pack, float heading)
+{
+    Map* map = m_player->GetMap();
+    float const playerX = m_player->GetPositionX();
+    float const playerY = m_player->GetPositionY();
+
+    for (uint32 attempt = 0; attempt < 8; ++attempt)
+    {
+        // As far off as new enemies ahead, or the map's distance indoors.
+        float const distance = attempt < BONK_FAR_TRIES ? frand(BONK_FAR_MIN_DISTANCE, BONK_FAR_MAX_DISTANCE) :
+            frand(m_map.spawnMinDistance, m_map.spawnMaxDistance);
+        float centreX, centreY, centreZ;
+        if (!FindSpawnPositionAt(heading + frand(-BONK_FRONT_ARC, BONK_FRONT_ARC), distance, centreX, centreY, centreZ))
+            continue;
+
+        // A way between packs, and none on top of enemies already there.
+        auto const within = [centreX, centreY](float x, float y, float range)
+        {
+            return (x - centreX) * (x - centreX) + (y - centreY) * (y - centreY) < range * range;
+        };
+        if (std::any_of(m_packSpots.begin(), m_packSpots.end(), [&within](PackSpot const& spot) { return within(spot.x, spot.y, BONK_PACK_SPACING); }))
+            continue;
+        bool crowded = false;
+        for (ObjectGuid const& guid : m_mobs)
+            if (Creature const* other = map->GetCreature(guid))
+                if (other->IsAlive() && std::find(pack.begin(), pack.end(), other) == pack.end() &&
+                    within(other->GetPositionX(), other->GetPositionY(), BONK_PACK_CLEARANCE))
+                {
+                    crowded = true;
+                    break;
+                }
+        if (crowded)
+            continue;
+
+        // The first stands on the spot, the others around it where the
+        // ground allows.
+        for (size_t i = 0; i < pack.size(); ++i)
+        {
+            float x = centreX, y = centreY, z = centreZ;
+            if (i)
+            {
+                float const offsetAngle = frand(0.0f, 2.0f * M_PI_F);
+                float const offset = frand(1.0f, BONK_PACK_RADIUS);
+                float const memberX = centreX + offset * std::cos(offsetAngle);
+                float const memberY = centreY + offset * std::sin(offsetAngle);
+                float const angle = std::atan2(memberY - playerY, memberX - playerX);
+                float const distance = std::sqrt((memberX - playerX) * (memberX - playerX) + (memberY - playerY) * (memberY - playerY));
+                if (!FindSpawnPositionAt(angle, distance, x, y, z))
+                {
+                    x = centreX;
+                    y = centreY;
+                    z = centreZ;
+                }
+            }
+            MoveMob(pack[i], x, y, z);
+        }
+
+        m_packSpots.push_back({ centreX, centreY, m_elapsedMs + BONK_PACK_SPOT_MS });
+        return true;
+    }
+    return false;
+}
+
+bool BonkRun::PlaceAside(Creature* mob, float heading)
+{
+    for (uint32 attempt = 0; attempt < 10; ++attempt)
+    {
+        float const side = urand(0, 1) ? 1.0f : -1.0f;
+        float const angle = heading + side * frand(BONK_SIDE_MIN_ANGLE, BONK_SIDE_MAX_ANGLE);
+        float x, y, z;
+        if (FindSpawnPositionAt(angle, frand(m_map.spawnMinDistance, m_map.spawnMaxDistance), x, y, z))
+        {
+            MoveMob(mob, x, y, z);
+            return true;
+        }
+    }
+    return false;
+}
+
+void BonkRun::MoveMob(Creature* mob, float x, float y, float z)
+{
+    float const facing = std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x);
+    mob->NearTeleportTo(x, y, z, facing);
+    if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+        ai->Arrive();
+}
+
 uint32 BonkRun::GetMobLevel() const
 {
     int32 const level = int32(m_player->GetLevel()) + m_map.levelOffset;
@@ -1677,7 +1990,7 @@ void BonkRun::Revive()
 Creature* BonkRun::SpawnMob(BonkMapCreature const& creature)
 {
     float x, y, z;
-    if (!FindSpawnPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
+    if (!FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
         return nullptr;
     return SpawnMobAt(creature, x, y, z);
 }
@@ -1806,6 +2119,8 @@ void BonkRun::DespawnMobs()
                 mob->DespawnOrUnsummon();
             }
     m_mobs.clear();
+    m_farSince.clear();
+    m_packSpots.clear();
 }
 
 GameObject* BonkRun::PlaceObject(uint32 entry, float x, float y, float z, uint32 lifetimeSeconds)
@@ -3898,21 +4213,6 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
         OpenPortal(mob);
 }
 
-void BonkRun::OnMobStrayed(Creature* mob, BonkSpawnKind kind)
-{
-    // A stray elite is recycled: gone from the nameplates too.
-    if (kind == BONK_SPAWN_ELITE)
-        m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()));
-
-    // Bosses are never recycled: bring them back next to the player instead.
-    if ((kind != BONK_SPAWN_BOSS && kind != BONK_SPAWN_MINIBOSS) || m_state != STATE_RUNNING)
-        return;
-
-    float x, y, z;
-    if (FindSpawnPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
-        mob->NearTeleportTo(x, y, z, mob->GetOrientation());
-}
-
 BonkRun::OwnedWeapon* BonkRun::FindOwned(uint32 weaponId)
 {
     auto itr = std::find_if(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned) { return owned.weapon.id == weaponId; });
@@ -4825,11 +5125,10 @@ void BonkRun::OnMobStuck(Creature* mob)
     if (m_state != STATE_RUNNING || m_paused)
         return;
 
-    // Close by if there is room, else where new enemies appear.
+    // Where new enemies appear, so never right in front of the player.
     float x, y, z;
-    if (FindSpawnPosition(x, y, z, BONK_STUCK_MIN_DISTANCE, BONK_STUCK_MAX_DISTANCE) ||
-        FindSpawnPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
-        mob->NearTeleportTo(x, y, z, mob->GetOrientation());
+    if (FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
+        MoveMob(mob, x, y, z);
 }
 
 void BonkRun::CleanUp()
