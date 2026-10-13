@@ -86,8 +86,6 @@ class BonkMobAI : public CreatureAI
         void RollAffixes(uint32 count);
         void ScaleHealth(float factor);
         float GetMeleeHit() const;
-        // Close enough to swing, without the core's melee leeway.
-        bool IsInReach(Unit const* victim) const;
         void Cast(BonkMobAbility const& ability, Player* owner, bool triggered);
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);

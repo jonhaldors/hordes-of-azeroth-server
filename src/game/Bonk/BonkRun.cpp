@@ -2085,6 +2085,11 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     // Its nameplate's number, before Setup tells the addon about it.
     m_lastPlateId = m_lastPlateId % BONK_MAX_PLATE_ID + 1;
     mob->SetPlateId(m_lastPlateId);
+    // It hits only what it touches, and chases until it does: with the core's
+    // melee leeway it would stop chasing 2.66 yards out of its swing and run
+    // past a hero on the move. It also chases where the hero is now, not where
+    // their last movement packet put them.
+    mob->SetBonkEnemy(true);
 
     // Last, so abilities and affixes build on the final stats.
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))

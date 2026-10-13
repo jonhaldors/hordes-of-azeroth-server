@@ -331,6 +331,11 @@ class Creature : public Unit
         static constexpr uint32 BONK_PLATE_HEALTH_BASE = 100000;
         void SetPlateId(uint32 id) { m_plateId = id; }
         uint32 GetPlateId() const { return m_plateId; }
+        // Vanilla Bonk: a run enemy. It gets no melee leeway for its own reach
+        // (WorldObject::GetLeewayBonusRange), and chases a running player
+        // where they are now (ChaseMovementGenerator).
+        void SetBonkEnemy(bool enabled) { m_bonkEnemy = enabled; }
+        bool IsBonkEnemy() const { return m_bonkEnemy; }
         void MoveAwayFromTarget(Unit const* pTarget, float distance);
         void CallForHelp(float radius);
         void CallAssistance();
@@ -694,6 +699,7 @@ class Creature : public Unit
         float m_baseWalkSpeedRate;  // SetBaseSpeedRate, 0 = none
         float m_baseRunSpeedRate;
         uint32 m_plateId = 0;       // SetPlateId
+        bool m_bonkEnemy = false;      // SetBonkEnemy
 
     private:
         GridReference<Creature> m_gridRef;

@@ -32,6 +32,34 @@
 #include "Geometry.h"
 #include "Utilities/Random.h"
 
+namespace
+{
+    // Vanilla Bonk: run enemies (Creature::IsBonkEnemy) chasing a running
+    // player. A player sends a movement packet only every half second while
+    // running straight, and the server keeps the position of the last one, so
+    // a chaser aiming there runs after a ghost of the player. It aims at where
+    // the player is now (the last packet carried forward by its age) and a
+    // little ahead, and re-aims more often while close.
+    uint32 const BONK_CHASE_LEAD_MS    = 200;
+    uint32 const BONK_CHASE_MAX_AGE_MS = 1000;
+    uint32 const BONK_CHASE_RECHECK_MS = 200;      // after a new path; 500 otherwise
+    float const BONK_CHASE_NEAR        = 40.0f;    // re-aims that often only this close
+
+    bool IsBonkChase(Unit const& owner, Unit const* target)
+    {
+        Creature const* creature = owner.ToCreature();
+        return creature && creature->IsBonkEnemy() && target && target->IsPlayer() && target->IsMoving();
+    }
+
+    // Where the running player will be `leadMs` from now.
+    bool PredictBonkTarget(Unit const* target, uint32 leadMs, float& x, float& y, float& z)
+    {
+        uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(target->m_movementInfo.stime), BONK_CHASE_MAX_AGE_MS);
+        float o;
+        return target->ExtrapolateMovement(target->m_movementInfo, age + leadMs, x, y, z, o);
+    }
+}
+
 //-----------------------------------------------//
 template<class T, typename D>
 bool TargetedMovementGeneratorMedium<T, D>::IsFarEnoughToMoveStationaryFollower(T &owner) const
@@ -97,6 +125,7 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
     float x, y, z;
     bool losChecked = false;
     bool losResult = false;
+    bool const bonkChase = IsBonkChase(owner, i_target.getTarget());
 
     GenericTransport* transport = owner.GetTransport();
 
@@ -119,7 +148,9 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
             if (i_target->IsMoving())
             {
                 Position futurePos;
-                if (i_target->ExtrapolateMovement(i_target->m_movementInfo, 200, futurePos.x, futurePos.y, futurePos.z, futurePos.o))
+                bool const predicted = bonkChase ? PredictBonkTarget(i_target.getTarget(), 200, futurePos.x, futurePos.y, futurePos.z) :
+                    i_target->ExtrapolateMovement(i_target->m_movementInfo, 200, futurePos.x, futurePos.y, futurePos.z, futurePos.o);
+                if (predicted)
                     if (!i_target->CanReachWithMeleeAutoAttackAtPosition(&owner, futurePos.x, futurePos.y, futurePos.z))
                         futureOkay = false;
             }
@@ -133,9 +164,22 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
             }
         }
 
+        // Vanilla Bonk: arm's length this side of where the running player is
+        // now; through a wall, the usual point instead.
+        if (bonkChase && PredictBonkTarget(i_target.getTarget(), BONK_CHASE_LEAD_MS, x, y, z) && i_target->IsWithinLOS(x, y, z))
+        {
+            float const dx = owner.GetPositionX() - x;
+            float const dy = owner.GetPositionY() - y;
+            float const length = std::sqrt(dx * dx + dy * dy);
+            if (length > DEFAULT_COMBAT_REACH)
+            {
+                x += dx / length * DEFAULT_COMBAT_REACH;
+                y += dy / length * DEFAULT_COMBAT_REACH;
+            }
+        }
         // Avoid collisions between mobs.
         // This function takes on a random angle.
-        if (!i_target->GetRandomAttackPoint(&owner, x, y, z))
+        else if (!i_target->GetRandomAttackPoint(&owner, x, y, z))
         {
             m_bReachable = false;
             return;
@@ -239,7 +283,7 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
         init.SetFacingGUID(i_target->GetGUID());
 
     init.Launch();
-    m_checkDistanceTimer.Reset(500);
+    m_checkDistanceTimer.Reset(bonkChase && owner.IsWithinDist(i_target.getTarget(), BONK_CHASE_NEAR) ? BONK_CHASE_RECHECK_MS : 500);
 
     // Fly-hack
     if (Player* player = i_target->ToPlayer())
@@ -323,6 +367,11 @@ bool ChaseMovementGenerator<T>::Update(T &owner, uint32 const&  time_diff)
 
                 if (!targetMoved)
                     targetMoved = (dest.x != i_target->GetPositionX() || dest.y != i_target->GetPositionY() || dest.z != i_target->GetPositionZ());
+
+                // Vanilla Bonk: a running player has always moved since, whatever
+                // their last packet says.
+                if (!targetMoved && IsBonkChase(owner, i_target.getTarget()) && owner.IsWithinDist(i_target.getTarget(), BONK_CHASE_NEAR))
+                    targetMoved = true;
 
                 // Chase movement may be interrupted
                 if (!targetMoved)

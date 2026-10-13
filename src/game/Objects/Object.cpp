@@ -1918,6 +1918,12 @@ float WorldObject::GetLeewayBonusRangeForTargets(Player const* player, Unit cons
 
 float WorldObject::GetLeewayBonusRange(Unit const* target, bool ability) const
 {
+    // Vanilla Bonk: run enemies only reach what they touch, both to swing and
+    // to decide they are close enough to stop chasing.
+    if (Creature const* creature = ToCreature())
+        if (creature->IsBonkEnemy())
+            return 0.0f;
+
     if (target && IsUnit())
     {
         if (Player const* pPlayer = ToPlayer())

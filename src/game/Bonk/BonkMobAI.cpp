@@ -272,16 +272,6 @@ float BonkMobAI::GetMeleeHit() const
     return (m_creature->GetFloatValue(UNIT_FIELD_MINDAMAGE) + m_creature->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2.0f;
 }
 
-bool BonkMobAI::IsInReach(Unit const* victim) const
-{
-    // The core lets a unit chasing a running player swing from 2.66 yards
-    // further (melee leeway): every enemy that came at the hero landed a hit.
-    float const reach = m_creature->GetCombatReachToTarget(victim, false, 0.0f, true);
-    float const dx = m_creature->GetPositionX() - victim->GetPositionX();
-    float const dy = m_creature->GetPositionY() - victim->GetPositionY();
-    return dx * dx + dy * dy < reach * reach;
-}
-
 void BonkMobAI::Arrive()
 {
     m_arriveTimer = BONK_ARRIVE_MS;
@@ -385,9 +375,8 @@ void BonkMobAI::UpdateAI(uint32 const diff)
 
     UpdateAffixes(diff, owner);
     UpdateAbilities(diff, owner);
-    if (Unit* victim = m_creature->GetVictim())
-        if (IsInReach(victim))
-            DoMeleeAttackIfReady();
+    // Without melee leeway (BonkRun::SpawnMobAt): only what it touches.
+    DoMeleeAttackIfReady();
 }
 
 void BonkMobAI::SetFrozen(bool frozen)
