@@ -157,7 +157,9 @@ enum AttackPowerModIndex
 
 uint32 CreateProcExtendMask(SpellNonMeleeDamage* damageInfo, SpellMissInfo missCondition);
 
-#define UNIT_SPELL_UPDATE_TIME_BUFFER 60
+// Vanilla Bonk: 25 (stock 60), one world tick: at 60 spell events would
+// advance only every third 25 ms tick.
+#define UNIT_SPELL_UPDATE_TIME_BUFFER 25
 
 // According to data from sniffs, combat is checked every 3 batches of 400 ms.
 #define UNIT_COMBAT_CHECK_TIMER_MAX 1200u
