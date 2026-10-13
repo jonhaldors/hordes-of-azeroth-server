@@ -98,6 +98,7 @@ void BonkMgr::Load()
     LoadMapEvents();
     // Weapons name the keywords they apply and pay off.
     LoadKeywords();
+    LoadProjectiles();
     LoadWeapons();
     LoadPassives();
     LoadPowerups();
@@ -479,6 +480,60 @@ void BonkMgr::LoadKeywords()
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk keywords", uint32(m_keywords.size()));
+}
+
+void BonkMgr::LoadProjectiles()
+{
+    m_projectiles.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `spell_id`, `display_id`, `speed`, `radius`, `scale` FROM `bonk_projectile`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk projectiles.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkProjectileInfo projectile;
+        projectile.spellId = fields[0].GetUInt32();
+        projectile.displayId = fields[1].GetUInt32();
+        projectile.speed = fields[2].GetFloat();
+        projectile.radius = std::max(0.1f, fields[3].GetFloat());
+        projectile.scale = fields[4].GetFloat() > 0.0f ? fields[4].GetFloat() : 1.0f;
+
+        // Without the client patch's display (and the server's copy of
+        // its tables) the spell still lands on its target.
+        if (!sSpellMgr.GetSpellEntry(projectile.spellId) || projectile.speed <= 0.0f)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_projectile`: spell %u is missing or has no speed; skipped.", projectile.spellId);
+            continue;
+        }
+        if (!sCreatureDisplayInfoStore.LookupEntry(projectile.displayId) ||
+            !sCreatureDisplayInfoAddonStorage.LookupEntry<CreatureDisplayInfoAddon>(projectile.displayId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_projectile`: spell %u uses display %u, which the server's tables lack (build the client patch, tools/build-telegraphs.ps1); skipped.",
+                projectile.spellId, projectile.displayId);
+            continue;
+        }
+        m_projectiles[projectile.spellId] = projectile;
+    } while (result->NextRow());
+
+    if (!sObjectMgr.GetCreatureTemplate(BONK_PROJECTILE))
+    {
+        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: creature template %u is missing; spells land on their targets instead of flying.", BONK_PROJECTILE);
+        m_projectiles.clear();
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk projectiles", uint32(m_projectiles.size()));
+}
+
+BonkProjectileInfo const* BonkMgr::GetProjectile(uint32 spellId) const
+{
+    auto itr = m_projectiles.find(spellId);
+    return itr != m_projectiles.end() ? &itr->second : nullptr;
 }
 
 BonkKeywordInfo const* BonkMgr::GetKeyword(BonkKeyword id) const

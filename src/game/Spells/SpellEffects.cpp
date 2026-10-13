@@ -51,6 +51,7 @@
 #include "Utilities/Random.h"
 #include "ScriptMgr.h"
 #include "SocialMgr.h"
+#include "Bonk/BonkMgr.h"
 #include "Bonk/BonkPlayer.h"
 
 using namespace Spells;
@@ -3495,8 +3496,13 @@ void Spell::EffectWeaponDmg(SpellEffectIndex effIdx)
         bonus += m_casterUnit->CalculateDamage(m_attackType, normalized, i) * weaponDamagePercentMod;
     }
 
-    // Vanilla Bonk: a run weapon's damage replaces the weapon swing.
-    if (Player* pPlayer = m_casterUnit->ToPlayer())
+    // Vanilla Bonk: a run weapon's damage replaces the weapon swing, also
+    // when the hero's projectile casts it for the hero.
+    Player* pPlayer = m_casterUnit->ToPlayer();
+    if (!pPlayer && m_casterUnit->GetEntry() == BONK_PROJECTILE)
+        if (Unit* hero = GetAffectiveCaster())
+            pPlayer = hero->ToPlayer();
+    if (pPlayer)
         if (int32 const weaponDamage = pPlayer->GetBonkPlayer()->GetWeaponDamage(m_spellInfo->Id))
             bonus = float(weaponDamage);
 

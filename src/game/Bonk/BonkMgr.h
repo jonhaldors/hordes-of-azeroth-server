@@ -42,6 +42,19 @@ uint32 const BONK_ORB_HUGE  = 900102;
 uint32 const BONK_SANGUINE_POOL = 900110;
 // An invisible marker under a turkey leg or Talent Shard; its highlight is an aura on it.
 uint32 const BONK_PICKUP_MARKER = 900111;
+// A hero's bolt in flight, wearing its spell's missile model (bonk_projectile);
+// the spells it casts on enemies it touches are the hero's.
+uint32 const BONK_PROJECTILE = 900113;
+
+// A spell that flies as a projectile (bonk_projectile).
+struct BonkProjectileInfo
+{
+    uint32 spellId = 0;
+    uint32 displayId = 0;           // creature display wearing its missile model
+    float speed = 20.0f;            // yards a second
+    float radius = 1.0f;            // yards from its path an enemy is hit, before the enemy's own size
+    float scale = 1.0f;             // size of the model
+};
 
 enum BonkSpawnKind : uint8
 {
@@ -693,6 +706,9 @@ class BonkMgr
         // The weapon `weaponId` evolves into, if any.
         BonkWeapon const* GetEvolution(uint32 weaponId) const;
 
+        // How `spellId` flies, if it is a projectile.
+        BonkProjectileInfo const* GetProjectile(uint32 spellId) const;
+
         BonkKeywordInfo const* GetKeyword(BonkKeyword id) const;
         // The keyword whose debuff is `spellId`, if any.
         BonkKeywordInfo const* GetKeywordBySpell(uint32 spellId) const;
@@ -736,6 +752,7 @@ class BonkMgr
         void LoadMapCreatures();
         void LoadMapEvents();
         void LoadKeywords();
+        void LoadProjectiles();
         void LoadWeapons();
         void LoadPassives();
         void LoadPowerups();
@@ -755,6 +772,7 @@ class BonkMgr
         std::map<uint32, BonkMap> m_maps;
         std::map<uint32, BonkWeapon> m_weapons;
         std::map<uint8, BonkKeywordInfo> m_keywords;
+        std::map<uint32, BonkProjectileInfo> m_projectiles;     // by spell id
         std::map<uint32, BonkPassive> m_passives;
         std::vector<BonkPowerup> m_powerups;
         std::map<uint32, BonkShopTree> m_shopTrees;

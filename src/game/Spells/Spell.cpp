@@ -53,6 +53,16 @@
 
 using namespace Spells;
 
+namespace
+{
+    // Vanilla Bonk: a hero's bolt in flight (BonkRun projectiles). It casts
+    // the bolt's spell on the hero's behalf on each enemy it touches.
+    bool IsBonkProjectile(SpellCaster const* caster)
+    {
+        return caster && caster->IsCreature() && caster->GetEntry() == BONK_PROJECTILE;
+    }
+}
+
 #define SPELL_CHANNEL_VISUAL_TIMER 800
 
 extern pEffect SpellEffects[TOTAL_SPELL_EFFECTS];
@@ -935,6 +945,9 @@ void Spell::AddUnitTarget(Unit* pTarget, SpellEffectIndex effIndex)
         targetInfo.isCrit = affectiveObject->IsSpellCrit(pTarget, m_spellInfo, m_spellSchoolMask, m_attackType, this);
 
     // Spell have speed - need calculate incoming time
+    // Vanilla Bonk: a projectile's hit flies from the projectile, not the hero.
+    if (IsBonkProjectile(m_caster))
+        affectiveObject = m_caster;
     if (m_spellInfo->speed > 0.0f && affectiveObject && pTarget != affectiveObject)
     {
         // calculate spell incoming interval
@@ -1070,6 +1083,9 @@ void Spell::AddGOTarget(GameObject* pTarget, SpellEffectIndex effIndex)
 
     // spell fly from visual cast object
     SpellCaster* affectiveObject = GetAffectiveCasterObject();
+    // Vanilla Bonk: a projectile's hit flies from the projectile, not the hero.
+    if (IsBonkProjectile(m_caster))
+        affectiveObject = m_caster;
 
     // Spell have speed - need calculate incoming time
     if (m_spellInfo->speed > 0.0f && affectiveObject && pTarget != affectiveObject)
@@ -2094,6 +2110,11 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             if (EffectChainTarget > 1)
                 EffectChainTarget += modOwner->GetBonkPlayer()->GetChainBonus(m_spellInfo->Id);
         }
+
+        // A projectile hits only the enemy it touched (a spell that hits
+        // several flies as several projectiles).
+        if (IsBonkProjectile(m_caster) && EffectChainTarget > 1)
+            EffectChainTarget = 1;
     }
 
     // Add spell leeway to caster centered AoE when moving or jumping

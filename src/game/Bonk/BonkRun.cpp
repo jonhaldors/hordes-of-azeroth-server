@@ -165,6 +165,12 @@ namespace
     float const BONK_WEAPON_ORB_SCALE      = 1.2f;
     float const BONK_WEAPON_ORB_SPEED      = 0.35f;    // times a running hero's speed
     float const BONK_PLAYER_RUN_SPEED      = 7.0f;     // yards a second
+    // Projectiles fly this high above where they set off from the hero (the
+    // missile models sit on their middle) and fan out this far apart
+    // (radians) when a spell fires several at once.
+    float const BONK_PROJECTILE_HEIGHT     = 1.2f;
+    float const BONK_PROJECTILE_FAN        = 0.17f;    // about 10 degrees
+    float const BONK_PROJECTILE_Z_REACH    = 4.0f;     // enemies this far above or below its path are missed
     float const BONK_CONE_ARC              = M_PI_F / 2.0f;    // a cone's width before Area; never wider than half a circle
     float const BONK_KNOCKBACK_DISTANCE    = 6.0f;
     float const BONK_KNOCKBACK_SPEED       = 18.0f;
@@ -740,6 +746,7 @@ void BonkRun::StartStage()
     SetNecroticStacks(0);
     DespawnPools();
     DespawnWeaponOrbs();
+    DespawnProjectiles();
     m_pendingCasts.clear();
     m_telegraphs.Clear(m_player->FindMap());
     DespawnTraps();
@@ -816,6 +823,7 @@ void BonkRun::UpdateRunning(uint32 diff)
         return;
     UpdatePendingCasts(diff);
     UpdateWeaponOrbs(diff);
+    UpdateProjectiles(diff);
     UpdateTraps(diff);
     UpdatePetTargets(diff);
     UpdateKeywords();
@@ -2640,7 +2648,7 @@ void BonkRun::GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInf
     }
 }
 
-void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare, bool followUp)
+void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare, bool followUp, Creature* source)
 {
     BonkWeapon const& weapon = owned.weapon;
 
@@ -2659,7 +2667,12 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
     if (weapon.weaponDamage)
         m_player->GetBonkPlayer()->TweakSpell(weapon.spellId).weaponDamage = std::max(1, int32(GetWeaponDamage(owned) * damageShare));
 
-    m_player->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], true);
+    // A projectile casts it where it touched the enemy; the hit is still
+    // the hero's (its damage, crit and Power).
+    if (source)
+        source->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], true, nullptr, nullptr, m_player->GetObjectGuid());
+    else
+        m_player->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], true);
 
     if (followUp)
         return;
@@ -3160,7 +3173,10 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
                     ++itr;
             }
 
-        // Triggered casts skip the line of sight check, so do it here.
+        // Triggered casts skip the line of sight check, so do it here. A
+        // spell that flies as a projectile sets off at each target instead
+        // of landing on it, and hits what it touches on the way.
+        BonkProjectileInfo const* projectile = sBonkMgr.GetProjectile(castInfo->Id);
         uint32 const targets = GetWeaponTargets(owned);
         std::vector<Creature*> struck;
         for (Creature* mob : mobs)
@@ -3169,7 +3185,10 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
                 break;
             if (!m_player->IsWithinLOSInMap(mob))
                 continue;
-            StrikeWith(owned, castInfo, mob, castShare);
+            if (projectile)
+                LaunchProjectiles(owned, *projectile, castInfo, castShare, m_player, mob);
+            else
+                StrikeWith(owned, castInfo, mob, castShare);
             if (weapon.target == BONK_TARGET_RANDOM)
                 owned.recentTargets[mob->GetObjectGuid()] = now;
             struck.push_back(mob);
@@ -3178,9 +3197,9 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
 
         // A cleave also hits the enemies next to each target, for a share
         // of the damage; an aimed spell's pierces and bounces hit them in
-        // full. Every enemy is hit once.
+        // full (a projectile's pass through instead). Every enemy is hit once.
         bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
-        bool const pierce = weapon.IsAimed() && !weapon.chains && weapon.behavior != BONK_BEHAVIOR_SPREAD;
+        bool const pierce = weapon.IsAimed() && !weapon.chains && weapon.behavior != BONK_BEHAVIOR_SPREAD && !projectile;
         uint32 const victims = cleave ? 1 + weapon.baseJumps + owned.extraJumps : pierce ? weapon.baseJumps + owned.extraJumps : 0;
         if (victims)
         {
@@ -3447,7 +3466,9 @@ void BonkRun::UpdateWeaponOrbs(uint32 diff)
             itr->tickMs = int32(std::max(150.0f, std::max(200u, weapon.tickMs) / GetHasteRate()));
             if (SpellEntry const* info = sSpellMgr.GetSpellEntry(weapon.spellId))
             {
-                // The orb's casts come from the hero, at the enemies around the orb.
+                // At the enemies around the orb: a projectile flies out of
+                // the orb, any other spell comes from the hero.
+                BonkProjectileInfo const* projectile = sBonkMgr.GetProjectile(info->Id);
                 uint32 const targets = GetWeaponTargets(*owned);
                 uint32 struck = 0;
                 FiringWeapon firing(m_player->GetBonkPlayer());
@@ -3455,7 +3476,10 @@ void BonkRun::UpdateWeaponOrbs(uint32 diff)
                 {
                     if (struck >= targets)
                         break;
-                    StrikeWith(*owned, info, mob, 1.0f);
+                    if (projectile)
+                        LaunchProjectiles(*owned, *projectile, info, 1.0f, orb, mob);
+                    else
+                        StrikeWith(*owned, info, mob, 1.0f);
                     ++struck;
                 }
             }
@@ -3471,6 +3495,180 @@ void BonkRun::DespawnWeaponOrbs()
             if (Creature* creature = map->GetCreature(orb.creature))
                 creature->DespawnOrUnsummon();
     m_weaponOrbs.clear();
+}
+
+float BonkRun::GetLeadAngle(WorldObject const* from, Unit const* target, float speed) const
+{
+    // A moving enemy runs on along its facing while the projectile flies.
+    float x = target->GetPositionX();
+    float y = target->GetPositionY();
+    if (speed > 0.0f && target->IsMoving())
+    {
+        float const run = target->GetSpeed(target->IsWalking() ? MOVE_WALK : MOVE_RUN) * from->GetDistance2d(target) / speed;
+        x += run * std::cos(target->GetOrientation());
+        y += run * std::sin(target->GetOrientation());
+    }
+    return from->GetAngle(x, y);
+}
+
+void BonkRun::LaunchProjectiles(OwnedWeapon& owned, BonkProjectileInfo const& info, SpellEntry const* spellInfo, float damageShare,
+    WorldObject const* from, Creature* target)
+{
+    BonkWeapon const& weapon = owned.weapon;
+    float const aim = GetLeadAngle(from, target, info.speed);
+
+    // A spell that hits several enemies at once fires that many in a fan,
+    // each stopping at the first enemy it touches; its jumps add more.
+    if (weapon.chains)
+    {
+        uint32 chain = 1;
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            chain = std::max(chain, spellInfo->EffectChainTarget[i]);
+        uint32 const count = chain + owned.extraJumps;
+        for (uint32 i = 0; i < count; ++i)
+            LaunchProjectile(owned, info, spellInfo->Id, damageShare, from, aim + (float(i) - (count - 1) / 2.0f) * BONK_PROJECTILE_FAN,
+                weapon.baseJumps);
+        return;
+    }
+
+    // The rest pass through one more enemy for each pierce; a spell that
+    // spreads uses its jumps for that instead.
+    uint32 const pierce = weapon.behavior == BONK_BEHAVIOR_SPREAD ? 0 : weapon.baseJumps + owned.extraJumps;
+    LaunchProjectile(owned, info, spellInfo->Id, damageShare, from, aim, pierce);
+}
+
+void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& info, uint32 spellId, float damageShare,
+    WorldObject const* from, float angle, uint32 pierce)
+{
+    // From the hero's chest (an orb already floats), as far as the spell
+    // reaches or to the first wall.
+    float const x = from->GetPositionX();
+    float const y = from->GetPositionY();
+    float const z = from->GetPositionZ() + (from == m_player ? BONK_PROJECTILE_HEIGHT : 0.0f);
+    float const length = owned.weapon.range * (1.0f + owned.rangeBonus / 100.0f);
+    float ex = x + length * std::cos(angle);
+    float ey = y + length * std::sin(angle);
+    float ez = z;
+    m_player->GetMap()->GetLosHitPosition(x, y, z, ex, ey, ez, -0.5f);
+    float const flight = std::sqrt((ex - x) * (ex - x) + (ey - y) * (ey - y));
+    if (flight < 1.0f)
+        return;
+
+    uint32 const flightMs = uint32(flight / info.speed * IN_MILLISECONDS);
+    Creature* missile = m_player->SummonCreature(BONK_PROJECTILE, x, y, z, angle, TEMPSUMMON_TIMED_DESPAWN, flightMs + 2000, false, 0, &InstallOrbAI);
+    if (!missile)
+        return;
+    missile->SetDisplayId(info.displayId);
+    missile->SetObjectScale(info.scale);
+    missile->SetFactionTemplateId(BONK_ORB_FACTION);
+    missile->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    // The hero's: the spells it casts deal the hero's damage (BonkRun::FromAttack).
+    missile->SetOwnerGuid(m_player->GetObjectGuid());
+    missile->SetLevel(m_player->GetLevel());
+    missile->MonsterMoveWithSpeed(ex, ey, ez, angle, info.speed, MOVE_FLY_MODE);
+
+    Projectile projectile;
+    projectile.creature = missile->GetObjectGuid();
+    projectile.weaponId = owned.weapon.id;
+    projectile.spellId = spellId;
+    projectile.damageShare = damageShare;
+    projectile.x = x;
+    projectile.y = y;
+    projectile.z = z;
+    projectile.dirX = std::cos(angle);
+    projectile.dirY = std::sin(angle);
+    projectile.speed = info.speed;
+    projectile.length = flight;
+    projectile.radius = info.radius;
+    projectile.pierce = pierce;
+    m_projectiles.push_back(projectile);
+}
+
+void BonkRun::UpdateProjectiles(uint32 diff)
+{
+    if (m_projectiles.empty())
+        return;
+
+    Map* map = m_player->GetMap();
+    for (auto itr = m_projectiles.begin(); itr != m_projectiles.end();)
+    {
+        Projectile& projectile = *itr;
+        Creature* missile = map->GetCreature(projectile.creature);
+        OwnedWeapon* owned = FindOwned(projectile.weaponId);
+        SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(projectile.spellId);
+        bool done = !missile || !owned || !spellInfo;
+
+        if (!done)
+        {
+            // Where along its path it has got since it was last looked at.
+            projectile.flownMs += diff;
+            float const reached = std::min(projectile.length, projectile.speed * projectile.flownMs / IN_MILLISECONDS);
+
+            // The enemies that stretch touches, nearest first.
+            std::vector<std::pair<float, Creature*>> touched;
+            for (ObjectGuid const& guid : m_mobs)
+            {
+                Creature* mob = map->GetCreature(guid);
+                if (!mob || !mob->IsAlive() || std::find(projectile.struck.begin(), projectile.struck.end(), guid) != projectile.struck.end())
+                    continue;
+                float const dx = mob->GetPositionX() - projectile.x;
+                float const dy = mob->GetPositionY() - projectile.y;
+                float const reach = projectile.radius + mob->GetObjectBoundingRadius();
+                float const along = dx * projectile.dirX + dy * projectile.dirY;
+                if (along < projectile.checked - reach || along > reached + reach)
+                    continue;
+                if (std::fabs(dx * projectile.dirY - dy * projectile.dirX) > reach ||
+                    std::fabs(mob->GetPositionZ() + BONK_PROJECTILE_HEIGHT - projectile.z) > BONK_PROJECTILE_Z_REACH)
+                    continue;
+                touched.emplace_back(along, mob);
+            }
+            std::sort(touched.begin(), touched.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
+            projectile.checked = reached;
+
+            FiringWeapon firing(m_player->GetBonkPlayer());
+            for (auto const& hit : touched)
+            {
+                projectile.struck.push_back(hit.second->GetObjectGuid());
+                owned->killed = false;
+                StrikeWith(*owned, spellInfo, hit.second, projectile.damageShare, false, missile);
+                // A killing shot that resets is ready again at once.
+                if (owned->killed && owned->weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL))
+                    owned->timer = std::min<int32>(owned->timer, BONK_CLEARCAST_DELAY_MS);
+                if (!projectile.pierce)
+                {
+                    done = true;
+                    break;
+                }
+                --projectile.pierce;
+            }
+            if (reached >= projectile.length)
+                done = true;
+        }
+
+        if (!done)
+        {
+            ++itr;
+            continue;
+        }
+        // Gone from sight at once; it lingers unseen a moment, as the spell
+        // it cast is still on its way to the enemy.
+        if (missile)
+        {
+            missile->StopMoving();
+            missile->SetDisplayId(BONK_DISPLAY_INVISIBLE);
+            missile->DespawnOrUnsummon(1000);
+        }
+        itr = m_projectiles.erase(itr);
+    }
+}
+
+void BonkRun::DespawnProjectiles()
+{
+    if (Map* map = m_player->FindMap())
+        for (Projectile const& projectile : m_projectiles)
+            if (Creature* missile = map->GetCreature(projectile.creature))
+                missile->DespawnOrUnsummon();
+    m_projectiles.clear();
 }
 
 float BonkRun::GetMobDamageMultiplier(Creature const* mob) const
@@ -5225,6 +5423,7 @@ void BonkRun::CleanUp()
     SetNecroticStacks(0);
     DespawnPools();
     DespawnWeaponOrbs();
+    DespawnProjectiles();
     m_pendingCasts.clear();
     m_telegraphs.Clear(m_player->FindMap());
     DespawnTraps();

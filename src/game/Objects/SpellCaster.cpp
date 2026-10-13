@@ -51,7 +51,10 @@ namespace
     // caster's level again (spells made for creatures) would count it twice.
     bool HasBonkRunDamage(SpellCaster const* caster, SpellEntry const* spell, SpellEffectIndex index)
     {
+        // A hero's projectile casts on the hero's behalf (BonkRun projectiles).
         Player const* player = caster->ToPlayer();
+        if (!player && caster->IsCreature() && caster->GetEntry() == BONK_PROJECTILE)
+            player = caster->ToUnit()->GetCharmerOrOwnerPlayerOrPlayerItself();
         if (!player || !player->GetBonkPlayer()->GetRun())
             return false;
 

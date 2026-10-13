@@ -333,9 +333,11 @@ class BonkRun
         // Base points for `damageShare` of the weapon's damage. Ground ticks hit
         // as hard as the strike; a hit's burn adds up to one more hit.
         void GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInfo, float damageShare, nonstd::optional<int32>* basePoints) const;
-        // Casts the weapon's spell on `target` for `damageShare` of its damage.
+        // Casts the weapon's spell on `target` for `damageShare` of its damage,
+        // from the hero or from `source` (a projectile) on the hero's behalf.
         // A follow-up (a burst's later shots) sets nothing else off.
-        void StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare, bool followUp = false);
+        void StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float damageShare, bool followUp = false,
+            Creature* source = nullptr);
         // Normal enemies below the weapon's kill_below_pct die to its hit.
         bool CanKill(BonkWeapon const& weapon, Creature const* target) const;
         // Bosses first, then mini-bosses and elites, then the most health.
@@ -369,6 +371,18 @@ class BonkRun
         void LaunchOrb(OwnedWeapon& owned);
         void UpdateWeaponOrbs(uint32 diff);
         void DespawnWeaponOrbs();
+        // Projectiles: a spell with a bonk_projectile row flies from `from`
+        // towards where `target` will be, and hits the enemies it touches.
+        // A spell that hits several enemies at once (Multi-Shot) fires that
+        // many in a fan; the rest pass through the weapon's pierces.
+        void LaunchProjectiles(OwnedWeapon& owned, BonkProjectileInfo const& info, SpellEntry const* spellInfo, float damageShare,
+            WorldObject const* from, Creature* target);
+        void LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& info, uint32 spellId, float damageShare,
+            WorldObject const* from, float angle, uint32 pierce);
+        void UpdateProjectiles(uint32 diff);
+        void DespawnProjectiles();
+        // The direction from `from` that meets `target` where it will be.
+        float GetLeadAngle(WorldObject const* from, Unit const* target, float speed) const;
         void AddSpellShield(uint32 amount);
         void CastSelfArea(OwnedWeapon& owned, SpellEntry const* spellInfo, float areaScale);
         void AddWeapon(BonkWeapon const& weapon);
@@ -559,6 +573,23 @@ class BonkRun
             int32 tickMs = 0;
         };
         std::vector<WeaponOrb> m_weaponOrbs;
+        struct Projectile
+        {
+            ObjectGuid creature;
+            uint32 weaponId = 0;
+            uint32 spellId = 0;             // cast on each enemy it touches
+            float damageShare = 1.0f;
+            float x = 0.0f, y = 0.0f, z = 0.0f;     // where it set off
+            float dirX = 0.0f, dirY = 0.0f;
+            float speed = 0.0f;             // yards a second
+            float length = 0.0f;            // how far it flies
+            float radius = 0.0f;            // hits enemies this close to its path, plus their own size
+            uint32 pierce = 0;              // enemies it passes through before it stops
+            uint32 flownMs = 0;
+            float checked = 0.0f;           // of its path, looked at for enemies
+            std::vector<ObjectGuid> struck;
+        };
+        std::vector<Projectile> m_projectiles;
         uint32 m_spellShield = 0;           // from Shield spells, soaked before the stat Shield
         bool m_wardBurst = false;           // a ward's Shield just broke
         struct Mark
