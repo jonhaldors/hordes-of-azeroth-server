@@ -833,6 +833,26 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                     else
                         *data << uint32(m_uint32Values[index]);
                 }
+                // Vanilla Bonk: a run enemy's health is sent out of a number
+                // that names it (Creature::SetPlateId). Its share is unchanged,
+                // and the addon reads which enemy a nameplate shows off the
+                // bar's maximum.
+                else if ((index == UNIT_FIELD_HEALTH || index == UNIT_FIELD_MAXHEALTH) && GetTypeId() == TYPEID_UNIT &&
+                    static_cast<Creature const*>(this)->GetPlateId())
+                {
+                    uint32 const scale = Creature::BONK_PLATE_HEALTH_BASE + static_cast<Creature const*>(this)->GetPlateId();
+                    if (index == UNIT_FIELD_MAXHEALTH)
+                        *data << scale;
+                    else
+                    {
+                        uint32 const health = m_uint32Values[UNIT_FIELD_HEALTH];
+                        uint32 const maxHealth = std::max(1u, m_uint32Values[UNIT_FIELD_MAXHEALTH]);
+                        uint32 sent = uint32(uint64(std::min(health, maxHealth)) * scale / maxHealth);
+                        if (health && !sent)
+                            sent = 1;
+                        *data << sent;
+                    }
+                }
                 // Hide real health value. Send a percent instead. See ShowHealthValues option in mangosd.conf
                 else if (!ShowHealthValues && (index == UNIT_FIELD_HEALTH || index == UNIT_FIELD_MAXHEALTH))
                 {

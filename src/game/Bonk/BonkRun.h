@@ -466,6 +466,7 @@ class BonkRun
         bool m_bossSpawned = false;
         ObjectGuid m_bossGuid;
         std::vector<ObjectGuid> m_mobs;
+        uint32 m_lastPlateId = 0;           // enemies' nameplate numbers, 1 to BONK_MAX_PLATE_ID over and over
         float m_moveX = 0.0f, m_moveY = 0.0f;       // the player's smoothed movement, yards a second
         float m_lastX = 0.0f, m_lastY = 0.0f;       // where they were at the last sample
         uint32 m_headingTimer = 0;

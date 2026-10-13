@@ -324,6 +324,13 @@ class Creature : public Unit
         // the template's). Auras still modify it, and UpdateSpeed keeps it,
         // where SetSpeedRate is lost on the next speed aura or follow.
         void SetBaseSpeedRate(UnitMoveType mtype, float rate);
+        // Vanilla Bonk: a run enemy's number for its nameplate, 0 = none. Its
+        // health is sent out of BONK_PLATE_HEALTH_BASE + this (see
+        // Object::BuildValuesUpdate), so the addon knows which enemy a
+        // nameplate shows.
+        static constexpr uint32 BONK_PLATE_HEALTH_BASE = 100000;
+        void SetPlateId(uint32 id) { m_plateId = id; }
+        uint32 GetPlateId() const { return m_plateId; }
         void MoveAwayFromTarget(Unit const* pTarget, float distance);
         void CallForHelp(float radius);
         void CallAssistance();
@@ -686,6 +693,7 @@ class Creature : public Unit
         float m_detectionDistance;
         float m_baseWalkSpeedRate;  // SetBaseSpeedRate, 0 = none
         float m_baseRunSpeedRate;
+        uint32 m_plateId = 0;       // SetPlateId
 
     private:
         GridReference<Creature> m_gridRef;

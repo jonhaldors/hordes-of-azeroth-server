@@ -171,9 +171,10 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
     else if (kind == BONK_SPAWN_MINIBOSS)
         RollAffixes(affixes + 1);
 
-    // The addon's nameplates know elites and bosses by name.
+    // The addon's nameplates know elites and bosses by their plate number (or name).
     if (kind != BONK_SPAWN_NORMAL && owner)
-        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(kind) + "~" + m_creature->GetName() + "~" + GetAffixIcons());
+        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(kind) + "~" + m_creature->GetName() + "~" + GetAffixIcons() + "~" +
+            std::to_string(m_creature->GetPlateId()));
 }
 
 void BonkMobAI::RollAffixes(uint32 count)

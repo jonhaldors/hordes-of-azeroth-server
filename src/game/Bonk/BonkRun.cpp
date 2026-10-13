@@ -80,6 +80,7 @@ namespace
     uint32 const BONK_ELITE_RETRY_MS       = 5000;     // an elite held back looks again this soon
     float const BONK_BRUISER_SIZE          = 1.3f;     // bruisers are at least this much bigger than the biggest grunt
     float const BONK_BRUISER_MAX_GROWTH    = 2.5f;
+    uint32 const BONK_MAX_PLATE_ID         = 65535;    // nameplate numbers go round (Creature::SetPlateId)
     float const BONK_RING_DISTANCE         = 22.0f;    // a ring starts this close
     float const BONK_RUSH_WIDTH            = 0.6f;     // radians either side of a rush's direction
 
@@ -2080,6 +2081,10 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
         }
     }
     mob->SetNoXP();
+
+    // Its nameplate's number, before Setup tells the addon about it.
+    m_lastPlateId = m_lastPlateId % BONK_MAX_PLATE_ID + 1;
+    mob->SetPlateId(m_lastPlateId);
 
     // Last, so abilities and affixes build on the final stats.
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
@@ -4237,7 +4242,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     {
         DropChest(mob, kind);
         OnAffixedDeath(mob);
-        m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()));
+        m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()) + "~" + std::to_string(mob->GetPlateId()));
     }
 
     DropShards(mob, kind);
