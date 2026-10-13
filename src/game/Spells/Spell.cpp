@@ -61,6 +61,13 @@ namespace
     {
         return caster && caster->IsCreature() && caster->GetEntry() == BONK_PROJECTILE;
     }
+
+    // Vanilla Bonk: a spell with a travel time a hero casts in a run.
+    bool IsBonkRunBolt(SpellCaster const* caster, SpellEntry const* spellInfo)
+    {
+        Player const* player = caster ? caster->ToPlayer() : nullptr;
+        return spellInfo->speed > 0.0f && player && player->GetBonkPlayer()->GetRun();
+    }
 }
 
 #define SPELL_CHANNEL_VISUAL_TIMER 800
@@ -3833,6 +3840,12 @@ void Spell::cast(bool skipCheck)
         m_immediateHandled = false;
         m_spellState = SPELL_STATE_DELAYED;
         SetDelayStart(0);
+        // Vanilla Bonk: a run bolt's travel starts at the cast, as the client's
+        // missile does, not at the hero's next update (SpellEvent::Execute),
+        // a player update later. Runs cast from the hero's
+        // update after their spell events, so the event clock reads now.
+        if (IsBonkRunBolt(m_caster, m_spellInfo))
+            SetDelayStart(m_caster->m_Events.CalculateTime(0));
 
         // start combat at cast for delayed spells, only for explicit target
         if (m_casterUnit && m_casterUnit->IsCharmerOrOwnerPlayerOrPlayerItself() && // only player casters
