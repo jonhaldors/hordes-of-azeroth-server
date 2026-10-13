@@ -173,12 +173,12 @@ namespace
     float const BONK_MAX_DEMORALIZE        = 60.0f;    // % less damage a shout can take off
     float const BONK_MARK_JUMP_RANGE       = 15.0f;    // a mark moves on to an enemy this close to the one that died
     // Traps: how near an enemy sets one off, how soon after it lands, how
-    // long it lies (in its spell's cooldowns, longer with Duration; about two
-    // drops out at once), how many one spell can have out, and how near an
+    // long it lies (in its spell's cooldowns, longer with Duration; about one
+    // drop out at once), how many one spell can have out, and how near an
     // enemy must be before the hero drops any.
     float const BONK_TRAP_TRIGGER_RADIUS   = 2.5f;
     int32 const BONK_TRAP_ARM_MS           = 500;
-    float const BONK_TRAP_LIFETIME         = 2.0f;
+    float const BONK_TRAP_LIFETIME         = 1.0f;
     size_t const BONK_MAX_TRAPS            = 8;
     float const BONK_TRAP_AWARE_RANGE      = 25.0f;
     float const BONK_TRAP_SPACING          = 3.0f;     // between traps dropped together
@@ -352,8 +352,22 @@ namespace
             void UpdateAI(uint32 const /*diff*/) override
             {
                 Unit* victim = m_creature->GetVictim();
-                if (victim && victim->IsAlive())
-                    DoMeleeAttackIfReady();
+                if (!victim || !victim->IsAlive())
+                    return;
+
+                // The core gives a unit 2.66 yd more reach when it and its
+                // target are both running (melee leeway), but only if one of
+                // them is a player: a beast chasing an enemy that chases the
+                // hero trailed just out of reach. It gets the same leeway.
+                if (m_creature->IsAttackReady(BASE_ATTACK) && m_creature->IsMovingButNotWalking() && victim->IsMovingButNotWalking() &&
+                    !m_creature->CanReachWithMeleeAutoAttack(victim) && m_creature->CanReachWithMeleeAutoAttack(victim, LEEWAY_BONUS_RANGE) &&
+                    m_creature->HasInArc(victim, 2 * M_PI_F / 3))
+                {
+                    m_creature->AttackerStateUpdate(victim, BASE_ATTACK);
+                    m_creature->ResetAttackTimer(BASE_ATTACK);
+                    return;
+                }
+                DoMeleeAttackIfReady();
             }
     };
 
