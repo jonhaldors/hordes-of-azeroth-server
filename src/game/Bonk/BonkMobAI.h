@@ -102,9 +102,11 @@ class BonkMobAI : public CreatureAI
         void UpdateBolt(uint32 diff, Player* owner);
         void AimBoltNow(Player* owner);
         void LaunchBolt();
-        // Chargers: stop, warn with a red line, dash along it.
+        // Chargers: stop, warn with a red line, dash along it. Any enemy with
+        // a Charge ability does the same when it uses it; only chargers charge
+        // on their own timer.
         bool UpdateCharge(uint32 diff, Player* owner);
-        void StartCharge(Player* owner);
+        void StartCharge(Player* owner, float damage);
         void Dash(Player* owner);
         void EndCharge(Player* owner);
 
@@ -127,6 +129,7 @@ class BonkMobAI : public CreatureAI
         int32 m_chargeTimer = 2000;         // to the next charge, the dash, or its end
         float m_chargeX = 0.0f, m_chargeY = 0.0f, m_chargeZ = 0.0f;    // where the dash starts
         float m_chargeAngle = 0.0f, m_chargeLength = 0.0f;
+        float m_chargeDamage = 0.0f;        // the dash's hit, in melee hits
         float m_dashX = 0.0f, m_dashY = 0.0f, m_dashZ = 0.0f;          // where it ends
         // An aimed bolt (AimBolt): cast at a stand-in target, which moves to
         // where the player will be as the cast ends.

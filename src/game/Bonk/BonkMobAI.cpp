@@ -45,17 +45,26 @@ namespace
     uint32 const BONK_ERUPTION_INTERVAL = 6000;
     float const BONK_ERUPTION_DAMAGE    = 1.5f;     // melee hits
 
-    // Chargers: with the player this far off and in sight, they stop, warn
-    // with a red line through the player for a moment, then dash along it;
-    // a player still in the line when it fills is hit.
+    // Chargers: they stop, warn with a red line through where the player
+    // will be as the warning ends, then dash along it; a player in the line
+    // when it fills is hit. They only charge with that spot well within
+    // reach (BONK_CHARGE_AIM_RANGE), so a player running away is not
+    // charged at from the edge of range, and one coming at them is met head
+    // on. How often depends on the difficulty (BonkTier::chargeIntervalMs).
     float const BONK_CHARGE_MIN_RANGE   = 8.0f;
-    float const BONK_CHARGE_MAX_RANGE   = 25.0f;
+    float const BONK_CHARGE_MAX_RANGE   = 20.0f;    // how far off the player may be now
+    float const BONK_CHARGE_AIM_RANGE   = 16.0f;    // and where they will be
+    float const BONK_CHARGE_MAX_LENGTH  = 30.0f;    // a charge never runs further, overshoot included
     float const BONK_CHARGE_OVERSHOOT   = 5.0f;     // the line goes on past the player
-    uint32 const BONK_CHARGE_WARN_MS    = 1200;
-    uint32 const BONK_CHARGE_INTERVAL   = 8000;
+    uint32 const BONK_CHARGE_WARN_MS    = 1200;     // the line seen; the wind-up adds the line's lead (GetBonkTelegraphLeadMs)
+    uint32 const BONK_CHARGE_INTERVAL   = 8000;     // when the run has no say
     uint32 const BONK_CHARGE_RETRY_MS   = 500;      // out of reach: looks again this soon
     float const BONK_CHARGE_SPEED       = 30.0f;    // yards a second
     float const BONK_CHARGE_DAMAGE      = 2.0f;     // melee hits
+    // A player hit is knocked this fast along the charge and up: about 3
+    // yards.
+    float const BONK_CHARGE_KNOCKBACK_SPEED = 8.0f;
+    float const BONK_CHARGE_KNOCKBACK_LIFT  = 4.0f;
     uint32 const BONK_SPELL_CHARGE_HIT  = 24257;    // Jeklik's Crushing Blow: a plain physical hit
 
     // Casters' bolts: a circle this big where the player will be when the
@@ -63,7 +72,7 @@ namespace
     // missile already on its way is not turned round), warning at least this
     // long, and the bolt's target lingering a little after.
     float const BONK_BOLT_RADIUS        = 2.0f;
-    uint32 const BONK_BOLT_MIN_WARN_MS  = 900;
+    uint32 const BONK_BOLT_MIN_WARN_MS  = 1500;    // a new object takes a moment to show on the client
     uint32 const BONK_BOLT_AIM_BEFORE_MS = 150;
     uint32 const BONK_BOLT_TARGET_LINGER_MS = 3000;
     // A player's movement packet comes every half second while they run
@@ -91,6 +100,13 @@ namespace
         y = py;
         z = pz;
     }
+    // A charger stands from the start of its charge to the dash: the line is
+    // seen for BONK_CHARGE_WARN_MS once its stand-ins have turned to it.
+    uint32 GetChargeWindupMs()
+    {
+        return BONK_CHARGE_WARN_MS + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_LINE);
+    }
+
     float const BONK_VAMPIRIC_HEAL      = 0.5f;     // share of damage dealt
     float const BONK_FRENZIED_SPEED     = 1.5f;     // times the enemy's attack speed
     float const BONK_FORTIFIED_HEALTH   = 1.5f;
@@ -473,6 +489,15 @@ void BonkMobAI::Cast(BonkMobAbility const& ability, Player* owner, bool triggere
     if (!spellInfo)
         return;
 
+    // A Charge (Stitches, Nefaru and the like) warns with a red line and
+    // dashes along it, as chargers do: the spell itself lands at once and
+    // cannot be dodged.
+    if (ability.target == BONK_ABILITY_PLAYER && spellInfo->HasEffect(SPELL_EFFECT_CHARGE))
+    {
+        StartCharge(owner, ability.damage > 0.0f ? ability.damage : BONK_CHARGE_DAMAGE);
+        return;
+    }
+
     // A bolt that flies flies at where the player stands, not at the
     // player: a red circle warns, and only a player still in it is hit.
     if (ability.target == BONK_ABILITY_PLAYER && spellInfo->speed > 0.0f && ability.damageEffectIndex >= 0 &&
@@ -692,7 +717,9 @@ void BonkMobAI::Explode(Player* owner)
 
 bool BonkMobAI::UpdateCharge(uint32 diff, Player* owner)
 {
-    if (m_archetype != BONK_ARCHETYPE_CHARGER || m_kind != BONK_SPAWN_NORMAL)
+    // Others only finish a charge an ability started.
+    bool const charger = m_archetype == BONK_ARCHETYPE_CHARGER && m_kind == BONK_SPAWN_NORMAL;
+    if (!charger && m_chargeState == CHARGE_NONE)
         return false;
 
     m_chargeTimer -= int32(diff);
@@ -710,50 +737,60 @@ bool BonkMobAI::UpdateCharge(uint32 diff, Player* owner)
             break;
     }
 
-    if (m_chargeTimer > 0)
+    if (!charger || m_chargeTimer > 0)
         return false;
-    float const distance = m_creature->GetDistance(owner);
-    if (distance < BONK_CHARGE_MIN_RANGE || distance > BONK_CHARGE_MAX_RANGE || !m_creature->IsWithinLOSInMap(owner) ||
+    // Where the player will be as the warning ends: it has to be well within
+    // reach, and the player not too far off now.
+    float x, y, z;
+    PredictPlayer(owner, GetChargeWindupMs(), x, y, z);
+    float const aim = m_creature->GetDistance2d(x, y);
+    if (aim < BONK_CHARGE_MIN_RANGE || aim > BONK_CHARGE_AIM_RANGE || m_creature->GetDistance(owner) > BONK_CHARGE_MAX_RANGE ||
+        !m_creature->IsWithinLOSInMap(owner) || !m_creature->IsWithinLOS(x, y, z + 2.0f) ||
         m_creature->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED))
     {
         m_chargeTimer = BONK_CHARGE_RETRY_MS;
         return false;
     }
-    StartCharge(owner);
+    StartCharge(owner, BONK_CHARGE_DAMAGE);
     return m_chargeState != CHARGE_NONE;
 }
 
-void BonkMobAI::StartCharge(Player* owner)
+void BonkMobAI::StartCharge(Player* owner, float damage)
 {
     BonkRun* run = owner->GetBonkPlayer()->GetRun();
     if (!run)
         return;
 
-    // Through the player and a little past, as far as the ground allows.
+    // Through where the player will be as the warning ends and a little
+    // past, as far as the ground allows.
+    float x, y, z;
+    PredictPlayer(owner, GetChargeWindupMs(), x, y, z);
     m_chargeX = m_creature->GetPositionX();
     m_chargeY = m_creature->GetPositionY();
     m_chargeZ = m_creature->GetPositionZ();
-    m_chargeAngle = m_creature->GetAngle(owner);
-    float const length = m_creature->GetDistance(owner) + BONK_CHARGE_OVERSHOOT;
+    m_chargeAngle = m_creature->GetAngle(x, y);
+    float const length = std::min(BONK_CHARGE_MAX_LENGTH, m_creature->GetDistance2d(x, y) + BONK_CHARGE_OVERSHOOT);
     m_dashX = m_chargeX + length * std::cos(m_chargeAngle);
     m_dashY = m_chargeY + length * std::sin(m_chargeAngle);
     m_dashZ = m_chargeZ;
     m_creature->GetMap()->GetWalkHitPosition(nullptr, m_chargeX, m_chargeY, m_chargeZ, m_dashX, m_dashY, m_dashZ);
     m_chargeLength = m_creature->GetDistance2d(m_dashX, m_dashY);
-    if (m_chargeLength < BONK_CHARGE_MIN_RANGE)
+    // Nor into a wall short of the player.
+    if (m_chargeLength < BONK_CHARGE_MIN_RANGE || m_chargeLength + 1.0f < std::min(length - BONK_CHARGE_OVERSHOOT, BONK_CHARGE_MAX_LENGTH))
     {
         m_chargeTimer = BONK_CHARGE_RETRY_MS;
         return;
     }
 
     m_chargeState = CHARGE_WINDUP;
-    m_chargeTimer = BONK_CHARGE_WARN_MS;
+    m_chargeTimer = GetChargeWindupMs();
+    m_chargeDamage = damage;
     m_creature->AttackStop();
     m_creature->StopMoving();
     m_creature->GetMotionMaster()->Clear(false);
     m_creature->GetMotionMaster()->MoveIdle();
     m_creature->SetFacingTo(m_chargeAngle);
-    run->AddTelegraph(BONK_TELEGRAPH_LINE, m_chargeX, m_chargeY, m_chargeZ, m_chargeAngle, m_chargeLength, BONK_CHARGE_WARN_MS);
+    run->AddTelegraph(BONK_TELEGRAPH_LINE, m_chargeX, m_chargeY, m_chargeZ, m_chargeAngle, m_chargeLength, GetChargeWindupMs());
 }
 
 void BonkMobAI::Dash(Player* owner)
@@ -761,11 +798,16 @@ void BonkMobAI::Dash(Player* owner)
     m_chargeState = CHARGE_DASH;
     m_chargeTimer = int32(m_chargeLength / BONK_CHARGE_SPEED * IN_MILLISECONDS) + 300;
 
-    if (owner->IsAlive() && IsInBonkTelegraph(BONK_TELEGRAPH_LINE, m_chargeX, m_chargeY, m_chargeAngle, m_chargeLength,
-        owner->GetPositionX(), owner->GetPositionY()))
+    // Where the player is now, not where the server last heard.
+    float x, y, z;
+    PredictPlayer(owner, 0, x, y, z);
+    if (owner->IsAlive() && IsInBonkTelegraph(BONK_TELEGRAPH_LINE, m_chargeX, m_chargeY, m_chargeAngle, m_chargeLength, x, y))
     {
-        int32 const damage = std::max(1, int32(GetMeleeHit() * BONK_CHARGE_DAMAGE));
+        int32 const damage = std::max(1, int32(GetMeleeHit() * m_chargeDamage));
         m_creature->CastCustomSpell(owner, BONK_SPELL_CHARGE_HIT, damage, {}, {}, true);
+        // Bowled over: a short shove the way the charge runs.
+        if (owner->IsAlive())
+            owner->KnockBack(m_chargeAngle, BONK_CHARGE_KNOCKBACK_SPEED, BONK_CHARGE_KNOCKBACK_LIFT);
     }
 
     m_creature->GetMotionMaster()->MovePoint(0, m_dashX, m_dashY, m_dashZ, MOVE_RUN_MODE | MOVE_FORCE_DESTINATION, BONK_CHARGE_SPEED);
@@ -774,7 +816,8 @@ void BonkMobAI::Dash(Player* owner)
 void BonkMobAI::EndCharge(Player* owner)
 {
     m_chargeState = CHARGE_NONE;
-    m_chargeTimer = BONK_CHARGE_INTERVAL;
+    BonkRun* run = owner->GetBonkPlayer()->GetRun();
+    m_chargeTimer = run && run->GetTier().chargeIntervalMs ? int32(run->GetTier().chargeIntervalMs) : BONK_CHARGE_INTERVAL;
     AttackStart(owner);
 }
 

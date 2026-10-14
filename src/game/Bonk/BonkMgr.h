@@ -224,6 +224,8 @@ struct BonkTier
     float eliteDodge = 0.0f;
     // Affixes every elite rolls; mini-bosses roll one more.
     uint8 eliteAffixes = 1;
+    // Time between a charger's charges.
+    uint32 chargeIntervalMs = 8000;
     // Class Mastery experience for the class played.
     uint32 masteryXpMinute = 10;        // per minute survived
     uint32 masteryXpMiniboss = 15;      // per mini-boss killed

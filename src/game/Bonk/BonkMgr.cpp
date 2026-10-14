@@ -132,7 +132,7 @@ void BonkMgr::LoadTiers()
         "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes`, "
-        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec` FROM `bonk_tier`"));
+        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -173,6 +173,7 @@ void BonkMgr::LoadTiers()
         tier.maxAlive = std::max(1u, fields[25].GetUInt32());
         tier.maxBruisers = fields[26].GetUInt32();
         tier.firstEliteSecond = fields[27].GetUInt32();
+        tier.chargeIntervalMs = fields[28].GetUInt32();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
