@@ -17,6 +17,7 @@
 #include "BonkMgr.h"
 #include "ObjectGuid.h"
 
+#include <string>
 #include <vector>
 
 class BonkRun;
@@ -33,6 +34,9 @@ class BonkMobAI : public CreatureAI
         // by SetNextPlateId just before the summon.
         static void Install(Creature* creature);
         static void SetNextPlateId(uint32 id) { s_nextPlateId = id; }
+        // Its GUID as the client's UnitGUID prints it (ClassicAPI): the
+        // addon's nameplates know an enemy by it.
+        static std::string GetUnitGuidText(Creature const* creature);
 
         // Called by the run once the enemy's level, health, damage and speed are set.
         void Setup(BonkSpawnKind kind);

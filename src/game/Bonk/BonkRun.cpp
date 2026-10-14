@@ -4551,7 +4551,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     {
         DropChest(mob, kind);
         OnAffixedDeath(mob);
-        m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()) + "~" + std::to_string(mob->GetPlateId()));
+        m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()) + "~" + std::to_string(mob->GetPlateId()) + "~" +
+            BonkMobAI::GetUnitGuidText(mob));
     }
 
     DropShards(mob, kind);

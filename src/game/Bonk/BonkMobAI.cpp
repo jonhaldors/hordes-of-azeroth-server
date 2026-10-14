@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace
 {
@@ -215,10 +216,19 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
     else if (kind == BONK_SPAWN_MINIBOSS)
         RollAffixes(affixes + 1);
 
-    // The addon's nameplates know elites and bosses by their plate number (or name).
+    // The addon's nameplates know elites and bosses by their GUID, without
+    // ClassicAPI by their plate number (or name).
     if (kind != BONK_SPAWN_NORMAL && owner)
         owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(kind) + "~" + m_creature->GetName() + "~" + GetAffixIcons() + "~" +
-            std::to_string(m_creature->GetPlateId()));
+            std::to_string(m_creature->GetPlateId()) + "~" + GetUnitGuidText(m_creature));
+}
+
+std::string BonkMobAI::GetUnitGuidText(Creature const* creature)
+{
+    uint64 const raw = creature->GetObjectGuid().GetRawValue();
+    char text[19];
+    snprintf(text, sizeof(text), "0x%08X%08X", uint32(raw >> 32), uint32(raw));
+    return text;
 }
 
 void BonkMobAI::RollAffixes(uint32 count)
