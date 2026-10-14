@@ -9,6 +9,7 @@
 #ifndef MANGOS_BONKPLAYER_H
 #define MANGOS_BONKPLAYER_H
 
+#include "BonkTelegraph.h"
 #include "Common.h"
 #include "ObjectGuid.h"
 
@@ -39,6 +40,9 @@ class BonkPlayer
         void Update(uint32 diff);
 
         BonkRun* GetRun() const { return m_run.get(); }
+        // GM testing aid outside a run: a ground warning that fills and goes
+        // just as an ability's does, with nothing after it.
+        void PreviewTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);
         bool StartRun(BonkTier const& tier, std::string& error);
         void StopRun();
 
@@ -217,6 +221,7 @@ class BonkPlayer
 
         Player* m_player;
         std::unique_ptr<BonkRun> m_run;
+        BonkTelegraphs m_previewTelegraphs;     // PreviewTelegraph
         bool m_addonReady = false;
         bool m_firingWeapon = false;
         std::map<uint32, SpellTweak> m_spellTweaks;

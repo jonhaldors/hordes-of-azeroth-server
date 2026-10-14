@@ -805,7 +805,10 @@ void BonkRun::StartStage()
     DespawnWeaponOrbs();
     DespawnProjectiles();
     m_pendingCasts.clear();
-    m_telegraphs.Clear(m_player->FindMap());
+    // Stand-ins of the stage's own for its warnings (BonkTelegraphs), ready
+    // by the time enemies cast.
+    m_telegraphs.Dismiss(m_player);
+    m_telegraphs.Warm();
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
@@ -884,7 +887,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateTraps(diff);
     UpdatePetTargets(diff);
     UpdateKeywords();
-    m_telegraphs.Update(m_player->GetMap(), diff);
+    m_telegraphs.Update(m_player, diff);
     if (m_state != STATE_RUNNING)
         return;
 
@@ -2545,7 +2548,7 @@ void BonkRun::EnterNextStage()
     DespawnOrbs();
     DespawnTraps();
     DespawnPets();
-    m_telegraphs.Clear(m_player->FindMap());
+    m_telegraphs.Dismiss(m_player);
 
     std::string error;
     if (!TeleportToStage(*next, error))
@@ -3762,7 +3765,7 @@ void BonkRun::AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, 
 {
     if (m_state != STATE_RUNNING || m_paused)
         return;
-    m_telegraphs.Add(m_player->GetMap(), shape, x, y, z, orientation, size, durationMs, std::move(onFire));
+    m_telegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs, std::move(onFire));
 }
 
 void BonkRun::Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius, uint32 damage)
@@ -5452,7 +5455,7 @@ void BonkRun::SetPaused(bool paused)
         // The client fills a warning on its own clock, so one held over a
         // pause would look full long before it fired: drop them instead.
         if (paused)
-            m_telegraphs.Clear(map);
+            m_telegraphs.Clear(m_player);
 
         // Beasts hold still too; they find their prey again after.
         for (OwnedWeapon const& owned : m_weapons)
@@ -5501,7 +5504,7 @@ void BonkRun::CleanUp()
     DespawnWeaponOrbs();
     DespawnProjectiles();
     m_pendingCasts.clear();
-    m_telegraphs.Clear(m_player->FindMap());
+    m_telegraphs.Dismiss(m_player);
     DespawnTraps();
     DespawnPets();
     m_marks.clear();

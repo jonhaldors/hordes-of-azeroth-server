@@ -401,6 +401,7 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
 
 void BonkPlayer::OnLogout()
 {
+    m_previewTelegraphs.Dismiss(m_player);
     if (m_run)
     {
         m_run->Abort();
@@ -1120,6 +1121,14 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
     return bonuses;
 }
 
+void BonkPlayer::PreviewTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs)
+{
+    // Waits for its stand-ins the first time, rather than fading in.
+    m_previewTelegraphs.SetPatient(true);
+    m_previewTelegraphs.Warm();
+    m_previewTelegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs);
+}
+
 void BonkPlayer::Update(uint32 diff)
 {
     if (m_campCheckPending && !m_player->IsBeingTeleported())
@@ -1129,6 +1138,8 @@ void BonkPlayer::Update(uint32 diff)
         if (!m_run && !m_player->IsGameMaster() && !IsAtCamp())
             TeleportToCamp();
     }
+
+    m_previewTelegraphs.Update(m_player, diff);
 
     if (m_run)
     {

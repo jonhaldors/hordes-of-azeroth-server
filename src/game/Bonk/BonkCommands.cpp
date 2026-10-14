@@ -346,7 +346,7 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
         run->AddTelegraph(shape, x, y, z, o, size, durationMs, [run, x, y, z]() { run->Erupt(ObjectGuid(), x, y, z, 0.0f, 0); });
     }
     else
-        BonkTelegraphs::Preview(player->GetMap(), shape, x, y, z, o, size, durationMs);
+        player->GetBonkPlayer()->PreviewTelegraph(shape, x, y, z, o, size, durationMs);
 
     PSendSysMessage("A %s of %.1f yards, %.1f seconds.", GetBonkTelegraphShapeName(shape), size, durationMs / float(IN_MILLISECONDS));
     return true;
