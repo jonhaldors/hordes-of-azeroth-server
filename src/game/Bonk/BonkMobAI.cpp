@@ -61,8 +61,10 @@ namespace
     uint32 const BONK_CHARGE_RETRY_MS   = 500;      // out of reach: looks again this soon
     float const BONK_CHARGE_SPEED       = 30.0f;    // yards a second
     float const BONK_CHARGE_DAMAGE      = 2.0f;     // melee hits
-    // A player hit is knocked this fast along the charge and up: about 3
-    // yards.
+    // A dashing charger runs into the player when its path passes this close
+    // (the line is 3 yards wide). It hits once and knocks them this fast
+    // along the charge and up: about 3 yards.
+    float const BONK_CHARGE_CONTACT     = 1.75f;
     float const BONK_CHARGE_KNOCKBACK_SPEED = 8.0f;
     float const BONK_CHARGE_KNOCKBACK_LIFT  = 4.0f;
     uint32 const BONK_SPELL_CHARGE_HIT  = 24257;    // Jeklik's Crushing Blow: a plain physical hit
@@ -730,6 +732,7 @@ bool BonkMobAI::UpdateCharge(uint32 diff, Player* owner)
                 Dash(owner);
             return true;
         case CHARGE_DASH:
+            UpdateDash(owner);
             if (m_chargeTimer <= 0)
                 EndCharge(owner);
             return m_chargeState != CHARGE_NONE;
@@ -797,20 +800,37 @@ void BonkMobAI::Dash(Player* owner)
 {
     m_chargeState = CHARGE_DASH;
     m_chargeTimer = int32(m_chargeLength / BONK_CHARGE_SPEED * IN_MILLISECONDS) + 300;
-
-    // Where the player is now, not where the server last heard.
-    float x, y, z;
-    PredictPlayer(owner, 0, x, y, z);
-    if (owner->IsAlive() && IsInBonkTelegraph(BONK_TELEGRAPH_LINE, m_chargeX, m_chargeY, m_chargeAngle, m_chargeLength, x, y))
-    {
-        int32 const damage = std::max(1, int32(GetMeleeHit() * m_chargeDamage));
-        m_creature->CastCustomSpell(owner, BONK_SPELL_CHARGE_HIT, damage, {}, {}, true);
-        // Bowled over: a short shove the way the charge runs.
-        if (owner->IsAlive())
-            owner->KnockBack(m_chargeAngle, BONK_CHARGE_KNOCKBACK_SPEED, BONK_CHARGE_KNOCKBACK_LIFT);
-    }
-
+    m_dashFromX = m_creature->GetPositionX();
+    m_dashFromY = m_creature->GetPositionY();
+    m_dashHit = false;
     m_creature->GetMotionMaster()->MovePoint(0, m_dashX, m_dashY, m_dashZ, MOVE_RUN_MODE | MOVE_FORCE_DESTINATION, BONK_CHARGE_SPEED);
+}
+
+void BonkMobAI::UpdateDash(Player* owner)
+{
+    // The stretch it covered since the last look, against where the player
+    // is now (not where the server last heard): a player on it is run into,
+    // hurt and bowled over the way the charge runs. Once a charge.
+    float const toX = m_creature->GetPositionX(), toY = m_creature->GetPositionY();
+    if (!m_dashHit && owner->IsAlive())
+    {
+        float x, y, z;
+        PredictPlayer(owner, 0, x, y, z);
+        float const segX = toX - m_dashFromX, segY = toY - m_dashFromY;
+        float const segLength2 = segX * segX + segY * segY;
+        float const along = segLength2 > 0.0f ? std::max(0.0f, std::min(1.0f, ((x - m_dashFromX) * segX + (y - m_dashFromY) * segY) / segLength2)) : 0.0f;
+        float const dx = x - (m_dashFromX + along * segX), dy = y - (m_dashFromY + along * segY);
+        if (dx * dx + dy * dy <= BONK_CHARGE_CONTACT * BONK_CHARGE_CONTACT && std::fabs(z - m_creature->GetPositionZ()) < 3.0f)
+        {
+            m_dashHit = true;
+            int32 const damage = std::max(1, int32(GetMeleeHit() * m_chargeDamage));
+            m_creature->CastCustomSpell(owner, BONK_SPELL_CHARGE_HIT, damage, {}, {}, true);
+            if (owner->IsAlive())
+                owner->KnockBack(m_chargeAngle, BONK_CHARGE_KNOCKBACK_SPEED, BONK_CHARGE_KNOCKBACK_LIFT);
+        }
+    }
+    m_dashFromX = toX;
+    m_dashFromY = toY;
 }
 
 void BonkMobAI::EndCharge(Player* owner)

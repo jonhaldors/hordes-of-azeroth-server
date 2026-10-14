@@ -108,6 +108,8 @@ class BonkMobAI : public CreatureAI
         bool UpdateCharge(uint32 diff, Player* owner);
         void StartCharge(Player* owner, float damage);
         void Dash(Player* owner);
+        // While dashing: the player it runs into is hit.
+        void UpdateDash(Player* owner);
         void EndCharge(Player* owner);
 
         ObjectGuid m_ownerGuid;
@@ -131,6 +133,8 @@ class BonkMobAI : public CreatureAI
         float m_chargeAngle = 0.0f, m_chargeLength = 0.0f;
         float m_chargeDamage = 0.0f;        // the dash's hit, in melee hits
         float m_dashX = 0.0f, m_dashY = 0.0f, m_dashZ = 0.0f;          // where it ends
+        float m_dashFromX = 0.0f, m_dashFromY = 0.0f;   // where it was at the last look
+        bool m_dashHit = false;                          // it has run into the player
         // An aimed bolt (AimBolt): cast at a stand-in target, which moves to
         // where the player will be as the cast ends.
         ObjectGuid m_boltTarget;
