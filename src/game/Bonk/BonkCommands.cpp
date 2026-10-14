@@ -457,6 +457,50 @@ bool ChatHandler::HandleBonkEventCommand(char* args)
     return false;
 }
 
+bool ChatHandler::HandleBonkShrineCommand(char* args)
+{
+    // GM testing aid: a shrine at one of the stage's spawn points now.
+    // .bonk shrine leyline|greed|altar|moonwell|stone
+    char* nameArg = ExtractArg(&args);
+    BonkShrineType type = BONK_SHRINE_LEY_LINE;
+    if (!nameArg || !ParseBonkShrine(nameArg, type))
+    {
+        SendSysMessage("Usage: .bonk shrine leyline|greed|altar|moonwell|stone");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    std::string error;
+    if (!run)
+        error = "Shrines need a run.";
+    else if (run->PlaceShrineNow(type, error))
+    {
+        PSendSysMessage("Shrine %s placed.", GetBonkShrineName(type));
+        return true;
+    }
+    SendSysMessage(error.c_str());
+    SetSentErrorMessage(true);
+    return false;
+}
+
+bool ChatHandler::HandleBonkLeyPickCommand(char* args)
+{
+    // A Ley Line blessing: .bonk leypick <number> (the addon's cards send it).
+    uint32 index = 0;
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    std::string error;
+    if (!run)
+        error = "No run.";
+    else if (!ExtractUInt32(&args, index))
+        error = "Usage: .bonk leypick <number>";
+    else if (run->PickLeyBuff(index, error))
+        return true;
+    SendSysMessage(error.c_str());
+    SetSentErrorMessage(true);
+    return false;
+}
+
 bool ChatHandler::HandleBonkKeywordCommand(char* args)
 {
     // GM testing aid: stacks of a keyword on the selected enemy of your run.

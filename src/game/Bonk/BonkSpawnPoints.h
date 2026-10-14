@@ -16,6 +16,7 @@
 
 #include "Common.h"
 
+#include <functional>
 #include <vector>
 
 class Player;
@@ -38,6 +39,8 @@ class BonkSpawnPoints
         // A free spot `minDistance` to `maxDistance` yards from the hero, now
         // taken; false if there is none yet.
         bool Take(Player const* hero, float minDistance, float maxDistance, BonkSpot& spot);
+        // The same, among the spots `fits` accepts.
+        bool Take(Player const* hero, float minDistance, float maxDistance, BonkSpot& spot, std::function<bool(BonkSpot const&)> const& fits);
         // Gives back the spot taken at x, y.
         void Release(float x, float y);
 

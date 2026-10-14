@@ -48,6 +48,22 @@ enum BonkMiniEventType : uint8
 // The addon's and `.bonk event`'s name for one ("horde"), and back.
 char const* GetBonkMiniEventName(BonkMiniEventType type);
 bool ParseBonkMiniEvent(char const* name, BonkMiniEventType& type);
+
+// Shrines (BonkRunShrines.cpp): places on the map worth walking to, a few
+// per stage, each marked with a shrine objective.
+enum BonkShrineType : uint8
+{
+    BONK_SHRINE_LEY_LINE = 0,       // stand in its ring a while, then pick a buff for the run
+    BONK_SHRINE_GREED    = 1,       // click: one more Greed stack, more reward and more enemies
+    BONK_SHRINE_ALTAR    = 2,       // click: an elite pack with two affixes guards a free chest
+    BONK_SHRINE_MOONWELL = 3,       // click: heals the hero inside for a few seconds, double experience
+    BONK_SHRINE_STONE    = 4,       // click: the stage's boss, early; the stage goes on after
+    MAX_BONK_SHRINE
+};
+
+// `.bonk shrine`'s name for one ("leyline"), and back.
+char const* GetBonkShrineName(BonkShrineType type);
+bool ParseBonkShrine(char const* name, BonkShrineType& type);
 class SpellAuraHolder;
 class SpellCaster;
 class Unit;
@@ -63,6 +79,14 @@ class BonkRun
         void Surrender();   // `.bonk stop`
         bool SkipTime(uint32 seconds, std::string& error);  // `.bonk skip`, GM testing
         bool StartMiniEventNow(BonkMiniEventType type, std::string& error);    // `.bonk event`, GM testing
+        bool PlaceShrineNow(BonkShrineType type, std::string& error);          // `.bonk shrine`, GM testing
+        // A shrine's model was clicked (go_bonk_shrine).
+        void UseShrine(GameObject* go);
+        // The Ley Line buff picked, 1-based (`.bonk leypick`).
+        bool PickLeyBuff(uint32 index, std::string& error);
+        // Greed Totem stacks this run: their reward and extra enemies, %.
+        uint32 GetGreedRewardPercent() const;
+        float GetGreedCrowdPercent() const;
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool IsPaused() const { return m_paused; }
@@ -260,6 +284,21 @@ class BonkRun
         bool StartMiniEvent(BonkMiniEventType type);
         bool SpawnHorde();
         void EndMiniEvent();
+        // Shrines (BonkRunShrines.cpp).
+        void UpdateShrines(uint32 diff);
+        bool PlaceShrine(BonkShrineType type);
+        BonkShrineType PickShrineType() const;
+        void RemoveShrine(size_t index);
+        void UpdateLeyLine(size_t index, uint32 diff);
+        void UpdateMoonwell(size_t index, uint32 diff);
+        void UpdateAltar(size_t index);
+        void OfferLeyBuffs();
+        void SendLeyOffer() const;
+        void SendGreed() const;
+        bool IsInMoonwell(float x, float y) const;
+        // A new stage: the last one's shrines gone, this one's to place.
+        void ResetShrines();
+        void DespawnShrines();
         void UpdateSpawns(uint32 diff);
         void UpdateWeapons(uint32 diff);
         void UpdateBoundary(uint32 diff);
@@ -545,6 +584,38 @@ class BonkRun
         };
         MiniEvent m_miniEvent;
         bool m_miniEventActive = false;
+        // A shrine standing this stage.
+        struct Shrine
+        {
+            BonkShrineType type = BONK_SHRINE_LEY_LINE;
+            BonkSpot spot;
+            uint32 objectiveId = 0;
+            ObjectGuid model;
+            uint32 progressMs = 0;          // Ley Line: time stood in it; Moonwell: its bar is up
+            uint32 leftMs = 0;              // Moonwell: time it still heals
+            uint32 tickMs = 0;              // Moonwell: to its next heal
+            bool active = false;            // Moonwell, Challenge Altar: set off
+            std::vector<ObjectGuid> pack;   // Challenge Altar: its guards
+        };
+        std::vector<Shrine> m_shrines;
+        uint32 m_shrinesToPlace = 0;        // left to place this stage
+        uint32 m_shrineTimer = 0;
+        bool m_moonwellPlaced = false;      // at most one a stage
+        bool m_stonePlaced = false;         // exactly one a stage...
+        uint32 m_stoneAt = 0;               // ...placed when m_shrinesToPlace counts down to this
+        bool m_captureShown = false;        // the addon shows a capture bar
+        uint32 m_captureSendMs = 0;
+        uint32 m_greedStacks = 0;           // the whole run
+        float m_shrineBonuses[MAX_BONK_PASSIVE_EFFECT] = {};    // Ley Line buffs picked, the whole run
+        // A Ley Line buff card: a stat, how much, its rarity.
+        struct LeyBuff
+        {
+            BonkPassiveEffect effect = BONK_PASSIVE_POWER;
+            float value = 0.0f;
+            BonkRarity rarity = BONK_RARITY_COMMON;
+        };
+        std::vector<LeyBuff> m_leyOffer;    // shown now
+        uint32 m_pendingLeyOffers = 0;      // captured, not yet offered
         uint32 m_nextMiniEventMs = 0;       // into the stage
         BonkMiniEventType m_lastMiniEvent = MAX_BONK_MINI_EVENT;
         float m_gruntRadius = 0.0f;         // the biggest grunt this stage: bruisers are bigger
@@ -574,7 +645,6 @@ class BonkRun
         std::vector<ObjectGuid> m_chests;
         std::vector<ObjectGuid> m_powerups;
         std::vector<Orb> m_orbs;
-        ObjectGuid m_overflowOrb;           // the red orb that gathers experience past the orb cap
         uint32 m_orbTimer = 0;
         std::vector<ShardDrop> m_shardDrops;
         // Turkey legs lying where an enemy died.

@@ -279,6 +279,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "objective",      SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkObjectiveCommand,       "", nullptr },
         { "spots",          SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSpotsCommand,           "", nullptr },
         { "event",          SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkEventCommand,           "", nullptr },
+        { "shrine",         SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkShrineCommand,          "", nullptr },
+        { "leypick",        SEC_PLAYER,         false, &ChatHandler::HandleBonkLeyPickCommand,         "", nullptr },
         { "keyword",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkKeywordCommand,         "", nullptr },
         { "scaling",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkScalingCommand,         "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }

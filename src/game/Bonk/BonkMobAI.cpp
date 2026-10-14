@@ -164,6 +164,7 @@ BonkMobAI::BonkMobAI(Creature* creature) : CreatureAI(creature)
 }
 
 thread_local uint32 BonkMobAI::s_nextPlateId = 0;
+thread_local uint32 BonkMobAI::s_nextAffixCount = 0;
 
 void BonkMobAI::Install(Creature* creature)
 {
@@ -228,7 +229,8 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
     // Elites roll the tier's number of affixes, mini-bosses one more.
     Player* owner = GetOwner();
     BonkRun* run = owner ? owner->GetBonkPlayer()->GetRun() : nullptr;
-    uint32 const affixes = run ? run->GetTier().eliteAffixes : 1;
+    uint32 const affixes = s_nextAffixCount ? s_nextAffixCount : run ? run->GetTier().eliteAffixes : 1;
+    s_nextAffixCount = 0;
     if (kind == BONK_SPAWN_ELITE)
         RollAffixes(affixes);
     else if (kind == BONK_SPAWN_MINIBOSS)

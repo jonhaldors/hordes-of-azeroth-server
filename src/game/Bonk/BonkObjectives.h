@@ -4,11 +4,15 @@
  *
  * Each stands as a tall pillar of light in its kind's colour, as big as
  * Arathi Basin's banner auras and seen from far off (gameobject templates
- * BONK_GO_OBJECTIVE + kind, so their looks are world data), and the addon
- * pins it on the minimap and the world map:
- * "objective~id~kind~x~y~mapId~label~seconds" when one appears (seconds: how
- * long until it leaves, 0 = it stays), "objectiveclear~id" when it goes and
- * "objectiveclear" when the stage ends.
+ * BONK_GO_OBJECTIVE + kind, so their looks are world data). The pillar only
+ * guides: it goes once the hero is close (the hero would stand inside it)
+ * and comes back if they walk away. The addon pins each objective on the
+ * minimap and the world map:
+ * "objective~id~kind~x~y~mapId~label~seconds~icon~description" when one
+ * appears (seconds: how long until it leaves, 0 = it stays; icon: its own
+ * pin, empty for the kind's; description: what it does, for the pin's
+ * tooltip), "objectiveclear~id" when it goes and "objectiveclear" when the
+ * stage ends.
  */
 
 #ifndef BONK_OBJECTIVES_H
@@ -41,21 +45,25 @@ struct BonkObjective
     BonkObjectiveKind kind = BONK_OBJECTIVE_SHRINE;
     float x = 0.0f, y = 0.0f, z = 0.0f;
     std::string label;
+    std::string icon;           // Interface\Icons file for its pin; empty: the kind's
+    std::string description;    // what it does, one line
     uint32 leftMs = 0;          // until it leaves; 0 = it stays
-    ObjectGuid pillar;
+    ObjectGuid pillar;          // empty while the hero is close
 };
 
 class BonkObjectives
 {
     public:
         // Marks a spot; returns the objective's id.
-        uint32 Add(Player* hero, BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds);
+        uint32 Add(Player* hero, BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds,
+            std::string const& icon = "", std::string const& description = "");
         // Takes one away (gone from the world, the map and the minimap).
         void Remove(Player* hero, uint32 id);
         // Takes them all away, at the end of a stage.
         void Clear(Player* hero);
         // Counts down the ones that leave, and takes them away when they do;
-        // returns those that left.
+        // puts pillars up and down as the hero comes and goes; returns those
+        // that left.
         std::vector<BonkObjective> Update(Player* hero, uint32 diff);
         // Tells the addon about every one again (after a reload).
         void Resend(Player* hero) const;
@@ -66,9 +74,11 @@ class BonkObjectives
     private:
         void Send(Player* hero, BonkObjective const& objective) const;
         void Despawn(Player* hero, BonkObjective const& objective) const;
+        void RaisePillar(Player* hero, BonkObjective& objective) const;
 
         std::vector<BonkObjective> m_objectives;
         uint32 m_nextId = 1;
+        uint32 m_pillarTimer = 0;
 };
 
 #endif

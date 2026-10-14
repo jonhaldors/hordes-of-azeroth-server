@@ -815,6 +815,7 @@ void BonkRun::StartStage()
     // Spawn points gather around the hero as the stage goes on.
     m_objectives.Clear(m_player);
     m_spawnPoints.Reset(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
+    ResetShrines();
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
@@ -844,6 +845,10 @@ void BonkRun::SendFullState() const
     if (!m_offer.empty())
         SendOffer();
     m_objectives.Resend(m_player);
+    if (m_greedStacks)
+        SendGreed();
+    if (!m_leyOffer.empty())
+        SendLeyOffer();
 }
 
 void BonkRun::UpdateRunning(uint32 diff)
@@ -882,6 +887,9 @@ void BonkRun::UpdateRunning(uint32 diff)
     if (m_state != STATE_RUNNING)
         return;
     UpdateMiniEvents(diff);
+    UpdateShrines(diff);
+    if (m_state != STATE_RUNNING)
+        return;
 
     UpdateSpawns(diff);
     if (m_state != STATE_RUNNING)
@@ -920,14 +928,17 @@ void BonkRun::UpdateOffers()
         m_lastLevel = level;
     }
 
-    if (!m_offer.empty())
+    if (!m_offer.empty() || !m_leyOffer.empty())
         return;
 
-    // Chests first: the player just walked up to one.
+    // Chests first: the player just walked up to one. Ley Line blessings
+    // last, one at a time like the rest.
     if (!m_pendingChestChoices.empty())
         OfferUpgrades(OFFER_CHEST);
     else if (m_pendingLevels)
         OfferUpgrades(OFFER_LEVEL);
+    else if (m_pendingLeyOffers)
+        OfferLeyBuffs();
 }
 
 void BonkRun::UpdateBoundary(uint32 diff)
@@ -1284,7 +1295,7 @@ float BonkRun::GetCurveMinAlive() const
         if (span > 0.0f)
             minAlive += (next.minAlive - minAlive) * (second - curve[index].second) / span;
     }
-    return minAlive * m_tier.minAliveMultiplier * (1.0f + m_bonuses.spawnRate / 100.0f);
+    return minAlive * m_tier.minAliveMultiplier * (1.0f + m_bonuses.spawnRate / 100.0f) * (1.0f + GetGreedCrowdPercent() / 100.0f);
 }
 
 uint32 BonkRun::GetSpawnTarget() const
@@ -2597,6 +2608,7 @@ void BonkRun::EnterNextStage()
     DespawnPets();
     m_telegraphs.Dismiss(m_player);
     m_objectives.Clear(m_player);
+    DespawnShrines();
 
     std::string error;
     if (!TeleportToStage(*next, error))
@@ -2666,7 +2678,8 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
         for (OwnedWeapon const& owned : m_weapons)
             if (owned.weapon.behavior == BONK_BEHAVIOR_REVENGE)
                 total += owned.weapon.behaviorValue;
-    return total;
+    // Ley Line blessings, for the rest of the run.
+    return total + m_shrineBonuses[effect];
 }
 
 float BonkRun::GetStat(BonkPassiveEffect effect) const
@@ -4251,17 +4264,16 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
     if (!experience)
         return;
 
-    // Past the cap, one red orb gathers the experience instead.
+    // Past the cap the oldest orb makes way, and the new one carries its
+    // experience on (red, as it holds more than a kill's worth).
     Map* map = m_player->GetMap();
-    bool const overflow = m_orbs.size() >= BONK_MAX_ORBS;
-    if (overflow)
+    while (m_orbs.size() >= BONK_MAX_ORBS)
     {
-        for (Orb& orb : m_orbs)
-            if (orb.guid == m_overflowOrb && map->GetCreature(orb.guid))
-            {
-                orb.experience += experience;
-                return;
-            }
+        Orb const oldest = m_orbs.front();
+        m_orbs.erase(m_orbs.begin());
+        if (Creature* creature = map->GetCreature(oldest.guid))
+            VanishOrb(creature);
+        experience += oldest.experience;
         colour = BONK_ORB_RED;
     }
 
@@ -4280,8 +4292,6 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
     dropped.guid = orb->GetObjectGuid();
     dropped.experience = experience;
     m_orbs.push_back(dropped);
-    if (overflow)
-        m_overflowOrb = dropped.guid;
 }
 
 void BonkRun::UpdateOrbs(uint32 diff)
@@ -4369,7 +4379,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
     }
     // The map type's reward: whole tickets, and the fraction left as a chance
     // of one more.
-    uint32 const scaled = count * GetBonkMapRewardPercent(m_map.type);
+    uint32 const scaled = count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent());
     count = scaled / 100 + (roll_chance_u(scaled % 100) ? 1 : 0);
     if (!count)
         return;
@@ -4556,7 +4566,7 @@ void BonkRun::GiveGold(uint32 copper)
 {
     // The map type's reward adds to Greed and the gold talents.
     float const mapBonus = float(GetBonkMapRewardPercent(m_map.type)) - 100.0f;
-    copper = uint32(copper * (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus + mapBonus) / 100.0f));
+    copper = uint32(copper * (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus + mapBonus + GetGreedRewardPercent()) / 100.0f));
     if (!copper)
         return;
     m_player->ModifyMoney(int32(copper));
@@ -4603,7 +4613,10 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
             experience *= archetype.experience;
             colour = archetype.orb;
         }
-        uint32 const xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / float(killsForLevel) * experience * growth));
+        uint32 xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / float(killsForLevel) * experience * growth));
+        // A Moonwell doubles what dies inside it.
+        if (IsInMoonwell(mob->GetPositionX(), mob->GetPositionY()))
+            xp *= 2;
         DropOrb(mob, xp, colour);
     }
 
@@ -5557,6 +5570,7 @@ void BonkRun::CleanUp()
     DespawnMobs();
     DespawnObjects();
     m_objectives.Clear(m_player);
+    DespawnShrines();
     DespawnOrbs();
     m_player->SetCreatureSummonLimit(sWorld.getConfig(CONFIG_UINT32_CREATURE_SUMMON_LIMIT));
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);

@@ -34,6 +34,9 @@ class BonkMobAI : public CreatureAI
         // by SetNextPlateId just before the summon.
         static void Install(Creature* creature);
         static void SetNextPlateId(uint32 id) { s_nextPlateId = id; }
+        // The affixes the next elite or mini-boss set up rolls, whatever the
+        // tier says (a Challenge Altar's guards); 0: the tier's.
+        static void SetNextAffixCount(uint32 count) { s_nextAffixCount = count; }
         // Its GUID as the client's UnitGUID prints it (ClassicAPI): the
         // addon's nameplates know an enemy by it.
         static std::string GetUnitGuidText(Creature const* creature);
@@ -149,6 +152,7 @@ class BonkMobAI : public CreatureAI
         // Install's nameplate number for the next summon; per thread, as maps
         // may update side by side.
         static thread_local uint32 s_nextPlateId;
+        static thread_local uint32 s_nextAffixCount;
 };
 
 #endif

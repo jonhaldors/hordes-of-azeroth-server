@@ -129,10 +129,15 @@ bool BonkSpawnPoints::IsClear(float x, float y) const
 
 bool BonkSpawnPoints::Take(Player const* hero, float minDistance, float maxDistance, BonkSpot& spot)
 {
+    return Take(hero, minDistance, maxDistance, spot, [](BonkSpot const&) { return true; });
+}
+
+bool BonkSpawnPoints::Take(Player const* hero, float minDistance, float maxDistance, BonkSpot& spot, std::function<bool(BonkSpot const&)> const& accepts)
+{
     std::vector<BonkSpot*> fits;
     for (BonkSpot& candidate : m_spots)
     {
-        if (candidate.taken)
+        if (candidate.taken || !accepts(candidate))
             continue;
         float const distanceSq = DistanceSq(candidate.x, candidate.y, hero->GetPositionX(), hero->GetPositionY());
         if (distanceSq >= minDistance * minDistance && distanceSq <= maxDistance * maxDistance)

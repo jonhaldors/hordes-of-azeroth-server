@@ -18,6 +18,17 @@ namespace
     // Seen from this far, well past the map's usual sight (100 yards on
     // continents), the way large objects are.
     float const BONK_OBJECTIVE_SIGHT = VISIBILITY_DISTANCE_GIGANTIC;
+    // The hero this close takes the pillar down, this far puts it back up.
+    float const BONK_PILLAR_LOWER = 25.0f;
+    float const BONK_PILLAR_RAISE = 40.0f;
+    uint32 const BONK_PILLAR_CHECK_MS = 500;
+
+    float DistanceSq(Player const* hero, BonkObjective const& objective)
+    {
+        float const dx = hero->GetPositionX() - objective.x;
+        float const dy = hero->GetPositionY() - objective.y;
+        return dx * dx + dy * dy;
+    }
 
     char const* const KIND_NAMES[MAX_BONK_OBJECTIVE_KIND] = { "shrine", "vendor", "event", "extract" };
 
@@ -45,7 +56,8 @@ bool ParseBonkObjectiveKind(char const* name, BonkObjectiveKind& kind)
     return false;
 }
 
-uint32 BonkObjectives::Add(Player* hero, BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds)
+uint32 BonkObjectives::Add(Player* hero, BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds,
+    std::string const& icon, std::string const& description)
 {
     BonkObjective objective;
     objective.id = m_nextId++;
@@ -54,14 +66,11 @@ uint32 BonkObjectives::Add(Player* hero, BonkObjectiveKind kind, float x, float 
     objective.y = y;
     objective.z = z;
     objective.label = label;
+    objective.icon = icon;
+    objective.description = description;
     objective.leftMs = seconds * IN_MILLISECONDS;
-    if (GameObject* pillar = hero->SummonGameObject(BONK_GO_OBJECTIVE + kind, x, y, z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, BONK_OBJECTIVE_PILLAR_SEC, false))
-    {
-        // Only active objects are seen past the usual distance.
-        pillar->SetVisibilityModifier(BONK_OBJECTIVE_SIGHT);
-        pillar->SetActiveObjectState(true);
-        objective.pillar = pillar->GetObjectGuid();
-    }
+    if (DistanceSq(hero, objective) > BONK_PILLAR_LOWER * BONK_PILLAR_LOWER)
+        RaisePillar(hero, objective);
 
     m_objectives.push_back(objective);
     Send(hero, objective);
@@ -89,6 +98,23 @@ void BonkObjectives::Clear(Player* hero)
 
 std::vector<BonkObjective> BonkObjectives::Update(Player* hero, uint32 diff)
 {
+    m_pillarTimer += diff;
+    if (m_pillarTimer >= BONK_PILLAR_CHECK_MS)
+    {
+        m_pillarTimer = 0;
+        for (BonkObjective& objective : m_objectives)
+        {
+            float const distanceSq = DistanceSq(hero, objective);
+            if (!objective.pillar.IsEmpty() && distanceSq < BONK_PILLAR_LOWER * BONK_PILLAR_LOWER)
+            {
+                Despawn(hero, objective);
+                objective.pillar.Clear();
+            }
+            else if (objective.pillar.IsEmpty() && distanceSq > BONK_PILLAR_RAISE * BONK_PILLAR_RAISE)
+                RaisePillar(hero, objective);
+        }
+    }
+
     std::vector<BonkObjective> gone;
     for (BonkObjective& objective : m_objectives)
     {
@@ -125,7 +151,19 @@ void BonkObjectives::Send(Player* hero, BonkObjective const& objective) const
     uint32 const seconds = (objective.leftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS;
     hero->GetBonkPlayer()->SendAddon("objective~" + std::to_string(objective.id) + "~" + GetBonkObjectiveKindName(objective.kind) + "~" +
         FormatCoordinate(objective.x) + "~" + FormatCoordinate(objective.y) + "~" + std::to_string(hero->GetMapId()) + "~" +
-        objective.label + "~" + std::to_string(seconds));
+        objective.label + "~" + std::to_string(seconds) + "~" + objective.icon + "~" + objective.description);
+}
+
+void BonkObjectives::RaisePillar(Player* hero, BonkObjective& objective) const
+{
+    GameObject* pillar = hero->SummonGameObject(BONK_GO_OBJECTIVE + objective.kind, objective.x, objective.y, objective.z, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, BONK_OBJECTIVE_PILLAR_SEC, false);
+    if (!pillar)
+        return;
+    // Only active objects are seen past the usual distance.
+    pillar->SetVisibilityModifier(BONK_OBJECTIVE_SIGHT);
+    pillar->SetActiveObjectState(true);
+    objective.pillar = pillar->GetObjectGuid();
 }
 
 void BonkObjectives::Despawn(Player* hero, BonkObjective const& objective) const

@@ -253,6 +253,14 @@ bool GOHello_go_bonk_chest(Player* player, GameObject* go)
     return true;
 }
 
+// A shrine's model at a run's spot: Greed Totem, Challenge Altar.
+bool GOHello_go_bonk_shrine(Player* player, GameObject* go)
+{
+    if (BonkRun* run = player->GetBonkPlayer()->GetRun())
+        run->UseShrine(go);
+    return true;
+}
+
 bool GOHello_go_bonk_portal(Player* player, GameObject* go)
 {
     BonkRun* run = player->GetBonkPlayer()->GetRun();
@@ -315,6 +323,11 @@ void AddSC_bonk_npcs()
     newscript = new Script;
     newscript->Name = "go_bonk_chest";
     newscript->pGOHello = &GOHello_go_bonk_chest;
+    newscript->RegisterSelf();
+
+    newscript = new Script;
+    newscript->Name = "go_bonk_shrine";
+    newscript->pGOHello = &GOHello_go_bonk_shrine;
     newscript->RegisterSelf();
 
     newscript = new Script;
