@@ -5439,11 +5439,18 @@ void BonkRun::SetPaused(bool paused)
     m_paused = paused;
 
     // Everything stops at once, rather than each enemy on its own next
-    // update. A root, not an aura: runs make the player immune to those.
-    // Auras, casts and ground spells stop too (Unit::SetTimeFrozen).
-    if (m_player->IsInWorld())
-        m_player->SetRooted(paused);
+    // update. Auras, casts and ground spells stop too (Unit::SetTimeFrozen).
+    // The hero is held still by a speed of nothing (Unit::UpdateSpeed), not a
+    // root: the client drops the movement keys held through a root, and a
+    // root in the air loses the jump, but it keeps both through a speed of
+    // nothing, so the hero goes on as they were when the run resumes.
     m_player->SetTimeFrozen(paused);
+    if (m_player->IsInWorld())
+    {
+        for (UnitMoveType type : { MOVE_WALK, MOVE_RUN, MOVE_RUN_BACK, MOVE_SWIM })
+            m_player->UpdateSpeed(type, false);
+        m_player->SetSpeedRate(MOVE_SWIM_BACK, paused ? 0.0f : 1.0f);     // UpdateSpeed leaves this one be
+    }
 
     if (Map* map = m_player->FindMap())
     {

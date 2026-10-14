@@ -7077,6 +7077,9 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced, float ratio)
     {
         if (GetDeathState() == CORPSE)
             speed *= sWorld.getConfig(((Player*)this)->InBattleGround() ? CONFIG_FLOAT_GHOST_RUN_SPEED_BG : CONFIG_FLOAT_GHOST_RUN_SPEED_WORLD);
+        // Vanilla Bonk: a paused run holds the hero still by speed (BonkRun::SetPaused).
+        if (IsTimeFrozen())
+            speed = 0.0f;
     }
 
     switch (mtype)
