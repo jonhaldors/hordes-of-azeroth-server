@@ -77,6 +77,9 @@ class BonkRun
         void OnMobStuck(Creature* mob);
         // Damage the player's weapons took off an enemy, for Leech.
         void OnWeaponDamage(uint32 damage);
+        // Health the hero just gained, from any heal (Unit::ModifyHealth):
+        // quests count it.
+        void OnHeroHealed(uint32 amount) { m_healedUnreported += amount; }
         // An enemy's hit on the hero: Armor takes its share off, then the
         // Shield soaks what it can. Returns what is left for health.
         uint32 MitigateDamage(uint32 damage);
@@ -262,6 +265,8 @@ class BonkRun
         void UpdateBoundary(uint32 diff);
         void UpdateNatives(uint32 diff);
         void UpdateRecovery(uint32 diff);
+        // Tells quests the run's crits and the healing since last time.
+        void ReportQuestCounts();
         // Refills the Shield after a while unhurt and keeps its look and the
         // addon's bar in step.
         void UpdateShield(uint32 diff);
@@ -504,6 +509,9 @@ class BonkRun
         BonkMasteryBonuses const m_mastery; // the class's Mastery, fixed for the run
         std::map<uint32, uint32> m_spellRoots;  // spell id -> root weapon id
         uint32 m_masteryXp = 0;             // from kills; minutes are added at the end
+        mutable uint32 m_crits = 0;         // the hero's crits this run (RollCritMultiplier)
+        uint32 m_critsReported = 0;
+        uint32 m_healedUnreported = 0;      // health healed, not yet told to quests
         bool m_masteryAwarded = false;
         uint32 m_siphonWindow = 0;          // start of the second Soul Siphon is capped in
         float m_siphonHealed = 0.0f;        // % of max health healed in it

@@ -3,6 +3,7 @@
  */
 
 #include "BonkQuests.h"
+#include "BonkMastery.h"
 #include "BonkPlayer.h"
 #include "Creature.h"
 #include "Database/DatabaseEnv.h"
@@ -13,6 +14,7 @@
 #include "ScriptedGossip.h"
 #include "WorldSession.h"
 
+#include <bitset>
 #include <vector>
 
 INSTANTIATE_SINGLETON_1(BonkQuests);
@@ -20,14 +22,64 @@ INSTANTIATE_SINGLETON_1(BonkQuests);
 namespace
 {
     uint32 const BONK_TEXT_QUEST_BOARD = 900005;
+
+    char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
+
+    // A class unlock's name and icon, by class id.
+    struct ClassLook
+    {
+        char const* name;
+        char const* icon;
+    };
+    ClassLook const CLASS_LOOKS[] = {
+        { "", "" },
+        { "Warrior", "Ability_Warrior_BattleShout" },
+        { "Paladin", "Spell_Holy_SealOfMight" },
+        { "Hunter", "Ability_Hunter_SniperShot" },
+        { "Rogue", "Ability_Stealth" },
+        { "Priest", "Spell_Holy_PowerWordShield" },
+        { "", "" },
+        { "Shaman", "Spell_Nature_BloodLust" },
+        { "Mage", "Spell_Frost_FrostBolt02" },
+        { "Warlock", "Spell_Shadow_SummonImp" },
+        { "", "" },
+        { "Druid", "Ability_Druid_CatForm" },
+    };
+
+    ClassLook const* GetClassLook(uint32 classId)
+    {
+        if (classId >= sizeof(CLASS_LOOKS) / sizeof(CLASS_LOOKS[0]) || !*CLASS_LOOKS[classId].name)
+            return nullptr;
+        return &CLASS_LOOKS[classId];
+    }
+
+    uint32 CountBits(uint32 value)
+    {
+        return uint32(std::bitset<32>(value).count());
+    }
+}
+
+char const* BonkQuests::GetCategoryKey(BonkQuestCategory category)
+{
+    return category < MAX_BONK_QUEST_CATEGORY ? CATEGORY_KEYS[category] : "";
 }
 
 void BonkQuests::Load()
 {
     m_quests.clear();
+    m_titles.clear();
+
+    if (std::unique_ptr<QueryResult> titles{ WorldDatabase.Query("SELECT `id`, `name` FROM `bonk_title`") })
+    {
+        do
+        {
+            Field* fields = titles->Fetch();
+            m_titles[fields[0].GetUInt32()] = fields[1].GetCppString();
+        } while (titles->NextRow());
+    }
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `description`, `icon`, `type`, `target`, `amount`, `reward_type`, `reward_value`, `class` FROM `bonk_quest`"));
+        "SELECT `id`, `name`, `description`, `icon`, `type`, `target`, `amount`, `reward_type`, `reward_value`, `class`, `param`, `category` FROM `bonk_quest`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk quests.");
@@ -49,6 +101,8 @@ void BonkQuests::Load()
         uint8 const rewardType = fields[7].GetUInt8();
         quest.rewardValue = fields[8].GetUInt32();
         quest.classId = fields[9].GetUInt8();
+        quest.param = fields[10].GetUInt32();
+        uint8 const category = fields[11].GetUInt8();
 
         if (type >= MAX_BONK_QUEST_TYPE || rewardType >= MAX_BONK_REWARD)
         {
@@ -57,15 +111,23 @@ void BonkQuests::Load()
         }
         quest.type = BonkQuestType(type);
         quest.rewardType = BonkQuestReward(rewardType);
+        if (category >= MAX_BONK_QUEST_CATEGORY)
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_quest`: quest %u has unknown category %u; shown under Slayer.", quest.id, category);
+        else
+            quest.category = BonkQuestCategory(category);
 
         bool rewardExists = true;
         switch (quest.rewardType)
         {
-            case BONK_REWARD_WEAPON:  rewardExists = sBonkMgr.GetWeapon(quest.rewardValue) != nullptr; break;
-            case BONK_REWARD_PASSIVE: rewardExists = sBonkMgr.GetPassive(quest.rewardValue) != nullptr; break;
-            case BONK_REWARD_TALENT:  rewardExists = sBonkMgr.GetTalent(quest.rewardValue) != nullptr; break;
-            case BONK_REWARD_UPGRADE: rewardExists = sBonkMgr.GetUpgrade(quest.rewardValue) != nullptr; break;
-            case BONK_REWARD_MASTERY: rewardExists = quest.classId != 0; break;     // points for a class
+            case BONK_REWARD_WEAPON:
+            case BONK_REWARD_EPIC_RANK: rewardExists = sBonkMgr.GetWeapon(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_PASSIVE:   rewardExists = sBonkMgr.GetPassive(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_TALENT:    rewardExists = sBonkMgr.GetTalent(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_UPGRADE:   rewardExists = sBonkMgr.GetUpgrade(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_MASTERY:   rewardExists = quest.classId != 0; break;     // points for a class
+            case BONK_REWARD_CLASS:     rewardExists = GetClassLook(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_CAPSTONE:  rewardExists = sBonkMastery.GetNode(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_TITLE:     rewardExists = m_titles.count(quest.rewardValue) != 0; break;
             default: break;
         }
         if (!rewardExists)
@@ -77,7 +139,7 @@ void BonkQuests::Load()
         m_quests[quest.id] = std::move(quest);
     } while (result->NextRow());
 
-    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk quests", uint32(m_quests.size()));
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk quests and %u titles", uint32(m_quests.size()), uint32(m_titles.size()));
 }
 
 void BonkQuests::OnLogin(Player* player)
@@ -102,9 +164,10 @@ void BonkQuests::OnLogin(Player* player)
         m_accounts[account] = std::move(loaded);
     }
 
-    // Stages reached before there were quests count as well.
+    // Stages reached and Mastery earned before there were quests count as well.
     for (auto const& itr : sBonkMgr.GetTiers())
         OnStage(player, itr.first, player->GetBonkPlayer()->GetBestStage(itr.first), true);
+    OnProgress(player, BONK_QUEST_MASTERY_LEVEL, player->GetClass(), player->GetBonkPlayer()->GetMasteryLevel(), true);
 }
 
 void BonkQuests::Save(uint32 account)
@@ -198,6 +261,36 @@ uint32 BonkQuests::GetRootWeapon(uint32 spellId) const
     return 0;
 }
 
+void BonkQuests::Track(Player* player, std::function<void(BonkQuest const&, AccountProgress&)> const& step)
+{
+    uint32 const account = player->GetSession()->GetAccountId();
+    std::vector<BonkQuest const*> done;
+    {
+        std::lock_guard<std::mutex> guard(m_lock);
+        auto itr = m_accounts.find(account);
+        if (itr == m_accounts.end())
+            return;
+        AccountProgress& progress = itr->second;
+
+        for (auto const& quest : m_quests)
+        {
+            BonkQuest const& q = quest.second;
+            if (!Counts(player, q))
+                continue;
+            auto const entry = progress.find(q.id);
+            if (entry != progress.end() && entry->second.completed)
+                continue;
+            step(q, progress);
+            auto const after = progress.find(q.id);
+            if (after != progress.end() && after->second.completed)
+                done.push_back(&q);
+        }
+    }
+
+    for (BonkQuest const* quest : done)
+        Complete(player, *quest);
+}
+
 void BonkQuests::Advance(Player* /*player*/, AccountProgress& progress, BonkQuest const& quest, uint32 value, bool absolute)
 {
     Progress& entry = progress[quest.id];
@@ -214,53 +307,60 @@ void BonkQuests::Advance(Player* /*player*/, AccountProgress& progress, BonkQues
         entry.completed = true;
 }
 
-void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell)
+void BonkQuests::AdvanceBit(AccountProgress& progress, BonkQuest const& quest, uint32 bit)
 {
-    uint32 const account = player->GetSession()->GetAccountId();
+    if (bit >= 32)
+        return;
+
+    Progress& entry = progress[quest.id];
+    if (entry.completed || (entry.value & (1u << bit)))
+        return;
+
+    entry.value |= 1u << bit;
+    entry.dirty = true;
+    if (CountBits(entry.value) >= quest.amount)
+        entry.completed = true;
+}
+
+uint32 BonkQuests::GetShownProgress(BonkQuest const& quest, Progress const& entry)
+{
+    if (entry.completed)
+        return quest.amount;
+    return quest.CountsBits() ? CountBits(entry.value) : entry.value;
+}
+
+void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType)
+{
     uint32 const weapon = GetRootWeapon(killingSpell);
     uint32 const level = player->GetLevel();
 
-    std::vector<BonkQuest const*> done;
+    Track(player, [&](BonkQuest const& q, AccountProgress& progress)
     {
-        std::lock_guard<std::mutex> guard(m_lock);
-        auto itr = m_accounts.find(account);
-        if (itr == m_accounts.end())
-            return;
-        AccountProgress& progress = itr->second;
-
-        for (auto const& quest : m_quests)
+        switch (q.type)
         {
-            BonkQuest const& q = quest.second;
-            if (!Counts(player, q))
-                continue;
-            bool const wasDone = progress[q.id].completed;
-            switch (q.type)
-            {
-                case BONK_QUEST_KILLS:
+            case BONK_QUEST_KILLS:
+                Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_KILL_KIND:
+                if (q.target == uint32(kind))
                     Advance(player, progress, q, 1, false);
-                    break;
-                case BONK_QUEST_KILL_KIND:
-                    if (q.target == uint32(kind))
-                        Advance(player, progress, q, 1, false);
-                    break;
-                case BONK_QUEST_KILL_WEAPON:
-                    if (weapon && q.target == weapon)
-                        Advance(player, progress, q, 1, false);
-                    break;
-                // Levels only rise during a run, and kills are what raise them.
-                case BONK_QUEST_REACH_LEVEL:
-                    Advance(player, progress, q, level, true);
-                    break;
-                default:
-                    break;
-            }
-            if (!wasDone && progress[q.id].completed)
-                done.push_back(&q);
+                break;
+            case BONK_QUEST_KILL_WEAPON:
+                if (weapon && q.target == weapon)
+                    Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_KILL_TYPE:
+                if (q.target == creatureType)
+                    Advance(player, progress, q, 1, false);
+                break;
+            // Levels only rise during a run, and kills are what raise them.
+            case BONK_QUEST_REACH_LEVEL:
+                Advance(player, progress, q, level, true);
+                break;
+            default:
+                break;
         }
-    }
-
-    for (BonkQuest const* quest : done)
-        Complete(player, *quest);
+    });
 }
 
 void BonkQuests::OnStage(Player* player, uint32 tierId, uint32 stage, bool backfill)
@@ -268,54 +368,49 @@ void BonkQuests::OnStage(Player* player, uint32 tierId, uint32 stage, bool backf
     if (!stage)
         return;
 
-    uint32 const account = player->GetSession()->GetAccountId();
-    std::vector<BonkQuest const*> done;
+    Track(player, [&](BonkQuest const& q, AccountProgress& progress)
     {
-        std::lock_guard<std::mutex> guard(m_lock);
-        auto itr = m_accounts.find(account);
-        if (itr == m_accounts.end())
-            return;
+        if (q.type == BONK_QUEST_REACH_STAGE && q.target == tierId && !(backfill && q.classId))
+            Advance(player, progress, q, stage, true);
+    });
+}
 
-        for (auto const& quest : m_quests)
+void BonkQuests::OnBossKilled(Player* player, uint32 tierId, uint32 stage, uint32 second)
+{
+    Track(player, [&](BonkQuest const& q, AccountProgress& progress)
+    {
+        switch (q.type)
         {
-            BonkQuest const& q = quest.second;
-            if (q.type != BONK_QUEST_REACH_STAGE || q.target != tierId || !Counts(player, q) || (backfill && q.classId))
-                continue;
-            bool const wasDone = itr->second[q.id].completed;
-            Advance(player, itr->second, q, stage, true);
-            if (!wasDone && itr->second[q.id].completed)
-                done.push_back(&q);
+            case BONK_QUEST_BOSS_BEFORE:
+                if ((!q.target || q.target == tierId) && second < q.param)
+                    Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_CLEAR_CLASSES:
+                if (q.param == stage && (q.target & player->GetClassMask()))
+                    AdvanceBit(progress, q, player->GetClass() - 1);
+                break;
+            default:
+                break;
         }
-    }
-
-    for (BonkQuest const* quest : done)
-        Complete(player, *quest);
+    });
 }
 
 void BonkQuests::OnShards(Player* player, uint32 count)
 {
-    uint32 const account = player->GetSession()->GetAccountId();
-    std::vector<BonkQuest const*> done;
+    OnProgress(player, BONK_QUEST_SHARDS, 0, count);
+}
+
+void BonkQuests::OnProgress(Player* player, BonkQuestType type, uint32 target, uint32 value, bool absolute)
+{
+    Track(player, [&](BonkQuest const& q, AccountProgress& progress)
     {
-        std::lock_guard<std::mutex> guard(m_lock);
-        auto itr = m_accounts.find(account);
-        if (itr == m_accounts.end())
+        if (q.type != type || (q.target && q.target != target))
             return;
-
-        for (auto const& quest : m_quests)
-        {
-            BonkQuest const& q = quest.second;
-            if (q.type != BONK_QUEST_SHARDS || !Counts(player, q))
-                continue;
-            bool const wasDone = itr->second[q.id].completed;
-            Advance(player, itr->second, q, count, false);
-            if (!wasDone && itr->second[q.id].completed)
-                done.push_back(&q);
-        }
-    }
-
-    for (BonkQuest const* quest : done)
-        Complete(player, *quest);
+        if (q.CountsBits())
+            AdvanceBit(progress, q, value);
+        else
+            Advance(player, progress, q, value, absolute);
+    });
 }
 
 void BonkQuests::Complete(Player* player, BonkQuest const& quest)
@@ -393,6 +488,37 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
         case BONK_REWARD_MASTERY:
             *icon = "Spell_Holy_SealOfWisdom";
             return std::to_string(quest.rewardValue) + (quest.rewardValue == 1 ? " talent point" : " talent points");
+        case BONK_REWARD_CLASS:
+            if (ClassLook const* look = GetClassLook(quest.rewardValue))
+            {
+                *icon = look->icon;
+                return std::string("Unlocks the ") + look->name + " class";
+            }
+            break;
+        case BONK_REWARD_EPIC_RANK:
+            if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
+            {
+                *icon = weapon->icon;
+                return "An Epic rank for " + weapon->name;
+            }
+            break;
+        case BONK_REWARD_CAPSTONE:
+            if (BonkMasteryNode const* node = sBonkMastery.GetNode(quest.rewardValue))
+            {
+                *icon = node->icon;
+                return "Unlocks the capstone " + node->name;
+            }
+            break;
+        case BONK_REWARD_TITLE:
+        {
+            auto const title = m_titles.find(quest.rewardValue);
+            if (title != m_titles.end())
+            {
+                *icon = "INV_Misc_Note_02";
+                return "The title \"" + title->second + "\"";
+            }
+            break;
+        }
         default:
             break;
     }
@@ -424,8 +550,9 @@ void BonkQuests::SendLog(Player* player, std::string const& npc)
         std::string rewardIcon;
         std::string const reward = DescribeReward(quest, &rewardIcon);
         bonk->SendAddon("q~" + std::to_string(quest.id) + "~" + quest.name + "~" + quest.description + "~" + quest.icon + "~" +
-            std::to_string(entry.completed ? quest.amount : entry.value) + "~" + std::to_string(quest.amount) + "~" +
-            (entry.completed ? "1" : "0") + "~" + reward + "~" + rewardIcon + "~" + (quest.classId ? "1" : "0"));
+            std::to_string(GetShownProgress(quest, entry)) + "~" + std::to_string(quest.amount) + "~" +
+            (entry.completed ? "1" : "0") + "~" + reward + "~" + rewardIcon + "~" + (quest.classId ? "1" : "0") + "~" +
+            GetCategoryKey(quest.category));
     }
     bonk->SendAddon("qlogend");
 }
@@ -449,8 +576,8 @@ std::vector<std::string> BonkQuests::DescribeAll(Player* player) const
         Progress const& entry = progress[quest.id];
         std::string icon;
         std::string const reward = DescribeReward(quest, &icon);
-        lines.push_back(quest.name + (entry.completed ? " (done): " : " " + std::to_string(entry.value) + "/" + std::to_string(quest.amount) + ": ") +
-            quest.description + (reward.empty() ? "" : " - " + reward));
+        lines.push_back(quest.name + (entry.completed ? " (done): " : " " + std::to_string(GetShownProgress(quest, entry)) + "/" +
+            std::to_string(quest.amount) + ": ") + quest.description + (reward.empty() ? "" : " - " + reward));
     }
     return lines;
 }

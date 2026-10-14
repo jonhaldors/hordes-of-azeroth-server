@@ -251,6 +251,8 @@ void BonkPlayer::AddMasteryXp(uint32 xp)
         m_player->GetSession()->GetAccountId(), uint32(m_player->GetClass()), m_masteryXp);
 
     uint32 const after = GetMasteryLevel();
+    if (after > before)
+        sBonkQuests.OnProgress(m_player, BONK_QUEST_MASTERY_LEVEL, m_player->GetClass(), after, true);
     std::string const name = GetClassName() + " Mastery";
     if (after > before)
         Notify(name + " " + std::to_string(after) + "! +" + std::to_string(after - before) +

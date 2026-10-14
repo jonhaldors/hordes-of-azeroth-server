@@ -989,6 +989,7 @@ void BonkRun::UpdateRecovery(uint32 diff)
     if (m_recoveryTimer < IN_MILLISECONDS)
         return;
     m_recoveryTimer -= IN_MILLISECONDS;
+    ReportQuestCounts();
 
     // Leech gathered over the last second, up to its cap; the rest is lost.
     uint32 heal = uint32(m_leechCarry);
@@ -1011,6 +1012,20 @@ void BonkRun::UpdateRecovery(uint32 diff)
             m_player->DealHeal(m_player, amount, spellInfo);
         else
             m_player->ModifyHealth(int32(amount));
+    }
+}
+
+void BonkRun::ReportQuestCounts()
+{
+    if (m_crits != m_critsReported)
+    {
+        m_critsReported = m_crits;
+        sBonkQuests.OnProgress(m_player, BONK_QUEST_CRITS, 0, m_crits, true);
+    }
+    if (m_healedUnreported)
+    {
+        sBonkQuests.OnProgress(m_player, BONK_QUEST_HEALED, 0, m_healedUnreported);
+        m_healedUnreported = 0;
     }
 }
 
@@ -2017,6 +2032,7 @@ float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
     if (victim && (IsFrozen(victim) || (victim->HasAuraType(SPELL_AURA_MOD_ROOT) && HasBehavior(BONK_BEHAVIOR_FREEZE))))
         bonus += BONK_FROZEN_CRIT_BONUS;
     float multiplier = 1.0f + bonus;
+    ++m_crits;
 
     float const overcrit = GetCritChance() - 100.0f;
     if (overcrit > 0.0f && roll_chance_f(overcrit))
@@ -4557,7 +4573,9 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     SpreadKeywords(mob);
     OnMarkedDeath(mob);
     uint32 const killingSpell = BonkStats::CountKill(m_player->GetObjectGuid(), mob->GetObjectGuid(), kind);
-    sBonkQuests.OnKill(m_player, kind, killingSpell);
+    sBonkQuests.OnKill(m_player, kind, killingSpell, mob->GetCreatureType());
+    if (kind == BONK_SPAWN_BOSS)
+        sBonkQuests.OnBossKilled(m_player, m_tier.id, m_stage, m_elapsedMs / IN_MILLISECONDS);
     SoulSiphon(killingSpell);
     if (kind == BONK_SPAWN_MINIBOSS)
         m_masteryXp += m_tier.masteryXpMiniboss * GetBonkMapRewardPercent(m_map.type) / 100;
@@ -5467,6 +5485,7 @@ void BonkRun::Finish(bool wentHome)
         BonkStats::SendSummary(m_player, weapons);
     }
 
+    ReportQuestCounts();
     sBonkQuests.Save(m_player->GetSession()->GetAccountId());
     sBonkQuests.SendLog(m_player, "");
 }

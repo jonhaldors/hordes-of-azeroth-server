@@ -6240,6 +6240,12 @@ int32 Unit::ModifyHealth(int32 dVal)
         gain = maxHealth - curHealth;
     }
 
+    // Vanilla Bonk: quests count the healing a hero takes in a run.
+    if (gain > 0 && IsPlayer())
+        if (BonkPlayer* bonk = static_cast<Player*>(this)->GetBonkPlayer())
+            if (BonkRun* run = bonk->GetRun())
+                run->OnHeroHealed(uint32(gain));
+
     return gain;
 }
 
