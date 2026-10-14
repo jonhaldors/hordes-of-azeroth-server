@@ -59,6 +59,58 @@ namespace
         return target->ExtrapolateMovement(target->m_movementInfo, age + leadMs, x, y, z, o);
     }
 
+    // A pack chasing a running player spreads out instead of queueing in its
+    // wake. Each chaser behind the player has its own place round them: a
+    // fixed angle off straight behind (its guid spreads chasers evenly over
+    // up to BONK_CHASE_FAN_ANGLE each way, from right behind to right beside
+    // them), measured from the way the player runs, not from where the chaser
+    // is, so it never circles. Far off it also aims out to that side, more
+    // the further it is, so a pack fans out on the way in and comes up the
+    // player's sides.
+    float const BONK_CHASE_FAN_ANGLE = M_PI_F / 2.0f;     // each way off straight behind
+    float const BONK_CHASE_FAN_WIDTH = 6.0f;              // yards out to the side, at most
+    float const BONK_CHASE_FAN_RATE  = 0.3f;              // of those yards per yard away beyond:
+    float const BONK_CHASE_FAN_START = 3.0f;              // closer than this, none: it ends at arm's length to swing
+
+    // (x, y, z): where the running player will be (PredictBonkTarget); the
+    // chaser's place `reach` from there. False for a chaser not behind them:
+    // it comes at them from its own side, as before.
+    bool GetBonkChaseSlot(Unit const& owner, Unit const* target, float reach, float& x, float& y, float& z)
+    {
+        // The way the player runs: from where they are now to (x, y).
+        float nowX, nowY, nowZ;
+        if (!PredictBonkTarget(target, 0, nowX, nowY, nowZ))
+            return false;
+        float runX = x - nowX;
+        float runY = y - nowY;
+        float const run = std::sqrt(runX * runX + runY * runY);
+        if (run < 0.1f)
+            return false;
+        runX /= run;
+        runY /= run;
+
+        float const toX = owner.GetPositionX() - x;
+        float const toY = owner.GetPositionY() - y;
+        if (toX * runX + toY * runY >= 0.0f)
+            return false;
+
+        // Its angle off straight behind, the same every time.
+        uint32 const hash = owner.GetObjectGuid().GetCounter() * 2654435761u;
+        float const share = float(hash >> 8) / float(1u << 24);
+        float const angle = std::atan2(-runY, -runX) + (share * 2.0f - 1.0f) * BONK_CHASE_FAN_ANGLE;
+        float const slotX = std::cos(angle);
+        float const slotY = std::sin(angle);
+
+        // Out to its side of the player's track, more the further it is.
+        float const across = slotX * -runY + slotY * runX;
+        float const away = std::max(0.0f, std::sqrt(toX * toX + toY * toY) - BONK_CHASE_FAN_START);
+        float const fan = across * std::min(BONK_CHASE_FAN_WIDTH, away * BONK_CHASE_FAN_RATE);
+        x += slotX * reach - runY * fan;
+        y += slotY * reach + runX * fan;
+        target->UpdateAllowedPositionZ(x, y, z);
+        return true;
+    }
+
     // A chaser faces the way its path's current segment runs, so every new
     // path would snap it round. Its path instead starts the way it already
     // faces and curves round to the target in short steps: it turns at this
@@ -210,17 +262,30 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
             }
         }
 
-        // Vanilla Bonk: arm's length this side of where the running player is
-        // now; through a wall, the usual point instead.
+        // Vanilla Bonk: a chaser behind the running player goes for its own
+        // place round them (GetBonkChaseSlot); ahead of them, or with that
+        // place through a wall, arm's length this side of where they are now;
+        // with that through a wall too, the usual point instead.
         if (bonkChase && PredictBonkTarget(i_target.getTarget(), BONK_CHASE_LEAD_MS, x, y, z) && i_target->IsWithinLOS(x, y, z))
         {
-            float const dx = owner.GetPositionX() - x;
-            float const dy = owner.GetPositionY() - y;
-            float const length = std::sqrt(dx * dx + dy * dy);
-            if (length > DEFAULT_COMBAT_REACH)
+            float slotX = x, slotY = y, slotZ = z;
+            if (GetBonkChaseSlot(owner, i_target.getTarget(), DEFAULT_COMBAT_REACH, slotX, slotY, slotZ) &&
+                i_target->IsWithinLOS(slotX, slotY, slotZ))
             {
-                x += dx / length * DEFAULT_COMBAT_REACH;
-                y += dy / length * DEFAULT_COMBAT_REACH;
+                x = slotX;
+                y = slotY;
+                z = slotZ;
+            }
+            else
+            {
+                float const dx = owner.GetPositionX() - x;
+                float const dy = owner.GetPositionY() - y;
+                float const length = std::sqrt(dx * dx + dy * dy);
+                if (length > DEFAULT_COMBAT_REACH)
+                {
+                    x += dx / length * DEFAULT_COMBAT_REACH;
+                    y += dy / length * DEFAULT_COMBAT_REACH;
+                }
             }
         }
         // Avoid collisions between mobs.
