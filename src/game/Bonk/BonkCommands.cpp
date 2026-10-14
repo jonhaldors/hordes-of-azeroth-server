@@ -352,6 +352,84 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkObjectiveCommand(char* args)
+{
+    // GM testing aid: an objective marker at one of the stage's spawn points
+    // 120-250 yards away (or 30 yards ahead if none is free yet), or all of
+    // them taken away.
+    // .bonk objective shrine|vendor|event|extract [seconds] | clear
+    Player* player = m_session->GetPlayer();
+    BonkRun* run = player->GetBonkPlayer()->GetRun();
+    if (!run || !run->IsActive())
+    {
+        SendSysMessage("Objectives need a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    char* kindArg = ExtractArg(&args);
+    if (kindArg && !strcmp(kindArg, "clear"))
+    {
+        std::vector<uint32> ids;
+        for (BonkObjective const& objective : run->GetObjectives().GetAll())
+            ids.push_back(objective.id);
+        for (uint32 id : ids)
+            run->RemoveObjective(id);
+        PSendSysMessage("%u objectives taken away.", uint32(ids.size()));
+        return true;
+    }
+
+    BonkObjectiveKind kind = BONK_OBJECTIVE_SHRINE;
+    if (!kindArg || !ParseBonkObjectiveKind(kindArg, kind))
+    {
+        SendSysMessage("Usage: .bonk objective shrine|vendor|event|extract [seconds] | clear");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    uint32 seconds = 0;
+    ExtractUInt32(&args, seconds);
+
+    char const* const labels[MAX_BONK_OBJECTIVE_KIND] = { "Shrine", "Goblin Merchant", "Event", "Extraction Point" };
+    BonkSpot spot;
+    bool const atSpot = run->TakeSpawnPoint(120.0f, 250.0f, spot);
+    if (!atSpot)
+    {
+        float const o = player->GetOrientation();
+        spot.x = player->GetPositionX() + 30.0f * std::cos(o);
+        spot.y = player->GetPositionY() + 30.0f * std::sin(o);
+        spot.z = player->GetMap()->GetHeight(spot.x, spot.y, player->GetPositionZ() + 10.0f, true, 30.0f);
+        if (spot.z <= INVALID_HEIGHT)
+            spot.z = player->GetPositionZ();
+    }
+    uint32 const id = run->AddObjective(kind, spot.x, spot.y, spot.z, labels[kind], seconds);
+    PSendSysMessage("Objective %u (%s) %.0f yards away, %s.", id, GetBonkObjectiveKindName(kind), player->GetDistance2dToCenter(spot.x, spot.y),
+        atSpot ? "at a spawn point" : "30 yards ahead (no free spawn point yet)");
+    return true;
+}
+
+bool ChatHandler::HandleBonkSpotsCommand(char* /*args*/)
+{
+    // GM testing aid: an event pillar on every spawn point the stage has
+    // gathered so far, for 20 seconds (seen only within the usual 100 yards).
+    Player* player = m_session->GetPlayer();
+    BonkRun* run = player->GetBonkPlayer()->GetRun();
+    if (!run || !run->IsActive())
+    {
+        SendSysMessage("Spawn points need a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 taken = 0;
+    for (BonkSpot const& spot : run->GetSpawnPoints().GetSpots())
+    {
+        player->SummonGameObject(900020 + BONK_OBJECTIVE_EVENT, spot.x, spot.y, spot.z, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 20, false);
+        taken += spot.taken ? 1 : 0;
+    }
+    PSendSysMessage("%u spawn points (%u taken), shown for 20 seconds.", uint32(run->GetSpawnPoints().GetSpots().size()), taken);
+    return true;
+}
+
 bool ChatHandler::HandleBonkKeywordCommand(char* args)
 {
     // GM testing aid: stacks of a keyword on the selected enemy of your run.

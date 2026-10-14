@@ -1388,7 +1388,8 @@ void BonkPlayer::SendArena(std::string const& npc) const
             std::string maps;
             for (uint32 mapId : tier.mapIds)
                 if (BonkMap const* map = sBonkMgr.GetMap(mapId))
-                    maps += (maps.empty() ? "" : ",") + map->icon + ":" + map->name;
+                    maps += (maps.empty() ? "" : ",") + map->icon + ":" + map->name + ":" + std::to_string(uint32(map->type)) + ":" +
+                        std::to_string(GetBonkMapRewardPercent(map->type));
             SendAddon("tier~" + std::to_string(tier.id) + "~" + tier.key + "~" + tier.name + "~" + (unlocked ? "1" : "0") + "~" +
                 (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best) + "~" + tier.description + "~" + tier.art + "~" + maps);
         }

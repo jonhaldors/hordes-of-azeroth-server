@@ -826,6 +826,16 @@ std::string FormatBonkMoney(uint32 copper)
     return text.empty() ? "0c" : text;
 }
 
+uint32 GetBonkMapRewardPercent(BonkMapType type)
+{
+    switch (type)
+    {
+        case BONK_MAP_ENCLOSED: return 125;
+        case BONK_MAP_ARENA:    return 150;
+        default:                return 100;
+    }
+}
+
 std::string FormatBonkShards(uint32 count)
 {
     return std::to_string(count) + (count == 1 ? " Darkmoon Ticket" : " Darkmoon Tickets");

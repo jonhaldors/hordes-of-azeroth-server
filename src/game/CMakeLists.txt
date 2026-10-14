@@ -26,10 +26,12 @@ set (game_SRCS
     Bonk/BonkMgr.cpp
     Bonk/BonkMobAI.cpp
     Bonk/BonkNpcs.cpp
+    Bonk/BonkObjectives.cpp
     Bonk/BonkPlayer.cpp
     Bonk/BonkQuests.cpp
     Bonk/BonkRun.cpp
     Bonk/BonkRunStats.cpp
+    Bonk/BonkSpawnPoints.cpp
     Bonk/BonkTelegraph.cpp
     Camera.cpp
     Conditions.cpp
@@ -268,10 +270,12 @@ set (game_SRCS
     Bonk/BonkMastery.h
     Bonk/BonkMgr.h
     Bonk/BonkMobAI.h
+    Bonk/BonkObjectives.h
     Bonk/BonkPlayer.h
     Bonk/BonkQuests.h
     Bonk/BonkRun.h
     Bonk/BonkRunStats.h
+    Bonk/BonkSpawnPoints.h
     Bonk/BonkTelegraph.h
     Camera.h
     ClientDefines.h

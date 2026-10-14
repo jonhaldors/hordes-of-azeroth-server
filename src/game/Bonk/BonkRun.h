@@ -22,6 +22,8 @@
 
 #include "BonkMastery.h"
 #include "BonkMgr.h"
+#include "BonkObjectives.h"
+#include "BonkSpawnPoints.h"
 #include "BonkTelegraph.h"
 #include "ObjectGuid.h"
 #include "nonstd/optional.hpp"
@@ -114,6 +116,16 @@ class BonkRun
         // stage ends.
         void AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
             std::function<void()> onFire = nullptr);
+        // Objectives (BonkObjectives): a marked spot worth walking to, often
+        // one of the stage's spawn points (BonkSpawnPoints), which it holds
+        // until it is taken away. All go when the stage ends.
+        uint32 AddObjective(BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds);
+        void RemoveObjective(uint32 id);
+        BonkObjectives const& GetObjectives() const { return m_objectives; }
+        // A free spawn point `minDistance` to `maxDistance` yards from the
+        // hero, now taken; false if there is none yet.
+        bool TakeSpawnPoint(float minDistance, float maxDistance, BonkSpot& spot) { return m_spawnPoints.Take(m_player, minDistance, maxDistance, spot); }
+        BonkSpawnPoints const& GetSpawnPoints() const { return m_spawnPoints; }
         // Volcanic: fire bursts up where a warning was, and the enemy that
         // called it hits the hero for `damage` if they are still inside.
         void Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius, uint32 damage);
@@ -312,6 +324,7 @@ class BonkRun
         uint32 GetChestCost() const;
         void SpawnPowerup();
         void UpdatePowerups(uint32 diff, bool spawn);
+        void UpdateObjectives(uint32 diff);
         void DespawnObjects();
 
         uint32 GetMobLevel() const;
@@ -491,6 +504,7 @@ class BonkRun
         uint32 m_enterTimer = 0;
         uint32 m_elapsedMs = 0;             // this stage
         uint32 m_totalMs = 0;               // the whole run
+        uint32 m_rewardMs = 0;              // the same, times each stage's map type reward (Mastery minutes)
         size_t m_nextEvent = 0;
         std::vector<BonkMapEvent> m_heldEvents;     // waiting out a quiet time
         float m_gruntRadius = 0.0f;         // the biggest grunt this stage: bruisers are bigger
@@ -619,6 +633,8 @@ class BonkRun
         std::vector<ObjectGuid> m_retaliations;     // enemies that hit the hero meanwhile
         float m_bleedHeal = 0.0f;           // Bloodthirst healing not yet given
         BonkTelegraphs m_telegraphs;
+        BonkSpawnPoints m_spawnPoints;
+        BonkObjectives m_objectives;
         uint32 m_shield = 0;                // absorb left
         uint32 m_shieldIdleMs = 0;          // since the hero last took damage
         uint32 m_shieldSendTimer = 0;

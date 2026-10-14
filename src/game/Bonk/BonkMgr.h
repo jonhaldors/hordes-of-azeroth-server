@@ -151,6 +151,10 @@ enum BonkMapType : uint8
     MAX_BONK_MAP_TYPE
 };
 
+// What a map type pays, in percent of gold, Darkmoon Tickets and Mastery
+// experience: an open zone 100, an enclosed raid 125, an arena 150.
+uint32 GetBonkMapRewardPercent(BonkMapType type);
+
 struct BonkMap
 {
     uint32 id = 0;

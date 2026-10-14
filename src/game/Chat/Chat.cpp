@@ -276,6 +276,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "skip",           SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSkipCommand,            "", nullptr },
         { "god",            SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkGodCommand,             "", nullptr },
         { "telegraph",      SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkTelegraphCommand,       "", nullptr },
+        { "objective",      SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkObjectiveCommand,       "", nullptr },
+        { "spots",          SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSpotsCommand,           "", nullptr },
         { "keyword",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkKeywordCommand,         "", nullptr },
         { "scaling",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkScalingCommand,         "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }

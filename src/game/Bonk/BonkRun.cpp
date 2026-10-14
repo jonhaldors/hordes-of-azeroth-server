@@ -809,6 +809,9 @@ void BonkRun::StartStage()
     // by the time enemies cast.
     m_telegraphs.Dismiss(m_player);
     m_telegraphs.Warm();
+    // Spawn points gather around the hero as the stage goes on.
+    m_objectives.Clear(m_player);
+    m_spawnPoints.Reset(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
@@ -837,6 +840,7 @@ void BonkRun::SendFullState() const
     SendState();
     if (!m_offer.empty())
         SendOffer();
+    m_objectives.Resend(m_player);
 }
 
 void BonkRun::UpdateRunning(uint32 diff)
@@ -858,6 +862,7 @@ void BonkRun::UpdateRunning(uint32 diff)
 
     m_elapsedMs += diff;
     m_totalMs += diff;
+    m_rewardMs += diff * GetBonkMapRewardPercent(m_map.type) / 100;
 
     UpdateHeading(diff);
     UpdateBoundary(diff);
@@ -866,6 +871,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateNecrotic(diff);
     UpdatePools(diff);
     UpdatePowerups(diff, true);
+    UpdateObjectives(diff);
     UpdateOrbs(diff);
     UpdateShards(diff);
     UpdateHeals(diff);
@@ -2102,7 +2108,7 @@ void BonkRun::AwardMastery()
     if (m_masteryAwarded)
         return;
     m_masteryAwarded = true;
-    m_player->GetBonkPlayer()->AddMasteryXp(m_totalMs / (MINUTE * IN_MILLISECONDS) * m_tier.masteryXpMinute + m_masteryXp);
+    m_player->GetBonkPlayer()->AddMasteryXp(m_rewardMs / (MINUTE * IN_MILLISECONDS) * m_tier.masteryXpMinute + m_masteryXp);
 }
 
 void BonkRun::Revive()
@@ -2433,6 +2439,27 @@ void BonkRun::DespawnObjects()
     m_portalGuid.Clear();
 }
 
+void BonkRun::UpdateObjectives(uint32 diff)
+{
+    m_spawnPoints.Update(m_player, m_map.zoneId, diff);
+    for (BonkObjective const& gone : m_objectives.Update(m_player, diff))
+        m_spawnPoints.Release(gone.x, gone.y);
+}
+
+uint32 BonkRun::AddObjective(BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds)
+{
+    return m_objectives.Add(m_player, kind, x, y, z, label, seconds);
+}
+
+void BonkRun::RemoveObjective(uint32 id)
+{
+    if (BonkObjective const* objective = m_objectives.Get(id))
+    {
+        m_spawnPoints.Release(objective->x, objective->y);
+        m_objectives.Remove(m_player, id);
+    }
+}
+
 void BonkRun::UseChest(GameObject* chest)
 {
     if (m_state != STATE_RUNNING && m_state != STATE_PORTAL)
@@ -2549,6 +2576,7 @@ void BonkRun::EnterNextStage()
     DespawnTraps();
     DespawnPets();
     m_telegraphs.Dismiss(m_player);
+    m_objectives.Clear(m_player);
 
     std::string error;
     if (!TeleportToStage(*next, error))
@@ -2589,6 +2617,7 @@ bool BonkRun::SkipTime(uint32 seconds, std::string& error)
     }
 
     m_totalMs += target - m_elapsedMs;
+    m_rewardMs += (target - m_elapsedMs) * GetBonkMapRewardPercent(m_map.type) / 100;
     m_elapsedMs = target;
 
     // Events in the skipped stretch are dropped, not all fired at once.
@@ -4318,6 +4347,10 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
         case BONK_SPAWN_BOSS:     count = m_tier.shardsBoss; break;
         default: break;
     }
+    // The map type's reward: whole tickets, and the fraction left as a chance
+    // of one more.
+    uint32 const scaled = count * GetBonkMapRewardPercent(m_map.type);
+    count = scaled / 100 + (roll_chance_u(scaled % 100) ? 1 : 0);
     if (!count)
         return;
 
@@ -4501,7 +4534,9 @@ void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGui
 
 void BonkRun::GiveGold(uint32 copper)
 {
-    copper = uint32(copper * (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus) / 100.0f));
+    // The map type's reward adds to Greed and the gold talents.
+    float const mapBonus = float(GetBonkMapRewardPercent(m_map.type)) - 100.0f;
+    copper = uint32(copper * (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus + mapBonus) / 100.0f));
     if (!copper)
         return;
     m_player->ModifyMoney(int32(copper));
@@ -4521,9 +4556,9 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     sBonkQuests.OnKill(m_player, kind, killingSpell);
     SoulSiphon(killingSpell);
     if (kind == BONK_SPAWN_MINIBOSS)
-        m_masteryXp += m_tier.masteryXpMiniboss;
+        m_masteryXp += m_tier.masteryXpMiniboss * GetBonkMapRewardPercent(m_map.type) / 100;
     else if (kind == BONK_SPAWN_BOSS)
-        m_masteryXp += m_tier.masteryXpBoss;
+        m_masteryXp += m_tier.masteryXpBoss * GetBonkMapRewardPercent(m_map.type) / 100;
     uint32 const reward = GetKindReward(kind);
     GiveGold(m_map.goldPerKill * reward);
     m_coins += m_map.coinsPerKill * reward;
@@ -5498,6 +5533,7 @@ void BonkRun::CleanUp()
     m_player->GetBonkPlayer()->ClearSpellTweaks();
     DespawnMobs();
     DespawnObjects();
+    m_objectives.Clear(m_player);
     DespawnOrbs();
     m_player->SetCreatureSummonLimit(sWorld.getConfig(CONFIG_UINT32_CREATURE_SUMMON_LIMIT));
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
