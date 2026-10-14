@@ -430,6 +430,33 @@ bool ChatHandler::HandleBonkSpotsCommand(char* /*args*/)
     return true;
 }
 
+bool ChatHandler::HandleBonkEventCommand(char* args)
+{
+    // GM testing aid: a mini-event right now, whatever the scheduler says.
+    // .bonk event horde
+    char* nameArg = ExtractArg(&args);
+    BonkMiniEventType type = BONK_MINI_EVENT_HORDE;
+    if (!nameArg || !ParseBonkMiniEvent(nameArg, type))
+    {
+        SendSysMessage("Usage: .bonk event horde");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    std::string error;
+    if (!run)
+        error = "Mini-events need a run.";
+    else if (run->StartMiniEventNow(type, error))
+    {
+        PSendSysMessage("Mini-event %s started.", GetBonkMiniEventName(type));
+        return true;
+    }
+    SendSysMessage(error.c_str());
+    SetSentErrorMessage(true);
+    return false;
+}
+
 bool ChatHandler::HandleBonkKeywordCommand(char* args)
 {
     // GM testing aid: stacks of a keyword on the selected enemy of your run.

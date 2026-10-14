@@ -36,6 +36,18 @@
 class Creature;
 class GameObject;
 class Player;
+
+// Mini-events (BonkRunEvents.cpp): something happening somewhere on the map,
+// one at a time, every couple of minutes.
+enum BonkMiniEventType : uint8
+{
+    BONK_MINI_EVENT_HORDE = 0,      // a ring of enemies surrounds the hero and closes in
+    MAX_BONK_MINI_EVENT
+};
+
+// The addon's and `.bonk event`'s name for one ("horde"), and back.
+char const* GetBonkMiniEventName(BonkMiniEventType type);
+bool ParseBonkMiniEvent(char const* name, BonkMiniEventType& type);
 class SpellAuraHolder;
 class SpellCaster;
 class Unit;
@@ -50,6 +62,7 @@ class BonkRun
         void Abort();       // logout: clean up without moving the player
         void Surrender();   // `.bonk stop`
         bool SkipTime(uint32 seconds, std::string& error);  // `.bonk skip`, GM testing
+        bool StartMiniEventNow(BonkMiniEventType type, std::string& error);    // `.bonk event`, GM testing
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool IsPaused() const { return m_paused; }
@@ -236,6 +249,14 @@ class BonkRun
         void UpdateRunning(uint32 diff);
         void UpdateOffers();
         void UpdateEvents();
+        // The mini-event scheduler (BonkRunEvents.cpp): one every
+        // BONK_MINI_EVENT_INTERVAL_MS, never the same twice running, one at
+        // a time, none in a quiet time or once the boss is up.
+        void UpdateMiniEvents(uint32 diff);
+        BonkMiniEventType PickMiniEvent() const;
+        bool StartMiniEvent(BonkMiniEventType type);
+        bool SpawnHorde();
+        void EndMiniEvent();
         void UpdateSpawns(uint32 diff);
         void UpdateWeapons(uint32 diff);
         void UpdateBoundary(uint32 diff);
@@ -507,6 +528,17 @@ class BonkRun
         uint32 m_rewardMs = 0;              // the same, times each stage's map type reward (Mastery minutes)
         size_t m_nextEvent = 0;
         std::vector<BonkMapEvent> m_heldEvents;     // waiting out a quiet time
+        // The mini-event at a spot under way, if `m_miniEventActive`.
+        struct MiniEvent
+        {
+            BonkMiniEventType type = BONK_MINI_EVENT_HORDE;
+            uint32 objectiveId = 0;
+            BonkSpot spot;
+        };
+        MiniEvent m_miniEvent;
+        bool m_miniEventActive = false;
+        uint32 m_nextMiniEventMs = 0;       // into the stage
+        BonkMiniEventType m_lastMiniEvent = MAX_BONK_MINI_EVENT;
         float m_gruntRadius = 0.0f;         // the biggest grunt this stage: bruisers are bigger
         int32 m_spawnTimer = 0;
         int32 m_eliteTimer = 0;

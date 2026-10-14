@@ -30,6 +30,7 @@ set (game_SRCS
     Bonk/BonkPlayer.cpp
     Bonk/BonkQuests.cpp
     Bonk/BonkRun.cpp
+    Bonk/BonkRunEvents.cpp
     Bonk/BonkRunStats.cpp
     Bonk/BonkSpawnPoints.cpp
     Bonk/BonkTelegraph.cpp

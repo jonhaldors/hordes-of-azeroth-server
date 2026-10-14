@@ -733,6 +733,9 @@ void BonkRun::StartStage()
     m_state = STATE_RUNNING;
     m_elapsedMs = 0;
     m_nextEvent = 0;
+    m_miniEventActive = false;
+    m_nextMiniEventMs = 0;
+    m_lastMiniEvent = MAX_BONK_MINI_EVENT;
     m_spawnTimer = BONK_FIRST_WAVE_MS;
     m_eliteTimer = int32(m_tier.firstEliteSecond * IN_MILLISECONDS);
     m_heldEvents.clear();
@@ -878,6 +881,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateEvents();
     if (m_state != STATE_RUNNING)
         return;
+    UpdateMiniEvents(diff);
 
     UpdateSpawns(diff);
     if (m_state != STATE_RUNNING)
