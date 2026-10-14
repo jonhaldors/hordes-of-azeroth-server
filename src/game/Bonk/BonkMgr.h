@@ -562,7 +562,7 @@ struct BonkMob
 
 // Money as players read it: "1g 20s", leaving out empty parts.
 std::string FormatBonkMoney(uint32 copper);
-// "1 Talent Shard", "3 Talent Shards".
+// "1 Darkmoon Ticket", "3 Darkmoon Tickets" (Talent Shards before the renames).
 std::string FormatBonkShards(uint32 count);
 
 // The camp shops. With the addon, each shows its wares as talent trees.

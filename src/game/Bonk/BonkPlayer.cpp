@@ -254,7 +254,7 @@ void BonkPlayer::AddMasteryXp(uint32 xp)
     std::string const name = GetClassName() + " Mastery";
     if (after > before)
         Notify(name + " " + std::to_string(after) + "! +" + std::to_string(after - before) +
-            (after - before == 1 ? " Mastery Point" : " Mastery Points") + " to spend at camp.");
+            (after - before == 1 ? " talent point" : " talent points") + " to spend at the talent trainer.");
     else if (after < BONK_MASTERY_MAX_LEVEL)
         Notify("+" + std::to_string(xp) + " " + name + " experience (" + std::to_string(BonkMastery::GetXpIntoLevel(m_masteryXp)) + "/" +
             std::to_string(BonkMastery::GetXpForLevel(after + 1)) + ").");
@@ -296,7 +296,7 @@ bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
 
     if (GetMasterySpent() >= GetMasteryPoints())
     {
-        message = "No Mastery Points left: level your Mastery or finish class quests.";
+        message = "No talent points left: level your Mastery or finish class quests.";
         return false;
     }
 
@@ -317,7 +317,7 @@ bool BonkPlayer::ResetMastery(std::string& message)
     }
     if (m_masteryRanks.empty())
     {
-        message = "You have not spent any Mastery Points.";
+        message = "You have not spent any talent points.";
         return false;
     }
 
@@ -329,7 +329,7 @@ bool BonkPlayer::ResetMastery(std::string& message)
 
     uint32 const refunded = GetMasterySpent();
     m_masteryRanks.clear();
-    message = std::to_string(refunded) + (refunded == 1 ? " Mastery Point" : " Mastery Points") + " refunded.";
+    message = std::to_string(refunded) + (refunded == 1 ? " talent point" : " talent points") + " refunded.";
     SendMasteryState();
     return true;
 }
@@ -394,7 +394,7 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
         CharacterDatabase.PExecute("DELETE FROM `bonk_account_mastery_node` WHERE `account` = %u AND `node` = %u",
             m_player->GetSession()->GetAccountId(), nodeId);
     }
-    message = node->name + " refunded: 1 Mastery Point back.";
+    message = node->name + " refunded: 1 talent point back.";
     SendMasteryState();
     return true;
 }
@@ -747,7 +747,7 @@ bool BonkPlayer::ResetTalents(std::string& message)
     }
     if (m_talentRanks.empty())
     {
-        message = "You have not learned any talents.";
+        message = "You have not bought any fortunes.";
         return false;
     }
 
@@ -761,7 +761,7 @@ bool BonkPlayer::ResetTalents(std::string& message)
     m_enabledTalents.clear();
     CharacterDatabase.PExecute("DELETE FROM `bonk_account_talent` WHERE `account` = %u", m_player->GetSession()->GetAccountId());
     AddShards(refunded);
-    message = "Talents refunded: " + FormatBonkShards(refunded) + " back.";
+    message = "Fortunes refunded: " + FormatBonkShards(refunded) + " back.";
     return true;
 }
 
@@ -827,7 +827,7 @@ bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
     uint8 const rank = GetTalentRank(talentId);
     if (!rank)
     {
-        message = "You have not learned " + talent->name + ".";
+        message = "You have not bought " + talent->name + ".";
         return false;
     }
 

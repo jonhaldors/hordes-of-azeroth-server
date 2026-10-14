@@ -3,9 +3,10 @@
  *
  * At camp, the run master lists the tiers in `bonk_tier` and starts a run
  * on the one the player picks, the quartermaster sells permanent upgrades
- * (`bonk_upgrade`), the talent trainer sells run unlocks and switches
- * difficulty toggles (`bonk_talent`) and the Mastery trainer spends a
- * class's Mastery Points (`bonk_mastery`); the gear vendor is a plain vendor.
+ * (`bonk_upgrade`), Sayge sells fortunes for Darkmoon Tickets: run unlocks
+ * and switchable Dark Fortunes (`bonk_talent`), and the talent trainer spends
+ * a class's talent points, earned with Mastery levels (`bonk_mastery`); the
+ * gear vendor is a plain vendor.
  * In the arena, chests open an upgrade choice and the portal that appears
  * after a stage boss leads on or home. The NPCs and objects themselves are
  * world database rows.
@@ -31,10 +32,10 @@ namespace
     uint32 const BONK_TEXT_MASTERY       = 900008;
     uint32 const BONK_TEXT_MASTERY_SOON  = 900009;
 
-    // Mastery trainer without the addon: this action takes the points back.
+    // Talent trainer without the addon: this action takes the points back.
     uint32 const MASTERY_ACTION_RESPEC = GOSSIP_ACTION_INFO_DEF - 1;
 
-    // Talent trainer options: what a click does.
+    // Sayge's options: what a click does.
     uint32 const SENDER_BUY    = GOSSIP_SENDER_MAIN;
     uint32 const SENDER_TOGGLE = GOSSIP_SENDER_MAIN + 1;
 
@@ -137,7 +138,7 @@ bool GossipHello_npc_bonk_talents(Player* player, Creature* creature)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
 
-    // The addon hides this menu and shows the talents as talent trees.
+    // The addon hides this menu and shows the fortunes as talent trees.
     if (bonk->IsAddonReady())
     {
         bonk->OpenShop(BONK_SHOP_TALENTS, creature);
@@ -212,7 +213,7 @@ bool GossipHello_npc_bonk_mastery(Player* player, Creature* creature)
     uint32 const points = bonk->GetMasteryPoints();
     uint32 const spent = bonk->GetMasterySpent();
     std::string const header = "Mastery level " + std::to_string(bonk->GetMasteryLevel()) + ", " +
-        std::to_string(points > spent ? points - spent : 0) + " points to spend";
+        std::to_string(points > spent ? points - spent : 0) + " talent points to spend";
     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, header.c_str(), GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
     for (auto const& itr : sBonkMastery.GetNodes())
     {

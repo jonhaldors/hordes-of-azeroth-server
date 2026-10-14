@@ -828,7 +828,7 @@ std::string FormatBonkMoney(uint32 copper)
 
 std::string FormatBonkShards(uint32 count)
 {
-    return std::to_string(count) + (count == 1 ? " Talent Shard" : " Talent Shards");
+    return std::to_string(count) + (count == 1 ? " Darkmoon Ticket" : " Darkmoon Tickets");
 }
 
 char const* GetBonkRarityName(BonkRarity rarity)

@@ -4345,7 +4345,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
     drop.count = count;
     drop.marker = PlaceMarker(go, BONK_SPELL_SHARD_BEAM, BONK_SHARD_BEAM_SCALE);
     m_shardDrops.push_back(drop);
-    m_player->GetBonkPlayer()->Notify(count == 1 ? "A Talent Shard dropped!" : FormatBonkShards(count) + " dropped!");
+    m_player->GetBonkPlayer()->Notify(count == 1 ? "A Darkmoon Ticket dropped!" : FormatBonkShards(count) + " dropped!");
 }
 
 void BonkRun::UpdateShards(uint32 diff)

@@ -360,7 +360,7 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             *icon = "INV_Misc_Coin_02";
             return FormatBonkMoney(quest.rewardValue);
         case BONK_REWARD_SHARDS:
-            *icon = "INV_Enchant_ShardBrilliantLarge";
+            *icon = "INV_Misc_Ticket_Darkmoon_01";
             return FormatBonkShards(quest.rewardValue);
         case BONK_REWARD_WEAPON:
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
@@ -380,7 +380,7 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkTalent const* talent = sBonkMgr.GetTalent(quest.rewardValue))
             {
                 *icon = talent->layout.icon;
-                return "Unlocks the talent " + talent->name;
+                return "Unlocks the fortune " + talent->name;
             }
             break;
         case BONK_REWARD_UPGRADE:
@@ -392,7 +392,7 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             break;
         case BONK_REWARD_MASTERY:
             *icon = "Spell_Holy_SealOfWisdom";
-            return std::to_string(quest.rewardValue) + (quest.rewardValue == 1 ? " Mastery Point" : " Mastery Points");
+            return std::to_string(quest.rewardValue) + (quest.rewardValue == 1 ? " talent point" : " talent points");
         default:
             break;
     }
