@@ -77,6 +77,14 @@ class BonkTelegraphs
         void SetPatient(bool patient) { m_patient = patient; }
         size_t Count() const { return m_telegraphs.size(); }
 
+        // A stand-in for another look for a moment (a thrown trap): a ready
+        // one moved to the spot unseen and dressed at once, so it shows the
+        // moment it is placed. Dress changes its look, Release hands it
+        // back. Empty if none is ready (a new one would fade in).
+        ObjectGuid Borrow(Player* owner, float x, float y, float z, uint32 display);
+        void Dress(Player* owner, ObjectGuid const& guid, uint32 display) { Wear(owner, guid, display); }
+        void Release(Player* owner, ObjectGuid const& guid) { Undress(owner, guid); }
+
     private:
         // One spot of a warning: its outline and its fill, worn by a stand-in
         // each. A line's fill grows from its piece's start edge, so sits there.

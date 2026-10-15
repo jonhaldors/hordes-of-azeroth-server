@@ -2,10 +2,10 @@
  * Vanilla Bonk: the mini-event scheduler, BonkRun's share of the in-run
  * events (feature plan, Mini-events).
  *
- * One mini-event every BONK_MINI_EVENT_INTERVAL_MS of a stage, picked at
- * random but never the same twice running (while there is more than one),
- * at most one under way, held while a mini-boss or the boss is near
- * (IsQuietTime) and none once the boss is up.
+ * The stage timeline's blocks have mini-event slots (bonk_wave): a block
+ * with one starts one of its allowed events as soon as it can, picked at
+ * random but never the same twice running (while there is another), at
+ * most one under way and none once the boss is up.
  *
  * They happen to the hero wherever they are, unmarked:
  * - Encircling horde: a ring of enemies closes in, growing through the
@@ -26,6 +26,7 @@
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
+#include "BonkQuests.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Player.h"
@@ -35,7 +36,6 @@
 
 namespace
 {
-    uint32 const BONK_MINI_EVENT_INTERVAL_MS = 2 * MINUTE * IN_MILLISECONDS;
     uint32 const BONK_MINI_EVENT_RETRY_MS    = 10 * IN_MILLISECONDS;   // it could not start yet
 
     float const BONK_HORDE_BASE              = 8.0f;    // enemies in the ring at 0:00...
@@ -97,23 +97,26 @@ void BonkRun::UpdateMiniEvents(uint32 diff)
         return;
     }
 
-    if (!m_nextMiniEventMs)
-        m_nextMiniEventMs = BONK_MINI_EVENT_INTERVAL_MS;
-    if (m_elapsedMs < m_nextMiniEventMs || m_bossSpawned || IsQuietTime())
+    // This block's slot, while it lasts.
+    if (!m_miniEventSlots || m_elapsedMs < m_nextMiniEventMs || m_bossSpawned)
         return;
 
-    if (StartMiniEvent(PickMiniEvent()))
-        m_nextMiniEventMs = m_elapsedMs + BONK_MINI_EVENT_INTERVAL_MS;
+    if (StartMiniEvent(PickMiniEvent(m_miniEventSlots)))
+        m_miniEventSlots = 0;
     else
         m_nextMiniEventMs = m_elapsedMs + BONK_MINI_EVENT_RETRY_MS;
 }
 
-BonkMiniEventType BonkRun::PickMiniEvent() const
+BonkMiniEventType BonkRun::PickMiniEvent(uint32 allowed) const
 {
-    std::vector<BonkMiniEventType> choices;
+    std::vector<BonkMiniEventType> choices, repeats;
     for (uint8 i = 0; i < MAX_BONK_MINI_EVENT; ++i)
-        if (BonkMiniEventType(i) != m_lastMiniEvent || MAX_BONK_MINI_EVENT == 1)
-            choices.push_back(BonkMiniEventType(i));
+        if (allowed & (1u << i))
+            (BonkMiniEventType(i) != m_lastMiniEvent ? choices : repeats).push_back(BonkMiniEventType(i));
+    if (choices.empty())
+        choices = repeats;
+    if (choices.empty())
+        return BONK_MINI_EVENT_HORDE;
     return choices[urand(0, uint32(choices.size()) - 1)];
 }
 
@@ -265,6 +268,7 @@ void BonkRun::OnMiniEventTargetKilled(Creature* mob)
         return;
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
+    sBonkQuests.OnProgress(m_player, BONK_QUEST_MINI_EVENTS, m_miniEvent.type, 1);
     float const x = mob->GetPositionX(), y = mob->GetPositionY(), z = mob->GetPositionZ();
     if (m_miniEvent.type == BONK_MINI_EVENT_GOBLIN)
     {
@@ -325,6 +329,5 @@ bool BonkRun::StartMiniEventNow(BonkMiniEventType type, std::string& error)
         error = "It could not start here (no room for more enemies, or no ground around you).";
         return false;
     }
-    m_nextMiniEventMs = m_elapsedMs + BONK_MINI_EVENT_INTERVAL_MS;
     return true;
 }

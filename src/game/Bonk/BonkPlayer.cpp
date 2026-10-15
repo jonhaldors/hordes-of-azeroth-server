@@ -534,6 +534,14 @@ void BonkPlayer::WriteHeroScreenStats() const
             << ", gearValue = " << hero.gearValue << " },\n";
     }
     lua << "\t},\n};\n";
+    WriteHeroScreenFile(lua.str());
+}
+
+void BonkPlayer::WriteHeroScreenFile(std::string const& lua)
+{
+    std::string const path = sConfig.GetStringDefault("Bonk.GlueStatsFile", "");
+    if (path.empty())
+        return;
 
     // Write next to the file and swap it in, so the client never reads half of it.
     std::string const temporary = path + ".tmp";
@@ -544,11 +552,30 @@ void BonkPlayer::WriteHeroScreenStats() const
             sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Bonk: cannot write hero stats to %s", temporary.c_str());
             return;
         }
-        file << lua.str();
+        file << lua;
     }
     std::remove(path.c_str());
     if (std::rename(temporary.c_str(), path.c_str()) != 0)
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Bonk: cannot replace hero stats file %s", path.c_str());
+}
+
+bool BonkPlayer::IsWipeName(std::string const& name)
+{
+    // As normalizePlayerName leaves it. Never a hero: the create handler
+    // turns it away while the account has any.
+    return name == "Wipeaccount";
+}
+
+void BonkPlayer::WipeAccount(uint32 accountId)
+{
+    // The heroes' own records went with them (Player::DeleteFromDB).
+    for (char const* table : { "bonk_account", "bonk_account_mastery", "bonk_account_mastery_node", "bonk_account_quest",
+        "bonk_account_talent", "bonk_account_tier", "bonk_account_upgrade" })
+        CharacterDatabase.PExecute("DELETE FROM `%s` WHERE `account` = %u", table, accountId);
+
+    WriteHeroScreenFile("-- Written by mangosd (Bonk.GlueStatsFile): the account was wiped.\n"
+        "BONK_STATS = {\n\tgold = 0,\n\tlastHero = \"\",\n\theroes = {\n\t},\n};\n");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk: account %u wiped from the hero screen", accountId);
 }
 
 void BonkPlayer::OnSave()
@@ -1032,7 +1059,7 @@ void BonkPlayer::SendShop(bool open) const
         if (itr.second.shop == m_shop)
             SendAddon("tree~" + std::to_string(itr.first) + "~" + itr.second.name + "~" + itr.second.background);
 
-    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description~locked~quest~valuePerRank~refund:
+    // node~tree~id~row~column~icon~rank~maxRank~cost~requiredId~requiredRank~toggle~enabled~name~description~locked~quest~valuePerRank~refund~questDescription:
     // the description states one rank's value, the addon shows it for the ranks learned and the next;
     // refund is what giving back the top rank returns.
     BonkQuestReward const lockType = m_shop == BONK_SHOP_UPGRADES ? BONK_REWARD_UPGRADE : BONK_REWARD_TALENT;
@@ -1050,7 +1077,7 @@ void BonkPlayer::SendShop(bool open) const
              << '~' << uint32(rank) << '~' << uint32(maxRank) << '~' << (rank < maxRank ? nextCost : 0)
              << '~' << layout.requiredId << '~' << uint32(layout.requiredRank) << '~' << (toggle ? 1 : 0) << '~' << (enabled ? 1 : 0)
              << '~' << name << '~' << description << '~' << (lock ? 1 : 0) << '~' << (lock ? lock->name : "") << '~' << FormatStat(valuePerRank)
-             << '~' << (rank ? refund : 0);
+             << '~' << (rank ? refund : 0) << '~' << (lock ? lock->description : "");
         SendAddon(line.str());
     };
 
@@ -1142,6 +1169,7 @@ void BonkPlayer::Update(uint32 diff)
     }
 
     m_previewTelegraphs.Update(m_player, diff);
+    UpdateDash(diff);
 
     if (m_run)
     {
@@ -1150,6 +1178,7 @@ void BonkPlayer::Update(uint32 diff)
         {
             m_run.reset();
             SendStats();
+            SendDash();     // the dash ring, at camp now
         }
         else
             BonkStats::UpdateBossBar(m_player, diff);

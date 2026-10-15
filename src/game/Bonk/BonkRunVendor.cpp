@@ -27,6 +27,7 @@
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
+#include "BonkQuests.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "Log.h"
@@ -319,6 +320,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
 
     m_coins -= slot.price;
     slot.state = VENDOR_SOLD;
+    sBonkQuests.OnProgress(m_player, BONK_QUEST_VENDOR_BOUGHT, 0, 1);
     slot.locked = false;
     std::string name;
     if (slot.isCharge)

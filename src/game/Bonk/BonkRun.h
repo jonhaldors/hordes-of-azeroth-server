@@ -114,7 +114,7 @@ class BonkRun
         void OnWeaponDamage(uint32 damage);
         // Health the hero just gained, from any heal (Unit::ModifyHealth):
         // quests count it.
-        void OnHeroHealed(uint32 amount) { m_healedUnreported += amount; }
+        void OnHeroHealed(uint32 amount) { m_healedUnreported += amount; m_minuteHealed += amount; }
         // An enemy's hit on the hero: Armor takes its share off, then the
         // Shield soaks what it can. Returns what is left for health.
         uint32 MitigateDamage(uint32 damage);
@@ -127,8 +127,13 @@ class BonkRun
         // Power and the class's Mastery bonuses for `spell` (null for melee
         // swings) against `victim`, added up: applies to all damage the
         // player deals (SpellCaster::SpellDamageBonusDone and
-        // MeleeDamageBonusDone).
-        float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim) const;
+        // MeleeDamageBonusDone). `powerShare`: how much of Power counts
+        // (GetPowerShare).
+        float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare = 1.0f) const;
+        // How much of the hero's Power `attacker`'s hits count: all of it
+        // for the hero and their projectiles, BONK_SUMMON_POWER_SHARE for
+        // a summon.
+        float GetPowerShare(Unit const* attacker) const;
 
         // The run whose hero, or the hero's pet, attacks one of that run's
         // enemies; null for every other fight. Such attacks skip the normal
@@ -156,11 +161,17 @@ class BonkRun
         // spells on an enemy (BonkOnDamage): the keyword the spell applies
         // goes on it at the next update.
         void OnWeaponHit(Unit* victim, SpellEntry const* spell);
+        // One of the hero's pets bit `victim` (BonkOnDamage): a frenzied
+        // pet's bite strikes the enemies in front of it too.
+        void OnPetBite(Creature* pet, Unit* victim);
         // The hero's hit about to kill an enemy: its damage over time stacks
         // are noted, as the core strips its debuffs before it counts as dead.
         void OnKillingBlow(Unit* victim);
-        // Puts `stacks` of `keyword` on a run enemy (`.bonk keyword` too).
-        bool ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks);
+        // Puts `stacks` of `keyword` on a run enemy (`.bonk keyword` too),
+        // for `durationMs` (0: the keyword's own); damage over time stacks
+        // deal `damageScale` times a stack's damage (the rank of the spell
+        // that applied them).
+        bool ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs = 0, float damageScale = 1.0f);
         uint32 GetKeywordStacks(Unit const* victim, BonkKeyword keyword) const;
         // A hero's stun on a run enemy (Spell::DoSpellHitOnUnit): cut to at
         // most BONK_MAX_HOLD_MS; false while the enemy is still immune after
@@ -310,7 +321,9 @@ class BonkRun
         // BONK_MINI_EVENT_INTERVAL_MS, never the same twice running, one at
         // a time, none in a quiet time or once the boss is up.
         void UpdateMiniEvents(uint32 diff);
-        BonkMiniEventType PickMiniEvent() const;
+        // One of `allowed` (bits by BonkMiniEventType), never the last one
+        // while another is allowed.
+        BonkMiniEventType PickMiniEvent(uint32 allowed) const;
         bool StartMiniEvent(BonkMiniEventType type);
         bool SpawnHorde();
         bool SpawnTreasureGoblin();
@@ -374,23 +387,40 @@ class BonkRun
         void PlacePortal(float x, float y, float baseZ);
 
         void PruneMobs();
-        enum class BruiserPick { ANY, NONE, ONLY };
-        // An enemy of `kind` whose time has come; normal enemies also wait
-        // for their archetype's time.
-        BonkMapCreature const* PickCreature(BonkSpawnKind kind, BruiserPick bruisers = BruiserPick::ANY) const;
-        // A normal enemy for the crowd: a bruiser by the spawn curve's
-        // share, while there is room for one.
+        // An enemy of `kind` whose time has come; normal enemies of
+        // `archetype` only (-1: any).
+        BonkMapCreature const* PickCreature(BonkSpawnKind kind, int32 archetype = -1) const;
+        // A normal enemy for the crowd, by the timeline block's roster;
+        // bruisers only while there is room for one.
         BonkMapCreature const* PickTrash() const;
         uint32 CountTrash() const;
         uint32 CountBruisers() const;
-        // The spawn curve right now (by stage time): the point in force and
-        // the crowd to keep alive, at most the tier's cap; past the cap the
-        // rest makes enemies tougher (GetCrowdOverflow).
-        BonkSpawnPoint const& GetSpawnPoint() const;
+        uint32 GetMaxBruisers() const;
+        // The stage timeline (bonk_wave): the block in force (by stage
+        // time), whether an archetype is in its roster, and the crowd of the
+        // roster's archetypes to keep alive, at most the tier's cap; past the
+        // cap the rest makes enemies tougher (GetCrowdOverflow).
+        BonkWave const& GetWave() const;
+        bool IsInRoster(BonkArchetype archetype) const;
+        uint32 CountRoster() const;
         float GetCurveMinAlive() const;
         uint32 GetSpawnTarget() const;
         float GetCrowdOverflow() const;
-        // No elites or events within 30 seconds of the mini-boss or the boss.
+        // A new block: its elites, mini-bosses and mini-event slot, and the
+        // addon's word of what comes next.
+        void UpdateWaves();
+        void EnterWave(size_t index);
+        uint32 GetFirstMinibossSecond() const;
+        std::string DescribeTimelineMarks() const;
+        // The boss still up a while after it came: ever stronger rings.
+        void UpdateOvertime(uint32 diff);
+        // Enemy scaling now (bonk_scaling, by run time): an enemy hit's share
+        // of the hero's base health, and enemy health's multiplier.
+        BonkScalingPoint GetScalingNow() const;
+        // The class's own health at its level: no gear, talents or picks.
+        float GetHeroBaseHealth() const;
+        // No elites or events in a lull or a mini-boss block, or shortly
+        // before the boss.
         bool IsQuietTime() const;
         // An event that waits out a quiet time.
         static bool IsQuietEvent(BonkEventType type);
@@ -501,10 +531,44 @@ class BonkRun
         void UpdateTraps(uint32 diff);
         void SpringTrap(OwnedWeapon& owned, float x, float y, float z);
         void DespawnTraps();
+        // A thrown trap (ground target): it shows where it lands and goes
+        // off at once.
+        void ThrowTrap(OwnedWeapon& owned, float x, float y, float z);
+        // `spellInfo` hits `target` for `damage` (before bonuses and crit):
+        // damage only, with its own crit roll, as a spell hit; the weapon's
+        // keyword follows through BonkOnDamage.
+        // `caster`: who deals it (a summon), the hero if null.
+        void DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster = nullptr);
+        // Aimed Shot: every enemy in a line from the hero at `angle`, as
+        // wide as the weapon's area lets it be.
+        std::vector<Creature*> GetMobsInLine(OwnedWeapon const& owned, float range, float angle) const;
+        // Bestial Wrath: spectral beasts leap into the largest groups and
+        // roar; the hero's pets frenzy. False while no beast is ready.
+        bool UnleashWrath(OwnedWeapon& owned, std::vector<Creature*> const& mobs);
+        void Roar(OwnedWeapon& owned, Creature* beast);
+        // The beasts wait unseen at the hero's side, so the client has faded
+        // them in before they are seen (it fades in anything new).
+        void KeepBeasts(OwnedWeapon const& owned);
+        void HideBeast(Creature* beast);
+        bool IsPetFrenzied() const;
+        // The class's defensive, which fires by itself (the Hunter's
+        // Deterrence: more Dodge for a while when health runs low).
+        void UpdateDefensive(uint32 diff);
         // Beasts fight beside the hero for as long as the spell is held.
         void UpdatePets(OwnedWeapon& owned);
         void UpdatePetTargets(uint32 diff);
         void DespawnPets();
+        // Summons (docs/Spells.md, Summons): whether `unit` is one of the
+        // hero's; how many more `owned` may have under BONK_MAX_SUMMONS,
+        // counting the other spells' first; a summon's size from `base`
+        // with Area and its summon size upgrade, capped together at
+        // BONK_MAX_AREA.
+        bool IsSummon(Unit const* unit) const;
+        uint32 GetSummonRoom(OwnedWeapon const& owned) const;
+        float GetSummonScale(OwnedWeapon const& owned, float base) const;
+        // The hero's pet family for Call Pet: the Cat until the Stable
+        // Master lets them choose.
+        BonkPetFamily const* GetPetFamily() const;
         // A spell's area scaled so its radius comes to `radius`.
         void ScaleRadius(SpellEntry const* spellInfo, float radius);
         // A spreading weapon's spell jumps from an enemy that died carrying it.
@@ -624,6 +688,29 @@ class BonkRun
         mutable uint32 m_crits = 0;         // the hero's crits this run (RollCritMultiplier)
         uint32 m_critsReported = 0;
         uint32 m_healedUnreported = 0;      // health healed, not yet told to quests
+        // More for quests, told once a second (ReportQuestCounts).
+        uint32 m_leechUnreported = 0;
+        uint32 m_dodgesUnreported = 0;
+        uint32 m_armorUnreported = 0;       // damage Armor took off enemy hits
+        uint32 m_projectilesUnreported = 0;
+        uint32 m_maxHealthReported = 0;
+        uint32 m_unhurtReported = 0;        // seconds, in steps
+        uint32 m_overtimeReported = 0;      // seconds, in steps
+        std::map<std::pair<bool, uint32>, uint32> m_ranksReported;   // (spell?, id) -> rank
+        bool m_hurt = false;                // an enemy hit the hero this run
+        uint32 m_lastHurtMs = 0;            // run time of the last enemy hit
+        std::map<ObjectGuid, uint32> m_bossArrivals;    // bosses and mini-bosses up: run time each arrived
+        // The run log (LevelUp.log): a line a minute, and how the run ended.
+        void LogMinute();
+        void LogDeath();
+        uint32 m_nextLogMinute = 1;
+        uint32 m_minuteDamage = 0;          // taken this minute, after Armor and Shields
+        uint32 m_minuteHealed = 0;
+        uint32 m_minuteKills = 0;           // m_kills when the minute began
+        uint32 m_minuteLowestHealth = 100;  // %
+        std::string m_lastStriker;          // "Name (grunt)": the last enemy to hit the hero
+        uint32 m_lastStrikeDamage = 0;
+        std::vector<std::pair<uint32, uint32>> m_recentHits;    // run ms, damage: the last 10 seconds
         bool m_masteryAwarded = false;
         uint32 m_siphonWindow = 0;          // start of the second Soul Siphon is capped in
         float m_siphonHealed = 0.0f;        // % of max health healed in it
@@ -724,6 +811,13 @@ class BonkRun
         float m_gruntRadius = 0.0f;         // the biggest grunt this stage: bruisers are bigger
         int32 m_spawnTimer = 0;
         int32 m_eliteTimer = 0;
+        size_t m_waveIndex = 0;             // the timeline block in force
+        bool m_waveEntered = false;         // this stage's first block began
+        size_t m_waveWarned = 0;            // the block the addon was told is coming
+        uint32 m_miniEventSlots = 0;        // this block's mini-event, not yet started (bits by type)
+        uint32 m_overtimeWaves = 0;
+        int32 m_overtimeTimer = 0;
+        float m_spawnDamageScale = 1.0f;    // overtime's shades hit harder
         uint32 m_boundaryTimer = 0;
         uint32 m_nativeTimer = 0;
         uint32 m_recoveryTimer = 0;
@@ -795,8 +889,15 @@ class BonkRun
             bool selfArea = false;      // the spell again around the hero (a spin, a shockwave)
             bool strike = false;        // a burst's later shot at `target`
             bool recast = false;        // Count: the spell around the hero or its cone again
+            bool field = false;         // a trap's field ticks: its damage and keyword on everything inside
+            bool roar = false;          // a spectral beast (`target`) lands and roars
+            bool hideBeast = false;     // ...and is unseen again
+            bool springTrap = false;    // a thrown trap (worn by stand-in `target`) goes off
+            bool releaseLook = false;   // ...and its stand-in goes back
+            bool petCleave = false;     // a frenzied pet's bite (`target` bitten) strikes the enemies in front of it
             float share = 1.0f;         // of the weapon's damage
             ObjectGuid target;
+            ObjectGuid source;          // petCleave: the pet
             float x = 0.0f, y = 0.0f, z = 0.0f;
         };
         std::vector<PendingCast> m_pendingCasts;
@@ -845,6 +946,16 @@ class BonkRun
         std::vector<Trap> m_traps;
         uint32 m_trapTimer = 0;
         uint32 m_petTimer = 0;
+        uint32 m_petFrenzyUntil = 0;        // ms: Bestial Wrath's frenzy
+        bool m_petsFrenzied = false;        // as the pets were last set up
+        struct Beast
+        {
+            ObjectGuid guid;
+            uint32 readyAtMs = 0;       // faded in by then
+            uint32 busyUntilMs = 0;     // leaping and roaring until then
+        };
+        std::vector<Beast> m_beasts;        // Bestial Wrath's spectral beasts
+        int32 m_defensiveTimer = 0;         // until the class defensive can fire again
         bool m_dodged = false;              // a dodge Revenge has not answered yet
         uint32 m_retaliateUntil = 0;        // ms: hits taken until then strike back
         std::vector<ObjectGuid> m_retaliations;     // enemies that hit the hero meanwhile
@@ -862,7 +973,7 @@ class BonkRun
         uint32 m_pendingLevels = 0;
 
         // Keywords (BonkKeywords.cpp).
-        void UpdateKeywords();
+        void UpdateKeywords(uint32 diff);
         void SpreadKeywords(Creature const* dead);
         // Frozen: held for a moment, then immune for a while. Elites and
         // bosses are never held but count as Frozen for Shatter crits.
@@ -872,8 +983,24 @@ class BonkRun
         // Payoffs and Hunter's Mark, times the damage of `spell` (null for
         // a swing) on `victim`; the vulnerabilities are debuffs the core reads.
         float GetKeywordDamageMultiplier(SpellEntry const* spell, Unit const* victim) const;
-        SpellAuraHolder* AddKeywordAura(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs);
+        // % more damage Hunter's Mark adds: the keyword's, grown by the
+        // ranks and Mark strength of the hero's spell that applies it.
+        float GetHuntersMarkBonus() const;
+        // `points`: a stack's damage or effect, 0 for the keyword's own.
+        SpellAuraHolder* AddKeywordAura(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points = 0);
         int32 GetKeywordPoints(BonkKeywordInfo const& info) const;
+        // Damage over time (Burning, Bleed, Poison), Megabonk-style: each
+        // stack runs out on its own and keeps the damage it was applied
+        // with; the debuff carries their count and deals their sum.
+        struct DotStack
+        {
+            uint32 untilMs = 0;
+            int32 points = 0;           // its damage a tick, before Power
+        };
+        void AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points);
+        // Drops stacks that ran out and shows the rest on the debuff.
+        void UpdateDotStacks(uint32 diff);
+        void SyncDotAura(Creature* mob, BonkKeywordInfo const& info, std::vector<DotStack> const& stacks);
         // Knockbacks: never elites or bosses, and once per enemy every while.
         bool CanKnockBack(Creature const* mob);
         void RebuildWeaponSpells();
@@ -884,9 +1011,24 @@ class BonkRun
             ObjectGuid mob;
             BonkKeyword keyword = BONK_KEYWORD_NONE;
             uint8 stacks = 0;
+            uint32 durationMs = 0;      // 0: the keyword's own
+            float damageScale = 1.0f;
         };
         std::vector<PendingKeyword> m_pendingKeywords;
-        std::map<ObjectGuid, std::map<uint8, uint32>> m_dyingKeywords;  // enemy dealt a killing blow -> damage over time stacks it had
+        // The keyword `owned` puts on what it hits (a pet: its family's),
+        // with its stacks, how long they last and how hard they hit; false
+        // if it applies none.
+        bool GetWeaponKeyword(OwnedWeapon const& owned, PendingKeyword& keyword) const;
+        // An enemy dealt a killing blow: what it carried, to pass on.
+        struct DyingKeyword
+        {
+            uint32 stacks = 0;
+            int32 points = 0;           // damage over time: a stack's, on average
+            uint32 leftMs = 0;          // Hunter's Mark: the time it had left
+        };
+        std::map<ObjectGuid, std::map<uint8, DyingKeyword>> m_dyingKeywords;
+        std::map<ObjectGuid, std::map<uint8, std::vector<DotStack>>> m_dotStacks;  // enemy -> keyword -> its stacks
+        uint32 m_dotTimer = 0;
         struct CrowdControl
         {
             uint32 frozenImmuneUntil = 0;   // ms

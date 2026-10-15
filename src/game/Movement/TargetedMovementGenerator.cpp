@@ -59,6 +59,23 @@ namespace
         return target->ExtrapolateMovement(target->m_movementInfo, age + leadMs, x, y, z, o);
     }
 
+    // Vanilla Bonk: a hero's summon (a creature the hero owns) on a run enemy
+    // that is moving. Run enemies never stop walking at the hero, and the
+    // usual chase stands still once in reach, so a pet stopped at every bite
+    // and ran after its prey again. It aims at where the prey will be (along
+    // the prey's own path) and paces itself to get there when the prey does:
+    // alongside it, biting on the move (BonkPetAI). It catches up at its own
+    // run speed, and always a little faster than the prey.
+    uint32 const BONK_PREY_LEAD_MS  = 500;
+    float const BONK_PREY_CATCH_UP  = 1.1f;     // times the prey's speed, at least
+
+    bool IsBonkPrey(Unit const& owner, Unit const* target)
+    {
+        Creature const* creature = owner.ToCreature();
+        Creature const* prey = target ? target->ToCreature() : nullptr;
+        return creature && !creature->IsBonkEnemy() && creature->GetOwnerGuid().IsPlayer() && prey && prey->IsBonkEnemy() && prey->IsMoving();
+    }
+
     // A pack chasing a running player spreads out instead of queueing in its
     // wake. Each chaser behind the player has its own place round them: a
     // fixed angle off straight behind (its guid spreads chasers evenly over
@@ -220,10 +237,11 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
     if (owner.HasUnitState(UNIT_STATE_CAN_NOT_MOVE | UNIT_STATE_POSSESSED))
         return;
 
-    float x, y, z;
+    float x, y, z, preyO;
     bool losChecked = false;
     bool losResult = false;
     bool const bonkChase = IsBonkChase(owner, i_target.getTarget());
+    bool const bonkPrey = IsBonkPrey(owner, i_target.getTarget());
 
     GenericTransport* transport = owner.GetTransport();
 
@@ -239,7 +257,8 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
 
     if (!m_fOffset)
     {
-        if (owner.CanReachWithMeleeAutoAttack(i_target.getTarget()))
+        // A summon keeps up with its moving prey instead of standing in reach.
+        if (!bonkPrey && owner.CanReachWithMeleeAutoAttack(i_target.getTarget()))
         {
             bool futureOkay = true;
 
@@ -286,6 +305,20 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
                     x += dx / length * DEFAULT_COMBAT_REACH;
                     y += dy / length * DEFAULT_COMBAT_REACH;
                 }
+            }
+        }
+        // Vanilla Bonk: a summon goes for half its reach this side of where
+        // its prey will be: well in reach, clear of its body.
+        else if (bonkPrey && i_target->ExtrapolateMovement(i_target->m_movementInfo, BONK_PREY_LEAD_MS, x, y, z, preyO) && i_target->IsWithinLOS(x, y, z))
+        {
+            float const reach = owner.GetCombatReachToTarget(i_target.getTarget(), false, 0.0f, true) / 2.0f;
+            float const dx = owner.GetPositionX() - x;
+            float const dy = owner.GetPositionY() - y;
+            float const length = std::sqrt(dx * dx + dy * dy);
+            if (length > reach)
+            {
+                x += dx / length * reach;
+                y += dy / length * reach;
             }
         }
         // Avoid collisions between mobs.
@@ -394,12 +427,23 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
         init.Move(&path);
     init.SetWalk(EnableWalking());
 
+    // Vanilla Bonk: a summon gets there when its prey does, never slower
+    // than the prey, at most its own run speed or a little faster than the
+    // prey.
+    if (bonkPrey)
+    {
+        float const preySpeed = i_target->GetSpeed(i_target->IsWalking() ? MOVE_WALK : MOVE_RUN);
+        float const fastest = std::max(owner.GetSpeed(MOVE_RUN), preySpeed * BONK_PREY_CATCH_UP);
+        float const pace = path.Length() * IN_MILLISECONDS / BONK_PREY_LEAD_MS;
+        init.SetVelocity(std::min(std::max(pace, preySpeed), fastest));
+    }
+
     // Make player face target he is chasing (player does not automatically face target like creature).
     if (owner.IsPlayer())
         init.SetFacingGUID(i_target->GetGUID());
 
     init.Launch();
-    m_checkDistanceTimer.Reset(bonkChase && owner.IsWithinDist(i_target.getTarget(), BONK_CHASE_NEAR) ? BONK_CHASE_RECHECK_MS : 500);
+    m_checkDistanceTimer.Reset((bonkChase && owner.IsWithinDist(i_target.getTarget(), BONK_CHASE_NEAR)) || bonkPrey ? BONK_CHASE_RECHECK_MS : 500);
 
     // Fly-hack
     if (Player* player = i_target->ToPlayer())

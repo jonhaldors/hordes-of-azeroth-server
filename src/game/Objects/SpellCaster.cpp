@@ -35,6 +35,7 @@ namespace
     // Vanilla Bonk: Might and gear Power raise all damage a hero (or their
     // pet) deals to run enemies, like a damage done aura for every school;
     // Class Mastery adds to the hero's own spells (`spell`, null for a swing).
+    // A summon counts only its share of Power (BonkRun::GetPowerShare).
     float GetBonkDamageMultiplier(Unit const* attacker, Unit const* victim, SpellEntry const* spell)
     {
         // Run enemies are summoned, not owned, so this skips only players and their pets.
@@ -43,7 +44,7 @@ namespace
 
         Player const* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
         BonkRun const* run = player ? player->GetBonkPlayer()->GetRun() : nullptr;
-        return run ? run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim) : 1.0f;
+        return run ? run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetPowerShare(attacker)) : 1.0f;
     }
 
     // Vanilla Bonk: a hero's spells in a run deal a share of the enemies'

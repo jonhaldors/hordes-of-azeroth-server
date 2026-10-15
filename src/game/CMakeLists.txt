@@ -28,6 +28,7 @@ set (game_SRCS
     Bonk/BonkNpcs.cpp
     Bonk/BonkObjectives.cpp
     Bonk/BonkPlayer.cpp
+    Bonk/BonkPlayerDash.cpp
     Bonk/BonkQuests.cpp
     Bonk/BonkRun.cpp
     Bonk/BonkRunEvents.cpp

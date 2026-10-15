@@ -852,7 +852,8 @@ void BonkMobAI::UpdateDash(Player* owner)
     // is now (not where the server last heard): a player on it is run into,
     // hurt and bowled over the way the charge runs. Once a charge.
     float const toX = m_creature->GetPositionX(), toY = m_creature->GetPositionY();
-    if (!m_dashHit && owner->IsAlive())
+    // A dashing hero is not there to be run into (still hit after, if on the line).
+    if (!m_dashHit && owner->IsAlive() && !owner->GetBonkPlayer()->IsDashInvulnerable())
     {
         float x, y, z;
         PredictPlayer(owner, 0, x, y, z);
@@ -892,6 +893,12 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
     if (victim->GetObjectGuid() == m_ownerGuid)
         if (BonkRun* run = static_cast<Player*>(victim)->GetBonkPlayer()->GetRun())
         {
+            // A dashing hero is not there to be hit.
+            if (static_cast<Player*>(victim)->GetBonkPlayer()->IsDashInvulnerable())
+            {
+                damage = 0;
+                return;
+            }
             float multiplier = (1.0f + BONK_BOLSTER_BONUS * m_bolsterStacks) * run->GetMobDamageMultiplier(m_creature);
             if (m_enraged)
                 multiplier *= BONK_RAGING_DAMAGE;

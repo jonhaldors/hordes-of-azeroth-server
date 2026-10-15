@@ -421,6 +421,15 @@ ObjectGuid BonkTelegraphs::Move(Player* owner, float x, float y, float z, float 
     return standIn.guid;
 }
 
+ObjectGuid BonkTelegraphs::Borrow(Player* owner, float x, float y, float z, uint32 display)
+{
+    if (!owner->IsInWorld() || !CountIdle(true))
+        return ObjectGuid();
+    ObjectGuid const guid = Move(owner, x, y, z, 0.0f, false);
+    Wear(owner, guid, display);
+    return guid;
+}
+
 void BonkTelegraphs::Wear(Player* owner, ObjectGuid const& guid, uint32 display)
 {
     if (!guid.IsEmpty())

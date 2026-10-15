@@ -55,6 +55,14 @@ class BonkPlayer
         std::string GetUnlockHint(BonkTier const& tier) const;
         void RecordStage(uint32 tierId, uint32 stage);
 
+        // The hero screen's "Wipe account" (BonkGlue): it deletes every hero,
+        // then asks for a hero with this reserved name, which is never made.
+        static bool IsWipeName(std::string const& name);
+        // Every hero already deleted: the account's progress goes too (gold,
+        // Darkmoon Tickets, upgrades, Sayge's Fortunes, quests, Mastery, tier
+        // records), and the hero screen's stats file starts over.
+        static void WipeAccount(uint32 accountId);
+
         // This character's record over all its runs, shown on the hero screen.
         void RecordRun(uint32 stage, uint32 seconds, uint32 kills, uint32 goldEarned);
 
@@ -65,6 +73,8 @@ class BonkPlayer
         uint8 GetUpgradeRank(uint32 upgradeId) const;
         uint8 GetTalentRank(uint32 talentId) const;
         bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
+        // Dark Fortunes (difficulty toggles) switched on.
+        uint32 CountDarkFortunes() const { return uint32(m_enabledTalents.size()); }
         bool BuyUpgrade(uint32 upgradeId, std::string& message);
         bool BuyTalent(uint32 talentId, std::string& message);
         // Free full refunds: every upgrade's gold, every talent's shards.
@@ -172,6 +182,17 @@ class BonkPlayer
         void SendAddon(std::string const& line) const;
         // Short message: a center-screen notice with the addon, chat without it.
         void Notify(std::string const& text) const;
+
+        // The Shift dash (BonkPlayerDash.cpp, `.bonk dash`), at camp and in
+        // runs: false if the hero can't dash now (a paused run, stunned,
+        // swimming, no charge).
+        bool Dash();
+        // Enemy hits do nothing for a moment after a dash.
+        bool IsDashInvulnerable() const { return m_dashClockMs < m_dashInvulnerableUntilMs; }
+        // The ground dash's speed while its burst lasts, else 0 (Unit::UpdateSpeed).
+        float GetDashBurstSpeed() const { return m_dashBursting ? GetDashSpeed() : 0.0f; }
+        // The addon's "dash~" line: charges and cooldown.
+        void SendDash() const;
         // The difficulties, with what this character brings into a run.
         void SendTierList() const;
         // Item stats and sets, for the addon's tooltips and character sheet.
@@ -203,6 +224,7 @@ class BonkPlayer
 
         // Writes every hero's record for the client's hero screen (BonkStats.lua).
         void WriteHeroScreenStats() const;
+        static void WriteHeroScreenFile(std::string const& lua);
 
         void LoadPurchases();
         void LoadMastery();
@@ -244,6 +266,23 @@ class BonkPlayer
         BonkShop m_shop{};                      // last shop spoken to; none at first
         ObjectGuid m_shopNpc;
         std::string m_shopNpcName;
+
+        // The Shift dash (BonkPlayerDash.cpp).
+        float GetDashDistance() const;
+        uint32 GetDashCooldownMs() const;
+        uint32 GetDashMaxCharges() const;
+        float GetDashSpeed() const;             // yards a second
+        bool IsDashPaused() const;
+        void UpdateDash(uint32 diff);
+        void SetDashBurst(bool on);
+        // Unit::KnockBack with no lift, less its interrupt, which would cut a channel.
+        void ThrowHero(float angle, float speed);
+        uint32 m_dashClockMs = 0;               // stops while a run is paused
+        uint32 m_dashSpent = 0;                 // charges used and not back yet
+        uint32 m_dashRechargeMs = 0;            // until the next one is back
+        uint32 m_dashInvulnerableUntilMs = 0;
+        uint32 m_dashBurstUntilMs = 0;
+        bool m_dashBursting = false;            // the ground dash's speed is on
 };
 
 #endif

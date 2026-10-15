@@ -219,6 +219,7 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
     uint32 const dealt = std::min(damage, health);
 
     // A hero's beast counts for the spell that called it.
+    bool const swing = !spellProto;
     Player* owner = nullptr;
     if (attacker->IsCreature() && !victim->IsPlayer())
         if (Player* hero = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
@@ -240,6 +241,9 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             run->OnKillingBlow(victim);
         else
             run->OnWeaponHit(victim, spellProto);
+        // A frenzied pet's bite (a swing, never its own cleave) strikes on.
+        if (owner && swing)
+            run->OnPetBite(attacker->ToCreature(), victim);
 
         uint32 const spellId = spellProto ? spellProto->Id : 0;
         std::lock_guard<std::mutex> guard(s_lock);

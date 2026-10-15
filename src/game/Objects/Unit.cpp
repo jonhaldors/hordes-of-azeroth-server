@@ -7105,6 +7105,14 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced, float ratio)
         }
     }
 
+    // Vanilla Bonk: the Shift dash's burst on the ground goes at its own
+    // speed whatever slows the hero; a paused run still holds them still
+    // (BonkPlayerDash.cpp).
+    if (IsPlayer() && !IsTimeFrozen() && (mtype == MOVE_WALK || mtype == MOVE_RUN || mtype == MOVE_RUN_BACK))
+        if (BonkPlayer const* bonk = static_cast<Player*>(this)->GetBonkPlayer())
+            if (float const dashSpeed = bonk->GetDashBurstSpeed())
+                speed = dashSpeed / baseMoveSpeed[mtype];
+
     if (IsCreature())
     {
         // Before patch 1.9 pets should retain their wild speed, after that they are normalised

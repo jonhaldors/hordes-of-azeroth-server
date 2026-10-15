@@ -92,7 +92,8 @@ void BonkMgr::Load()
 {
     LoadTiers();
     LoadArchetypes();
-    LoadSpawnCurve();
+    LoadWaves();
+    LoadScaling();
     LoadMaps();
     LoadMapCreatures();
     LoadMapEvents();
@@ -110,6 +111,8 @@ void BonkMgr::Load()
     // Quests check the weapons, passives, talents and upgrades they unlock.
     sBonkQuests.Load();
     sBonkMastery.Load();
+    // Keywords first: families name the one their bites apply.
+    LoadPetFamilies();
 
     for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL, BONK_GO_SHARD })
         if (!sObjectMgr.GetGameObjectTemplate(entry))
@@ -293,36 +296,83 @@ void BonkMgr::LoadArchetypes()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk enemy archetypes", count);
 }
 
-void BonkMgr::LoadSpawnCurve()
+void BonkMgr::LoadWaves()
 {
-    m_spawnCurve.clear();
+    m_waves.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `second`, `min_alive`, `bruiser_share`, `elite_interval_sec` FROM `bonk_spawn_curve` ORDER BY `second`"));
+        "SELECT `start_sec`, `name`, `beat`, `swarmer`, `grunt`, `bruiser`, `caster`, `charger`, `crowd_start`, `crowd_end`, "
+        "`spawn_per_tick`, `max_bruisers`, `elite_interval_sec`, `elites`, `minibosses`, `mini_events` FROM `bonk_wave` ORDER BY `start_sec`"));
     if (result)
     {
         do
         {
             Field* fields = result->Fetch();
-            BonkSpawnPoint point;
-            point.second = fields[0].GetUInt32();
-            point.minAlive = std::max(0.0f, fields[1].GetFloat());
-            point.bruiserShare = std::min(1.0f, std::max(0.0f, fields[2].GetFloat() / 100.0f));
-            point.eliteIntervalSeconds = fields[3].GetUInt32();
-            m_spawnCurve.push_back(point);
+            BonkWave wave;
+            wave.startSecond = fields[0].GetUInt32();
+            wave.name = fields[1].GetCppString();
+            uint8 const beat = fields[2].GetUInt8();
+            wave.beat = beat < MAX_BONK_WAVE_BEAT ? BonkWaveBeat(beat) : BONK_BEAT_BUILD;
+            for (uint8 archetype = 0; archetype < MAX_BONK_ARCHETYPE; ++archetype)
+                wave.roster[archetype] = fields[3 + archetype].GetUInt32();
+            wave.crowdStart = std::max(0.0f, fields[8].GetFloat());
+            wave.crowdEnd = std::max(0.0f, fields[9].GetFloat());
+            wave.spawnPerTick = fields[10].GetUInt32();
+            wave.maxBruisers = fields[11].GetUInt32();
+            wave.eliteIntervalSeconds = fields[12].GetUInt32();
+            wave.elites = fields[13].GetUInt32();
+            wave.minibosses = fields[14].GetUInt32();
+            wave.miniEvents = fields[15].GetUInt32();
+            if (std::all_of(std::begin(wave.roster), std::end(wave.roster), [](uint32 weight) { return weight == 0; }))
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_wave`: block at %u s has an empty roster; grunts it is.", wave.startSecond);
+                wave.roster[BONK_ARCHETYPE_GRUNT] = 1;
+            }
+            m_waves.push_back(wave);
         } while (result->NextRow());
     }
 
-    if (m_spawnCurve.empty())
+    if (m_waves.empty() || m_waves.front().startSecond != 0)
     {
-        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_spawn_curve` is empty; runs keep a small crowd.");
-        BonkSpawnPoint point;
-        point.minAlive = 20.0f;
-        point.eliteIntervalSeconds = 90;
-        m_spawnCurve.push_back(point);
+        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_wave` has no block at 0 s; runs start on a small crowd of grunts.");
+        BonkWave wave;
+        wave.name = "Grunts";
+        wave.roster[BONK_ARCHETYPE_GRUNT] = 1;
+        wave.crowdStart = wave.crowdEnd = 20.0f;
+        wave.eliteIntervalSeconds = 90;
+        m_waves.insert(m_waves.begin(), wave);
     }
 
-    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk spawn curve points", uint32(m_spawnCurve.size()));
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk timeline blocks", uint32(m_waves.size()));
+}
+
+void BonkMgr::LoadScaling()
+{
+    m_scaling.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `minute`, `hit_share`, `health` FROM `bonk_scaling` ORDER BY `minute`"));
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            BonkScalingPoint point;
+            point.minute = std::max(0.0f, fields[0].GetFloat());
+            point.hitShare = std::max(0.0f, fields[1].GetFloat() / 100.0f);
+            point.health = std::max(0.01f, fields[2].GetFloat());
+            m_scaling.push_back(point);
+        } while (result->NextRow());
+    }
+
+    if (m_scaling.empty())
+    {
+        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_scaling` is empty; enemies hit for 5%% of the hero's health and never toughen.");
+        BonkScalingPoint point;
+        point.hitShare = 0.05f;
+        m_scaling.push_back(point);
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk scaling points", uint32(m_scaling.size()));
 }
 
 void BonkMgr::LoadMapCreatures()
@@ -640,11 +690,16 @@ void BonkMgr::LoadWeapons()
             case BONK_BEHAVIOR_DEMORALIZE:
             case BONK_BEHAVIOR_BUFF:
             case BONK_BEHAVIOR_PET:
+            case BONK_BEHAVIOR_WRATH:   // its beasts' roars deal the damage
                 damageless = true;
                 break;
             default:
                 break;
         }
+        // A spell that only puts its keyword on enemies (Serpent Sting's
+        // Poison, a flare's Mark): its own spell is just its look.
+        if (weapon.applies != BONK_KEYWORD_NONE && weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
+            damageless = true;
         if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage && !damageless)
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: spell %u of weapon %u has no damage effect; it will use its own values.", weapon.spellId, weapon.id);
 
@@ -665,6 +720,14 @@ void BonkMgr::LoadWeapons()
                 continue;
             }
         }
+        // A ground spell that only marks or applies a keyword: its own area.
+        if (weapon.target == BONK_TARGET_GROUND && weapon.groundRadius <= 0.0f && damageless)
+            for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+                if (spellInfo->EffectRadiusIndex[i])
+                {
+                    weapon.groundRadius = Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i]));
+                    break;
+                }
         if (weapon.target == BONK_TARGET_GROUND && weapon.groundRadius <= 0.0f)
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: ground weapon %u uses spell %u, which has no damaging ground effect; skipped.", weapon.id, weapon.spellId);
@@ -698,6 +761,11 @@ void BonkMgr::LoadWeapons()
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u, upgrade %u, step %g is not valid; skipped.", weaponId, upgrade, step);
                 continue;
             }
+            if (upgrade == BONK_SPELL_UPGRADE_STACKS && weapon->second.applies == BONK_KEYWORD_NONE)
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u applies no keyword, so more stacks would do nothing; skipped.", weaponId);
+                continue;
+            }
             BonkWeaponUpgrade entry;
             entry.upgrade = BonkSpellUpgrade(upgrade);
             entry.step = step;
@@ -727,6 +795,12 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         case BONK_SPELL_UPGRADE_MARK:       return percent + " damage taken by marked enemies";
         case BONK_SPELL_UPGRADE_PET_DAMAGE: return percent + " damage dealt by its " + weapon.GetTargetNoun() + "s";
         case BONK_SPELL_UPGRADE_PET_SIZE:   return percent + " " + weapon.GetTargetNoun() + " size";
+        case BONK_SPELL_UPGRADE_STACKS:
+        {
+            BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(weapon.applies);
+            std::string const stacks = std::string("+") + number + (amount == 1.0f ? " stack" : " stacks");
+            return stacks + " of " + (keyword ? keyword->name : std::string("its effect")) + " applied";
+        }
         default:                      return "";
     }
 }
@@ -1304,4 +1378,57 @@ bool BonkMgr::IsStaticCreatureSuppressed(Map const* map, uint32 dbGuid) const
 
     uint32 const zoneId = map->GetTerrain()->GetZoneId(data->position.x, data->position.y, data->position.z);
     return itr->second.count(zoneId) != 0;
+}
+
+void BonkMgr::LoadPetFamilies()
+{
+    m_petFamilies.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `entry`, `scale`, `attack_ms`, `applies`, `apply_stacks` FROM `bonk_pet_family`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk pet families. Table `bonk_pet_family` is empty or missing; Call Pet summons nothing.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkPetFamily family;
+        family.id = fields[0].GetUInt32();
+        family.name = fields[1].GetCppString();
+        family.entry = fields[2].GetUInt32();
+        family.scale = fields[3].GetFloat();
+        family.attackMs = std::max(500u, fields[4].GetUInt32());
+        uint8 const applies = fields[5].GetUInt8();
+        family.applyStacks = fields[6].GetUInt8();
+
+        if (!sObjectMgr.GetCreatureTemplate(family.entry))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_family`: family %u uses creature %u, which is missing; skipped.", family.id, family.entry);
+            continue;
+        }
+        if (family.scale <= 0.0f)
+            family.scale = 1.0f;
+        if (applies != BONK_KEYWORD_NONE && !GetKeyword(BonkKeyword(applies)))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_family`: family %u applies unknown keyword %u; it applies nothing.", family.id, uint32(applies));
+            family.applyStacks = 0;
+        }
+        else
+            family.applies = BonkKeyword(applies);
+        m_petFamilies[family.id] = std::move(family);
+    } while (result->NextRow());
+
+    if (!m_petFamilies.count(BONK_PET_FAMILY_CAT))
+        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_family`: the default family %u (Cat) is missing; Call Pet summons nothing.", BONK_PET_FAMILY_CAT);
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk pet families", uint32(m_petFamilies.size()));
+}
+
+BonkPetFamily const* BonkMgr::GetPetFamily(uint32 id) const
+{
+    auto itr = m_petFamilies.find(id);
+    return itr != m_petFamilies.end() ? &itr->second : nullptr;
 }

@@ -52,6 +52,30 @@ enum BonkQuestType : uint8
     BONK_QUEST_SHRINE_TYPES   = 14,   // amount: kinds of shrine activated
     BONK_QUEST_HEIRLOOMS      = 15,   // heirlooms extracted
     BONK_QUEST_MASTERY_LEVEL  = 16,   // target: class id, 0 any; amount: Mastery level
+    BONK_QUEST_QUESTS_DONE    = 17,   // amount: quests completed (milestones that unlock Sayge's run charges)
+    // Megabonk-style quests (2026-10-15). "In a run" ones take the best run;
+    // the rest add up over runs. Kills as a class are BONK_QUEST_KILLS with
+    // the quest's class set.
+    BONK_QUEST_KILL_SCHOOL    = 18,   // target: spell school + 1 (1 physical, 2 holy, 3 fire, 4 nature, 5 frost, 6 shadow, 7 arcane)
+    BONK_QUEST_KILLS_STANDING = 19,   // kills while the hero stands still
+    BONK_QUEST_PASSIVE_RANK   = 20,   // target: passive id, 0 any; amount: its rank in a run
+    BONK_QUEST_SPELL_RANK     = 21,   // target: weapon id, 0 any; amount: its rank in a run
+    BONK_QUEST_MAX_HEALTH     = 22,   // amount: maximum health in a run
+    BONK_QUEST_BOSS_FAST      = 23,   // target: spawn kind (2 boss, 3 mini-boss); param: seconds from its arrival
+    BONK_QUEST_BOSS_UNHURT    = 24,   // target: spawn kind; killed without an enemy hit on the hero since it arrived
+    BONK_QUEST_BOSS_LOW_HEALTH = 25,  // target: spawn kind; param: the hero's health below this %
+    BONK_QUEST_UNHURT_TIME    = 26,   // amount: seconds in a row without an enemy hit, in a run
+    BONK_QUEST_OVERTIME       = 27,   // amount: seconds of overtime survived, in a run
+    BONK_QUEST_LEECH_HEALED   = 28,   // amount: health healed by Leech
+    BONK_QUEST_DODGES         = 29,   // amount: enemy hits dodged
+    BONK_QUEST_ARMOR_ABSORBED = 30,   // amount: damage Armor took off enemy hits
+    BONK_QUEST_CHESTS_BOUGHT  = 31,   // amount: chests bought with Valor
+    BONK_QUEST_VENDOR_BOUGHT  = 32,   // amount: things bought from the wandering vendor
+    BONK_QUEST_MINI_EVENTS    = 33,   // target: BonkMiniEventType (1 goblin, 2 bounty); amount: won
+    BONK_QUEST_KILL_CREATURE  = 34,   // target: creature entry (a named boss or mini-boss)
+    BONK_QUEST_DARK_FORTUNES  = 35,   // amount: Dark Fortunes switched on when a stage is cleared
+    BONK_QUEST_PROJECTILES    = 36,   // amount: bolts fired
+    BONK_QUEST_DEATHS         = 37,   // amount: runs ended by dying
     MAX_BONK_QUEST_TYPE
 };
 
@@ -117,7 +141,11 @@ class BonkQuests
         BonkQuest const* GetUnlockingQuest(BonkQuestReward type, uint32 id) const;
 
         // `creatureType`: the enemy's (CREATURE_TYPE_*).
-        void OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType);
+        // `standing`: the hero stood still. `entry`: the enemy's creature.
+        void OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType, uint32 entry, bool standing);
+        // A boss or mini-boss killed `seconds` after it arrived; `unhurt`: no
+        // enemy hit the hero since; `healthPercent`: the hero's health then.
+        void OnBossFight(Player* player, BonkSpawnKind kind, uint32 seconds, bool unhurt, uint32 healthPercent);
         // `backfill`: the account's best stage at login, which says nothing
         // about which class reached it.
         void OnStage(Player* player, uint32 tierId, uint32 stage, bool backfill = false);
@@ -158,6 +186,7 @@ class BonkQuests
         // Sets bit `bit` of a bit-counting quest's progress.
         void AdvanceBit(AccountProgress& progress, BonkQuest const& quest, uint32 bit);
         void Complete(Player* player, BonkQuest const& quest);
+        uint32 CountCompleted(uint32 account) const;
         static bool Counts(Player const* player, BonkQuest const& quest);
         // What the board shows as done so far.
         static uint32 GetShownProgress(BonkQuest const& quest, Progress const& entry);

@@ -254,6 +254,23 @@ void WorldSession::HandleCharCreateOpcode(WorldPackets::Character::CharCreate co
         return;
     }
 
+    // Vanilla Bonk: the hero screen's "Wipe account" deletes every hero, then
+    // asks for a hero with a reserved name, which is never made; with no
+    // heroes left, the account's progress is wiped instead.
+    if (BonkPlayer::IsWipeName(safeName))
+    {
+        std::vector<PlayerCacheData const*> characters;
+        sObjectMgr.GetPlayerDataForAccount(GetAccountId(), characters);
+        if (!characters.empty())
+        {
+            sendResponse(CHAR_NAME_RESERVED);
+            return;
+        }
+        BonkPlayer::WipeAccount(GetAccountId());
+        sendResponse(CHAR_CREATE_SUCCESS);
+        return;
+    }
+
     // check name limitations
     uint8 res = ObjectMgr::CheckPlayerName(safeName, true);
     if (res != CHAR_NAME_SUCCESS)

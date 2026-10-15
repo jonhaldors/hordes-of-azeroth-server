@@ -12,6 +12,7 @@
 #include "Policies/SingletonImp.h"
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
+#include "SpellMgr.h"
 #include "WorldSession.h"
 
 #include <bitset>
@@ -168,6 +169,7 @@ void BonkQuests::OnLogin(Player* player)
     for (auto const& itr : sBonkMgr.GetTiers())
         OnStage(player, itr.first, player->GetBonkPlayer()->GetBestStage(itr.first), true);
     OnProgress(player, BONK_QUEST_MASTERY_LEVEL, player->GetClass(), player->GetBonkPlayer()->GetMasteryLevel(), true);
+    OnProgress(player, BONK_QUEST_QUESTS_DONE, 0, CountCompleted(account), true);
 }
 
 void BonkQuests::Save(uint32 account)
@@ -329,10 +331,12 @@ uint32 BonkQuests::GetShownProgress(BonkQuest const& quest, Progress const& entr
     return quest.CountsBits() ? CountBits(entry.value) : entry.value;
 }
 
-void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType)
+void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType, uint32 entry, bool standing)
 {
     uint32 const weapon = GetRootWeapon(killingSpell);
     uint32 const level = player->GetLevel();
+    SpellEntry const* spellInfo = killingSpell ? sSpellMgr.GetSpellEntry(killingSpell) : nullptr;
+    uint32 const school = spellInfo ? spellInfo->School + 1 : 0;
 
     Track(player, [&](BonkQuest const& q, AccountProgress& progress)
     {
@@ -351,6 +355,18 @@ void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell,
                 break;
             case BONK_QUEST_KILL_TYPE:
                 if (q.target == creatureType)
+                    Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_KILL_SCHOOL:
+                if (school && q.target == school)
+                    Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_KILLS_STANDING:
+                if (standing)
+                    Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_KILL_CREATURE:
+                if (q.target == entry)
                     Advance(player, progress, q, 1, false);
                 break;
             // Levels only rise during a run, and kills are what raise them.
@@ -388,6 +404,32 @@ void BonkQuests::OnBossKilled(Player* player, uint32 tierId, uint32 stage, uint3
             case BONK_QUEST_CLEAR_CLASSES:
                 if (q.param == stage && (q.target & player->GetClassMask()))
                     AdvanceBit(progress, q, player->GetClass() - 1);
+                break;
+            default:
+                break;
+        }
+    });
+}
+
+void BonkQuests::OnBossFight(Player* player, BonkSpawnKind kind, uint32 seconds, bool unhurt, uint32 healthPercent)
+{
+    Track(player, [&](BonkQuest const& q, AccountProgress& progress)
+    {
+        if (q.target != uint32(kind))
+            return;
+        switch (q.type)
+        {
+            case BONK_QUEST_BOSS_FAST:
+                if (seconds <= q.param)
+                    Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_BOSS_UNHURT:
+                if (unhurt)
+                    Advance(player, progress, q, 1, false);
+                break;
+            case BONK_QUEST_BOSS_LOW_HEALTH:
+                if (healthPercent < q.param)
+                    Advance(player, progress, q, 1, false);
                 break;
             default:
                 break;
@@ -445,6 +487,22 @@ void BonkQuests::Complete(Player* player, BonkQuest const& quest)
         bonk->SendAddon("questdone~" + std::to_string(quest.id) + "~" + quest.name + "~" + reward + "~" + icon);
     else
         bonk->Notify("Quest complete: " + quest.name + "! " + reward);
+
+    // One more quest done counts toward the milestones.
+    OnProgress(player, BONK_QUEST_QUESTS_DONE, 0, CountCompleted(account), true);
+}
+
+uint32 BonkQuests::CountCompleted(uint32 account) const
+{
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto itr = m_accounts.find(account);
+    if (itr == m_accounts.end())
+        return 0;
+    uint32 count = 0;
+    for (auto const& progress : itr->second)
+        if (progress.second.completed && m_quests.count(progress.first))
+            ++count;
+    return count;
 }
 
 std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon) const

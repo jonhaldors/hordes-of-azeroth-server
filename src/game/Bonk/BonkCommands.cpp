@@ -261,6 +261,7 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     bonk->SendGearInfo();
     bonk->SendMasteryState();
     bonk->SendWallet();
+    bonk->SendDash();
     sBonkQuests.SendLog(m_session->GetPlayer(), "");
     if (BonkRun* run = bonk->GetRun())
         run->SendFullState();
@@ -624,5 +625,14 @@ bool ChatHandler::HandleBonkStressCommand(char* /*args*/)
     }
 
     run->ToggleStress();
+    return true;
+}
+
+bool ChatHandler::HandleBonkDashCommand(char* /*args*/)
+{
+    // The Shift dash (VanillaBonkDash.lua), at camp and in runs. One the
+    // hero can't make now (a paused run, stunned, no charge) is dropped
+    // quietly.
+    m_session->GetPlayer()->GetBonkPlayer()->Dash();
     return true;
 }

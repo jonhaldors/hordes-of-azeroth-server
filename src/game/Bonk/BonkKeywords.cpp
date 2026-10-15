@@ -29,6 +29,14 @@ namespace
     uint32 const BONK_HOLD_IMMUNE_MS         = 6000;    // after a hold or a knockback, before the next
     float const BONK_KEYWORD_SPREAD_RANGE    = 8.0f;    // damage over time spreads to enemies this close to its dead carrier
     uint32 const BONK_KEYWORD_SPREAD_TARGETS = 2;
+    // Damage over time stacks have no cap but what the 1.12 client can
+    // show on a debuff; they are looked over this often.
+    uint32 const BONK_MAX_DOT_STACKS         = 255;
+    uint32 const BONK_DOT_CHECK_MS           = 200;
+    // Hunter's Mark: the most damage it adds, and how far a dying Marked
+    // enemy passes it on (to the BONK_KEYWORD_SPREAD_TARGETS nearest).
+    float const BONK_MAX_HUNTERS_MARK        = 30.0f;
+    float const BONK_MARK_SPREAD_RANGE       = 10.0f;
 
     BonkMobAI const* GetRunAI(Unit const* unit)
     {
@@ -48,15 +56,39 @@ void BonkRun::OnWeaponHit(Unit* victim, SpellEntry const* spell)
         return;
 
     OwnedWeapon const* owned = FindOwnedBySpell(spell->Id);
-    if (!owned || owned->weapon.applies == BONK_KEYWORD_NONE || !owned->weapon.applyStacks)
+    PendingKeyword pending;
+    if (!owned || !GetWeaponKeyword(*owned, pending))
         return;
 
     // Not from inside the damage: applied at the next update.
-    PendingKeyword pending;
     pending.mob = victim->GetObjectGuid();
-    pending.keyword = owned->weapon.applies;
-    pending.stacks = owned->weapon.applyStacks;
     m_pendingKeywords.push_back(pending);
+}
+
+bool BonkRun::GetWeaponKeyword(OwnedWeapon const& owned, PendingKeyword& keyword) const
+{
+    // A pet's bite: its family's keyword (BonkOnDamage counts the bite for
+    // the spell that called it).
+    BonkWeapon const& weapon = owned.weapon;
+    keyword.keyword = weapon.applies;
+    uint32 stacks = weapon.applyStacks;
+    if (weapon.behavior == BONK_BEHAVIOR_PET && keyword.keyword == BONK_KEYWORD_NONE)
+        if (BonkPetFamily const* family = GetPetFamily())
+        {
+            keyword.keyword = family->applies;
+            stacks = family->applyStacks;
+        }
+    BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword.keyword);
+    if (!info || !stacks)
+        return false;
+
+    // Its ranks: more stacks a hit, longer lasting, and harder hitting
+    // stacks (damage over time locks its damage in when applied).
+    stacks += uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS));
+    keyword.stacks = uint8(std::min<uint32>(stacks, BONK_MAX_DOT_STACKS));
+    keyword.durationMs = uint32(info->durationMs * GetWeaponDurationScale(owned));
+    keyword.damageScale = 1.0f + (owned.damageBonus + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_PET_DAMAGE)) / 100.0f;
+    return true;
 }
 
 void BonkRun::OnKillingBlow(Unit* victim)
@@ -64,29 +96,52 @@ void BonkRun::OnKillingBlow(Unit* victim)
     if (m_state != STATE_RUNNING || !GetRunAI(victim))
         return;
 
-    std::map<uint8, uint32> stacks;
+    // Damage over time spreads; Hunter's Mark moves on with the time it had.
+    std::map<uint8, DyingKeyword> carried;
     for (auto const& itr : sBonkMgr.GetKeywords())
-        if (itr.second.spreadsOnDeath)
-            if (uint32 const count = GetKeywordStacks(victim, itr.second.id))
-                stacks[itr.first] = count;
-    if (!stacks.empty())
-        m_dyingKeywords[victim->GetObjectGuid()] = std::move(stacks);
+    {
+        BonkKeywordInfo const& info = itr.second;
+        if (info.id == BONK_KEYWORD_HUNTERS_MARK)
+        {
+            SpellAuraHolder const* holder = victim->GetSpellAuraHolder(info.spellId, m_player->GetObjectGuid());
+            if (holder && holder->GetAuraDuration() > 0)
+                carried[itr.first].leftMs = uint32(holder->GetAuraDuration());
+            continue;
+        }
+        if (!info.spreadsOnDeath)
+            continue;
+        auto mob = m_dotStacks.find(victim->GetObjectGuid());
+        if (mob == m_dotStacks.end())
+            continue;
+        auto stacks = mob->second.find(itr.first);
+        if (stacks == mob->second.end() || stacks->second.empty())
+            continue;
+        int64 sum = 0;
+        for (DotStack const& stack : stacks->second)
+            sum += stack.points;
+        DyingKeyword& dying = carried[itr.first];
+        dying.stacks = uint32(stacks->second.size());
+        dying.points = int32(sum / int64(dying.stacks));
+    }
+    if (!carried.empty())
+        m_dyingKeywords[victim->GetObjectGuid()] = std::move(carried);
 }
 
-void BonkRun::UpdateKeywords()
+void BonkRun::UpdateKeywords(uint32 diff)
 {
-    if (m_pendingKeywords.empty())
-        return;
-
-    std::vector<PendingKeyword> pending;
-    pending.swap(m_pendingKeywords);
-    Map* map = m_player->GetMap();
-    for (PendingKeyword const& keyword : pending)
-        if (Creature* mob = map->GetCreature(keyword.mob))
-            ApplyKeyword(mob, keyword.keyword, keyword.stacks);
+    if (!m_pendingKeywords.empty())
+    {
+        std::vector<PendingKeyword> pending;
+        pending.swap(m_pendingKeywords);
+        Map* map = m_player->GetMap();
+        for (PendingKeyword const& keyword : pending)
+            if (Creature* mob = map->GetCreature(keyword.mob))
+                ApplyKeyword(mob, keyword.keyword, keyword.stacks, keyword.durationMs, keyword.damageScale);
+    }
+    UpdateDotStacks(diff);
 }
 
-bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks)
+bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs, float damageScale)
 {
     BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
     if (!info || !stacks || !mob || !mob->IsAlive() || !GetRunAI(mob) || !m_player->IsInWorld())
@@ -94,6 +149,16 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks)
 
     if (keyword == BONK_KEYWORD_FROZEN)
         return Freeze(mob);
+
+    uint32 const length = durationMs ? durationMs : info->durationMs;
+
+    // Damage over time: stacks of their own, each with the damage it was
+    // applied with.
+    if (info->IsDamageOverTime())
+    {
+        AddDotStacks(mob, *info, stacks, length, std::max(1, int32(GetKeywordPoints(*info) * damageScale + 0.5f)));
+        return true;
+    }
 
     uint32 const total = std::min<uint32>(GetKeywordStacks(mob, keyword) + stacks, info->maxStacks);
 
@@ -105,7 +170,108 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks)
         return true;
     }
 
-    return AddKeywordAura(mob, *info, total, info->durationMs) != nullptr;
+    return AddKeywordAura(mob, *info, total, length) != nullptr;
+}
+
+void BonkRun::AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points)
+{
+    std::vector<DotStack>& list = m_dotStacks[mob->GetObjectGuid()][info.id];
+    DotStack stack;
+    stack.untilMs = WorldTimer::getMSTime() + std::max(1u, durationMs);
+    stack.points = points;
+    list.insert(list.end(), stacks, stack);
+
+    // Past what the client can show, the oldest go first.
+    if (list.size() > BONK_MAX_DOT_STACKS)
+        list.erase(list.begin(), list.begin() + (list.size() - BONK_MAX_DOT_STACKS));
+    SyncDotAura(mob, info, list);
+}
+
+void BonkRun::UpdateDotStacks(uint32 diff)
+{
+    m_dotTimer += diff;
+    if (m_dotTimer < BONK_DOT_CHECK_MS || m_dotStacks.empty())
+        return;
+    m_dotTimer = 0;
+
+    uint32 const now = WorldTimer::getMSTime();
+    Map* map = m_player->GetMap();
+    for (auto mob = m_dotStacks.begin(); mob != m_dotStacks.end();)
+    {
+        Creature* creature = map->GetCreature(mob->first);
+        if (!creature || !creature->IsAlive())
+        {
+            mob = m_dotStacks.erase(mob);
+            continue;
+        }
+
+        for (auto keyword = mob->second.begin(); keyword != mob->second.end();)
+        {
+            std::vector<DotStack>& stacks = keyword->second;
+            size_t const before = stacks.size();
+            stacks.erase(std::remove_if(stacks.begin(), stacks.end(), [now](DotStack const& stack) { return !TimeLeft(stack.untilMs, now); }), stacks.end());
+
+            // Gone from the enemy some other way (the debuff limit took it):
+            // its stacks are forgotten.
+            BonkKeywordInfo const* info = sBonkMgr.GetKeyword(BonkKeyword(keyword->first));
+            bool const worn = info && creature->GetSpellAuraHolder(info->spellId, m_player->GetObjectGuid());
+            if (!info || !worn || stacks.empty())
+            {
+                if (worn)
+                    creature->RemoveAurasByCasterSpell(info->spellId, m_player->GetObjectGuid());
+                keyword = mob->second.erase(keyword);
+                continue;
+            }
+            if (stacks.size() != before)
+                SyncDotAura(creature, *info, stacks);
+            ++keyword;
+        }
+        if (mob->second.empty())
+            mob = m_dotStacks.erase(mob);
+        else
+            ++mob;
+    }
+}
+
+void BonkRun::SyncDotAura(Creature* mob, BonkKeywordInfo const& info, std::vector<DotStack> const& stacks)
+{
+    // The debuff carries their count and deals their sum: its per-stack
+    // damage is their average. It lasts as long as the last of them.
+    uint32 const now = WorldTimer::getMSTime();
+    uint32 const count = uint32(stacks.size());
+    int64 sum = 0;
+    int32 leftMs = 1;
+    for (DotStack const& stack : stacks)
+    {
+        sum += stack.points;
+        leftMs = std::max(leftMs, int32(stack.untilMs - now));
+    }
+    int32 const average = std::max<int32>(1, int32((sum + count / 2) / count));
+
+    SpellAuraHolder* holder = mob->GetSpellAuraHolder(info.spellId, m_player->GetObjectGuid());
+    if (!holder)
+    {
+        AddKeywordAura(mob, info, count, uint32(leftMs), average);
+        return;
+    }
+
+    for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        if (Aura* aura = holder->GetAuraByEffectIndex(SpellEffectIndex(i)))
+            aura->SetBasePoints(average);
+    if (holder->GetStackAmount() != count)
+        holder->SetStackAmount(count);      // works its damage out again from the new average
+    else
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (Aura* aura = holder->GetAuraByEffectIndex(SpellEffectIndex(i)))
+            {
+                int32 points = aura->GetBasePoints();
+                float const amount = count * m_player->CalculateSpellEffectValue(mob, holder->GetSpellProto(), SpellEffectIndex(i), &points);
+                aura->ApplyModifier(false, true);
+                aura->GetModifier()->m_amount = amount;
+                aura->ApplyModifier(true, true);
+            }
+    holder->SetAuraMaxDuration(leftMs);
+    holder->RefreshHolder();
 }
 
 uint32 BonkRun::GetKeywordStacks(Unit const* victim, BonkKeyword keyword) const
@@ -220,23 +386,44 @@ float BonkRun::GetKeywordDamageMultiplier(SpellEntry const* spell, Unit const* v
 
     // Hunter's Mark: more damage from everything.
     float multiplier = 1.0f;
-    if (BonkKeywordInfo const* mark = sBonkMgr.GetKeyword(BONK_KEYWORD_HUNTERS_MARK))
-        if (GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK))
-            multiplier *= 1.0f + mark->valuePerStack / 100.0f;
+    if (GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK))
+        multiplier *= 1.0f + GetHuntersMarkBonus() / 100.0f;
 
     // The spell's payoff: more damage for each stack of its keyword on the
-    // enemy, or for each different keyword on it.
+    // enemy, or for each different keyword on it. Never for each stack of
+    // damage over time, which has no cap: a hundred stacks would make it a
+    // multiplier past balancing (docs/Spells.md, Keywords).
     if (spell)
         if (OwnedWeapon const* owned = FindOwnedBySpell(spell->Id))
             if (owned->weapon.uses != BONK_KEYWORD_NONE && owned->weapon.usesPct > 0.0f)
             {
-                uint32 const count = owned->weapon.uses == BONK_KEYWORD_VARIETY ? CountKeywords(victim) : GetKeywordStacks(victim, owned->weapon.uses);
+                uint32 count = 0;
+                if (owned->weapon.uses == BONK_KEYWORD_VARIETY)
+                    count = CountKeywords(victim);
+                else if (BonkKeywordInfo const* used = sBonkMgr.GetKeyword(owned->weapon.uses))
+                    if (!used->IsDamageOverTime())
+                        count = GetKeywordStacks(victim, owned->weapon.uses);
                 multiplier *= 1.0f + owned->weapon.usesPct * count / 100.0f;
             }
     return multiplier;
 }
 
-SpellAuraHolder* BonkRun::AddKeywordAura(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs)
+float BonkRun::GetHuntersMarkBonus() const
+{
+    BonkKeywordInfo const* mark = sBonkMgr.GetKeyword(BONK_KEYWORD_HUNTERS_MARK);
+    if (!mark)
+        return 0.0f;
+
+    // The hero's spell that marks: it deals no damage, so its damage ranks
+    // grow the Mark instead, and its Mark strength upgrades add to it.
+    float bonus = mark->valuePerStack;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.applies == BONK_KEYWORD_HUNTERS_MARK)
+            bonus = std::max(bonus, mark->valuePerStack * (1.0f + owned.damageBonus / 100.0f) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_MARK));
+    return std::min(bonus, BONK_MAX_HUNTERS_MARK);
+}
+
+SpellAuraHolder* BonkRun::AddKeywordAura(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points)
 {
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(info.spellId);
     if (!spellInfo)
@@ -258,7 +445,8 @@ SpellAuraHolder* BonkRun::AddKeywordAura(Creature* mob, BonkKeywordInfo const& i
 
     // A stack's worth; the core multiplies it by the stacks. Always a
     // debuff, whatever its spell's targets would make the core think.
-    int32 points = GetKeywordPoints(info);
+    if (!points)
+        points = GetKeywordPoints(info);
     SpellAuraHolder* holder = CreateSpellAuraHolder(spellInfo, mob, m_player, m_player);
     for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
         if (spellInfo->Effect[i] == SPELL_EFFECT_APPLY_AURA)
@@ -315,27 +503,50 @@ void BonkRun::SpreadKeywords(Creature const* dead)
 {
     m_crowdControl.erase(dead->GetObjectGuid());
 
+    m_dotStacks.erase(dead->GetObjectGuid());
+
     auto itr = m_dyingKeywords.find(dead->GetObjectGuid());
     if (itr == m_dyingKeywords.end())
         return;
-    std::map<uint8, uint32> const stacks = std::move(itr->second);
+    std::map<uint8, DyingKeyword> const carried = std::move(itr->second);
     m_dyingKeywords.erase(itr);
 
-    // Half its stacks, rounded down, go to the nearest enemies, so a chain
-    // fades out (10, 5, 2, 1).
-    std::vector<Creature*> const nearby = GetMobsInRange(BONK_KEYWORD_SPREAD_RANGE, dead);
-    for (auto const& keyword : stacks)
+    for (auto const& keyword : carried)
     {
-        uint32 const half = keyword.second / 2;
+        BonkKeywordInfo const* info = sBonkMgr.GetKeyword(BonkKeyword(keyword.first));
+        if (!info)
+            continue;
+
+        // Hunter's Mark moves on to the nearest enemies without it, for the
+        // time it had left.
+        if (info->id == BONK_KEYWORD_HUNTERS_MARK)
+        {
+            uint32 passed = 0;
+            for (Creature* next : GetMobsInRange(BONK_MARK_SPREAD_RANGE, dead))
+            {
+                if (passed >= BONK_KEYWORD_SPREAD_TARGETS)
+                    break;
+                if (!GetKeywordStacks(next, BONK_KEYWORD_HUNTERS_MARK) && ApplyKeyword(next, info->id, 1, keyword.second.leftMs))
+                    ++passed;
+            }
+            continue;
+        }
+
+        // Half its stacks, rounded down, go to the nearest enemies, so a
+        // chain fades out (10, 5, 2, 1), each with a fresh timer and the
+        // damage the dead one's stacks had.
+        uint32 const half = keyword.second.stacks / 2;
         if (!half)
             continue;
         uint32 spread = 0;
-        for (Creature* next : nearby)
+        for (Creature* next : GetMobsInRange(BONK_KEYWORD_SPREAD_RANGE, dead))
         {
             if (spread >= BONK_KEYWORD_SPREAD_TARGETS)
                 break;
-            if (ApplyKeyword(next, BonkKeyword(keyword.first), half))
-                ++spread;
+            if (!next->IsAlive() || !GetRunAI(next))
+                continue;
+            AddDotStacks(next, *info, half, info->durationMs, keyword.second.points);
+            ++spread;
         }
     }
 }

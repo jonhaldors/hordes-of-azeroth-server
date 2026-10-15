@@ -92,7 +92,7 @@ enum BonkArchetype : uint8
 {
     BONK_ARCHETYPE_SWARMER = 0,     // small, fast, comes in numbers
     BONK_ARCHETYPE_GRUNT   = 1,     // the standard walker
-    BONK_ARCHETYPE_BRUISER = 2,     // big and slow, hits hard; its share of the crowd follows the spawn curve
+    BONK_ARCHETYPE_BRUISER = 2,     // big and slow, hits hard
     BONK_ARCHETYPE_CASTER  = 3,     // keeps its distance and casts
     BONK_ARCHETYPE_CHARGER = 4,     // charges in
     MAX_BONK_ARCHETYPE
@@ -117,16 +117,49 @@ struct BonkArchetypeInfo
     BonkOrb orb = BONK_ORB_BLUE;
 };
 
-// The spawn curve (bonk_spawn_curve): from `second` into a stage, the crowd
-// is kept at least `minAlive` strong (rising to the next point's), a
-// `bruiserShare` of new enemies are bruisers, and an elite comes every
-// `eliteIntervalSeconds` (0 = none).
-struct BonkSpawnPoint
+// What a block of the stage timeline is for (feature plan, Balance spec).
+enum BonkWaveBeat : uint8
 {
-    uint32 second = 0;
-    float minAlive = 0.0f;
-    float bruiserShare = 0.0f;      // 0..1
+    BONK_BEAT_BUILD    = 0,     // the crowd builds up
+    BONK_BEAT_LULL     = 1,     // a breather: no elites or events
+    BONK_BEAT_WALL     = 2,     // a wall the build has to get through
+    BONK_BEAT_MINIBOSS = 3,     // a mini-boss arrives: no elites or events
+    MAX_BONK_WAVE_BEAT
+};
+
+// A block of the stage timeline (bonk_wave), from `startSecond` of a stage
+// to the next block's. The crowd is drawn from `roster` (weights by
+// archetype) and kept `crowdStart` rising to `crowdEnd` strong, counting
+// only the roster's archetypes: enemies of the others still fight, but are
+// let go once left behind, so rosters rotate. Elites and mini-bosses
+// arrive at its start, more elites every `eliteIntervalSeconds`, and a
+// mini-event of `miniEvents` (bits by BonkMiniEventType, 0 = none) as soon
+// as one can start.
+struct BonkWave
+{
+    uint32 startSecond = 0;
+    std::string name;
+    BonkWaveBeat beat = BONK_BEAT_BUILD;
+    uint32 roster[MAX_BONK_ARCHETYPE] = {};
+    float crowdStart = 0.0f;
+    float crowdEnd = 0.0f;
+    uint32 spawnPerTick = 0;        // 0: the usual
+    uint32 maxBruisers = 0;         // 0: the tier's
     uint32 eliteIntervalSeconds = 0;
+    uint32 elites = 0;
+    uint32 minibosses = 0;
+    uint32 miniEvents = 0;
+};
+
+// Enemy scaling over a run (bonk_scaling): at `minute` of the run (all
+// stages), an enemy hit takes `hitShare` of the hero's base health and
+// enemies have `health` times their table health; between points it rises
+// evenly, and past the last it goes on as the last two points do.
+struct BonkScalingPoint
+{
+    float minute = 0.0f;
+    float hitShare = 0.0f;          // 0..1, a grunt's
+    float health = 1.0f;
 };
 
 struct BonkMapCreature
@@ -252,6 +285,7 @@ enum BonkWeaponTarget : uint8
     BONK_TARGET_FARTHEST  = 5,      // fire at the farthest enemies in range
     BONK_TARGET_CONE      = 6,      // every enemy in a cone towards the nearest one
     BONK_TARGET_SELF      = 7,      // the hero: a buff, a trap at their feet, a pet
+    BONK_TARGET_LINE      = 8,      // every enemy in a line toward the Marked group, else the largest group
     MAX_BONK_TARGET
 };
 
@@ -304,11 +338,12 @@ enum BonkSpellUpgrade : uint8
     BONK_SPELL_UPGRADE_MARK         = 6,      // % more damage taken from its mark
     BONK_SPELL_UPGRADE_PET_DAMAGE   = 7,      // % more damage from its beasts
     BONK_SPELL_UPGRADE_PET_SIZE     = 8,      // % bigger beasts
+    BONK_SPELL_UPGRADE_STACKS       = 9,      // more stacks of its keyword on every hit or tick
     MAX_BONK_SPELL_UPGRADE
 };
 
 // The most a spell can gain of each upgrade, 0 = no cap.
-float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f };
+float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f };
 // Spell cleave strikes this many enemies near each target, within BONK_CLEAVE_RADIUS.
 uint32 const BONK_SPELL_CLEAVE_TARGETS = 2;
 
@@ -366,6 +401,7 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_BURST         = 18,   // value more shots at each target, quickly after the first
     BONK_BEHAVIOR_TRAP          = 19,   // a trap (value: its gameobject) that goes off when an enemy steps on it; range is its radius
     BONK_BEHAVIOR_PET           = 20,   // beasts that fight for the hero: a hit's damage every tick_ms, value their size
+    BONK_BEHAVIOR_WRATH         = 21,   // spectral beasts (value: their creature) leap into the largest groups and roar; pets frenzy for duration_ms
     MAX_BONK_BEHAVIOR
 };
 
@@ -504,6 +540,29 @@ struct BonkWeapon
 // `amount` of an upgrade on `weapon`, in tooltip words: "+10% radius",
 // "passes through 2 additional enemies".
 std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount);
+
+// Summons (docs/Spells.md, Summons): at most this many a hero across all
+// spells, and their hits count this share of the hero's Power.
+uint32 const BONK_MAX_SUMMONS        = 8;
+float const BONK_SUMMON_POWER_SHARE  = 0.6f;
+
+// A hunter's pet family (bonk_pet_family): the beast Call Pet summons and
+// what its bites put on enemies. The Cat is the default; the others come
+// with the Stable Master.
+uint32 const BONK_PET_FAMILY_CAT = 1;
+
+struct BonkPetFamily
+{
+    uint32 id = 0;
+    std::string name;
+    uint32 entry = 0;               // its creature
+    float scale = 1.0f;             // its size before summon size and Area
+    // Between bites, before Haste. Its spell's damage a second stays the
+    // same, so a faster family bites more often for less.
+    uint32 attackMs = 1500;
+    BonkKeyword applies = BONK_KEYWORD_NONE;    // put on every enemy it bites
+    uint8 applyStacks = 0;
+};
 
 // The hero's stats. Every source adds into one total per stat: worn gear,
 // camp upgrades, Class Mastery and in-run picks (passives).
@@ -753,7 +812,8 @@ class BonkMgr
 
         BonkArchetypeInfo const& GetArchetype(BonkArchetype archetype) const { return m_archetypes[archetype]; }
         // The spawn curve, by second into a stage.
-        std::vector<BonkSpawnPoint> const& GetSpawnCurve() const { return m_spawnCurve; }
+        std::vector<BonkWave> const& GetWaves() const { return m_waves; }
+        std::vector<BonkScalingPoint> const& GetScaling() const { return m_scaling; }
 
         BonkPassive const* GetPassive(uint32 id) const;
         // Its description, and which passive it can't be taken with.
@@ -781,6 +841,9 @@ class BonkMgr
         bool IsStaticCreatureSuppressed(Map const* map, uint32 dbGuid) const;
         bool IsArenaLocation(uint32 mapId, uint32 zoneId) const;
 
+        // A pet family, or null if `id` has none.
+        BonkPetFamily const* GetPetFamily(uint32 id) const;
+
     private:
         void LoadTiers();
         void LoadMaps();
@@ -797,7 +860,9 @@ class BonkMgr
         void LoadItemStats();
         void LoadMobs();
         void LoadArchetypes();
-        void LoadSpawnCurve();
+        void LoadWaves();
+        void LoadScaling();
+        void LoadPetFamilies();
 
         // Drops tree slots and requirements that don't fit, with a log line each.
         template <class Entry>
@@ -817,8 +882,10 @@ class BonkMgr
         std::map<uint32, BonkItemSet> m_itemSets;
         std::map<uint32, BonkMob> m_mobs;
         BonkArchetypeInfo m_archetypes[MAX_BONK_ARCHETYPE];
-        std::vector<BonkSpawnPoint> m_spawnCurve;   // by second
+        std::vector<BonkWave> m_waves;              // by second
+        std::vector<BonkScalingPoint> m_scaling;    // by minute
         std::map<uint32, std::set<uint32>> m_arenaZonesByMap;   // zone 0 = whole map
+        std::map<uint32, BonkPetFamily> m_petFamilies;
 };
 
 #define sBonkMgr MaNGOS::Singleton<BonkMgr>::Instance()

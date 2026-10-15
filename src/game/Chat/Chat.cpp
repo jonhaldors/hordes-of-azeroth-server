@@ -285,6 +285,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "keyword",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkKeywordCommand,         "", nullptr },
         { "scaling",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkScalingCommand,         "", nullptr },
         { "stress",         SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkStressCommand,          "", nullptr },
+        { "dash",           SEC_PLAYER,         false, &ChatHandler::HandleBonkDashCommand,            "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 
