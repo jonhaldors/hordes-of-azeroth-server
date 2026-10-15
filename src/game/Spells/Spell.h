@@ -472,6 +472,7 @@ class Spell
             uint32 hitTypeFlags; // enum SpellHitType
             uint32 meleeHitInfo; // enum HitInfo
             uint32 damage;
+            float bonkBaseDamage;   // Vanilla Bonk: before bonuses and crit, for BonkRun::HitAgain
             SpellMissInfo missCondition:8;
             SpellMissInfo reflectResult:8;
             uint8  effectMask:8;

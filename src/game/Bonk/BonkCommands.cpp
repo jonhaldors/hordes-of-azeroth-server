@@ -433,12 +433,12 @@ bool ChatHandler::HandleBonkSpotsCommand(char* /*args*/)
 bool ChatHandler::HandleBonkEventCommand(char* args)
 {
     // GM testing aid: a mini-event right now, whatever the scheduler says.
-    // .bonk event horde
+    // .bonk event horde|goblin|bounty
     char* nameArg = ExtractArg(&args);
     BonkMiniEventType type = BONK_MINI_EVENT_HORDE;
     if (!nameArg || !ParseBonkMiniEvent(nameArg, type))
     {
-        SendSysMessage("Usage: .bonk event horde");
+        SendSysMessage("Usage: .bonk event horde|goblin|bounty");
         SetSentErrorMessage(true);
         return false;
     }
@@ -496,6 +496,52 @@ bool ChatHandler::HandleBonkLeyPickCommand(char* args)
         error = "Usage: .bonk leypick <number>";
     else if (run->PickLeyBuff(index, error))
         return true;
+    SendSysMessage(error.c_str());
+    SetSentErrorMessage(true);
+    return false;
+}
+
+bool ChatHandler::HandleBonkVendorCommand(char* args)
+{
+    // The wandering vendor's shelf (the addon's buttons send these):
+    // .bonk vendor buy|lock <number>, .bonk vendor reroll|close, and for GMs
+    // .bonk vendor spawn.
+    char* action = ExtractArg(&args);
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    std::string error;
+    uint32 index = 0;
+    if (!action)
+        error = "Usage: .bonk vendor buy|lock <number>, .bonk vendor reroll|close";
+    else if (!run)
+        error = "You are not in a run.";
+    else if (!strcmp(action, "buy") || !strcmp(action, "lock"))
+    {
+        if (!ExtractUInt32(&args, index))
+            error = std::string("Usage: .bonk vendor ") + action + " <number>";
+        else if (!strcmp(action, "buy") ? run->BuyFromVendor(index, error) : run->LockVendorSlot(index, error))
+            return true;
+    }
+    else if (!strcmp(action, "reroll"))
+    {
+        if (run->RerollVendor(error))
+            return true;
+    }
+    else if (!strcmp(action, "close"))
+    {
+        run->CloseVendor();
+        return true;
+    }
+    else if (!strcmp(action, "spawn") && GetAccessLevel() >= SEC_GAMEMASTER)
+    {
+        if (run->SpawnVendorNow(error))
+        {
+            SendSysMessage("The merchant is on his way.");
+            return true;
+        }
+    }
+    else
+        error = "Usage: .bonk vendor buy|lock <number>, .bonk vendor reroll|close";
+
     SendSysMessage(error.c_str());
     SetSentErrorMessage(true);
     return false;
@@ -562,5 +608,21 @@ bool ChatHandler::HandleBonkScalingCommand(char* /*args*/)
 
     for (std::string const& line : run->DescribeScaling())
         SendSysMessage(line.c_str());
+    return true;
+}
+
+bool ChatHandler::HandleBonkStressCommand(char* /*args*/)
+{
+    // GM testing aid: a maxed hero against a full screen, with the server
+    // tick reported every 10 seconds (BonkRunStress.cpp). Again to stop.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run || !run->IsActive())
+    {
+        SendSysMessage("You are not in a running stage.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    run->ToggleStress();
     return true;
 }

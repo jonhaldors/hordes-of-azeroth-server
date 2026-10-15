@@ -67,6 +67,9 @@ class BonkObjectives
         std::vector<BonkObjective> Update(Player* hero, uint32 diff);
         // Tells the addon about every one again (after a reload).
         void Resend(Player* hero) const;
+        // Those that leave on their own again, after a pause: the addon
+        // counts down on its own clock, which ran on meanwhile.
+        void ResendTimed(Player* hero) const;
 
         BonkObjective const* Get(uint32 id) const;
         std::vector<BonkObjective> const& GetAll() const { return m_objectives; }

@@ -59,6 +59,7 @@
 #include "MovementPacketSender.h"
 #include "Errors.h"
 #include "Utilities/Random.h"
+#include "Bonk/BonkMobAI.h"
 #include "Bonk/BonkPlayer.h"
 #include "Bonk/BonkRun.h"
 #include "Bonk/BonkRunStats.h"
@@ -4563,7 +4564,9 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
 
     if (Creature* pCreature = ToCreature()) // && !((Creature*)this)->GetLinkGroup())
     {
-        pCreature->SendAIReaction(AI_REACTION_HOSTILE);
+        // Vanilla Bonk: run enemies yell once each, a few at a time.
+        if (!pCreature->IsBonkEnemy() || BonkMobAI::MayCry(pCreature))
+            pCreature->SendAIReaction(AI_REACTION_HOSTILE);
         pCreature->CallAssistance();
 
         if (Pet* pet = GetPet())

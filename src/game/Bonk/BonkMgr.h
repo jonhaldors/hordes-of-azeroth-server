@@ -34,10 +34,13 @@ uint32 const BONK_GO_SHARD      = 900007;   // a dropped Talent Shard, taken by 
 uint32 const BONK_GO_HEAL       = 900008;   // a dropped Turkey Leg, eaten by walking over it while hurt
 
 // Experience orbs dropped by kills (creature templates, only their looks are
-// used): blue for most trash, green for bruisers, red for elites and bosses.
+// used, jewels from the client patch, tools/telegraphs/Pickups.cs): blue for
+// most trash, green for bruisers, red for elites and bosses. Orbs lying
+// together merge up the colours to purple.
 uint32 const BONK_ORB_SMALL = 900100;
 uint32 const BONK_ORB_LARGE = 900101;
 uint32 const BONK_ORB_HUGE  = 900102;
+uint32 const BONK_ORB_GRAND = 900103;
 // An invisible marker where a Sanguine enemy died; its pool's look is an aura on it.
 uint32 const BONK_SANGUINE_POOL = 900110;
 // An invisible marker under a turkey leg or Talent Shard; its highlight is an aura on it.
@@ -100,6 +103,7 @@ enum BonkOrb : uint8
     BONK_ORB_BLUE  = 0,
     BONK_ORB_GREEN = 1,
     BONK_ORB_RED   = 2,
+    BONK_ORB_PURPLE = 3,    // only from merging (BonkRun::MergeOrbs)
 };
 
 struct BonkArchetypeInfo
@@ -266,7 +270,7 @@ float const BONK_CLEAVE_RADIUS    = 6.0f;   // a cleave or pierce hits enemies t
 float const BONK_SPREAD_RADIUS    = 10.0f;  // a spread reaches enemies this close to the one that died
 
 // Rarity, in WoW item colours. A level-up card for a spell rolls one, and it
-// decides what that rank adds (BonkRankStep); Luck raises the odds.
+// decides what that rank adds; Luck raises the odds.
 enum BonkRarity : uint8
 {
     BONK_RARITY_COMMON    = 0,  // white
@@ -277,39 +281,54 @@ enum BonkRarity : uint8
     MAX_BONK_RARITY
 };
 
-// What one spell rank adds. Ranks are uncapped.
+// What a card for a spell brings. Ranks are uncapped.
 enum BonkRankStep : uint8
 {
     BONK_STEP_NEW              = 0,     // the spell itself, rank 1
-    BONK_STEP_DAMAGE           = 1,     // Common
-    BONK_STEP_COOLDOWN         = 2,     // Uncommon: damage, and fires more often
-    BONK_STEP_AREA             = 3,     // Uncommon: damage, and a bigger area or reach (area spells, cleaves)
-    BONK_STEP_DURATION         = 4,     // Uncommon: damage, and lasts longer (damage over time, ground spells)
-    BONK_STEP_RANGE            = 5,     // Rare: damage, and reaches further (aimed spells)
-    BONK_STEP_JUMP             = 6,     // Rare: damage, and one more pierce, bounce, spread or cleaved enemy
-    BONK_STEP_WIDE             = 7,     // Rare: damage, and a much bigger area (area spells)
-    BONK_STEP_TARGET           = 8,     // Epic: one more target or ground drop, BONK_MAX_EPIC_STEPS per spell
-    BONK_STEP_EPIC_DAMAGE      = 9,     // Epic once those are used up, or for spells with nothing to add
-    BONK_STEP_EVOLVE           = 10,    // Legendary: the spell evolves
-    BONK_STEP_LEGENDARY_DAMAGE = 11,    // Legendary for an evolved spell, or one that cannot evolve
+    BONK_STEP_RANK             = 1,     // Common to Epic: damage, and upgrades from the spell's list
+    BONK_STEP_EVOLVE           = 2,     // Legendary: the spell evolves
     MAX_BONK_STEP
 };
 
-// Step sizes, %.
-float const BONK_RANK_DAMAGE           = 20.0f;     // Common
-float const BONK_RANK_DAMAGE_MINOR     = 15.0f;     // the damage part of Uncommon and Rare
-float const BONK_RANK_HASTE            = 10.0f;
-float const BONK_RANK_AREA             = 15.0f;
-float const BONK_RANK_DURATION         = 20.0f;
-float const BONK_RANK_RANGE            = 20.0f;
-float const BONK_RANK_WIDE             = 25.0f;
-float const BONK_RANK_EPIC_DAMAGE      = 50.0f;
-float const BONK_RANK_LEGENDARY_DAMAGE = 100.0f;
-uint8 const BONK_MAX_EPIC_STEPS        = 3;
-uint32 const BONK_MAX_JUMPS            = 5;         // pierces, bounces and the like a spell can gain
-// Legendary ranks are offered once a spell is at BONK_EVOLVE_RANK, more
-// likely every rank after and with Luck; a spell that has not evolved by
-// BONK_EVOLVE_PITY_RANK always gets one. Spreading spells spread from
+// What a Rare or Epic rank can add besides damage (docs/Spells.md, Upgrades
+// by spell type). Every spell has its own list with a step size for each
+// (bonk_weapon_upgrade), so no card is dead.
+enum BonkSpellUpgrade : uint8
+{
+    BONK_SPELL_UPGRADE_NONE         = 0,
+    BONK_SPELL_UPGRADE_CLEAVE       = 1,      // spell cleave: % of the hit to up to BONK_SPELL_CLEAVE_TARGETS enemies near the target
+    BONK_SPELL_UPGRADE_HIT_TWICE    = 2,      // % chance a hit lands again, for damage only, with its own crit
+    BONK_SPELL_UPGRADE_HASTE        = 3,      // % Haste for this spell only
+    BONK_SPELL_UPGRADE_RETIRED      = 4,      // was radius (% bigger area or reach); spells no longer grow by rank, only Area sizes them
+    BONK_SPELL_UPGRADE_DURATION     = 5,      // % longer
+    BONK_SPELL_UPGRADE_MARK         = 6,      // % more damage taken from its mark
+    BONK_SPELL_UPGRADE_PET_DAMAGE   = 7,      // % more damage from its beasts
+    BONK_SPELL_UPGRADE_PET_SIZE     = 8,      // % bigger beasts
+    MAX_BONK_SPELL_UPGRADE
+};
+
+// The most a spell can gain of each upgrade, 0 = no cap.
+float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f };
+// Spell cleave strikes this many enemies near each target, within BONK_CLEAVE_RADIUS.
+uint32 const BONK_SPELL_CLEAVE_TARGETS = 2;
+
+struct BonkWeaponUpgrade
+{
+    BonkSpellUpgrade upgrade = BONK_SPELL_UPGRADE_NONE;
+    float step = 0.0f;
+};
+
+// Common to Epic: damage, %, and how many upgrade steps from the spell's list
+// (an Epic's two can be the same). A step the spell has no room left for is
+// BONK_RANK_SPARE_DAMAGE instead.
+float const BONK_RANK_DAMAGE[BONK_RARITY_LEGENDARY]   = { 10.0f, 18.0f, 15.0f, 15.0f };
+uint8 const BONK_RANK_UPGRADES[BONK_RARITY_LEGENDARY] = { 0, 0, 1, 2 };
+uint8 const BONK_MAX_RANK_UPGRADES                    = 2;
+float const BONK_RANK_SPARE_DAMAGE                    = 10.0f;
+// Legendary ranks evolve the spell. They are offered once a spell is at
+// BONK_EVOLVE_RANK, more likely every rank after and with Luck; a spell that
+// has not evolved by BONK_EVOLVE_PITY_RANK always gets one. A spell that has
+// evolved, or can't yet, gets no more. Spreading spells spread from
 // BONK_EVOLVE_RANK on.
 uint32 const BONK_EVOLVE_RANK                  = 8;
 uint32 const BONK_EVOLVE_PITY_RANK             = 16;
@@ -429,6 +448,7 @@ struct BonkWeapon
     // or for each different keyword on it (BONK_KEYWORD_VARIETY).
     BonkKeyword uses = BONK_KEYWORD_NONE;
     float usesPct = 0.0f;
+    std::vector<BonkWeaponUpgrade> upgrades;    // what its Rare and Epic ranks can add (bonk_weapon_upgrade)
 
     int32 damageEffectIndex = -1;   // effect whose base points carry the damage
     int32 tickEffectIndex = -1;     // damage over time besides damageEffectIndex (a hit that leaves it burning)
@@ -449,18 +469,22 @@ struct BonkWeapon
         return target == BONK_TARGET_SELF_AREA || target == BONK_TARGET_GROUND || target == BONK_TARGET_CONE ||
             behavior == BONK_BEHAVIOR_CLEAVE || behavior == BONK_BEHAVIOR_TRAP;
     }
-    // Rare ranks widen it rather than hitting one more enemy.
-    bool IsWide() const { return HasArea() && behavior != BONK_BEHAVIOR_CLEAVE; }
-    // Rare ranks can add a pierce, bounce, spread or cleaved enemy.
-    bool HasJumps() const { return IsAimed() || behavior == BONK_BEHAVIOR_CLEAVE; }
-    // Epic ranks can add a target, a ground drop, a trap or a beast.
+    // The step its ranks add of `upgrade`, 0 when that isn't on its list.
+    float GetUpgradeStep(BonkSpellUpgrade upgrade) const
+    {
+        for (BonkWeaponUpgrade const& itr : upgrades)
+            if (itr.upgrade == upgrade)
+                return itr.step;
+        return 0.0f;
+    }
+    // Count adds a target, a ground drop, a trap or a beast.
     bool HasTargets() const
     {
         if (target == BONK_TARGET_SELF)
             return behavior == BONK_BEHAVIOR_TRAP || behavior == BONK_BEHAVIOR_PET;
         return target != BONK_TARGET_SELF_AREA && target != BONK_TARGET_CONE;
     }
-    // What an Epic rank adds one of.
+    // What Count adds one of.
     char const* GetTargetNoun() const
     {
         if (behavior == BONK_BEHAVIOR_TRAP)
@@ -475,12 +499,11 @@ struct BonkWeapon
         std::string const noun = std::to_string(count) + " " + GetTargetNoun() + (count == 1 ? "" : "s");
         return target == BONK_TARGET_GROUND ? "lands on " + noun : noun;
     }
-    // An Epic rank: "+1 target", or "lands on 1 more pack".
-    std::string DescribeExtraTarget() const
-    {
-        return target == BONK_TARGET_GROUND ? std::string("lands on 1 more pack") : std::string("+1 ") + GetTargetNoun();
-    }
 };
+
+// `amount` of an upgrade on `weapon`, in tooltip words: "+10% radius",
+// "passes through 2 additional enemies".
+std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount);
 
 // The hero's stats. Every source adds into one total per stat: worn gear,
 // camp upgrades, Class Mastery and in-run picks (passives).
@@ -488,7 +511,7 @@ enum BonkPassiveEffect : uint8
 {
     BONK_PASSIVE_POWER       = 0,   // + damage dealt, %
     BONK_PASSIVE_HASTE       = 1,   // spells fire and tick more often: interval / (1 + Haste), %
-    BONK_PASSIVE_AMOUNT      = 2,   // + projectiles
+    BONK_PASSIVE_AMOUNT      = 2,   // Count: + bolts, ground drops, traps, beasts and targets; capped at BONK_MAX_COUNT
     BONK_PASSIVE_MOVE_SPEED  = 3,   // + run speed, %
     BONK_PASSIVE_MAX_HEALTH  = 4,   // + max health, %
     BONK_PASSIVE_RECOVERY    = 5,   // health regained per second, % of max
@@ -496,9 +519,9 @@ enum BonkPassiveEffect : uint8
     BONK_PASSIVE_GROWTH      = 7,   // + experience, %
     BONK_PASSIVE_PICKUP      = 8,   // + range experience orbs and turkey legs are picked up from, %
     BONK_PASSIVE_LEECH       = 9,   // weapon damage dealt comes back as health, %
-    BONK_PASSIVE_AREA        = 10,  // + area, reach and ground effect size, %
+    BONK_PASSIVE_AREA        = 10,  // + area, reach and ground effect size, %; capped at BONK_MAX_AREA
     BONK_PASSIVE_DURATION    = 11,  // + how long lasting spells (damage over time, ground effects) last, %
-    BONK_PASSIVE_ARMOR       = 12,  // - damage taken, %; capped at BONK_MAX_ARMOR
+    BONK_PASSIVE_ARMOR       = 12,  // damage taken / (1 + Armor / 100), points; no cap
     BONK_PASSIVE_HIT         = 13,  // - elite and boss dodge chance, %; capped at BONK_MAX_HIT
     BONK_PASSIVE_DODGE       = 14,  // + chance to dodge enemy melee, %; capped at BONK_MAX_DODGE
     BONK_PASSIVE_CRIT        = 15,  // + crit chance, %; past 100% a hit can crit twice
@@ -508,10 +531,16 @@ enum BonkPassiveEffect : uint8
     MAX_BONK_PASSIVE_EFFECT
 };
 
-// Stat caps and bases.
-float const BONK_MAX_ARMOR          = 60.0f;
+// Stat caps and bases. Level-ups stop offering a passive for a stat at its cap.
 float const BONK_MAX_DODGE          = 60.0f;
 float const BONK_MAX_HIT            = 100.0f;   // past it Hit is wasted
+float const BONK_MAX_COUNT          = 5.0f;
+float const BONK_MAX_AREA           = 50.0f;    // spells grow at most half again their size
+float const BONK_MAX_HASTE          = 100.0f;   // a spell fires at most twice as fast, every source together
+// Count: a spell around the hero or a cone goes off at most this many more
+// times a cast (bolts and ground spells take the full Count).
+uint32 const BONK_MAX_COUNT_PULSES  = 2;
+float const BONK_MAX_GEAR_HASTE     = 20.0f;    // Haste from worn gear counts up to this
 float const BONK_BASE_CRIT          = 5.0f;     // every hero's crit chance before stats
 float const BONK_BOSS_EXTRA_DODGE   = 5.0f;     // mini-bosses and bosses dodge this much more than elites
 uint32 const BONK_SHIELD_REGEN_DELAY_MS = 4000;

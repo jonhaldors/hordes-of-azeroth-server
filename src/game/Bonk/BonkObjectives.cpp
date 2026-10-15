@@ -137,6 +137,13 @@ void BonkObjectives::Resend(Player* hero) const
         Send(hero, objective);
 }
 
+void BonkObjectives::ResendTimed(Player* hero) const
+{
+    for (BonkObjective const& objective : m_objectives)
+        if (objective.leftMs)
+            Send(hero, objective);
+}
+
 BonkObjective const* BonkObjectives::Get(uint32 id) const
 {
     for (BonkObjective const& objective : m_objectives)

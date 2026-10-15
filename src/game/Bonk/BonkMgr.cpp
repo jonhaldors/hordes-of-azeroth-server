@@ -115,7 +115,7 @@ void BonkMgr::Load()
         if (!sObjectMgr.GetGameObjectTemplate(entry))
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: gameobject template %u is missing; runs will lack chests or portals, and give shards without a drop.", entry);
 
-    for (uint32 entry : { BONK_ORB_SMALL, BONK_ORB_LARGE, BONK_ORB_HUGE })
+    for (uint32 entry : { BONK_ORB_SMALL, BONK_ORB_LARGE, BONK_ORB_HUGE, BONK_ORB_GRAND })
         if (!sObjectMgr.GetCreatureTemplate(entry))
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: creature template %u is missing; kills will give experience directly.", entry);
 
@@ -681,7 +681,54 @@ void BonkMgr::LoadWeapons()
         if (itr.second.evolvesFrom && !m_weapons.count(itr.second.evolvesFrom))
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u evolves from unknown weapon %u.", itr.first, itr.second.evolvesFrom);
 
-    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk weapons", uint32(m_weapons.size()));
+    // What each spell's Rare and Epic ranks can add.
+    uint32 upgrades = 0;
+    std::unique_ptr<QueryResult> rows(WorldDatabase.Query("SELECT `weapon_id`, `upgrade`, `step` FROM `bonk_weapon_upgrade`"));
+    if (rows)
+    {
+        do
+        {
+            Field* fields = rows->Fetch();
+            uint32 const weaponId = fields[0].GetUInt32();
+            uint8 const upgrade = fields[1].GetUInt8();
+            float const step = fields[2].GetFloat();
+            auto weapon = m_weapons.find(weaponId);
+            if (weapon == m_weapons.end() || upgrade == BONK_SPELL_UPGRADE_NONE || upgrade == BONK_SPELL_UPGRADE_RETIRED || upgrade >= MAX_BONK_SPELL_UPGRADE || step <= 0.0f)
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u, upgrade %u, step %g is not valid; skipped.", weaponId, upgrade, step);
+                continue;
+            }
+            BonkWeaponUpgrade entry;
+            entry.upgrade = BonkSpellUpgrade(upgrade);
+            entry.step = step;
+            weapon->second.upgrades.push_back(entry);
+            ++upgrades;
+        } while (rows->NextRow());
+    }
+    for (auto const& itr : m_weapons)
+        if (itr.second.upgrades.empty())
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u has no upgrades; its Rare and Epic ranks add damage only.", itr.first);
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk weapons with %u upgrades", uint32(m_weapons.size()), upgrades);
+}
+
+std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount)
+{
+    char number[32];
+    snprintf(number, sizeof(number), "%g", amount);
+    std::string const percent = std::string("+") + number + "%";
+    switch (upgrade)
+    {
+        case BONK_SPELL_UPGRADE_CLEAVE:
+            return percent + " of its damage to up to " + std::to_string(BONK_SPELL_CLEAVE_TARGETS) + " nearby enemies";
+        case BONK_SPELL_UPGRADE_HIT_TWICE:  return percent + " chance to hit twice";
+        case BONK_SPELL_UPGRADE_HASTE:      return percent + " Haste for this spell";
+        case BONK_SPELL_UPGRADE_DURATION:   return percent + " duration";
+        case BONK_SPELL_UPGRADE_MARK:       return percent + " damage taken by marked enemies";
+        case BONK_SPELL_UPGRADE_PET_DAMAGE: return percent + " damage dealt by its " + weapon.GetTargetNoun() + "s";
+        case BONK_SPELL_UPGRADE_PET_SIZE:   return percent + " " + weapon.GetTargetNoun() + " size";
+        default:                      return "";
+    }
 }
 
 void BonkMgr::LoadMobs()

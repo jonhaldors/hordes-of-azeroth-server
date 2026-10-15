@@ -934,6 +934,7 @@ void Spell::AddUnitTarget(Unit* pTarget, SpellEffectIndex effIndex)
     targetInfo.hitTypeFlags = 0x0;
     targetInfo.meleeHitInfo = 0x0;
     targetInfo.damage = 0;
+    targetInfo.bonkBaseDamage = 0.0f;
     targetInfo.isCrit = false;
 
     // For melee spells crit outcome is part of the attack table, so MeleeSpellHitResult will set it.
@@ -1410,6 +1411,8 @@ void Spell::DoAllEffectOnTarget(TargetInfo *target)
         SpellNonMeleeDamage damageInfo(pCaster, unitTarget, m_spellInfo->Id, GetFirstSchoolInMask(m_spellSchoolMask));
         damageInfo.spell = this;
         damageInfo.reflected = isReflected;
+        // Vanilla Bonk: the damage before bonuses and crit, for a second hit.
+        float const bonkBaseDamage = m_delayed ? target->bonkBaseDamage : m_damage;
 
         if (m_delayed)
         {
@@ -1492,6 +1495,20 @@ void Spell::DoAllEffectOnTarget(TargetInfo *target)
 
         // Damage is done after procs so it can trigger auras on the victim that affect the caster in case of killing blow.
         pCaster->DealSpellDamage(&damageInfo, true);
+
+        // Vanilla Bonk: a hero's spell can hit twice (BonkRun::HitAgain).
+        if (bonkBaseDamage > 0.0f && !isReflected)
+            if (BonkRun* run = BonkRun::FromAttack(pCaster, unitTarget))
+            {
+                SpellEffectIndex damageEffectIndex = EFFECT_INDEX_0;
+                for (uint8 effectNumber = 0; effectNumber < MAX_EFFECT_INDEX; ++effectNumber)
+                    if ((effectMask & (1 << effectNumber)) && IsDirectDamageWithBonusEffect(m_spellInfo->Effect[effectNumber]))
+                    {
+                        damageEffectIndex = SpellEffectIndex(effectNumber);
+                        break;
+                    }
+                run->HitAgain(m_spellInfo, unitTarget, bonkBaseDamage, damageEffectIndex, m_attackType);
+            }
     }
     else if (m_canTrigger && (procAttacker || procVictim))
     {
@@ -1839,12 +1856,14 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
 
             // Vanilla Bonk: a hero's stun on a run enemy holds it for a
             // moment, and then that enemy can't be stunned for a while, so
-            // no spell keeps trash stunned (BonkRun::LimitStun). The spell's
+            // no spell keeps trash stunned (BonkRun::LimitStun); a root the
+            // same, by Frozen's rule (BonkRun::LimitRoot). The spell's
             // damage still lands.
-            if (duration != 0 && m_spellInfo->HasAura(SPELL_AURA_MOD_STUN) && unit->IsCreature())
+            bool const bonkStun = m_spellInfo->HasAura(SPELL_AURA_MOD_STUN);
+            if (duration != 0 && (bonkStun || m_spellInfo->HasAura(SPELL_AURA_MOD_ROOT)) && unit->IsCreature())
                 if (Player* hero = pRealUnitCaster ? pRealUnitCaster->ToPlayer() : nullptr)
                     if (BonkRun* run = hero->GetBonkPlayer()->GetRun())
-                        if (!run->LimitStun(static_cast<Creature*>(unit), duration))
+                        if (!(bonkStun ? run->LimitStun(static_cast<Creature*>(unit), duration) : run->LimitRoot(static_cast<Creature*>(unit), duration)))
                         {
                             delete m_spellAuraHolder;
                             m_spellAuraHolder = nullptr;
@@ -1976,6 +1995,8 @@ void Spell::HandleDelayedSpellLaunch(TargetInfo *target)
             }
         }
 
+        // Vanilla Bonk: kept for a second hit when it lands (BonkRun::HitAgain).
+        target->bonkBaseDamage = m_damage;
         if (m_damage > 0)
             pCaster->CalculateSpellDamage(&damageInfo, m_damage, m_spellInfo, damageEffectIndex, m_attackType, this, target->isCrit);
     }

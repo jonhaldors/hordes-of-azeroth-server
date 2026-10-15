@@ -41,7 +41,9 @@ class Player;
 // one at a time, every couple of minutes.
 enum BonkMiniEventType : uint8
 {
-    BONK_MINI_EVENT_HORDE = 0,      // a ring of enemies surrounds the hero and closes in
+    BONK_MINI_EVENT_HORDE  = 0,     // a ring of enemies surrounds the hero and closes in
+    BONK_MINI_EVENT_GOBLIN = 1,     // a treasure goblin runs from the hero; caught, Valor and a chest
+    BONK_MINI_EVENT_BOUNTY = 2,     // a tougher elite with a skull; killed in time, a chest
     MAX_BONK_MINI_EVENT
 };
 
@@ -87,6 +89,15 @@ class BonkRun
         // Greed Totem stacks this run: their reward and extra enemies, %.
         uint32 GetGreedRewardPercent() const;
         float GetGreedCrowdPercent() const;
+        // The wandering vendor (BonkRunVendor.cpp): his goblin was clicked
+        // (npc_bonk_vendor); `.bonk vendor buy|lock <slot>`, `reroll`,
+        // `close`, slots from 1; `.bonk vendor spawn`, GM testing.
+        void OpenVendor(Creature* vendor);
+        bool BuyFromVendor(uint32 index, std::string& error);
+        bool LockVendorSlot(uint32 index, std::string& error);
+        bool RerollVendor(std::string& error);
+        void CloseVendor();
+        bool SpawnVendorNow(std::string& error);
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool IsPaused() const { return m_paused; }
@@ -107,6 +118,10 @@ class BonkRun
         // An enemy's hit on the hero: Armor takes its share off, then the
         // Shield soaks what it can. Returns what is left for health.
         uint32 MitigateDamage(uint32 damage);
+        // A hero's spell hit `target` for `damage` before crits and the
+        // enemy's own modifiers: by its chance to hit twice, it hits again,
+        // for damage only and with its own crit roll.
+        void HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, SpellEffectIndex effectIndex, WeaponAttackType attackType);
         // A Necrotic enemy hit the hero: healing is weaker for a while.
         void AddNecroticStack();
         // Power and the class's Mastery bonuses for `spell` (null for melee
@@ -151,6 +166,8 @@ class BonkRun
         // most BONK_MAX_HOLD_MS; false while the enemy is still immune after
         // its last one.
         bool LimitStun(Creature* mob, int32& duration);
+        // The same for a root (Frozen's rule; never elites or bosses).
+        bool LimitRoot(Creature* mob, int32& duration);
         // A red ground warning for an enemy ability; `onFire` runs when it
         // fills. Warnings are dropped, unfired, when the run pauses or the
         // stage ends.
@@ -187,6 +204,10 @@ class BonkRun
         // `.bonk scaling`: enemy health right now, and how many hits each
         // spell needs to kill a grunt, a bruiser and an elite.
         std::vector<std::string> DescribeScaling() const;
+        // `.bonk stress` (BonkRunStress.cpp), a GM test: on, the hero is
+        // maxed and the crowd kept at the cap, with the server tick reported
+        // every 10 seconds; off, a summary.
+        void ToggleStress();
         bool Pick(uint32 choice, std::string& error);
         bool Reroll(std::string& error);
         bool Banish(uint32 choice, std::string& error);
@@ -221,20 +242,14 @@ class BonkRun
             OFFER_CHEST,
         };
 
-        // A spell the hero has. Its ranks are uncapped; each added what its
-        // rarity rolled (BonkRankStep), kept here.
+        // A spell the hero has. Its ranks are uncapped; each added damage and
+        // the upgrades its rarity rolled, kept here (read with GetSpellUpgrade).
         struct OwnedWeapon
         {
             BonkWeapon weapon;
             uint32 rank = 1;
             float damageBonus = 0.0f;       // %
-            float hasteBonus = 0.0f;        // %
-            float areaBonus = 0.0f;         // %
-            float durationBonus = 0.0f;     // %
-            float rangeBonus = 0.0f;        // %
-            uint32 extraTargets = 0;        // targets, or drops for ground spells
-            uint32 extraJumps = 0;          // pierces, bounces, spreads or cleaved enemies
-            uint8 epicSteps = 0;            // Epic ranks that added a target
+            float upgrades[MAX_BONK_SPELL_UPGRADE] = {};  // by BonkSpellUpgrade; kept through evolving
             std::string rarities;           // the BonkRarity each rank after the first rolled, one digit per rank
             uint32 casts = 0;               // for every altEvery-th cast
             int32 timer = 0;
@@ -250,7 +265,10 @@ class BonkRun
             uint32 id = 0;              // the weapon (as owned, before evolving) or passive
             uint32 newLevel = 1;        // the rank it brings
             BonkRarity rarity = BONK_RARITY_COMMON;
-            BonkRankStep step = BONK_STEP_NEW;     // weapons: what the rank adds
+            BonkRankStep step = BONK_STEP_NEW;     // weapons: what the card brings
+            // A rank's upgrade steps, rolled with the card so it can show them;
+            // NONE where the spell had no room left (spare damage instead).
+            BonkSpellUpgrade upgrades[BONK_MAX_RANK_UPGRADES] = {};
             bool locked = false;        // chests: comes back at the next chest if not picked
         };
 
@@ -260,6 +278,18 @@ class BonkRun
             uint32 experience = 0;
             bool pulled = false;        // flying to the player
             float aimX = 0.0f, aimY = 0.0f, aimZ = 0.0f;    // where it is flying
+            BonkOrb colour = BONK_ORB_BLUE;
+            uint32 droppedMs = 0;       // WorldTimer ms
+            uint32 mergeId = 0;         // sliding into a merge (OrbMerge::id)
+        };
+        // Orbs sliding into one (BonkRun::MergeOrbs): the anchor stays put
+        // and takes the next colour once the others reach it.
+        struct OrbMerge
+        {
+            uint32 id = 0;
+            ObjectGuid anchor;
+            BonkOrb colour = BONK_ORB_BLUE;     // what the anchor becomes
+            int32 leftMs = 0;
         };
 
         // Talent Shards lying where an enemy died.
@@ -283,6 +313,14 @@ class BonkRun
         BonkMiniEventType PickMiniEvent() const;
         bool StartMiniEvent(BonkMiniEventType type);
         bool SpawnHorde();
+        bool SpawnTreasureGoblin();
+        bool SpawnBounty();
+        // A goblin or a bounty: under way until it dies or its time is up.
+        void StartMiniEventTarget(Creature* target, std::string const& label, uint32 seconds);
+        void UpdateMiniEventTarget(uint32 diff);
+        void OnMiniEventTargetKilled(Creature* mob);
+        // Its time left for the addon, when the second changes (or `force`).
+        void SendMiniEventTimer(bool force = false) const;
         void EndMiniEvent();
         // Shrines (BonkRunShrines.cpp).
         void UpdateShrines(uint32 diff);
@@ -299,6 +337,18 @@ class BonkRun
         // A new stage: the last one's shrines gone, this one's to place.
         void ResetShrines();
         void DespawnShrines();
+        // The wandering vendor (BonkRunVendor.cpp).
+        void ResetVendor();             // a new stage: when he comes
+        void UpdateVendor(uint32 diff);
+        bool IsBossUp() const;          // a boss or mini-boss alive
+        bool SpawnVendor();
+        void StockVendor(bool reroll);
+        void CheckVendorStock();
+        uint32 GetVendorPrice(Offer const* card) const;     // null: the special slot
+        uint32 GetVendorRerollCost() const;
+        void ApplyVendorCard(Offer const& card);
+        void SendVendor() const;
+        void DespawnVendor();
         void UpdateSpawns(uint32 diff);
         void UpdateWeapons(uint32 diff);
         void UpdateBoundary(uint32 diff);
@@ -401,11 +451,24 @@ class BonkRun
         // Minutes fought this run, over all stages: what enemies scale with.
         float GetRunMinutes() const { return m_totalMs / float(MINUTE * IN_MILLISECONDS); }
         float GetPassiveTotal(BonkPassiveEffect effect) const;
-        // The total after its cap (Armor, Dodge, Hit).
+        // The total after its cap (Dodge, Hit, Count, Area, Haste).
         float GetStat(BonkPassiveEffect effect) const;
+        // A stat's cap, 0 for none.
+        static float GetStatCap(BonkPassiveEffect effect);
+        // How far experience orbs and turkey legs come to the hero from.
+        float GetMagnetRange() const;
+        // What worn gear adds to a stat, after the gear Haste cap.
+        float GetGearTotal(BonkPassiveEffect effect) const;
         // 1 + Haste: how many times as often spells fire and tick.
         float GetHasteRate() const;
         float GetWeaponDamage(OwnedWeapon const& owned) const;
+        // What its ranks added of `upgrade`, up to that upgrade's cap; 0 when
+        // the spell (after evolving, say) doesn't use it.
+        float GetSpellUpgrade(OwnedWeapon const& owned, BonkSpellUpgrade upgrade) const;
+        // 1 + Duration + its own duration upgrades: how much longer it lasts.
+        float GetWeaponDurationScale(OwnedWeapon const& owned) const;
+        // 1 + Haste + its own Haste: how many times as often it fires and ticks.
+        float GetWeaponHasteRate(OwnedWeapon const& owned) const;
         uint32 GetWeaponCooldown(OwnedWeapon const& owned) const;
         // How much its area, reach and spreading grow: level and the Area passive.
         float GetWeaponArea(OwnedWeapon const& owned) const;
@@ -481,7 +544,14 @@ class BonkRun
         void GiveGold(uint32 copper);
 
         void DropOrb(Creature const* mob, uint32 experience, BonkOrb colour);
+        // An orb of `colour` on the ground; false (experience given at once)
+        // if it could not be placed.
+        bool SpawnOrb(float x, float y, float z, uint32 experience, BonkOrb colour);
         void UpdateOrbs(uint32 diff);
+        // Orbs of a colour lying together slide into one of the next colour.
+        void UpdateOrbMerges(uint32 diff);
+        void MergeOrbs();
+        void FinishOrbMerge(OrbMerge const& merge);
         void CollectAllOrbs();
         void DespawnOrbs();
 
@@ -501,8 +571,10 @@ class BonkRun
         void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid);
 
         // `avoid`: cards just shown, kept out of a reroll when others are
-        // left. `kept`: locked cards that stay.
-        bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr, std::vector<Offer> const* kept = nullptr);
+        // left. `kept`: locked cards that stay. `drawn`: the cards go there,
+        // nothing shown (the wandering vendor's shelf).
+        bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr, std::vector<Offer> const* kept = nullptr,
+            std::vector<Offer>* drawn = nullptr);
         // The card's name and icon (an evolution shows what it becomes).
         std::string DescribeOffer(Offer const& offer, std::string* icon) const;
         std::string DescribeStep(Offer const& offer) const;
@@ -510,9 +582,9 @@ class BonkRun
         OwnedWeapon const* FindOwned(uint32 weaponId) const;
 
         // Spell ranks: the rarity a card rolls (at least `minimum`, Legendary
-        // by its own chance), and what that rarity adds to this spell.
+        // by its own chance), and the upgrades that rarity adds to this spell.
         BonkRarity RollRarity(BonkRarity minimum) const;
-        BonkRankStep RollStep(OwnedWeapon const& owned, BonkRarity rarity) const;
+        void RollUpgrades(OwnedWeapon const& owned, Offer& offer) const;
         Offer MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const;
         bool CanEvolve(OwnedWeapon const& owned) const;
         float GetLegendaryChance(OwnedWeapon const& owned) const;
@@ -523,6 +595,7 @@ class BonkRun
         // fits; otherwise its rank is brought up to date.
         bool RefreshKeptOffer(Offer& offer) const;
         bool IsPassiveAllowed(BonkPassive const& passive) const;
+        bool IsPassiveCapped(BonkPassive const& passive) const;
         // The choice is made (picked or skipped): the next pending one follows.
         void CloseOffer(uint32 pickedIndex);
 
@@ -581,6 +654,11 @@ class BonkRun
             BonkMiniEventType type = BONK_MINI_EVENT_HORDE;
             uint32 objectiveId = 0;
             BonkSpot spot;
+            ObjectGuid target;              // a goblin or a bounty
+            std::string label;              // its timer's
+            uint32 leftMs = 0;
+            uint32 totalSeconds = 0;
+            mutable uint32 shownSeconds = 0;    // last sent to the addon
         };
         MiniEvent m_miniEvent;
         bool m_miniEventActive = false;
@@ -616,6 +694,31 @@ class BonkRun
         };
         std::vector<LeyBuff> m_leyOffer;    // shown now
         uint32 m_pendingLeyOffers = 0;      // captured, not yet offered
+        // The wandering vendor: a slot of his shelf.
+        enum VendorSlotState : uint8
+        {
+            VENDOR_FOR_SALE = 0,
+            VENDOR_SOLD     = 1,
+            VENDOR_GONE     = 2,            // no longer fits the build
+        };
+        struct VendorSlot
+        {
+            Offer card;                     // unless a charge
+            bool isCharge = false;          // the special slot: a Reroll, Banish or Skip charge
+            uint8 charge = 0;
+            uint32 price = 0;               // Valor
+            bool locked = false;            // back at the next visit if not bought
+            VendorSlotState state = VENDOR_FOR_SALE;
+        };
+        std::vector<VendorSlot> m_vendorStock;  // while he is here
+        std::vector<VendorSlot> m_vendorKept;   // locked, for his next visit
+        std::vector<uint32> m_vendorVisits;     // stage seconds he still comes at, earliest first
+        ObjectGuid m_vendorGuid;
+        uint32 m_vendorObjective = 0;
+        uint32 m_vendorLeftMs = 0;
+        uint32 m_vendorCheckMs = 0;
+        uint32 m_vendorRerolls = 0;             // this visit
+        bool m_vendorOpen = false;              // his shelf is shown; the run is paused
         uint32 m_nextMiniEventMs = 0;       // into the stage
         BonkMiniEventType m_lastMiniEvent = MAX_BONK_MINI_EVENT;
         float m_gruntRadius = 0.0f;         // the biggest grunt this stage: bruisers are bigger
@@ -646,6 +749,9 @@ class BonkRun
         std::vector<ObjectGuid> m_powerups;
         std::vector<Orb> m_orbs;
         uint32 m_orbTimer = 0;
+        std::vector<OrbMerge> m_orbMerges;
+        uint32 m_orbMergeTimer = 0;
+        uint32 m_lastOrbMergeId = 0;
         std::vector<ShardDrop> m_shardDrops;
         // Turkey legs lying where an enemy died.
         struct HealDrop
@@ -688,6 +794,7 @@ class BonkRun
             bool echo = false;
             bool selfArea = false;      // the spell again around the hero (a spin, a shockwave)
             bool strike = false;        // a burst's later shot at `target`
+            bool recast = false;        // Count: the spell around the hero or its cone again
             float share = 1.0f;         // of the weapon's damage
             ObjectGuid target;
             float x = 0.0f, y = 0.0f, z = 0.0f;
@@ -796,6 +903,50 @@ class BonkRun
         OfferSource m_offerSource = OFFER_LEVEL;
 
         float m_safeX = 0.0f, m_safeY = 0.0f, m_safeZ = 0.0f;
+
+        // `.bonk stress` (BonkRunStress.cpp).
+        struct StressTicks
+        {
+            uint32 count = 0;
+            uint64 totalMs = 0;
+            uint32 worstMs = 0;
+            uint32 slow = 0;                // over twice the 25 ms tick
+            uint64 runUs = 0;               // of them, spent in BonkRun::Update
+            uint32 worstRunUs = 0;
+            void Add(uint32 tickMs, uint32 usedUs);
+        };
+        struct Stress
+        {
+            bool on = false;
+            float bonuses[MAX_BONK_PASSIVE_EFFECT] = {};    // read by GetPassiveTotal
+            uint32 startMs = 0;             // run time (m_totalMs) it was turned on
+            uint32 reportMs = 0;            // run time of the last report
+            uint32 holdCheckMs = 0;
+            StressTicks window;             // since the last report
+            StressTicks total;              // since it was turned on
+            uint32 alive = 0;               // enemies at the last hold check
+            uint32 held = 0;                // of them, held
+            std::map<ObjectGuid, uint32> heldSince;     // enemy held -> run time it was first seen held
+            std::set<ObjectGuid> heldReported;          // held too long, reported once
+        };
+        // Times one BonkRun::Update while the stress test is on.
+        class StressTick
+        {
+            public:
+                StressTick(BonkRun& run, uint32 diff);
+                ~StressTick();
+            private:
+                BonkRun& m_run;
+                uint32 m_diff;
+                uint64 m_startUs;
+        };
+        void StartStress();
+        void StopStress();
+        // After each timed update: the hold check and the report.
+        void UpdateStress();
+        void CheckStressHolds();
+        void ReportStress(StressTicks const& ticks, bool summary) const;
+        Stress m_stress;
 };
 
 #endif

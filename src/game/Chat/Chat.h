@@ -228,8 +228,10 @@ class ChatHandler
         bool HandleBonkEventCommand(char* args);
         bool HandleBonkShrineCommand(char* args);
         bool HandleBonkLeyPickCommand(char* args);
+        bool HandleBonkVendorCommand(char* args);
         bool HandleBonkKeywordCommand(char* args);
         bool HandleBonkScalingCommand(char* args);
+        bool HandleBonkStressCommand(char* args);
 
         //Cheats
         bool HandleCheatStatusCommand(char *);

@@ -75,6 +75,7 @@ namespace
     // The crowd is topped up to the spawn curve every tick, a few at a time.
     uint32 const BONK_SPAWN_TICK_MS        = 1000;
     uint32 const BONK_SPAWN_PER_TICK       = 12;
+    uint32 const BONK_STRESS_SPAWN_PER_TICK = 40;      // `.bonk stress`: the crowd refills this fast
     float const BONK_BOSS_CROWD            = 0.5f;     // of the crowd, while the stage boss is up
     uint32 const BONK_QUIET_SECONDS        = 30;       // no elites or events this close to a mini-boss or the boss
     uint32 const BONK_ELITE_RETRY_MS       = 5000;     // an elite held back looks again this soon
@@ -133,10 +134,11 @@ namespace
     }
 
     // Experience orbs.
-    size_t const BONK_MAX_ORBS             = 300;      // past this, one red orb gathers the rest
+    size_t const BONK_MAX_ORBS             = 100;      // past this, the oldest orb goes, with its experience
     uint32 const BONK_ORB_CHECK_MS         = 100;
     float const BONK_ORB_PICKUP_RANGE      = 1.5f;
     float const BONK_ORB_MAGNET_RANGE      = 6.0f;     // before the Magnet passive
+    float const BONK_MAX_MAGNET_RANGE      = 30.0f;    // about the screen's edge; Pickup range past it is wasted
     // A pulled orb flies straight at the player this fast (yards per second),
     // turning toward the player again once they have moved this far.
     float const BONK_ORB_FLY_SPEED         = 28.0f;
@@ -144,6 +146,18 @@ namespace
     uint32 const BONK_ORB_FACTION          = 35;       // friendly: enemies and area spells leave it be
     // Orbs the run lost track of (cleanup off the map) still go away eventually.
     uint32 const BONK_ORB_LIFETIME_MS      = 30 * MINUTE * IN_MILLISECONDS;
+    // Orbs merge: this many of a colour lying this close to one become one of
+    // the next colour, holding all their experience (blue, green, red, purple).
+    uint32 const BONK_ORB_MERGE_COUNT      = 5;
+    float const BONK_ORB_MERGE_RANGE       = 8.0f;     // kills spread out; 4 yards left most orbs unmerged
+    uint32 const BONK_ORB_MERGE_CHECK_MS   = 1000;
+    uint32 const BONK_ORB_MERGE_MIN_AGE_MS = 1000;     // every drop is seen before it merges
+    uint32 const BONK_ORB_MERGE_SLIDE_MS   = 400;      // the others slide to the anchor, then they are one
+    float const BONK_ORB_MERGE_SLIDE_SPEED = 12.0f;    // yards per second
+    // The orbs are jewels standing on their own middle: each rises this far
+    // off the ground as it drops.
+    float const BONK_ORB_LIFT              = 0.5f;
+    float const BONK_ORB_RISE_SPEED        = 2.0f;     // yards per second
 
     size_t const BONK_MAX_WEAPONS  = 5;
     size_t const BONK_MAX_PASSIVES = 6;
@@ -163,6 +177,9 @@ namespace
     float const BONK_FROZEN_CRIT_BONUS     = 0.5f;     // more crit damage on rooted enemies with a freezing spell
     uint32 const BONK_SPELL_WEAPON_ORB     = 22576;    // Glowy (Blue): an orb's look
     float const BONK_WEAPON_ORB_SCALE      = 1.2f;
+    // The light blue wisp (tools/telegraphs/Wisps.cs): the XP orb templates
+    // the weapon orbs are summoned from look like jewels.
+    uint32 const BONK_DISPLAY_SPELL_ORB    = 17998;
     float const BONK_WEAPON_ORB_SPEED      = 0.35f;    // times a running hero's speed
     float const BONK_PLAYER_RUN_SPEED      = 7.0f;     // yards a second
     // Projectiles fly this high above where they set off from the hero (the
@@ -179,6 +196,7 @@ namespace
     float const BONK_KNOCKBACK_SPEED       = 18.0f;
     float const BONK_KNOCKBACK_HEIGHT      = 2.0f;
     uint32 const BONK_BURST_INTERVAL_MS    = 150;      // between a burst's shots
+    uint32 const BONK_COUNT_RECAST_MS      = 300;      // Count: a spell around the hero or a cone goes again this much later
     float const BONK_MAX_MARK              = 100.0f;   // % more damage a mark can add
     float const BONK_MAX_DEMORALIZE        = 60.0f;    // % less damage a shout can take off
     float const BONK_MARK_JUMP_RANGE       = 15.0f;    // a mark moves on to an enemy this close to the one that died
@@ -363,6 +381,18 @@ namespace
         creature->SetClientUnselectable(true);
     }
 
+    // Each colour's creature template (its look and size).
+    uint32 GetOrbEntry(BonkOrb colour)
+    {
+        switch (colour)
+        {
+            case BONK_ORB_GREEN:  return BONK_ORB_LARGE;
+            case BONK_ORB_RED:    return BONK_ORB_HUGE;
+            case BONK_ORB_PURPLE: return BONK_ORB_GRAND;
+            default:              return BONK_ORB_SMALL;
+        }
+    }
+
     void VanishOrb(Creature* orb)
     {
         orb->RemoveAllAuras();
@@ -469,16 +499,6 @@ namespace
         if (!evolved)
             return "";
         return " Legendary from rank " + std::to_string(BONK_EVOLVE_RANK) + ": " + evolved->name + ".";
-    }
-
-    // A spell's extra jumps, read as what they are for it.
-    std::string DescribeJump(BonkWeapon const& weapon)
-    {
-        if (weapon.behavior == BONK_BEHAVIOR_CLEAVE)
-            return "cleaves 1 more enemy";
-        if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
-            return "spreads to 1 more enemy";
-        return "hits 1 more enemy";
     }
 
     // CastCustomSpell for a spot on the ground.
@@ -659,6 +679,9 @@ bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
 
 void BonkRun::Update(uint32 diff)
 {
+    // `.bonk stress`: times this update (BonkRunStress.cpp).
+    StressTick const stressTick(*this, diff);
+
     switch (m_state)
     {
         case STATE_ENTERING:
@@ -816,6 +839,7 @@ void BonkRun::StartStage()
     m_objectives.Clear(m_player);
     m_spawnPoints.Reset(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
     ResetShrines();
+    ResetVendor();
     DespawnTraps();
     DespawnPets();
     m_marks.clear();
@@ -849,6 +873,10 @@ void BonkRun::SendFullState() const
         SendGreed();
     if (!m_leyOffer.empty())
         SendLeyOffer();
+    if (m_vendorOpen)
+        SendVendor();
+    if (m_miniEventActive)
+        SendMiniEventTimer(true);
 }
 
 void BonkRun::UpdateRunning(uint32 diff)
@@ -888,6 +916,7 @@ void BonkRun::UpdateRunning(uint32 diff)
         return;
     UpdateMiniEvents(diff);
     UpdateShrines(diff);
+    UpdateVendor(diff);
     if (m_state != STATE_RUNNING)
         return;
 
@@ -928,7 +957,7 @@ void BonkRun::UpdateOffers()
         m_lastLevel = level;
     }
 
-    if (!m_offer.empty() || !m_leyOffer.empty())
+    if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen)
         return;
 
     // Chests first: the player just walked up to one. Ley Line blessings
@@ -1261,7 +1290,7 @@ void BonkRun::UpdateSpawns(uint32 diff)
         uint32 const alive = m_mobs.size();
         uint32 count = target > trash ? target - trash : 0;
         count = std::min(count, m_tier.maxAlive > alive ? m_tier.maxAlive - alive : 0u);
-        count = std::min(count, BONK_SPAWN_PER_TICK);
+        count = std::min(count, m_stress.on ? BONK_STRESS_SPAWN_PER_TICK : BONK_SPAWN_PER_TICK);
         for (uint32 i = 0; i < count; ++i)
             if (BonkMapCreature const* creature = PickTrash())
                 SpawnMob(*creature);
@@ -1300,6 +1329,9 @@ float BonkRun::GetCurveMinAlive() const
 
 uint32 BonkRun::GetSpawnTarget() const
 {
+    // `.bonk stress`: always a full screen.
+    if (m_stress.on)
+        return m_tier.maxAlive;
     float target = std::min(GetCurveMinAlive(), float(m_tier.maxAlive));
     if (m_bossSpawned)
         target *= BONK_BOSS_CROWD;
@@ -1552,6 +1584,9 @@ void BonkRun::UpdateStragglers(uint32 diff)
         if (!mob || !mob->IsAlive() || mob->HasCreatureState(CSTATE_DESPAWNING) || mob->IsWithinDistInMap(m_player, BONK_STRAY_DISTANCE) ||
             IsAhead(mob->GetPositionX(), mob->GetPositionY(), forward))
             continue;
+        // A mini-event's goblin or bounty is chased, not brought along.
+        if (guid == m_miniEvent.target)
+            continue;
         auto const itr = m_farSince.find(guid);
         uint32 const since = itr != m_farSince.end() ? itr->second : now;
         farSince[guid] = since;
@@ -1790,8 +1825,10 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     if (!damage)
         return 0;
 
-    if (float const armor = GetStat(BONK_PASSIVE_ARMOR))
-        damage = std::max(1u, uint32(damage * (1.0f - armor / 100.0f)));
+    // Each point of Armor counts for less than the one before, so it never
+    // reaches all of the damage and keeps helping in endless runs.
+    if (float const armor = std::max(0.0f, GetStat(BONK_PASSIVE_ARMOR)))
+        damage = std::max(1u, uint32(damage / (1.0f + armor / 100.0f)));
 
     m_shieldIdleMs = 0;
 
@@ -2609,6 +2646,7 @@ void BonkRun::EnterNextStage()
     m_telegraphs.Dismiss(m_player);
     m_objectives.Clear(m_player);
     DespawnShrines();
+    DespawnVendor();
 
     std::string error;
     if (!TeleportToStage(*next, error))
@@ -2666,9 +2704,20 @@ void BonkRun::GoHome()
         Finish(true);
 }
 
+float BonkRun::GetMagnetRange() const
+{
+    return std::min(BONK_MAX_MAGNET_RANGE, BONK_ORB_MAGNET_RANGE * (1.0f + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_PICKUP)) / 100.0f));
+}
+
+float BonkRun::GetGearTotal(BonkPassiveEffect effect) const
+{
+    float const total = m_gear.passives[effect];
+    return effect == BONK_PASSIVE_HASTE ? std::min(total, BONK_MAX_GEAR_HASTE) : total;
+}
+
 float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
 {
-    float total = m_bonuses.passives[effect] + m_gear.passives[effect];
+    float total = m_bonuses.passives[effect] + GetGearTotal(effect);
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             if (passive->effect == effect)
@@ -2678,50 +2727,81 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
         for (OwnedWeapon const& owned : m_weapons)
             if (owned.weapon.behavior == BONK_BEHAVIOR_REVENGE)
                 total += owned.weapon.behaviorValue;
+    // `.bonk stress`: a maxed hero.
+    total += m_stress.bonuses[effect];
     // Ley Line blessings, for the rest of the run.
     return total + m_shrineBonuses[effect];
+}
+
+float BonkRun::GetStatCap(BonkPassiveEffect effect)
+{
+    switch (effect)
+    {
+        case BONK_PASSIVE_DODGE:  return BONK_MAX_DODGE;
+        case BONK_PASSIVE_HIT:    return BONK_MAX_HIT;
+        case BONK_PASSIVE_AMOUNT: return BONK_MAX_COUNT;
+        case BONK_PASSIVE_AREA:   return BONK_MAX_AREA;
+        case BONK_PASSIVE_HASTE:  return BONK_MAX_HASTE;
+        default:                  return 0.0f;
+    }
 }
 
 float BonkRun::GetStat(BonkPassiveEffect effect) const
 {
     float const total = GetPassiveTotal(effect);
-    switch (effect)
-    {
-        case BONK_PASSIVE_ARMOR: return std::min(total, BONK_MAX_ARMOR);
-        case BONK_PASSIVE_DODGE: return std::min(total, BONK_MAX_DODGE);
-        case BONK_PASSIVE_HIT:   return std::min(total, BONK_MAX_HIT);
-        default:                 return total;
-    }
+    float const cap = GetStatCap(effect);
+    return cap > 0.0f ? std::min(total, cap) : total;
 }
 
 float BonkRun::GetHasteRate() const
 {
-    return 1.0f + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_HASTE)) / 100.0f;
+    return 1.0f + std::max(0.0f, GetStat(BONK_PASSIVE_HASTE)) / 100.0f;
 }
 
 void BonkRun::SendStats() const
 {
     float totals[MAX_BONK_PASSIVE_EFFECT];
     for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
-        totals[effect] = GetPassiveTotal(BonkPassiveEffect(effect)) - m_gear.passives[effect];
+        totals[effect] = GetPassiveTotal(BonkPassiveEffect(effect)) - GetGearTotal(BonkPassiveEffect(effect));
     m_player->GetBonkPlayer()->SendStatTotals(totals, true);
 }
 
 float BonkRun::GetWeaponDamage(OwnedWeapon const& owned) const
 {
     // Power is not in here: GetDamageMultiplier applies it to every hit.
-    return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * (1.0f + owned.damageBonus / 100.0f);
+    // A beast's damage ranks add to its rank damage.
+    float const bonus = owned.damageBonus + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_PET_DAMAGE);
+    return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * (1.0f + bonus / 100.0f);
+}
+
+float BonkRun::GetSpellUpgrade(OwnedWeapon const& owned, BonkSpellUpgrade upgrade) const
+{
+    if (upgrade == BONK_SPELL_UPGRADE_NONE || upgrade >= MAX_BONK_SPELL_UPGRADE || owned.weapon.GetUpgradeStep(upgrade) <= 0.0f)
+        return 0.0f;
+    float const cap = BONK_SPELL_UPGRADE_CAP[upgrade];
+    return cap > 0.0f ? std::min(owned.upgrades[upgrade], cap) : owned.upgrades[upgrade];
+}
+
+float BonkRun::GetWeaponDurationScale(OwnedWeapon const& owned) const
+{
+    return std::max(0.1f, 1.0f + (GetPassiveTotal(BONK_PASSIVE_DURATION) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_DURATION)) / 100.0f);
+}
+
+float BonkRun::GetWeaponHasteRate(OwnedWeapon const& owned) const
+{
+    // The spell's own Haste counts toward the same cap (BONK_MAX_HASTE).
+    return std::min(1.0f + BONK_MAX_HASTE / 100.0f, GetHasteRate() + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HASTE) / 100.0f);
 }
 
 uint32 BonkRun::GetWeaponCooldown(OwnedWeapon const& owned) const
 {
     // Haste is a rate, so it never brings the cooldown to nothing; the
-    // spell's own faster ranks and a Mastery cooldown bonus count as more.
+    // spell's own Haste and a Mastery cooldown bonus count as more.
     float mastery = 0.0f;
     auto itr = m_mastery.spellCooldown.find(GetRootWeapon(owned.weapon));
     if (itr != m_mastery.spellCooldown.end())
         mastery = itr->second;
-    float const rate = GetHasteRate() + (owned.hasteBonus + mastery) / 100.0f;
+    float const rate = std::min(1.0f + BONK_MAX_HASTE / 100.0f, GetWeaponHasteRate(owned) + mastery / 100.0f);
     return std::max(200u, uint32(owned.weapon.cooldownMs / rate));
 }
 
@@ -2740,16 +2820,18 @@ void BonkRun::UpdateWeapons(uint32 diff)
 
 float BonkRun::GetWeaponArea(OwnedWeapon const& owned) const
 {
-    return std::max(0.1f, 1.0f + (owned.areaBonus + GetPassiveTotal(BONK_PASSIVE_AREA)) / 100.0f);
+    // The Area stat is a spell's only size, capped at +50% (BONK_MAX_AREA).
+    return std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f);
 }
 
 uint32 BonkRun::GetWeaponTargets(OwnedWeapon const& owned) const
 {
+    // Count is the only source of more targets besides a Mastery node.
     uint32 mastery = 0;
     auto itr = m_mastery.spellTargets.find(GetRootWeapon(owned.weapon));
     if (itr != m_mastery.spellTargets.end())
         mastery = itr->second;
-    return owned.weapon.baseTargets + owned.extraTargets + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT)) + mastery;
+    return owned.weapon.baseTargets + uint32(GetStat(BONK_PASSIVE_AMOUNT)) + mastery;
 }
 
 void BonkRun::GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInfo, float damageShare, optional<int32>* basePoints) const
@@ -2944,10 +3026,12 @@ float BonkRun::GetMarkBonus(Unit const* victim) const
     if (!owned)
         return 0.0f;
 
-    // A mark that deals no damage of its own grows with its damage ranks.
+    // A mark that deals no damage of its own grows with its damage ranks;
+    // its Mark strength upgrades add to it.
     float bonus = owned->weapon.behaviorValue;
     if (owned->weapon.damageEffectIndex < 0 && !owned->weapon.weaponDamage)
         bonus *= 1.0f + owned->damageBonus / 100.0f;
+    bonus += GetSpellUpgrade(*owned, BONK_SPELL_UPGRADE_MARK);
     return std::min(bonus, BONK_MAX_MARK);
 }
 
@@ -3035,7 +3119,7 @@ void BonkRun::SpreadFrom(Creature const* dead)
         if (!spellInfo)
             continue;
 
-        uint32 const jumps = uint32(weapon.behaviorValue) + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT)) + owned.extraJumps;
+        uint32 const jumps = uint32(weapon.behaviorValue) + uint32(GetStat(BONK_PASSIVE_AMOUNT));
         uint32 spread = 0;
         for (Creature* next : GetMobsInRange(BONK_SPREAD_RADIUS * GetWeaponArea(owned), dead))
         {
@@ -3077,12 +3161,13 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             continue;
         BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(spellId);
         tweak.areaScale = areaScale;
-        tweak.chainBonus = weapon.chains ? owned.extraJumps : 0;
+        tweak.chainBonus = 0;
         tweak.durationMs = weapon.durationMs;
-        tweak.durationScale = std::max(0.1f, 1.0f + (GetPassiveTotal(BONK_PASSIVE_DURATION) + owned.durationBonus) / 100.0f);
+        tweak.durationScale = GetWeaponDurationScale(owned);
         tweak.weaponDamage = weapon.weaponDamage ? std::max(1, int32(GetWeaponDamage(owned))) : 0;
         tweak.tickMs = weapon.tickMs;
-        tweak.tickScale = 1.0f / GetHasteRate();
+        // The spell's own Haste speeds its ticks too.
+        tweak.tickScale = 1.0f / GetWeaponHasteRate(owned);
     }
     BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(weapon.spellId);
     uint32 const now = WorldTimer::getMSTime();
@@ -3141,7 +3226,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     // Area weapons, cones and melee reach grow; a ground weapon's range is
     // where it can aim, not its area.
     bool const reachGrows = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE || weapon.behavior == BONK_BEHAVIOR_CLEAVE;
-    float const range = weapon.range * (reachGrows ? areaScale : 1.0f + owned.rangeBonus / 100.0f);
+    float const range = weapon.range * (reachGrows ? areaScale : 1.0f);
     std::vector<Creature*> mobs = GetMobsInRange(range);
 
     // Damage over time wants a fresh enemy each cast: casting again on one
@@ -3201,9 +3286,28 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     GetBasePoints(owned, castInfo, castShare, basePoints);
 
     FiringWeapon firing(m_player->GetBonkPlayer());
+
+    // Count: a spell around the hero or a cone casts again a moment later for
+    // each point, the way a bolt fires one more, at most
+    // BONK_MAX_COUNT_PULSES times.
+    auto castAgain = [&]()
+    {
+        uint32 const pulses = std::min(uint32(GetStat(BONK_PASSIVE_AMOUNT)), BONK_MAX_COUNT_PULSES);
+        for (uint32 i = 1; i <= pulses; ++i)
+        {
+            PendingCast again;
+            again.weaponId = weapon.id;
+            again.spellId = castInfo->Id;
+            again.leftMs = int32(i * BONK_COUNT_RECAST_MS);
+            again.recast = true;
+            m_pendingCasts.push_back(again);
+        }
+    };
+
     if (weapon.target == BONK_TARGET_SELF_AREA)
     {
         CastSelfArea(owned, castInfo, areaScale);
+        castAgain();
 
         // A second pulse, wider.
         if (weapon.behavior == BONK_BEHAVIOR_ECHO)
@@ -3264,6 +3368,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             owned.timer = 250;
             return;
         }
+        castAgain();
     }
     else if (weapon.target == BONK_TARGET_GROUND)
     {
@@ -3273,7 +3378,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             return !m_player->IsWithinLOSInMap(mob);
         }), mobs.end());
 
-        uint32 const drops = 1 + owned.extraTargets + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT));
+        uint32 const drops = 1 + uint32(GetStat(BONK_PASSIVE_AMOUNT));
         std::vector<Creature*> const spots = PickGroundSpots(mobs, weapon.groundRadius * areaScale, drops);
         if (spots.empty())
         {
@@ -3337,15 +3442,13 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         uint32 const fired = uint32(struck.size());
 
         // A cleave also hits the enemies next to each target, for a share
-        // of the damage; an aimed spell's pierces and bounces hit them in
-        // full (a projectile's pass through instead). Every enemy is hit once.
+        // of the damage; an aimed spell's pierces hit them in full (a
+        // projectile's pass through instead), and its spell cleave (a rank
+        // upgrade) for a share. Every enemy is hit once.
         bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
         bool const pierce = weapon.IsAimed() && !weapon.chains && weapon.behavior != BONK_BEHAVIOR_SPREAD && !projectile;
-        uint32 const victims = cleave ? 1 + weapon.baseJumps + owned.extraJumps : pierce ? weapon.baseJumps + owned.extraJumps : 0;
-        if (victims)
+        auto strikeNear = [&](uint32 victims, float share, float radius)
         {
-            float const share = cleave ? weapon.behaviorValue : 1.0f;
-            float const radius = BONK_CLEAVE_RADIUS * (cleave ? areaScale : 1.0f);
             for (size_t i = 0; i < fired; ++i)
             {
                 uint32 hit = 0;
@@ -3362,10 +3465,16 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
                     ++hit;
                 }
             }
-            // The next swing hits for full damage again.
-            if (weapon.weaponDamage)
-                tweak.weaponDamage = std::max(1, int32(GetWeaponDamage(owned)));
-        }
+        };
+        uint32 const victims = cleave ? 1 + weapon.baseJumps : pierce ? weapon.baseJumps : 0;
+        if (victims)
+            strikeNear(victims, cleave ? weapon.behaviorValue : 1.0f, BONK_CLEAVE_RADIUS * (cleave ? areaScale : 1.0f));
+        float const spellCleave = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_CLEAVE) / 100.0f;
+        if (spellCleave > 0.0f && !projectile)
+            strikeNear(BONK_SPELL_CLEAVE_TARGETS, spellCleave, BONK_CLEAVE_RADIUS);
+        // The next swing hits for full damage again.
+        if ((victims || spellCleave > 0.0f) && weapon.weaponDamage)
+            tweak.weaponDamage = std::max(1, int32(GetWeaponDamage(owned)));
 
         if (!fired)
         {
@@ -3481,6 +3590,23 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
         if (!owned || !info || !m_player->IsAlive())
             continue;
 
+        // Count's cast again: the same pulse around the hero, or the same
+        // cone, from where the hero is now.
+        if (cast.recast)
+        {
+            float const area = GetWeaponArea(*owned);
+            if (owned->weapon.target == BONK_TARGET_CONE)
+            {
+                float const share = info->Id == owned->weapon.spellId ? 1.0f : owned->weapon.altDamage;
+                FiringWeapon firing(m_player->GetBonkPlayer());
+                for (Creature* mob : GetMobsInCone(*owned, owned->weapon.range * area))
+                    StrikeWith(*owned, info, mob, share);
+            }
+            else
+                CastSelfArea(*owned, info, area);
+            continue;
+        }
+
         // An echo: the same pulse again, half again as wide.
         if (cast.echo)
         {
@@ -3506,7 +3632,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             Creature* target = map->GetCreature(cast.target);
             if (!target || !target->IsAlive())
             {
-                std::vector<Creature*> const mobs = GetMobsInRange(owned->weapon.range * (1.0f + owned->rangeBonus / 100.0f));
+                std::vector<Creature*> const mobs = GetMobsInRange(owned->weapon.range);
                 target = mobs.empty() ? nullptr : mobs.front();
             }
             if (target)
@@ -3559,6 +3685,7 @@ void BonkRun::LaunchOrb(OwnedWeapon& owned)
     Creature* orb = m_player->SummonCreature(BONK_ORB_SMALL, x, y, z + 1.0f, angle, TEMPSUMMON_TIMED_DESPAWN, lifetime + 2000, false, 0, &InstallOrbAI);
     if (!orb)
         return;
+    orb->SetDisplayId(BONK_DISPLAY_SPELL_ORB);
     orb->SetObjectScale(BONK_WEAPON_ORB_SCALE);
     orb->AddAura(BONK_SPELL_WEAPON_ORB);
     orb->SetSpeedRate(MOVE_RUN, BONK_WEAPON_ORB_SPEED);
@@ -3663,7 +3790,7 @@ void BonkRun::LaunchProjectiles(OwnedWeapon& owned, BonkProjectileInfo const& in
         uint32 chain = 1;
         for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
             chain = std::max(chain, spellInfo->EffectChainTarget[i]);
-        uint32 const count = chain + owned.extraJumps;
+        uint32 const count = chain;
         for (uint32 i = 0; i < count; ++i)
             LaunchProjectile(owned, info, spellInfo->Id, damageShare, from, aim + (float(i) - (count - 1) / 2.0f) * BONK_PROJECTILE_FAN,
                 weapon.baseJumps);
@@ -3672,7 +3799,7 @@ void BonkRun::LaunchProjectiles(OwnedWeapon& owned, BonkProjectileInfo const& in
 
     // The rest pass through one more enemy for each pierce; a spell that
     // spreads uses its jumps for that instead.
-    uint32 const pierce = weapon.behavior == BONK_BEHAVIOR_SPREAD ? 0 : weapon.baseJumps + owned.extraJumps;
+    uint32 const pierce = weapon.behavior == BONK_BEHAVIOR_SPREAD ? 0 : weapon.baseJumps;
     LaunchProjectile(owned, info, spellInfo->Id, damageShare, from, aim, pierce);
 }
 
@@ -3684,7 +3811,7 @@ void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& inf
     float const x = from->GetPositionX();
     float const y = from->GetPositionY();
     float const z = from->GetPositionZ() + (from == m_player ? BONK_PROJECTILE_HEIGHT : 0.0f);
-    float const length = owned.weapon.range * (1.0f + owned.rangeBonus / 100.0f);
+    float const length = owned.weapon.range;
     float ex = x + length * std::cos(angle);
     float ey = y + length * std::sin(angle);
     float ez = z;
@@ -3880,6 +4007,37 @@ void BonkRun::LandBolt(ObjectGuid mobGuid, ObjectGuid targetGuid, uint32 spellId
     mob->DealSpellDamage(&hit, false);
 }
 
+void BonkRun::HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, SpellEffectIndex effectIndex, WeaponAttackType attackType)
+{
+    if (m_state != STATE_RUNNING || !spellInfo || !target || !target->IsAlive() || damage <= 0.0f || !m_player->IsAlive())
+        return;
+
+    // The spell's own cast, or the alt spell a cast turned into.
+    OwnedWeapon const* owned = nullptr;
+    for (OwnedWeapon const& itr : m_weapons)
+        if (itr.weapon.spellId == spellInfo->Id || itr.weapon.altSpellId == spellInfo->Id)
+        {
+            owned = &itr;
+            break;
+        }
+    if (!owned)
+        return;
+    float const chance = GetSpellUpgrade(*owned, BONK_SPELL_UPGRADE_HIT_TWICE);
+    if (chance <= 0.0f || !roll_chance_f(chance))
+        return;
+
+    // The same hit again for damage only: no auras, stacks or procs. It
+    // rolls its own crit, then the enemy's modifiers, the combat log and the
+    // damage, as a spell hit.
+    SpellNonMeleeDamage hit(m_player, target, spellInfo->Id, SpellSchools(spellInfo->School));
+    bool const crit = spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo));
+    m_player->CalculateSpellDamage(&hit, damage, spellInfo, effectIndex, attackType, nullptr, crit);
+    target->CalculateAbsorbResistBlock(m_player, &hit, spellInfo, BASE_ATTACK, nullptr);
+    m_player->DealDamageMods(target, hit.damage, &hit.absorb);
+    m_player->SendSpellNonMeleeDamageLog(&hit);
+    m_player->DealSpellDamage(&hit, true);
+}
+
 void BonkRun::OnHeroDodge()
 {
     if (m_state != STATE_RUNNING)
@@ -3891,8 +4049,7 @@ void BonkRun::OnHeroDodge()
             // Retaliation: for a while, every hit taken strikes back.
             if (owned.weapon.durationMs)
             {
-                float const scale = std::max(0.1f, 1.0f + (GetPassiveTotal(BONK_PASSIVE_DURATION) + owned.durationBonus) / 100.0f);
-                m_retaliateUntil = WorldTimer::getMSTime() + uint32(owned.weapon.durationMs * scale);
+                m_retaliateUntil = WorldTimer::getMSTime() + uint32(owned.weapon.durationMs * GetWeaponDurationScale(owned));
             }
         }
 }
@@ -3917,7 +4074,7 @@ void BonkRun::OnPeriodicDamage(uint32 spellId, uint32 damage)
 void BonkRun::DropTraps(OwnedWeapon& owned)
 {
     BonkWeapon const& weapon = owned.weapon;
-    uint32 const count = 1 + owned.extraTargets + uint32(GetPassiveTotal(BONK_PASSIVE_AMOUNT));
+    uint32 const count = 1 + uint32(GetStat(BONK_PASSIVE_AMOUNT));
     int32 const lifetime = int32(BONK_TRAP_LIFETIME * GetWeaponCooldown(owned) * m_player->GetBonkPlayer()->TweakSpell(weapon.spellId).durationScale);
     float const startAngle = frand(0.0f, 2.0f * M_PI_F);
     for (uint32 i = 0; i < count; ++i)
@@ -4094,7 +4251,7 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
     float const damage = GetWeaponDamage(owned);
     float const pace = GetWeaponCooldown(owned) / float(std::max(1u, weapon.cooldownMs));
     uint32 const swing = std::max(300u, uint32(std::max(500u, weapon.tickMs) * pace));
-    float const scale = weapon.behaviorValue > 0.0f ? weapon.behaviorValue : 1.0f;
+    float const scale = (weapon.behaviorValue > 0.0f ? weapon.behaviorValue : 1.0f) * (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_PET_SIZE) / 100.0f);
     for (ObjectGuid const& guid : owned.pets)
         if (Creature* pet = map->GetCreature(guid))
         {
@@ -4251,6 +4408,15 @@ void BonkRun::GiveExperience(uint32 xp)
         next = m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
     }
     m_player->SetUInt32Value(PLAYER_XP, level >= maxLevel ? 0 : current);
+
+    // For tuning the level pace: when each level came, in run time (pauses
+    // left out), and how many kills it took (LevelUp.log).
+    for (uint32 reached = startLevel + 1; reached <= level; ++reached)
+        sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+            "Bonk level: %s reaches level %u at run minute %.2f (stage %u, %s, %s), %u kills, class %u, +%g%% experience",
+            m_player->GetName(), reached, GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), m_kills,
+            uint32(m_player->GetClass()), GetPassiveTotal(BONK_PASSIVE_GROWTH));
+
     if (level != startLevel && m_player->IsAlive())
     {
         // Not the full heal a level normally gives: a share per level.
@@ -4264,44 +4430,199 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
     if (!experience)
         return;
 
-    // Past the cap the oldest orb makes way, and the new one carries its
-    // experience on (red, as it holds more than a kill's worth).
+    // Past the cap an orb goes, and its experience with it: every orb on the
+    // ground costs the client frame rate (stress test, Oct 15: below 50 fps
+    // with a few hundred, 70-80 with them hidden). The oldest of the lowest
+    // colour goes first, as a merged orb holds many kills' worth; never one
+    // flying to the hero. The list is oldest first.
     Map* map = m_player->GetMap();
     while (m_orbs.size() >= BONK_MAX_ORBS)
     {
-        Orb const oldest = m_orbs.front();
-        m_orbs.erase(m_orbs.begin());
-        if (Creature* creature = map->GetCreature(oldest.guid))
+        auto victim = m_orbs.end();
+        for (auto itr = m_orbs.begin(); itr != m_orbs.end(); ++itr)
+            if (!itr->pulled && (victim == m_orbs.end() || itr->colour < victim->colour))
+                victim = itr;
+        if (victim == m_orbs.end())
+            victim = m_orbs.begin();
+        Orb const gone = *victim;
+        m_orbs.erase(victim);
+        if (Creature* creature = map->GetCreature(gone.guid))
             VanishOrb(creature);
-        experience += oldest.experience;
-        colour = BONK_ORB_RED;
     }
 
-    uint32 const entry = colour == BONK_ORB_BLUE ? BONK_ORB_SMALL : colour == BONK_ORB_GREEN ? BONK_ORB_LARGE : BONK_ORB_HUGE;
+    SpawnOrb(mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), experience, colour);
+}
+
+bool BonkRun::SpawnOrb(float x, float y, float z, uint32 experience, BonkOrb colour)
+{
     // The colour is the orb's own model (bonk orb templates), never a glow:
     // the Glowy auras are what affixed elites wear.
-    Creature* orb = m_player->SummonCreature(entry, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), 0.0f,
+    Creature* orb = m_player->SummonCreature(GetOrbEntry(colour), x, y, z, 0.0f,
         TEMPSUMMON_TIMED_DESPAWN, BONK_ORB_LIFETIME_MS, false, 0, &InstallOrbAI);
     if (!orb)
     {
         GiveExperience(experience);
-        return;
+        return false;
     }
+
+    orb->MonsterMoveWithSpeed(x, y, z + BONK_ORB_LIFT, -10.0f, BONK_ORB_RISE_SPEED, MOVE_FLY_MODE);
 
     Orb dropped;
     dropped.guid = orb->GetObjectGuid();
     dropped.experience = experience;
+    dropped.colour = colour;
+    dropped.droppedMs = WorldTimer::getMSTime();
     m_orbs.push_back(dropped);
+    return true;
+}
+
+void BonkRun::UpdateOrbMerges(uint32 diff)
+{
+    // Merges under way: once the others have slid to the anchor, they are one.
+    for (size_t i = 0; i < m_orbMerges.size();)
+    {
+        m_orbMerges[i].leftMs -= int32(diff);
+        if (m_orbMerges[i].leftMs > 0)
+        {
+            ++i;
+            continue;
+        }
+        OrbMerge const merge = m_orbMerges[i];
+        m_orbMerges.erase(m_orbMerges.begin() + i);
+        FinishOrbMerge(merge);
+    }
+
+    m_orbMergeTimer += diff;
+    if (m_orbMergeTimer < BONK_ORB_MERGE_CHECK_MS)
+        return;
+    m_orbMergeTimer = 0;
+    MergeOrbs();
+}
+
+void BonkRun::MergeOrbs()
+{
+    // BONK_ORB_MERGE_COUNT orbs of a colour within BONK_ORB_MERGE_RANGE of
+    // one (the anchor) slide to it and become one orb of the next colour
+    // holding all their experience, so 1 purple = 5 red = 25 green = 125
+    // blue. Only orbs that have been seen a moment, are not flying to the
+    // hero and are not merging already. Purple is the top: purples merge
+    // into one purple holding them all.
+    Map* map = m_player->GetMap();
+    uint32 const now = WorldTimer::getMSTime();
+    for (uint8 colour = BONK_ORB_BLUE; colour <= BONK_ORB_PURPLE; ++colour)
+    {
+        struct Candidate
+        {
+            size_t index;
+            Creature* creature;
+            bool taken;
+        };
+        std::vector<Candidate> candidates;
+        for (size_t i = 0; i < m_orbs.size(); ++i)
+        {
+            Orb const& orb = m_orbs[i];
+            if (orb.colour != colour || orb.pulled || orb.mergeId || WorldTimer::getMSTimeDiff(orb.droppedMs, now) < BONK_ORB_MERGE_MIN_AGE_MS)
+                continue;
+            if (Creature* creature = map->GetCreature(orb.guid))
+                candidates.push_back({ i, creature, false });
+        }
+        if (candidates.size() < BONK_ORB_MERGE_COUNT)
+            continue;
+
+        for (Candidate& anchor : candidates)
+        {
+            if (anchor.taken)
+                continue;
+            // The nearest others in range, closest first.
+            std::vector<std::pair<float, Candidate*>> nearby;
+            for (Candidate& other : candidates)
+                if (&other != &anchor && !other.taken)
+                {
+                    float const distance = anchor.creature->GetDistance2d(other.creature->GetPositionX(), other.creature->GetPositionY(), SizeFactor::None);
+                    if (distance <= BONK_ORB_MERGE_RANGE)
+                        nearby.push_back({ distance, &other });
+                }
+            if (nearby.size() + 1 < BONK_ORB_MERGE_COUNT)
+                continue;
+            std::sort(nearby.begin(), nearby.end(), [](std::pair<float, Candidate*> const& a, std::pair<float, Candidate*> const& b) { return a.first < b.first; });
+
+            OrbMerge merge;
+            merge.id = ++m_lastOrbMergeId;
+            merge.anchor = m_orbs[anchor.index].guid;
+            merge.colour = BonkOrb(std::min<uint8>(colour + 1, BONK_ORB_PURPLE));
+            merge.leftMs = int32(BONK_ORB_MERGE_SLIDE_MS);
+            anchor.taken = true;
+            m_orbs[anchor.index].mergeId = merge.id;
+            float const x = anchor.creature->GetPositionX(), y = anchor.creature->GetPositionY(), z = anchor.creature->GetPositionZ();
+            for (size_t i = 0; i + 1 < BONK_ORB_MERGE_COUNT; ++i)
+            {
+                Candidate& other = *nearby[i].second;
+                other.taken = true;
+                m_orbs[other.index].mergeId = merge.id;
+                other.creature->MonsterMoveWithSpeed(x, y, z, -10.0f, BONK_ORB_MERGE_SLIDE_SPEED, MOVE_FLY_MODE);
+            }
+            m_orbMerges.push_back(merge);
+        }
+    }
+}
+
+void BonkRun::FinishOrbMerge(OrbMerge const& merge)
+{
+    Map* map = m_player->GetMap();
+    auto anchor = std::find_if(m_orbs.begin(), m_orbs.end(), [&](Orb const& orb) { return orb.guid == merge.anchor; });
+    Creature* anchorCreature = anchor != m_orbs.end() ? map->GetCreature(anchor->guid) : nullptr;
+    // The anchor was taken or is flying to the hero: no merge, the others
+    // stay as they are.
+    if (!anchorCreature || anchor->pulled || anchor->mergeId != merge.id)
+    {
+        for (Orb& orb : m_orbs)
+            if (orb.mergeId == merge.id)
+                orb.mergeId = 0;
+        return;
+    }
+
+    // The others that reached it fold in; one the hero's pull caught on the
+    // way is the hero's.
+    uint32 experience = 0;
+    for (auto itr = m_orbs.begin(); itr != m_orbs.end();)
+    {
+        if (itr->mergeId != merge.id || itr->guid == merge.anchor || itr->pulled)
+        {
+            if (itr->mergeId == merge.id && itr->guid != merge.anchor)
+                itr->mergeId = 0;
+            ++itr;
+            continue;
+        }
+        experience += itr->experience;
+        if (Creature* creature = map->GetCreature(itr->guid))
+            VanishOrb(creature);
+        itr = m_orbs.erase(itr);
+    }
+
+    // The anchor takes the next colour's look and size at once (a new orb
+    // would fade in over 2 seconds); found again, as the list has shrunk.
+    anchor = std::find_if(m_orbs.begin(), m_orbs.end(), [&](Orb const& orb) { return orb.guid == merge.anchor; });
+    anchor->experience += experience;
+    anchor->colour = merge.colour;
+    anchor->mergeId = 0;
+    anchor->droppedMs = WorldTimer::getMSTime();
+    if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(GetOrbEntry(merge.colour)))
+    {
+        anchorCreature->SetDisplayId(info->display_id[0]);
+        anchorCreature->SetObjectScale(info->display_scale[0]);
+    }
 }
 
 void BonkRun::UpdateOrbs(uint32 diff)
 {
+    UpdateOrbMerges(diff);
+
     m_orbTimer += diff;
     if (m_orbTimer < BONK_ORB_CHECK_MS || m_orbs.empty())
         return;
     m_orbTimer = 0;
 
-    float const magnet = BONK_ORB_MAGNET_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_PICKUP) / 100.0f);
+    float const magnet = GetMagnetRange();
     Map* map = m_player->GetMap();
     // Orbs fly to, and are taken at, where the hero is now, not the server's
     // copy that trails a running hero.
@@ -4363,6 +4684,7 @@ void BonkRun::DespawnOrbs()
             if (Creature* creature = map->GetCreature(orb.guid))
                 VanishOrb(creature);
     m_orbs.clear();
+    m_orbMerges.clear();
 }
 
 void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
@@ -4495,7 +4817,7 @@ void BonkRun::UpdateHeals(uint32 diff)
 
     // Left lying while the hero is unhurt: one may be needed later.
     bool hurt = m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth();
-    float const range = BONK_ORB_MAGNET_RANGE * (1.0f + GetPassiveTotal(BONK_PASSIVE_PICKUP) / 100.0f);
+    float const range = GetMagnetRange();
     Map* map = m_player->GetMap();
     for (auto itr = m_healDrops.begin(); itr != m_healDrops.end();)
     {
@@ -4578,6 +4900,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     if (m_state != STATE_RUNNING)
         return;
 
+    OnMiniEventTargetKilled(mob);
+
     ++m_kills;
     SpreadFrom(mob);
     SpreadKeywords(mob);
@@ -4597,9 +4921,10 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
 
     if (kind != BONK_SPAWN_BOSS)
     {
-        // Early levels take a handful of kills, later ones a few dozen.
+        // Level 1 takes about 14 kills' worth, level 10 about 80, level 20
+        // about 155: aimed at level 12 by 5 minutes and 25 by 10.
         uint32 const level = m_player->GetLevel();
-        uint32 const killsForLevel = 4 + 2 * level;
+        float const killsForLevel = 6.0f + 7.5f * level;
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
 
         // Normal enemies by archetype: swarmers give half, bruisers a green
@@ -4613,7 +4938,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
             experience *= archetype.experience;
             colour = archetype.orb;
         }
-        uint32 xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / float(killsForLevel) * experience * growth));
+        uint32 xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / killsForLevel * experience * growth));
         // A Moonwell doubles what dies inside it.
         if (IsInMoonwell(mob->GetPositionX(), mob->GetPositionY()))
             xp *= 2;
@@ -4657,9 +4982,11 @@ bool BonkRun::CanEvolve(OwnedWeapon const& owned) const
 
 float BonkRun::GetLegendaryChance(OwnedWeapon const& owned) const
 {
-    if (owned.rank < BONK_EVOLVE_RANK)
+    // Legendary ranks are evolutions only: none once evolved, or while a
+    // quest still holds the evolution back.
+    if (owned.rank < BONK_EVOLVE_RANK || !CanEvolve(owned))
         return 0.0f;
-    if (owned.rank >= BONK_EVOLVE_PITY_RANK && CanEvolve(owned))
+    if (owned.rank >= BONK_EVOLVE_PITY_RANK)
         return 100.0f;
     return BONK_LEGENDARY_BASE_CHANCE + BONK_LEGENDARY_CHANCE_PER_RANK * (owned.rank - BONK_EVOLVE_RANK) +
         BONK_LEGENDARY_CHANCE_PER_LUCK * std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_LUCK));
@@ -4687,44 +5014,33 @@ BonkRarity BonkRun::RollRarity(BonkRarity minimum) const
     return BONK_RARITY_EPIC;
 }
 
-BonkRankStep BonkRun::RollStep(OwnedWeapon const& owned, BonkRarity rarity) const
+void BonkRun::RollUpgrades(OwnedWeapon const& owned, Offer& offer) const
 {
-    BonkWeapon const& weapon = owned.weapon;
-    std::vector<BonkRankStep> options;
-    switch (rarity)
-    {
-        case BONK_RARITY_LEGENDARY:
-            return CanEvolve(owned) ? BONK_STEP_EVOLVE : BONK_STEP_LEGENDARY_DAMAGE;
-        case BONK_RARITY_EPIC:
-            // Spells around the hero, cones and buffs have no target to add.
-            if (owned.epicSteps < BONK_MAX_EPIC_STEPS && weapon.HasTargets())
-                return BONK_STEP_TARGET;
-            return BONK_STEP_EPIC_DAMAGE;
-        case BONK_RARITY_RARE:
-            if (weapon.IsAimed())
-                options.push_back(BONK_STEP_RANGE);
-            if (weapon.HasJumps() && owned.extraJumps < BONK_MAX_JUMPS)
-                options.push_back(BONK_STEP_JUMP);
-            if (weapon.IsWide())
-                options.push_back(BONK_STEP_WIDE);
-            // A buff or a beast: it lasts longer instead.
-            if (options.empty() && weapon.lasting)
-                options.push_back(BONK_STEP_DURATION);
-            break;
-        case BONK_RARITY_UNCOMMON:
-            options.push_back(BONK_STEP_COOLDOWN);
-            if (weapon.HasArea())
-                options.push_back(BONK_STEP_AREA);
-            if (weapon.lasting)
-                options.push_back(BONK_STEP_DURATION);
-            break;
-        default:
-            return BONK_STEP_DAMAGE;
-    }
+    // Rare and Epic ranks add steps from the spell's own list, at random;
+    // an Epic's two can be the same. Capped upgrades are left out, counting
+    // a step this card already rolled.
+    for (BonkSpellUpgrade& upgrade : offer.upgrades)
+        upgrade = BONK_SPELL_UPGRADE_NONE;
+    if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY)
+        return;
 
-    if (options.empty())
-        return BONK_STEP_COOLDOWN;
-    return options[urand(0, uint32(options.size() - 1))];
+    float rolled[MAX_BONK_SPELL_UPGRADE] = {};
+    for (uint8 i = 0; i < BONK_RANK_UPGRADES[offer.rarity] && i < BONK_MAX_RANK_UPGRADES; ++i)
+    {
+        std::vector<BonkWeaponUpgrade const*> options;
+        for (BonkWeaponUpgrade const& upgrade : owned.weapon.upgrades)
+        {
+            float const cap = BONK_SPELL_UPGRADE_CAP[upgrade.upgrade];
+            if (cap > 0.0f && owned.upgrades[upgrade.upgrade] + rolled[upgrade.upgrade] + upgrade.step > cap + 0.001f)
+                continue;
+            options.push_back(&upgrade);
+        }
+        if (options.empty())
+            break;
+        BonkWeaponUpgrade const* pick = options[urand(0, uint32(options.size() - 1))];
+        offer.upgrades[i] = pick->upgrade;
+        rolled[pick->upgrade] += pick->step;
+    }
 }
 
 BonkRun::Offer BonkRun::MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const
@@ -4734,7 +5050,8 @@ BonkRun::Offer BonkRun::MakeRankOffer(OwnedWeapon const& owned, BonkRarity minim
     offer.newLevel = owned.rank + 1;
     float const legendary = GetLegendaryChance(owned);
     offer.rarity = legendary > 0.0f && roll_chance_f(legendary) ? BONK_RARITY_LEGENDARY : RollRarity(minimum);
-    offer.step = RollStep(owned, offer.rarity);
+    offer.step = offer.rarity == BONK_RARITY_LEGENDARY ? BONK_STEP_EVOLVE : BONK_STEP_RANK;
+    RollUpgrades(owned, offer);
     return offer;
 }
 
@@ -4742,58 +5059,32 @@ void BonkRun::ApplyStep(OwnedWeapon& owned, Offer const& offer)
 {
     ++owned.rank;
     owned.rarities += char('0' + int(offer.rarity));
-    switch (offer.step)
+    if (offer.step == BONK_STEP_EVOLVE)
     {
-        case BONK_STEP_DAMAGE:
-            owned.damageBonus += BONK_RANK_DAMAGE;
-            break;
-        case BONK_STEP_COOLDOWN:
-            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
-            owned.hasteBonus += BONK_RANK_HASTE;
-            break;
-        case BONK_STEP_AREA:
-            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
-            owned.areaBonus += BONK_RANK_AREA;
-            break;
-        case BONK_STEP_DURATION:
-            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
-            owned.durationBonus += BONK_RANK_DURATION;
-            break;
-        case BONK_STEP_RANGE:
-            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
-            owned.rangeBonus += BONK_RANK_RANGE;
-            break;
-        case BONK_STEP_JUMP:
-            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
-            ++owned.extraJumps;
-            break;
-        case BONK_STEP_WIDE:
-            owned.damageBonus += BONK_RANK_DAMAGE_MINOR;
-            owned.areaBonus += BONK_RANK_WIDE;
-            break;
-        case BONK_STEP_TARGET:
-            ++owned.extraTargets;
-            ++owned.epicSteps;
-            break;
-        case BONK_STEP_EPIC_DAMAGE:
-            owned.damageBonus += BONK_RANK_EPIC_DAMAGE;
-            break;
-        case BONK_STEP_EVOLVE:
-            if (BonkWeapon const* evolved = sBonkMgr.GetEvolution(owned.weapon.id))
-            {
-                // Ranks and what they added carry over.
-                std::string const from = owned.weapon.name;
-                owned.weapon = *evolved;
-                owned.timer = 500;
-                RebuildWeaponSpells();
-                m_player->GetBonkPlayer()->Notify(from + " evolved into " + evolved->name + "!");
-            }
-            break;
-        case BONK_STEP_LEGENDARY_DAMAGE:
-            owned.damageBonus += BONK_RANK_LEGENDARY_DAMAGE;
-            break;
-        default:
-            break;
+        if (BonkWeapon const* evolved = sBonkMgr.GetEvolution(owned.weapon.id))
+        {
+            // Ranks, damage and upgrades carry over; upgrades the evolution
+            // doesn't use rest (GetSpellUpgrade).
+            std::string const from = owned.weapon.name;
+            owned.weapon = *evolved;
+            owned.timer = 500;
+            RebuildWeaponSpells();
+            m_player->GetBonkPlayer()->Notify(from + " evolved into " + evolved->name + "!");
+        }
+        return;
+    }
+    if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY)
+        return;
+
+    // A step the spell had no room left for is damage instead.
+    owned.damageBonus += BONK_RANK_DAMAGE[offer.rarity];
+    for (uint8 i = 0; i < BONK_RANK_UPGRADES[offer.rarity] && i < BONK_MAX_RANK_UPGRADES; ++i)
+    {
+        float const step = owned.weapon.GetUpgradeStep(offer.upgrades[i]);
+        if (step > 0.0f)
+            owned.upgrades[offer.upgrades[i]] += step;
+        else
+            owned.damageBonus += BONK_RANK_SPARE_DAMAGE;
     }
 }
 
@@ -4810,6 +5101,13 @@ bool BonkRun::IsPassiveAllowed(BonkPassive const& passive) const
     return true;
 }
 
+bool BonkRun::IsPassiveCapped(BonkPassive const& passive) const
+{
+    // A stat already at its cap (Dodge, Hit, Count, Area, Haste) gains nothing from more.
+    float const cap = GetStatCap(passive.effect);
+    return cap > 0.0f && GetPassiveTotal(passive.effect) >= cap;
+}
+
 bool BonkRun::RefreshKeptOffer(Offer& offer) const
 {
     if (offer.isWeapon)
@@ -4824,24 +5122,21 @@ bool BonkRun::RefreshKeptOffer(Offer& offer) const
         if (!owned)
             return false;
 
-        // The rarity stays; what it adds is rolled again only if it no
-        // longer fits (evolved, Epic targets used up).
+        // The rarity stays; its upgrades are rolled again for the spell as
+        // it is now (it may have evolved or reached a cap). An evolution
+        // that no longer fits becomes an Epic rank.
         offer.newLevel = owned->rank + 1;
-        bool fits = true;
-        switch (offer.step)
+        if (offer.step == BONK_STEP_EVOLVE && !CanEvolve(*owned))
         {
-            case BONK_STEP_EVOLVE: fits = CanEvolve(*owned); break;
-            case BONK_STEP_TARGET: fits = owned->epicSteps < BONK_MAX_EPIC_STEPS; break;
-            case BONK_STEP_JUMP:   fits = owned->extraJumps < BONK_MAX_JUMPS; break;
-            default: break;
+            offer.step = BONK_STEP_RANK;
+            offer.rarity = BONK_RARITY_EPIC;
         }
-        if (!fits)
-            offer.step = RollStep(*owned, offer.rarity);
+        RollUpgrades(*owned, offer);
         return true;
     }
 
     BonkPassive const* passive = sBonkMgr.GetPassive(offer.id);
-    if (!passive || m_banished.count({ false, offer.id }) || !IsPassiveAllowed(*passive))
+    if (!passive || m_banished.count({ false, offer.id }) || !IsPassiveAllowed(*passive) || IsPassiveCapped(*passive))
         return false;
     auto rank = m_passiveRanks.find(offer.id);
     uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
@@ -4852,7 +5147,7 @@ bool BonkRun::RefreshKeptOffer(Offer& offer) const
     return true;
 }
 
-bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid, std::vector<Offer> const* kept)
+bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid, std::vector<Offer> const* kept, std::vector<Offer>* drawn)
 {
     struct Candidate
     {
@@ -4930,7 +5225,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
             continue;
         if (m_banished.count({ false, itr.first }) || isCard(false, itr.first) || sBonkQuests.IsLocked(account, BONK_REWARD_PASSIVE, itr.first))
             continue;
-        if (!IsPassiveAllowed(itr.second))
+        if (!IsPassiveAllowed(itr.second) || IsPassiveCapped(itr.second))
             continue;
         Offer offer;
         offer.isWeapon = false;
@@ -5004,8 +5299,15 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
         if (OwnedWeapon const* owned = FindOwned(card.id))
         {
             card.rarity = RollRarity(minimum);
-            card.step = RollStep(*owned, card.rarity);
+            card.step = BONK_STEP_RANK;
+            RollUpgrades(*owned, card);
         }
+    }
+
+    if (drawn)
+    {
+        *drawn = cards;
+        return !cards.empty();
     }
 
     m_offer = cards;
@@ -5062,55 +5364,39 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
     if (!weapon)
         return "";
 
-    std::string const minor = "+" + Percent(BONK_RANK_DAMAGE_MINOR) + " damage, ";
-    std::string text;
-    switch (offer.step)
+    if (offer.step == BONK_STEP_NEW)
+        return weapon->description + DescribeEvolution(*weapon);
+    if (offer.step == BONK_STEP_EVOLVE)
     {
-        case BONK_STEP_NEW:
-            return weapon->description + DescribeEvolution(*weapon);
-        case BONK_STEP_DAMAGE:
-            text = "+" + Percent(BONK_RANK_DAMAGE) + " damage";
-            break;
-        case BONK_STEP_COOLDOWN:
-            text = minor + "attacks " + Percent(BONK_RANK_HASTE) + " more often";
-            break;
-        case BONK_STEP_AREA:
-            text = minor + "+" + Percent(BONK_RANK_AREA) + (weapon->behavior == BONK_BEHAVIOR_CLEAVE ? " reach" : " area");
-            break;
-        case BONK_STEP_DURATION:
-            text = minor + "lasts " + Percent(BONK_RANK_DURATION) + " longer";
-            break;
-        case BONK_STEP_RANGE:
-            text = minor + "+" + Percent(BONK_RANK_RANGE) + " range";
-            break;
-        case BONK_STEP_JUMP:
-            text = minor + DescribeJump(*weapon);
-            break;
-        case BONK_STEP_WIDE:
-            text = minor + "+" + Percent(BONK_RANK_WIDE) + " area";
-            break;
-        case BONK_STEP_TARGET:
-        {
-            OwnedWeapon const* owned = FindOwned(offer.id);
-            uint32 const used = (owned ? owned->epicSteps : 0) + 1;
-            text = weapon->DescribeExtraTarget() + " (" + std::to_string(used) + "/" + std::to_string(BONK_MAX_EPIC_STEPS) + ")";
-            text[0] = char(toupper(text[0]));
-            break;
-        }
-        case BONK_STEP_EPIC_DAMAGE:
-            text = "+" + Percent(BONK_RANK_EPIC_DAMAGE) + " damage";
-            break;
-        case BONK_STEP_EVOLVE:
-        {
-            BonkWeapon const* evolved = sBonkMgr.GetEvolution(offer.id);
-            return evolved ? "Evolves " + weapon->name + ": " + evolved->description : "";
-        }
-        case BONK_STEP_LEGENDARY_DAMAGE:
-            text = "+" + Percent(BONK_RANK_LEGENDARY_DAMAGE) + " damage";
-            break;
-        default:
-            break;
+        BonkWeapon const* evolved = sBonkMgr.GetEvolution(offer.id);
+        return evolved ? "Evolves " + weapon->name + ": " + evolved->description : "";
     }
+    if (offer.rarity >= BONK_RARITY_LEGENDARY)
+        return "";
+
+    // "+15% damage, +10% radius": the same upgrade twice adds up, and a
+    // step the spell had no room for is spare damage.
+    OwnedWeapon const* owned = FindOwned(offer.id);
+    BonkWeapon const& current = owned ? owned->weapon : *weapon;
+    float damage = BONK_RANK_DAMAGE[offer.rarity];
+    float amounts[MAX_BONK_SPELL_UPGRADE] = {};
+    std::vector<BonkSpellUpgrade> order;
+    for (uint8 i = 0; i < BONK_RANK_UPGRADES[offer.rarity] && i < BONK_MAX_RANK_UPGRADES; ++i)
+    {
+        BonkSpellUpgrade const upgrade = offer.upgrades[i];
+        float const step = current.GetUpgradeStep(upgrade);
+        if (step <= 0.0f)
+        {
+            damage += BONK_RANK_SPARE_DAMAGE;
+            continue;
+        }
+        if (!amounts[upgrade])
+            order.push_back(upgrade);
+        amounts[upgrade] += step;
+    }
+    std::string text = "+" + Percent(damage) + " damage";
+    for (BonkSpellUpgrade upgrade : order)
+        text += ", " + DescribeBonkSpellUpgrade(current, upgrade, amounts[upgrade]);
 
     text += ".";
     if (weapon->behavior == BONK_BEHAVIOR_SPREAD && !weapon->evolvesFrom && offer.newLevel == BONK_EVOLVE_RANK)
@@ -5135,6 +5421,16 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
     }
 
     Offer const offer = m_offer[choice - 1];
+
+    // For tuning ranks: what was taken and when (LevelUp.log).
+    {
+        std::string const rarity = offer.isWeapon && offer.step != BONK_STEP_NEW ? GetBonkRarityName(offer.rarity) : "new";
+        sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+            "Bonk pick: %s takes %s rank %u (%s, %s) at run minute %.2f, level %u: %s",
+            m_player->GetName(), DescribeOffer(offer, nullptr).c_str(), offer.newLevel, rarity.c_str(),
+            m_offerSource == OFFER_CHEST ? "chest" : "level", GetRunMinutes(), m_player->GetLevel(), DescribeStep(offer).c_str());
+    }
+
     if (offer.isWeapon)
     {
         if (OwnedWeapon* owned = FindOwned(offer.id))
@@ -5339,19 +5635,13 @@ void BonkRun::SendLoadout() const
         uint32 const interval = GetWeaponCooldown(owned);
         uint32 const tenths = (interval + 50) / 100;
         std::string stats = "Every " + std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " s";
-        uint32 const targets = weapon.baseTargets + owned.extraTargets;
+        uint32 const targets = GetWeaponTargets(owned);
         if (weapon.HasTargets() && targets > 1)
             stats += " - " + weapon.DescribeTargets(targets);
-        if (owned.extraJumps)
-        {
-            std::string const count = std::to_string(owned.extraJumps);
-            if (weapon.behavior == BONK_BEHAVIOR_CLEAVE)
-                stats += " - cleaves " + count + " more";
-            else if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
-                stats += " - spreads to " + count + " more";
-            else
-                stats += " - hits " + count + " more";
-        }
+        // What its ranks added besides damage.
+        for (uint8 upgrade = BONK_SPELL_UPGRADE_NONE + 1; upgrade < MAX_BONK_SPELL_UPGRADE; ++upgrade)
+            if (float const amount = GetSpellUpgrade(owned, BonkSpellUpgrade(upgrade)))
+                stats += " - " + DescribeBonkSpellUpgrade(weapon, BonkSpellUpgrade(upgrade), amount);
         bonk->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(interval) + "~" +
             std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + weapon.description);
 
@@ -5549,6 +5839,10 @@ void BonkRun::SetPaused(bool paused)
                     pet->SetTimeFrozen(paused && pet->IsAlive());
                 }
     }
+
+    // The addon's countdowns ran on through the pause: set them right.
+    if (!paused && m_player->IsInWorld())
+        m_objectives.ResendTimed(m_player);
 }
 
 void BonkRun::OnMobStuck(Creature* mob)
@@ -5571,6 +5865,7 @@ void BonkRun::CleanUp()
     DespawnObjects();
     m_objectives.Clear(m_player);
     DespawnShrines();
+    DespawnVendor();
     DespawnOrbs();
     m_player->SetCreatureSummonLimit(sWorld.getConfig(CONFIG_UINT32_CREATURE_SUMMON_LIMIT));
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);

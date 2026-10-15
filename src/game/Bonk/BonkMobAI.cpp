@@ -22,6 +22,14 @@ namespace
     // An enemy the run moved stands this long under a puff of smoke.
     uint32 const BONK_ARRIVE_MS = 750;
     uint32 const BONK_SPELL_ARRIVE = 10389;     // Spawn Smoke
+    uint32 const BONK_AGGRO_CRY_MS = 250;       // between enemies' aggro yells
+
+    // A fleeing treasure goblin.
+    float const BONK_FLEE_STEP          = 12.0f;    // yards away at a time...
+    uint32 const BONK_FLEE_STEP_MS      = 700;      // ...this often, so it never stops
+    float const BONK_FLEE_CLIMB         = 6.0f;     // never up or down more than this a step
+    float const BONK_FLEE_BLINK         = 15.0f;    // a blink's reach, under a puff of smoke
+    uint32 const BONK_FLEE_BLINK_MS     = 4000;     // between blinks
 
     // An enemy that cannot walk to the player this long is moved: the core
     // would make it evade (and take no damage) after 3 seconds.
@@ -164,7 +172,8 @@ BonkMobAI::BonkMobAI(Creature* creature) : CreatureAI(creature)
 }
 
 thread_local uint32 BonkMobAI::s_nextPlateId = 0;
-thread_local uint32 BonkMobAI::s_nextAffixCount = 0;
+thread_local int32 BonkMobAI::s_nextAffixCount = -1;
+thread_local char const* BonkMobAI::s_nextPlateIcon = nullptr;
 
 void BonkMobAI::Install(Creature* creature)
 {
@@ -229,8 +238,10 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
     // Elites roll the tier's number of affixes, mini-bosses one more.
     Player* owner = GetOwner();
     BonkRun* run = owner ? owner->GetBonkPlayer()->GetRun() : nullptr;
-    uint32 const affixes = s_nextAffixCount ? s_nextAffixCount : run ? run->GetTier().eliteAffixes : 1;
-    s_nextAffixCount = 0;
+    uint32 const affixes = s_nextAffixCount >= 0 ? uint32(s_nextAffixCount) : run ? run->GetTier().eliteAffixes : 1;
+    s_nextAffixCount = -1;
+    m_plateIcon = s_nextPlateIcon ? s_nextPlateIcon : "";
+    s_nextPlateIcon = nullptr;
     if (kind == BONK_SPAWN_ELITE)
         RollAffixes(affixes);
     else if (kind == BONK_SPAWN_MINIBOSS)
@@ -241,6 +252,24 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
     if (kind != BONK_SPAWN_NORMAL && owner)
         owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(kind) + "~" + m_creature->GetName() + "~" + GetAffixIcons() + "~" +
             std::to_string(m_creature->GetPlateId()) + "~" + GetUnitGuidText(m_creature));
+}
+
+bool BonkMobAI::MayCry(Creature* creature)
+{
+    BonkMobAI* ai = dynamic_cast<BonkMobAI*>(creature->AI());
+    if (!ai)
+        return true;
+    if (ai->m_cried)
+        return false;
+    ai->m_cried = true;
+
+    // Per map thread: a run's enemies all update on its map's.
+    static thread_local uint32 s_lastCryMs = 0;
+    uint32 const now = WorldTimer::getMSTime();
+    if (s_lastCryMs && WorldTimer::getMSTimeDiff(s_lastCryMs, now) < BONK_AGGRO_CRY_MS)
+        return false;
+    s_lastCryMs = now;
+    return true;
 }
 
 std::string BonkMobAI::GetUnitGuidText(Creature const* creature)
@@ -324,7 +353,7 @@ uint32 BonkMobAI::GetAffixCount() const
 
 std::string BonkMobAI::GetAffixIcons() const
 {
-    std::string icons;
+    std::string icons = m_plateIcon;
     for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
         if (HasAffix(Affix(affix)))
             icons += (icons.empty() ? "" : ",") + std::string(BONK_AFFIXES[affix].icon);
@@ -371,7 +400,7 @@ void BonkMobAI::AttackStart(Unit* victim)
     // Only ever fight the player this run belongs to, and not while it
     // stands where the run moved it (a hit on it would start the chase).
     Player* owner = GetOwner();
-    if (!owner || victim != owner || m_arriveTimer > 0)
+    if (!owner || victim != owner || m_arriveTimer > 0 || m_fleeing)
         return;
 
     CreatureAI::AttackStart(victim);
@@ -424,6 +453,13 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         m_arriveTimer -= int32(diff);
         if (m_arriveTimer > 0)
             return;
+    }
+
+    // A treasure goblin only ever runs.
+    if (m_fleeing)
+    {
+        UpdateFlee(diff, owner);
+        return;
     }
 
     // A charger winding up or dashing does nothing else.
@@ -483,7 +519,9 @@ void BonkMobAI::SetFrozen(bool frozen)
 
     m_creature->ClearUnitState(UNIT_STATE_ROOT);
     m_creature->SetRooted(false);
-    if (Player* owner = GetOwner())
+    if (m_fleeing)
+        m_fleeTimer = 0;            // off again at once
+    else if (Player* owner = GetOwner())
         AttackStart(owner);
 }
 
@@ -870,12 +908,74 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
 
 void BonkMobAI::DamageTaken(Unit* attacker, uint32& damage)
 {
+    // A goblin that blinks does so at its next update, not in the middle of
+    // the hit.
+    if (m_fleeing && m_blinks && damage && damage < m_creature->GetHealth() && m_blinkTimer <= 0)
+        m_blinkPending = true;
+
     // Only what actually comes off the enemy counts towards Leech.
     if (!damage || !attacker || attacker->GetObjectGuid() != m_ownerGuid)
         return;
 
     if (BonkRun* run = static_cast<Player*>(attacker)->GetBonkPlayer()->GetRun())
         run->OnWeaponDamage(std::min(damage, m_creature->GetHealth()));
+}
+
+void BonkMobAI::SetFleeing(bool blinks)
+{
+    m_fleeing = true;
+    m_blinks = blinks;
+    m_fleeTimer = 0;
+    m_creature->AttackStop();
+    m_creature->GetMotionMaster()->Clear(false);
+}
+
+void BonkMobAI::UpdateFlee(uint32 diff, Player* owner)
+{
+    m_blinkTimer -= int32(diff);
+    if (m_blinkPending)
+    {
+        m_blinkPending = false;
+        float x, y, z;
+        if (FindFleePoint(owner, BONK_FLEE_BLINK, x, y, z))
+        {
+            m_creature->GetMotionMaster()->Clear(false);
+            m_creature->NearTeleportTo(x, y, z, owner->GetAngle(x, y));
+            m_creature->CastSpell(m_creature, BONK_SPELL_ARRIVE, true);
+            m_blinkTimer = BONK_FLEE_BLINK_MS;
+            m_fleeTimer = 0;
+        }
+    }
+
+    m_fleeTimer -= int32(diff);
+    if (m_fleeTimer > 0)
+        return;
+    m_fleeTimer = BONK_FLEE_STEP_MS;
+
+    float x, y, z;
+    if (FindFleePoint(owner, BONK_FLEE_STEP, x, y, z))
+        m_creature->GetMotionMaster()->MovePoint(1, x, y, z, MOVE_PATHFINDING | MOVE_RUN_MODE);
+}
+
+bool BonkMobAI::FindFleePoint(Player* owner, float distance, float& x, float& y, float& z) const
+{
+    // Straight away from the player, swerving a little; another way where
+    // the ground ahead is no good (water, a cliff, out of the arena).
+    Map* map = m_creature->GetMap();
+    float const away = owner->GetAngle(m_creature);
+    for (float swerve : { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f, 1.6f, -1.6f, 2.2f, -2.2f })
+    {
+        float const angle = away + swerve + frand(-0.25f, 0.25f);
+        x = m_creature->GetPositionX() + distance * std::cos(angle);
+        y = m_creature->GetPositionY() + distance * std::sin(angle);
+        z = map->GetHeight(x, y, m_creature->GetPositionZ() + BONK_FLEE_CLIMB, true, BONK_FLEE_CLIMB * 2.0f);
+        if (z <= INVALID_HEIGHT || std::fabs(z - m_creature->GetPositionZ()) > BONK_FLEE_CLIMB)
+            continue;
+        if (map->GetTerrain()->GetZoneId(x, y, z) != owner->GetZoneId() || map->GetTerrain()->IsInWater(x, y, z + 1.0f))
+            continue;
+        return true;
+    }
+    return false;
 }
 
 void BonkMobAI::JustDied(Unit* /*killer*/)

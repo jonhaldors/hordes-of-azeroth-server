@@ -7,7 +7,8 @@
  * run in and blow up, and any enemy can have abilities on cooldowns. Elites
  * and mini-bosses also roll random affixes: at most one from each category
  * (pressure, sustain, bulk, enrage), as many as the tier says, each with a
- * glow of its own.
+ * glow of its own. A mini-event's treasure goblin runs from the player
+ * instead (SetFleeing).
  */
 
 #ifndef MANGOS_BONKMOBAI_H
@@ -35,11 +36,20 @@ class BonkMobAI : public CreatureAI
         static void Install(Creature* creature);
         static void SetNextPlateId(uint32 id) { s_nextPlateId = id; }
         // The affixes the next elite or mini-boss set up rolls, whatever the
-        // tier says (a Challenge Altar's guards); 0: the tier's.
-        static void SetNextAffixCount(uint32 count) { s_nextAffixCount = count; }
+        // tier says (a Challenge Altar's guards, a bounty); -1: the tier's.
+        static void SetNextAffixCount(int32 count) { s_nextAffixCount = count; }
+        // An icon the next one shows on its nameplate before any affixes (a
+        // bounty's skull); a static string.
+        static void SetNextPlateIcon(char const* icon) { s_nextPlateIcon = icon; }
         // Its GUID as the client's UnitGUID prints it (ClassicAPI): the
         // addon's nameplates know an enemy by it.
         static std::string GetUnitGuidText(Creature const* creature);
+        // Whether a creature going for its victim (Unit::Attack) sends its
+        // aggro reaction, which the client voices. A run enemy does so only
+        // the first time, and in a burst of them only one every
+        // BONK_AGGRO_CRY_MS: a crowd re-engaging as a pause ends, or a wave
+        // appearing at once, would start dozens of yells on one frame.
+        static bool MayCry(Creature* creature);
 
         // Called by the run once the enemy's level, health, damage and speed are set.
         void Setup(BonkSpawnKind kind);
@@ -65,6 +75,10 @@ class BonkMobAI : public CreatureAI
         std::string GetAffixIcons() const;
         // A Bolstering enemy died nearby: more health, damage and size.
         void Bolster();
+        // A treasure goblin: it runs from the player and never attacks;
+        // `blinks`: hit, it blinks further away now and then.
+        void SetFleeing(bool blinks);
+        bool IsFleeing() const { return m_fleeing; }
 
         void MoveInLineOfSight(Unit*) override {}
         void AttackStart(Unit* victim) override;
@@ -114,6 +128,9 @@ class BonkMobAI : public CreatureAI
         // While dashing: the player it runs into is hit.
         void UpdateDash(Player* owner);
         void EndCharge(Player* owner);
+        // Fleeing: a little further from the player every so often.
+        void UpdateFlee(uint32 diff, Player* owner);
+        bool FindFleePoint(Player* owner, float distance, float& x, float& y, float& z) const;
 
         ObjectGuid m_ownerGuid;
         BonkSpawnKind m_kind = BONK_SPAWN_NORMAL;
@@ -127,6 +144,7 @@ class BonkMobAI : public CreatureAI
         uint32 m_bolsterStacks = 0;
         bool m_enraged = false;     // Raging, below its health mark
         bool m_frozen = false;
+        bool m_cried = false;               // its aggro reaction was sent, or passed over
         bool m_exploded = false;
         int32 m_arriveTimer = 0;           // standing where the run moved it
         enum ChargeState : uint8 { CHARGE_NONE, CHARGE_WINDUP, CHARGE_DASH };
@@ -148,11 +166,18 @@ class BonkMobAI : public CreatureAI
         int32 m_boltAimTimer = 0;           // until it aims
         bool m_boltStarted = false;
         bool m_boltAimed = false;
+        std::string m_plateIcon;
+        bool m_fleeing = false;
+        bool m_blinks = false;
+        bool m_blinkPending = false;        // hit: blinks at its next update
+        int32 m_fleeTimer = 0;              // to its next step away
+        int32 m_blinkTimer = 0;             // to its next blink
 
         // Install's nameplate number for the next summon; per thread, as maps
         // may update side by side.
         static thread_local uint32 s_nextPlateId;
-        static thread_local uint32 s_nextAffixCount;
+        static thread_local int32 s_nextAffixCount;
+        static thread_local char const* s_nextPlateIcon;
 };
 
 #endif

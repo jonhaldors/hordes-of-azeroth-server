@@ -253,6 +253,14 @@ bool GOHello_go_bonk_chest(Player* player, GameObject* go)
     return true;
 }
 
+// The wandering vendor in a run: his shelf, no gossip menu.
+bool GossipHello_npc_bonk_vendor(Player* player, Creature* creature)
+{
+    if (BonkRun* run = player->GetBonkPlayer()->GetRun())
+        run->OpenVendor(creature);
+    return true;
+}
+
 // A shrine's model at a run's spot: Greed Totem, Challenge Altar.
 bool GOHello_go_bonk_shrine(Player* player, GameObject* go)
 {
@@ -323,6 +331,11 @@ void AddSC_bonk_npcs()
     newscript = new Script;
     newscript->Name = "go_bonk_chest";
     newscript->pGOHello = &GOHello_go_bonk_chest;
+    newscript->RegisterSelf();
+
+    newscript = new Script;
+    newscript->Name = "npc_bonk_vendor";
+    newscript->pGossipHello = &GossipHello_npc_bonk_vendor;
     newscript->RegisterSelf();
 
     newscript = new Script;

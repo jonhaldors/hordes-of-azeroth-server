@@ -32,67 +32,58 @@ namespace
         return buffer;
     }
 
-    // "a", "a or b", "a, b or c".
-    std::string JoinOr(std::vector<std::string> const& parts)
+    // "a", "a or b", "a, b or c"; "and" in place of "or" for JoinAnd.
+    std::string Join(std::vector<std::string> const& parts, char const* last)
     {
         std::string text;
         for (size_t i = 0; i < parts.size(); ++i)
         {
             if (i)
-                text += i + 1 == parts.size() ? " or " : ", ";
+                text += i + 1 == parts.size() ? last : ", ";
             text += parts[i];
         }
         return text;
     }
 
-    // How a spell grows rank by rank (each card's rarity decides the step,
-    // see BonkRun::RollStep), and what it does besides its hit.
+    std::string JoinOr(std::vector<std::string> const& parts) { return Join(parts, " or "); }
+    std::string JoinAnd(std::vector<std::string> const& parts) { return Join(parts, " and "); }
+
+    // How a spell grows rank by rank (each card's rarity decides what it
+    // adds, see BonkRun::RollUpgrades), and what it does besides its hit.
     std::string DescribeGrowth(BonkWeapon const& weapon)
     {
         bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
         bool const damageless = weapon.damageEffectIndex < 0 && !weapon.weaponDamage;
-        std::string const minor = "+" + Points(BONK_RANK_DAMAGE_MINOR) + " damage and ";
 
-        std::string text = "Ranks have no cap; each card's rarity decides what it adds. Common: +" + Points(BONK_RANK_DAMAGE) + " damage.";
+        std::string text = "Ranks have no cap; each card's rarity decides what it adds. Common: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_COMMON]) +
+            " damage. Uncommon: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_UNCOMMON]) + " damage.";
 
-        std::vector<std::string> uncommon = { "attacks " + Points(BONK_RANK_HASTE) + " more often" };
-        if (weapon.HasArea())
-            uncommon.push_back("+" + Points(BONK_RANK_AREA) + (cleave ? " reach" : " area"));
-        if (weapon.lasting)
-            uncommon.push_back("lasts " + Points(BONK_RANK_DURATION) + " longer");
-        text += " Uncommon: " + minor + JoinOr(uncommon) + ".";
-
-        // The same choices as BonkRun::RollStep.
-        std::vector<std::string> rare;
-        if (weapon.IsAimed())
-            rare.push_back("+" + Points(BONK_RANK_RANGE) + " range");
-        if (weapon.HasJumps())
+        // Rare and Epic: damage and steps from the spell's own list.
+        std::vector<std::string> upgrades;
+        std::vector<std::string> caps;
+        for (BonkWeaponUpgrade const& upgrade : weapon.upgrades)
         {
-            if (cleave)
-                rare.push_back("cleaves 1 more enemy");
-            else if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
-                rare.push_back("spreads to 1 more enemy");
-            else
-                rare.push_back("hits 1 more enemy");
+            upgrades.push_back(DescribeBonkSpellUpgrade(weapon, upgrade.upgrade, upgrade.step));
+            float const cap = BONK_SPELL_UPGRADE_CAP[upgrade.upgrade];
+            if (cap > 0.0f)
+                caps.push_back(DescribeBonkSpellUpgrade(weapon, upgrade.upgrade, cap));
         }
-        if (weapon.IsWide())
-            rare.push_back("+" + Points(BONK_RANK_WIDE) + " area");
-        if (rare.empty())
-            rare.push_back(weapon.lasting ? "lasts " + Points(BONK_RANK_DURATION) + " longer" : "attacks " + Points(BONK_RANK_HASTE) + " more often");
-        text += " Rare: " + minor + JoinOr(rare) + ".";
-
-        if (!weapon.HasTargets())
-            text += " Epic: +" + Points(BONK_RANK_EPIC_DAMAGE) + " damage.";
+        if (upgrades.empty())
+            text += " Rare: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_RARE] + BONK_RANK_SPARE_DAMAGE) + " damage. Epic: +" +
+                Points(BONK_RANK_DAMAGE[BONK_RARITY_EPIC] + 2 * BONK_RANK_SPARE_DAMAGE) + " damage.";
         else
-            text += " Epic: " + weapon.DescribeExtraTarget() + " (up to " + std::to_string(BONK_MAX_EPIC_STEPS) + "), then +" +
-                Points(BONK_RANK_EPIC_DAMAGE) + " damage.";
+        {
+            text += " Rare: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_RARE]) + " damage and " + JoinOr(upgrades) + ". Epic: +" +
+                Points(BONK_RANK_DAMAGE[BONK_RARITY_EPIC]) + " damage and two of these, maybe the same one twice.";
+            if (!caps.empty())
+                text += " At most " + JoinAnd(caps) + ".";
+        }
 
+        // Legendary ranks are evolutions only.
         BonkWeapon const* evolved = weapon.evolvesFrom ? nullptr : sBonkMgr.GetEvolution(weapon.id);
         if (evolved)
             text += " Legendary, from rank " + std::to_string(BONK_EVOLVE_RANK) + " and sure by rank " + std::to_string(BONK_EVOLVE_PITY_RANK) +
-                ": evolves into " + evolved->name + ", then +" + Points(BONK_RANK_LEGENDARY_DAMAGE) + " damage.";
-        else
-            text += " Legendary, from rank " + std::to_string(BONK_EVOLVE_RANK) + ": +" + Points(BONK_RANK_LEGENDARY_DAMAGE) + " damage.";
+                ": evolves into " + evolved->name + ".";
 
         if (cleave)
             text += " Cleaves hit enemies within " + std::to_string(uint32(BONK_CLEAVE_RADIUS)) + " yards of the target for " +
@@ -115,10 +106,10 @@ namespace
                     text += " Damage ranks make the mark stronger.";
                 break;
             case BONK_BEHAVIOR_PET:
-                text += " Beasts bite for the spell's damage; faster ranks make them bite more often.";
+                text += " Beasts bite for the spell's damage; Haste makes them bite more often.";
                 break;
             case BONK_BEHAVIOR_REVENGE:
-                text += " Gives " + Percent(weapon.behaviorValue) + " Dodge while you have it.";
+                text += " Gives " + Points(weapon.behaviorValue) + " Dodge while you have it.";
                 break;
             default:
                 break;

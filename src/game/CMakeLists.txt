@@ -32,7 +32,9 @@ set (game_SRCS
     Bonk/BonkRun.cpp
     Bonk/BonkRunEvents.cpp
     Bonk/BonkRunShrines.cpp
+    Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp
+    Bonk/BonkRunStress.cpp
     Bonk/BonkSpawnPoints.cpp
     Bonk/BonkTelegraph.cpp
     Camera.cpp

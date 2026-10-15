@@ -175,6 +175,30 @@ bool BonkRun::LimitStun(Creature* mob, int32& duration)
     return true;
 }
 
+bool BonkRun::LimitRoot(Creature* mob, int32& duration)
+{
+    // A root from a hero's spell (Frost Nova, Frostbite, Entangling Roots)
+    // follows Frozen's rule, as Frozen is a root too: trash is held at most
+    // BONK_MAX_HOLD_MS, then neither roots nor Frozen take for
+    // BONK_HOLD_IMMUNE_MS; elites and bosses are never rooted. Repeated
+    // roots kept enemies held for good (stress test, Absolute Zero).
+    BonkMobAI const* ai = GetRunAI(mob);
+    if (!ai)
+        return true;
+    if (ai->GetKind() != BONK_SPAWN_NORMAL)
+        return false;
+
+    uint32 const now = WorldTimer::getMSTime();
+    CrowdControl& control = m_crowdControl[mob->GetObjectGuid()];
+    if (TimeLeft(control.frozenImmuneUntil, now))
+        return false;
+
+    if (duration <= 0 || duration > int32(BONK_MAX_HOLD_MS))
+        duration = int32(BONK_MAX_HOLD_MS);
+    control.frozenImmuneUntil = now + uint32(duration) + BONK_HOLD_IMMUNE_MS;
+    return true;
+}
+
 bool BonkRun::CanKnockBack(Creature const* mob)
 {
     BonkMobAI const* ai = GetRunAI(mob);
