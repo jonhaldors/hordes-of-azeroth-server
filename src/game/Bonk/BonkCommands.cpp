@@ -5,6 +5,7 @@
 
 #include "BonkCodex.h"
 #include "BonkMgr.h"
+#include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
 #include "BonkRun.h"
@@ -343,6 +344,7 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     bonk->SendAddon("hello~1");
     bonk->SendTierList();
     bonk->SendGearInfo();
+    BonkMobAI::SendAffixInfo(bonk);
     bonk->SendMasteryState();
     bonk->SendWallet();
     bonk->SendDash();

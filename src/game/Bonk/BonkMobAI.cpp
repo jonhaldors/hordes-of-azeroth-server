@@ -426,6 +426,53 @@ std::string BonkMobAI::GetAffixIcons() const
     return icons;
 }
 
+std::string BonkMobAI::GetAffixNames() const
+{
+    std::string names;
+    for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
+        if (HasAffix(Affix(affix)))
+            names += (names.empty() ? "" : ",") + std::string(BONK_AFFIXES[affix].name);
+    return names;
+}
+
+void BonkMobAI::SendAffixInfo(BonkPlayer* bonk)
+{
+    auto percent = [](float value)
+    {
+        char text[16];
+        snprintf(text, sizeof(text), "%g%%", value);
+        return std::string(text);
+    };
+    auto seconds = [](uint32 ms)
+    {
+        char text[16];
+        snprintf(text, sizeof(text), "%g sec", ms / 1000.0f);
+        return std::string(text);
+    };
+
+    for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
+    {
+        std::string text;
+        switch (Affix(affix))
+        {
+            case AFFIX_SWIFT:      text = "Moves " + percent((BONK_SWIFT_SPEED - 1.0f) * 100.0f) + " faster."; break;
+            case AFFIX_EXPLOSIVE:  text = "While you are close, fire bursts around it every " + seconds(BONK_BURN_INTERVAL) + ", after a red circle."; break;
+            case AFFIX_NECROTIC:   text = "Each of its hits lowers the healing you take, more with every hit. Stay away to lose it."; break;
+            case AFFIX_VAMPIRIC:   text = "Heals for " + percent(BONK_VAMPIRIC_HEAL * 100.0f) + " of the damage it deals."; break;
+            case AFFIX_BOLSTERING: text = "When it dies, enemies nearby gain " + percent(BONK_BOLSTER_BONUS * 100.0f) + " health and damage."; break;
+            case AFFIX_SANGUINE:   text = "When it dies, it leaves a pool that heals enemies standing in it."; break;
+            case AFFIX_BULWARK:    text = "Shields itself for " + percent(BONK_SHIELD_HEALTH * 100.0f) + " of its health, and again " +
+                                       seconds(BONK_SHIELD_INTERVAL) + " after a shield is gone."; break;
+            case AFFIX_FORTIFIED:  text = "Has " + percent((BONK_FORTIFIED_HEALTH - 1.0f) * 100.0f) + " more health."; break;
+            case AFFIX_FRENZIED:   text = "Attacks " + percent((BONK_FRENZIED_SPEED - 1.0f) * 100.0f) + " faster."; break;
+            case AFFIX_RAGING:     text = "Deals " + percent((BONK_RAGING_DAMAGE - 1.0f) * 100.0f) + " more damage below " + percent(BONK_RAGING_HEALTH) + " health."; break;
+            case AFFIX_VOLCANIC:   text = "Now and then fire bursts up under you, after a red circle."; break;
+            default: break;
+        }
+        bonk->SendAddon("affixinfo~" + std::string(BONK_AFFIXES[affix].name) + "~" + BONK_AFFIXES[affix].icon + "~" + text);
+    }
+}
+
 void BonkMobAI::Bolster()
 {
     if (m_bolsterStacks >= BONK_BOLSTER_MAX || !m_creature->IsAlive())

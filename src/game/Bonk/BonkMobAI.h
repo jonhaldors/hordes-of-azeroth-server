@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+class BonkPlayer;
 class BonkRun;
 class Player;
 class SpellEntry;
@@ -73,6 +74,11 @@ class BonkMobAI : public CreatureAI
         bool IsSanguine() const { return HasAffix(AFFIX_SANGUINE); }
         // "Icon,Icon": the affixes' icons.
         std::string GetAffixIcons() const;
+        // "Name,Name": the affixes, for the boss bar.
+        std::string GetAffixNames() const;
+        // "affixinfo~name~icon~description" for every affix, so the addon can
+        // say what each does (the boss bar's affix icons).
+        static void SendAffixInfo(BonkPlayer* bonk);
         // A Bolstering enemy died nearby: more health, damage and size.
         void Bolster();
         // A treasure goblin: it runs from the player and never attacks;

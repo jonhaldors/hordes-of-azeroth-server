@@ -230,7 +230,7 @@ void BonkStats::UpdateBossBar(Player* player, uint32 diff)
     {
         BonkMobAI const* ai = static_cast<BonkMobAI const*>(shown->AI());
         line += std::string(shown->GetName()) + "~" + std::to_string(shown->GetHealth()) + "~" + std::to_string(shown->GetMaxHealth()) + "~" +
-            (ai->GetKind() == BONK_SPAWN_BOSS ? "boss" : "mini");
+            (ai->GetKind() == BONK_SPAWN_BOSS ? "boss" : "mini") + "~" + ai->GetAffixNames();
     }
     if (line == bar->lastLine)
         return;

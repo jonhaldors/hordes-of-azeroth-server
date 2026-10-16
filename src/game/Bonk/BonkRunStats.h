@@ -67,7 +67,7 @@ namespace BonkStats
     // in it)..., sumend
     void SendSummary(Player* player, std::vector<BonkSummaryWeapon> const& weapons);
 
-    // boss~name~healthPercent~kind, or boss~ when no boss or mini-boss is up.
+    // boss~name~health~maxHealth~kind~affixes ("Name,Name"), or boss~ when no boss or mini-boss is up.
     void UpdateBossBar(Player* player, uint32 diff);
 }
 
