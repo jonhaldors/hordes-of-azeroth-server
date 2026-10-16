@@ -24,6 +24,11 @@ namespace
 {
     uint32 const BONK_TEXT_QUEST_BOARD = 900005;
 
+    // Unlock prices at the Spellbook, copper (Core loop v2 phase E).
+    uint32 const BONK_UNLOCK_SPELL_PRICE   = 5000;
+    uint32 const BONK_UNLOCK_PASSIVE_PRICE = 4000;
+    uint32 const BONK_UNLOCK_CARD_PRICE[MAX_BONK_RARITY] = { 2000, 3500, 6000, 10000, 10000 };     // common to legendary
+
     char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
 
     // A class unlock's name and icon, by class id.
@@ -129,6 +134,7 @@ void BonkQuests::Load()
             case BONK_REWARD_CLASS:     rewardExists = GetClassLook(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_CAPSTONE:  rewardExists = sBonkMastery.GetNode(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_TITLE:     rewardExists = m_titles.count(quest.rewardValue) != 0; break;
+            case BONK_REWARD_CARD:      rewardExists = sBonkMgr.GetCard(quest.rewardValue) != nullptr; break;
             default: break;
         }
         if (!rewardExists)
@@ -160,9 +166,21 @@ void BonkQuests::OnLogin(Player* player)
         } while (result->NextRow());
     }
 
+    std::set<uint64> owned;
+    result = CharacterDatabase.PQuery("SELECT `type`, `id` FROM `bonk_account_unlock` WHERE `account` = %u", account);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            owned.insert(UnlockKey(BonkQuestReward(fields[0].GetUInt8()), fields[1].GetUInt32()));
+        } while (result->NextRow());
+    }
+
     {
         std::lock_guard<std::mutex> guard(m_lock);
         m_accounts[account] = std::move(loaded);
+        m_owned[account] = std::move(owned);
     }
 
     // Stages reached and Mastery earned before there were quests count as well.
@@ -200,12 +218,66 @@ bool BonkQuests::IsLocked(uint32 account, BonkQuestReward type, uint32 id) const
     if (!quest)
         return false;
 
+    {
+        std::lock_guard<std::mutex> guard(m_lock);
+        auto itr = m_accounts.find(account);
+        if (itr == m_accounts.end())
+            return true;
+        auto progress = itr->second.find(quest->id);
+        if (progress == itr->second.end() || !progress->second.completed)
+            return true;
+    }
+    // Done: a spell, passive or card waits to be bought.
+    return IsBought(type) && !IsOwned(account, type, id);
+}
+
+bool BonkQuests::IsForSale(uint32 account, BonkQuestReward type, uint32 id) const
+{
+    if (!IsBought(type) || !GetUnlockingQuest(type, id) || !IsLocked(account, type, id))
+        return false;
+    // Locked only for want of buying: the quest is done.
+    BonkQuest const* quest = GetUnlockingQuest(type, id);
     std::lock_guard<std::mutex> guard(m_lock);
     auto itr = m_accounts.find(account);
     if (itr == m_accounts.end())
-        return true;
+        return false;
     auto progress = itr->second.find(quest->id);
-    return progress == itr->second.end() || !progress->second.completed;
+    return progress != itr->second.end() && progress->second.completed;
+}
+
+bool BonkQuests::IsOwned(uint32 account, BonkQuestReward type, uint32 id) const
+{
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto itr = m_owned.find(account);
+    return itr != m_owned.end() && itr->second.count(UnlockKey(type, id)) != 0;
+}
+
+uint32 BonkQuests::GetUnlockPrice(BonkQuestReward type, uint32 id)
+{
+    // Core loop v2 phase E: a death at Wall 1 (about 40-50s) buys one
+    // unlock; a cleared stage (about 2g) three or four.
+    switch (type)
+    {
+        case BONK_REWARD_WEAPON:
+            return BONK_UNLOCK_SPELL_PRICE;
+        case BONK_REWARD_PASSIVE:
+            return BONK_UNLOCK_PASSIVE_PRICE;
+        case BONK_REWARD_CARD:
+            if (BonkCard const* card = sBonkMgr.GetCard(id))
+                return BONK_UNLOCK_CARD_PRICE[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)];
+            return 0;
+        default:
+            return 0;
+    }
+}
+
+void BonkQuests::Buy(uint32 account, BonkQuestReward type, uint32 id)
+{
+    {
+        std::lock_guard<std::mutex> guard(m_lock);
+        m_owned[account].insert(UnlockKey(type, id));
+    }
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_unlock` (`account`, `type`, `id`) VALUES (%u, %u, %u)", account, uint32(type), id);
 }
 
 BonkQuest const* BonkQuests::GetUnlockingQuest(BonkQuestReward type, uint32 id) const
@@ -519,14 +591,14 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
             {
                 *icon = weapon->icon;
-                return "Unlocks the spell " + weapon->name;
+                return "Unlocks the spell " + weapon->name + ", to buy at the Spellbook";
             }
             break;
         case BONK_REWARD_PASSIVE:
             if (BonkPassive const* passive = sBonkMgr.GetPassive(quest.rewardValue))
             {
                 *icon = passive->icon;
-                return "Unlocks the passive " + passive->name;
+                return "Unlocks the passive " + passive->name + ", to buy at the Spellbook";
             }
             break;
         case BONK_REWARD_TALENT:
@@ -565,6 +637,13 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             {
                 *icon = node->icon;
                 return "Unlocks the capstone " + node->name;
+            }
+            break;
+        case BONK_REWARD_CARD:
+            if (BonkCard const* card = sBonkMgr.GetCard(quest.rewardValue))
+            {
+                *icon = card->icon;
+                return "Unlocks the card " + card->name + ", to buy at the Spellbook";
             }
             break;
         case BONK_REWARD_TITLE:

@@ -19,11 +19,13 @@
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
+#include "BonkQuests.h"
 #include "Creature.h"
 #include "Item.h"
 #include "Player.h"
 #include "SpellMgr.h"
 #include "Utilities/Random.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <cmath>
@@ -150,6 +152,31 @@ float BonkRun::GetCardPower(Unit const* victim) const
     return power;
 }
 
+bool BonkRun::IsCardInPool(BonkCard const& card) const
+{
+    // A legendary's own card never comes from chests; the rest once the
+    // account has it (the starter set, or bought after its quest).
+    return card.inChests && !sBonkQuests.IsLocked(m_player->GetSession()->GetAccountId(), BONK_REWARD_CARD, card.id);
+}
+
+void BonkRun::GiveStartCard()
+{
+    // Lucky Draw: a common card, an uncommon one from its second rank.
+    float const draw = GetUtility(BONK_UTILITY_START_CARD);
+    if (draw < 1.0f)
+        return;
+    BonkRarity const rarity = draw >= 2.0f ? BONK_RARITY_UNCOMMON : BONK_RARITY_COMMON;
+    std::vector<BonkCard const*> pool;
+    for (auto const& itr : sBonkMgr.GetCards())
+        if (itr.second.rarity == rarity && IsCardInPool(itr.second) && itr.second.effect != BONK_CARD_MAGNET)
+            pool.push_back(&itr.second);
+    if (pool.empty())
+        return;
+    BonkCard const& card = *pool[urand(0, uint32(pool.size()) - 1)];
+    AddCard(card);
+    m_player->GetBonkPlayer()->Notify("Lucky Draw: " + card.name + "!");
+}
+
 bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std::vector<Offer> const* kept, std::vector<Offer>* drawn)
 {
     // Locked cards stay: from this choice on a reroll or banish, or from the
@@ -195,7 +222,7 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
         probe.isWeapon = false;
         probe.isCard = true;
         probe.id = card.id;
-        if (!card.inChests || m_banished.count(GetBanishKey(probe)) || shown(card.id) || (card.maxCopies && GetCardCopies(card.id) >= card.maxCopies))
+        if (!IsCardInPool(card) || m_banished.count(GetBanishKey(probe)) || shown(card.id) || (card.maxCopies && GetCardCopies(card.id) >= card.maxCopies))
             continue;
         bool const avoided = avoid && std::any_of(avoid->begin(), avoid->end(), [&](Offer const& offer) { return offer.isCard && offer.id == card.id; });
         (avoided ? repeats : fresh).push_back(&card);

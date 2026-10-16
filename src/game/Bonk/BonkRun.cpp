@@ -188,6 +188,8 @@ namespace
     float const BONK_SKIP_COINS = 0.25f;
     // An elite chest offers one more card per affix, up to this many.
     size_t const BONK_MAX_OFFER_SIZE = 6;
+    // Haggle takes at most this much off a chest or a wandering vendor's ware, %.
+    float const BONK_MAX_HAGGLE = 50.0f;
 
     // Spell behaviors.
     float const BONK_SPELL_SHIELD_CAP      = 0.5f;     // spell Shields stack up to this share of max health
@@ -943,6 +945,10 @@ void BonkRun::StartStage()
 
         // Permanent upgrades may already need their auras.
         ApplyPassives();
+
+        // Camp upgrades: a card to start with, and levels up front.
+        GiveStartCard();
+        GiveStartLevels();
     }
     else
     {
@@ -2931,6 +2937,12 @@ uint32 BonkRun::GetChestCost() const
     return uint32(m_tier.chestCost * (1.0f + m_tier.chestCostGrowth * m_chestsBought) + 0.5f);
 }
 
+uint32 BonkRun::GetChestPrice() const
+{
+    float const haggle = std::min(GetUtility(BONK_UTILITY_HAGGLE), BONK_MAX_HAGGLE);
+    return std::max(1u, uint32(GetChestCost() * (1.0f - haggle / 100.0f) + 0.5f));
+}
+
 void BonkRun::SpawnPowerup()
 {
     std::vector<BonkPowerup> const& powerups = sBonkMgr.GetPowerups();
@@ -3081,7 +3093,7 @@ void BonkRun::UseChest(GameObject* chest)
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (chest->GetEntry() != BONK_GO_CHEST_FREE)
     {
-        uint32 const cost = GetChestCost();
+        uint32 const cost = GetChestPrice();
         if (m_coins < cost)
         {
             bonk->Notify("This chest costs " + std::to_string(cost) + " Valor. You have " + std::to_string(m_coins) + ".");
@@ -5581,6 +5593,20 @@ uint32 BonkRun::GetNextLevelXp() const
     return sObjectMgr.GetXPForLevel(maxLevel - 1);
 }
 
+void BonkRun::GiveStartLevels()
+{
+    // Head Start: the levels come as any level does, so each brings its pick.
+    uint32 const levels = uint32(GetUtility(BONK_UTILITY_START_LEVEL));
+    for (uint32 i = 0; i < levels; ++i)
+    {
+        uint32 const next = GetNextLevelXp();
+        uint32 const have = m_player->GetUInt32Value(PLAYER_XP);
+        if (!next || next <= have)
+            break;
+        GiveExperience(next - have);
+    }
+}
+
 void BonkRun::GiveExperience(uint32 xp)
 {
     uint32 const maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
@@ -6483,9 +6509,15 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     };
     std::vector<Candidate> candidates;
     BonkRarity const minimum = source == OFFER_CHEST ? BONK_CHEST_MIN_RARITY : BONK_LEVEL_MIN_RARITY;
-    // An elite chest offers a card more for every affix the elite had.
-    size_t const offerSize = source == OFFER_CHEST && !m_pendingChestChoices.empty() ?
-        std::min<size_t>(m_pendingChestChoices.front(), BONK_MAX_OFFER_SIZE) : BONK_OFFER_SIZE;
+    // An elite chest offers a card more for every affix the elite had; Card
+    // Shark adds one to every chest, Insight one to every level-up.
+    size_t offerSize = BONK_OFFER_SIZE;
+    if (source == OFFER_CHEST)
+        offerSize = (!m_pendingChestChoices.empty() ? m_pendingChestChoices.front() : BONK_OFFER_SIZE) +
+            size_t(GetUtility(BONK_UTILITY_CARD_CHOICES));
+    else
+        offerSize += size_t(GetUtility(BONK_UTILITY_LEVEL_CHOICES));
+    offerSize = std::min(offerSize, BONK_MAX_OFFER_SIZE);
 
     // Chests hold Darkmoon Cards (Core loop v2); spells and passives come
     // from level-ups.
@@ -6972,7 +7004,7 @@ void BonkRun::SendState() const
 {
     m_player->GetBonkPlayer()->SendAddon("state~" + std::to_string(m_elapsedMs / IN_MILLISECONDS) + "~" + std::to_string(m_map.durationSeconds) + "~" +
         std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0") + "~" +
-        std::to_string(m_coins) + "~" + std::to_string(GetChestCost()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0") + "~" +
+        std::to_string(m_coins) + "~" + std::to_string(GetChestPrice()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0") + "~" +
         std::to_string(m_shardsEarned) + "~" + DescribeWeaponStats() + "~" + std::to_string(m_totalMs / IN_MILLISECONDS));
 }
 

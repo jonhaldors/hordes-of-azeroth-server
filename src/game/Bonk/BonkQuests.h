@@ -27,6 +27,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -92,6 +93,7 @@ enum BonkQuestReward : uint8
     BONK_REWARD_EPIC_RANK = 8,        // bonk_weapon.id: its Epic rank joins the level-up pool
     BONK_REWARD_CAPSTONE  = 9,        // bonk_mastery.id: a talent capstone
     BONK_REWARD_TITLE     = 10,       // bonk_title.id (shown with the cosmetics, later)
+    BONK_REWARD_CARD      = 11,       // bonk_card.id: chests may offer it
     MAX_BONK_REWARD
 };
 
@@ -136,9 +138,20 @@ class BonkQuests
         void OnLogin(Player* player);
         void Save(uint32 account);
 
-        // Something a quest still has to unlock stays out of the game.
+        // Something a quest still has to unlock stays out of the game. A
+        // spell, passive or card (Core loop v2 phase E) also has to be bought
+        // at the Spellbook once its quest is done; until then it is for sale.
         bool IsLocked(uint32 account, BonkQuestReward type, uint32 id) const;
+        bool IsForSale(uint32 account, BonkQuestReward type, uint32 id) const;
         BonkQuest const* GetUnlockingQuest(BonkQuestReward type, uint32 id) const;
+        // The kinds of unlock bought with gold after their quest.
+        // Quests the account has finished.
+        uint32 GetCompletedCount(uint32 account) const { return CountCompleted(account); }
+        static bool IsBought(BonkQuestReward type) { return type == BONK_REWARD_WEAPON || type == BONK_REWARD_PASSIVE || type == BONK_REWARD_CARD; }
+        // Its price in copper (0 for something that is not for sale).
+        static uint32 GetUnlockPrice(BonkQuestReward type, uint32 id);
+        // Records the purchase (the caller took the gold).
+        void Buy(uint32 account, BonkQuestReward type, uint32 id);
 
         // `creatureType`: the enemy's (CREATURE_TYPE_*).
         // `standing`: the hero stood still. `entry`: the enemy's creature.
@@ -196,8 +209,12 @@ class BonkQuests
         std::map<uint32, BonkQuest> m_quests;
         std::map<uint32, std::string> m_titles;     // bonk_title
 
+        static uint64 UnlockKey(BonkQuestReward type, uint32 id) { return (uint64(type) << 32) | id; }
+        bool IsOwned(uint32 account, BonkQuestReward type, uint32 id) const;
+
         mutable std::mutex m_lock;
         std::map<uint32, AccountProgress> m_accounts;
+        std::map<uint32, std::set<uint64>> m_owned;     // bought unlocks by account (bonk_account_unlock)
 };
 
 #define sBonkQuests MaNGOS::Singleton<BonkQuests>::Instance()

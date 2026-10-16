@@ -718,14 +718,36 @@ struct BonkShopNode
     uint8 requiredRank = 0;         // ranks of it needed
 };
 
-// Permanent upgrade bought at camp; every rank adds to a passive effect in
-// every run.
+// Camp upgrades that change how a run plays rather than a stat (Core loop
+// v2 phase E: the Upgrades NPC sells utility only). bonk_upgrade.effect
+// BONK_UPGRADE_UTILITY_BASE + one of these; below that it is a stat.
+enum BonkUpgradeUtility : uint8
+{
+    BONK_UTILITY_DASH_RANGE    = 0,     // + dash distance, yards
+    BONK_UTILITY_DASH_COOLDOWN = 1,     // - dash cooldown, seconds
+    BONK_UTILITY_DASH_CHARGES  = 2,     // + dash charges
+    BONK_UTILITY_HAGGLE        = 3,     // - Valor price of chests and the wandering vendor's wares, %
+    BONK_UTILITY_SCRAPPER      = 4,     // + Valor from salvaged run gear, %
+    BONK_UTILITY_CARD_CHOICES  = 5,     // + cards a chest offers
+    BONK_UTILITY_LEVEL_CHOICES = 6,     // + cards a level-up offers
+    BONK_UTILITY_EVENT_TIME    = 7,     // + seconds to catch a treasure goblin or kill a bounty; a fifth of it goblin head start
+    BONK_UTILITY_SHRINE_SPEED  = 8,     // + shrine capture speed, %
+    BONK_UTILITY_HEARTHSTONE   = 9,     // + chance to find a Hearthstone, % of the chance; each 20 also a second off its ring
+    BONK_UTILITY_START_LEVEL   = 10,    // + level a run starts at
+    BONK_UTILITY_START_CARD    = 11,    // a random card at the start of a run: 1 common, 2 uncommon
+    MAX_BONK_UPGRADE_UTILITY
+};
+uint8 const BONK_UPGRADE_UTILITY_BASE = 100;
+
+// Permanent upgrade bought at camp; every rank adds to a passive effect, or
+// to a utility, in every run.
 struct BonkUpgrade
 {
     uint32 id = 0;
     std::string name;
     std::string description;
     BonkPassiveEffect effect = BONK_PASSIVE_POWER;
+    int8 utility = -1;              // a BonkUpgradeUtility in place of the stat; -1 for a stat
     float valuePerRank = 5.0f;
     uint8 maxRank = 5;
     uint32 cost = 5000;             // copper for the first rank
@@ -766,6 +788,7 @@ struct BonkTalent
     uint32 cost = 1;                // Talent Shards for the first rank
     float costGrowth = 1.0f;
     BonkShopNode layout;
+    std::vector<uint32> rankQuests;     // quests done to learn each rank, from the first; none: no gate
 
     bool IsToggle() const { return effect <= BONK_TALENT_ELITE_RATE; }
     uint32 GetCost(uint8 ownedRanks) const;
@@ -775,6 +798,7 @@ struct BonkTalent
 struct BonkRunBonuses
 {
     float passives[MAX_BONK_PASSIVE_EFFECT] = {};
+    float utility[MAX_BONK_UPGRADE_UTILITY] = {};   // camp upgrades' utilities
     float enemyHealth = 0.0f;       // %
     float enemyDamage = 0.0f;       // %
     float spawnRate = 0.0f;         // %

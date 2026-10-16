@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 bool ChatHandler::HandleBonkStartCommand(char* args)
 {
@@ -208,6 +209,35 @@ bool ChatHandler::HandleBonkSkipCommand(char* args)
 
     SendSysMessage(seconds ? "Skipped ahead." : "Skipped to the boss.");
     return true;
+}
+
+bool ChatHandler::HandleBonkUnlockCommand(char* args)
+{
+    // .bonk unlock w|p|c <id>: buy a spell, passive or card whose quest is
+    // done (the codex's Buy button), then the codex again.
+    char* kind = ExtractLiteralArg(&args);
+    uint32 id = 0;
+    BonkQuestReward type = MAX_BONK_REWARD;
+    if (kind && !strcmp(kind, "w"))
+        type = BONK_REWARD_WEAPON;
+    else if (kind && !strcmp(kind, "p"))
+        type = BONK_REWARD_PASSIVE;
+    else if (kind && !strcmp(kind, "c"))
+        type = BONK_REWARD_CARD;
+    if (type == MAX_BONK_REWARD || !ExtractUInt32(&args, id))
+    {
+        SendSysMessage("Use .bonk unlock w|p|c <id>.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    Player* player = m_session->GetPlayer();
+    BonkPlayer* bonk = player->GetBonkPlayer();
+    std::string message;
+    bool const bought = bonk->BuyUnlock(type, id, message);
+    bonk->Notify(message);
+    BonkCodex::Send(player, "");
+    return bought;
 }
 
 bool ChatHandler::HandleBonkGearCommand(char* args)

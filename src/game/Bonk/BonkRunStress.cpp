@@ -98,7 +98,8 @@ void BonkRun::StartStress()
     {
         BonkUpgrade const& upgrade = itr.second;
         uint8 const owned = std::min(bonk->GetUpgradeRank(upgrade.id), upgrade.maxRank);
-        m_stress.bonuses[upgrade.effect] += upgrade.valuePerRank * (upgrade.maxRank - owned);
+        if (upgrade.utility < 0)
+            m_stress.bonuses[upgrade.effect] += upgrade.valuePerRank * (upgrade.maxRank - owned);
     }
 
     // Haste and Area as from their passives at max rank, Count at its cap.

@@ -53,6 +53,7 @@ namespace
     uint32 const BONK_GOBLIN_GUARDS          = 2;       // on the hardest difficulty
     float const BONK_GOBLIN_GUARD_SPREAD     = 4.0f;
     uint32 const BONK_GOBLIN_HEAD_START_MS   = 2000;    // it stands this long before it runs
+    float const BONK_EVENT_HEAD_START_SHARE  = 0.2f;    // of Bounty Hunter's extra seconds, more head start
     // A skull on its nameplate and its minimap pin (user, 2026-10-16: hard to find).
     char const* const BONK_GOBLIN_ICON       = "INV_Misc_Bone_HumanSkull_01";
 
@@ -184,8 +185,11 @@ bool BonkRun::SpawnTreasureGoblin()
     Creature* mob = SpawnMobAt(goblin, x, y, z);
     if (!mob)
         return false;
+    // Bounty Hunter: more time to catch it, a fifth of it as head start.
+    float const extra = GetUtility(BONK_UTILITY_EVENT_TIME);
+    uint32 const seconds = BONK_GOBLIN_SECONDS + uint32(extra);
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
-        ai->SetFleeing(step >= 1, BONK_GOBLIN_HEAD_START_MS);
+        ai->SetFleeing(step >= 1, BONK_GOBLIN_HEAD_START_MS + uint32(extra * BONK_EVENT_HEAD_START_SHARE * IN_MILLISECONDS));
 
     // The hardest difficulty: elites at its side.
     if (step >= 2)
@@ -199,9 +203,9 @@ bool BonkRun::SpawnTreasureGoblin()
                     SpawnMobAt(*guard, guardX, guardY, guardZ);
             }
 
-    StartMiniEventTarget(mob, "Treasure Goblin", BONK_GOBLIN_SECONDS);
+    StartMiniEventTarget(mob, "Treasure Goblin", seconds);
     // Pinned on the minimap wherever it runs, and the minimap pinged on it.
-    m_miniEvent.objectiveId = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Treasure Goblin", BONK_GOBLIN_SECONDS,
+    m_miniEvent.objectiveId = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Treasure Goblin", seconds,
         BONK_GOBLIN_ICON, "Catch it before it gets away: Valor and a chest.");
     m_player->GetBonkPlayer()->Notify("A treasure goblin! Catch it before it gets away!");
     return true;
@@ -224,8 +228,10 @@ bool BonkRun::SpawnBounty()
         return false;
 
     std::string const name = mob->GetName();
-    StartMiniEventTarget(mob, "Bounty: " + name, BONK_BOUNTY_SECONDS);
-    m_player->GetBonkPlayer()->Notify("Bounty: " + name + "! Kill it within " + std::to_string(BONK_BOUNTY_SECONDS) + " seconds for a chest.");
+    // Bounty Hunter: more time.
+    uint32 const seconds = BONK_BOUNTY_SECONDS + uint32(GetUtility(BONK_UTILITY_EVENT_TIME));
+    StartMiniEventTarget(mob, "Bounty: " + name, seconds);
+    m_player->GetBonkPlayer()->Notify("Bounty: " + name + "! Kill it within " + std::to_string(seconds) + " seconds for a chest.");
     return true;
 }
 

@@ -373,6 +373,8 @@ class BonkRun
         void SendLeyOffer() const;
         void SendGreed() const;
         bool IsInMoonwell(float x, float y) const;
+        // How long a Moonwell's waters stir (Attunement adds to it).
+        uint32 GetMoonwellSeconds() const;
         // A new stage: the last one's shrines gone, this one's to place.
         void ResetShrines();
         void DespawnShrines();
@@ -493,6 +495,11 @@ class BonkRun
         void DropChest(Creature const* mob, BonkSpawnKind kind);
         bool SpawnChestNearby();
         uint32 GetChestCost() const;
+        // What the hero pays for one: the cost less Haggle. Rewards that are
+        // "a chest's worth" (salvage, skips, a goblin) go by the cost.
+        uint32 GetChestPrice() const;
+        // A camp upgrade's utility, as brought into this run.
+        float GetUtility(BonkUpgradeUtility utility) const { return m_bonuses.utility[utility]; }
         void SpawnPowerup();
         void UpdatePowerups(uint32 diff, bool spawn);
         void UpdateObjectives(uint32 diff);
@@ -718,6 +725,12 @@ class BonkRun
             uint32 copies = 0;
         };
         bool OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std::vector<Offer> const* kept, std::vector<Offer>* drawn);
+        // Chests may offer it: not a legendary's own, and the account has it.
+        bool IsCardInPool(BonkCard const& card) const;
+        // Camp upgrades at a run's start: Lucky Draw's card, Head Start's
+        // levels (each with its pick).
+        void GiveStartCard();
+        void GiveStartLevels();
         void AddCard(BonkCard const& card);
         void RemoveCard(BonkCard const& card);
         // Worn gear's cards (a legendary's effect, bonk_item_card): held while
@@ -807,6 +820,8 @@ class BonkRun
         void MaybeDropHearthstone(BonkSpawnKind kind);
         void UpdateHearth(uint32 diff);
         void EndHearth();
+        // How long the hero stands in the ring (Hearthstone Lore shortens it).
+        uint32 GetHearthMs() const;
         bool m_hearthDropped = false;                           // one a run
         bool m_hearthActive = false;
         uint32 m_hearthMs = 0;                                  // time stood in the ring
@@ -942,6 +957,7 @@ class BonkRun
             BonkPassiveEffect effect = BONK_PASSIVE_POWER;
             float value = 0.0f;
             BonkRarity rarity = BONK_RARITY_COMMON;
+            uint32 cardId = 0;              // a Darkmoon Card in place of a stat (Core loop v2 phase E)
         };
         std::vector<LeyBuff> m_leyOffer;    // shown now
         uint32 m_pendingLeyOffers = 0;      // captured, not yet offered

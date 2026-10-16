@@ -5,8 +5,10 @@
  *
  * It covers BONK_DASH_DISTANCE in BONK_DASH_MS, enemy hits do nothing for
  * BONK_DASH_INVULNERABLE_MS, and each of its BONK_DASH_CHARGES charges comes
- * back BONK_DASH_COOLDOWN_MS after it was used, one at a time. Range,
- * cooldown and extra charges (upgrades, late boots) are planned for later.
+ * back BONK_DASH_COOLDOWN_MS after it was used, one at a time. The camp's
+ * Mobility upgrades add range (the dash is faster, never longer than
+ * BONK_DASH_MS: the DLL flies an air dash for that long), take cooldown
+ * off, down to BONK_DASH_MIN_COOLDOWN_MS, and add a charge.
  *
  * How it moves (VanillaBonkClientFix.dll does the client's half, knowing a
  * dash by its speed: no hero runs at 20 yards a second otherwise):
@@ -50,23 +52,25 @@ namespace
     uint32 const BONK_DASH_MS               = 200;      // 40 yards a second
     uint32 const BONK_DASH_INVULNERABLE_MS  = 250;
     uint32 const BONK_DASH_COOLDOWN_MS      = 10000;    // until a used charge is back
+    uint32 const BONK_DASH_MIN_COOLDOWN_MS  = 3000;
     uint32 const BONK_DASH_CHARGES          = 1;
     uint32 const BONK_DASH_MAX_AGE_MS       = 1000;     // the last movement packet carried forward at most this far
 }
 
 float BonkPlayer::GetDashDistance() const
 {
-    return BONK_DASH_DISTANCE;
+    return BONK_DASH_DISTANCE + GetUpgradeUtility(BONK_UTILITY_DASH_RANGE);
 }
 
 uint32 BonkPlayer::GetDashCooldownMs() const
 {
-    return BONK_DASH_COOLDOWN_MS;
+    int32 const cooldown = int32(BONK_DASH_COOLDOWN_MS) - int32(GetUpgradeUtility(BONK_UTILITY_DASH_COOLDOWN) * IN_MILLISECONDS);
+    return uint32(std::max(cooldown, int32(BONK_DASH_MIN_COOLDOWN_MS)));
 }
 
 uint32 BonkPlayer::GetDashMaxCharges() const
 {
-    return BONK_DASH_CHARGES;
+    return BONK_DASH_CHARGES + uint32(GetUpgradeUtility(BONK_UTILITY_DASH_CHARGES));
 }
 
 float BonkPlayer::GetDashSpeed() const

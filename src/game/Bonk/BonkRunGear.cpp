@@ -55,6 +55,10 @@ namespace
     float const BONK_HEARTH_CHANCE_ELITE    = 3.0f;
     float const BONK_HEARTH_RADIUS       = 5.0f;
     uint32 const BONK_HEARTH_MS          = 10000;
+    // Hearthstone Lore: each this many % on the find chance also takes a
+    // second off the ring, down to BONK_HEARTH_MIN_MS.
+    float const BONK_HEARTH_LORE_STEP    = 20.0f;
+    uint32 const BONK_HEARTH_MIN_MS      = 5000;
     uint32 const BONK_HEARTH_SEND_MS     = 250;
     char const* const BONK_HEARTH_LABEL  = "Hearthstone";
 
@@ -240,7 +244,9 @@ void BonkRun::CollectAllGear()
 uint32 BonkRun::GetGearSalvage(uint32 entry) const
 {
     BonkGear const* gear = sBonkMgr.GetGear(entry);
-    return std::max(1u, uint32(GetChestCost() * GetSalvageShare(gear ? gear->quality : ITEM_QUALITY_UNCOMMON) + 0.5f));
+    // Scrapper: more for each piece.
+    float const scrapper = 1.0f + GetUtility(BONK_UTILITY_SCRAPPER) / 100.0f;
+    return std::max(1u, uint32(GetChestCost() * GetSalvageShare(gear ? gear->quality : ITEM_QUALITY_UNCOMMON) * scrapper + 0.5f));
 }
 
 void BonkRun::OfferGear()
@@ -444,7 +450,8 @@ void BonkRun::MaybeDropHearthstone(BonkSpawnKind kind)
 {
     if (m_hearthDropped || m_hearthActive)
         return;
-    float const chance = kind == BONK_SPAWN_MINIBOSS ? BONK_HEARTH_CHANCE_MINIBOSS : kind == BONK_SPAWN_ELITE ? BONK_HEARTH_CHANCE_ELITE : 0.0f;
+    float const chance = (kind == BONK_SPAWN_MINIBOSS ? BONK_HEARTH_CHANCE_MINIBOSS : kind == BONK_SPAWN_ELITE ? BONK_HEARTH_CHANCE_ELITE : 0.0f) *
+        (1.0f + GetUtility(BONK_UTILITY_HEARTHSTONE) / 100.0f);
     if (!roll_chance_f(chance))
         return;
 
@@ -455,7 +462,8 @@ void BonkRun::MaybeDropHearthstone(BonkSpawnKind kind)
     if (!m_player->StoreNewItem(dest, BONK_ITEM_HEARTHSTONE, true))
         return;
     m_hearthDropped = true;
-    m_player->GetBonkPlayer()->Notify("A Hearthstone! Use it to go home with your loot: stand in its ring for 10 sec.");
+    m_player->GetBonkPlayer()->Notify("A Hearthstone! Use it to go home with your loot: stand in its ring for " +
+        std::to_string(GetHearthMs() / IN_MILLISECONDS) + " sec.");
 }
 
 bool BonkRun::UseItem(Item* item)
@@ -481,7 +489,7 @@ bool BonkRun::UseItem(Item* item)
     m_hearthMs = 0;
     m_hearthSendMs = 0;
     m_hearthShown = false;
-    bonk->Notify("Stand in the ring for 10 sec to go home with your loot!");
+    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " sec to go home with your loot!");
     return true;
 }
 
@@ -505,7 +513,8 @@ void BonkRun::UpdateHearth(uint32 diff)
 
     m_hearthMs += diff;
     m_hearthSendMs += diff;
-    if (m_hearthMs >= BONK_HEARTH_MS)
+    uint32 const needed = GetHearthMs();
+    if (m_hearthMs >= needed)
     {
         bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~100");
         EndHearth();
@@ -517,8 +526,14 @@ void BonkRun::UpdateHearth(uint32 diff)
     {
         m_hearthSendMs = 0;
         m_hearthShown = true;
-        bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~" + std::to_string(m_hearthMs * 100 / BONK_HEARTH_MS));
+        bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~" + std::to_string(m_hearthMs * 100 / needed));
     }
+}
+
+uint32 BonkRun::GetHearthMs() const
+{
+    uint32 const off = uint32(GetUtility(BONK_UTILITY_HEARTHSTONE) / BONK_HEARTH_LORE_STEP) * IN_MILLISECONDS;
+    return std::max(BONK_HEARTH_MIN_MS, BONK_HEARTH_MS > off ? BONK_HEARTH_MS - off : 0u);
 }
 
 void BonkRun::EndHearth()

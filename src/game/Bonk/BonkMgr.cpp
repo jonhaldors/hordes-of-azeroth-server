@@ -15,6 +15,7 @@
 #include "SpellMgr.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <tuple>
 
 INSTANTIATE_SINGLETON_1(BonkMgr);
@@ -30,6 +31,7 @@ namespace
     GearColumn const BONK_GEAR_COLUMNS[] =
     {
         { "power",        BONK_PASSIVE_POWER },
+        { "max_health",   BONK_PASSIVE_MAX_HEALTH },
         { "armor",        BONK_PASSIVE_ARMOR },
         { "dodge",        BONK_PASSIVE_DODGE },
         { "hit",          BONK_PASSIVE_HIT },
@@ -1164,12 +1166,15 @@ void BonkMgr::LoadUpgrades()
         upgrade.layout.requiredId = fields[12].GetUInt32();
         upgrade.layout.requiredRank = fields[13].GetUInt8();
 
-        if (effect >= MAX_BONK_PASSIVE_EFFECT)
+        if (effect >= BONK_UPGRADE_UTILITY_BASE && effect < BONK_UPGRADE_UTILITY_BASE + MAX_BONK_UPGRADE_UTILITY)
+            upgrade.utility = int8(effect - BONK_UPGRADE_UTILITY_BASE);
+        else if (effect < MAX_BONK_PASSIVE_EFFECT)
+            upgrade.effect = BonkPassiveEffect(effect);
+        else
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_upgrade`: upgrade %u has unknown effect %u, skipped.", upgrade.id, effect);
             continue;
         }
-        upgrade.effect = BonkPassiveEffect(effect);
 
         m_upgrades[upgrade.id] = std::move(upgrade);
     } while (result->NextRow());
@@ -1184,7 +1189,7 @@ void BonkMgr::LoadTalents()
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `id`, `name`, `description`, `effect`, `value_per_rank`, `gold_bonus`, `max_rank`, `cost`, `cost_growth`, "
-        "`icon`, `tree`, `tree_row`, `tree_column`, `required_id`, `required_rank` FROM `bonk_talent`"));
+        "`icon`, `tree`, `tree_row`, `tree_column`, `required_id`, `required_rank`, `rank_quests` FROM `bonk_talent`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk talents.");
@@ -1211,6 +1216,14 @@ void BonkMgr::LoadTalents()
         talent.layout.column = fields[12].GetUInt8();
         talent.layout.requiredId = fields[13].GetUInt32();
         talent.layout.requiredRank = fields[14].GetUInt8();
+        // "15,35,55": quests done to learn each rank.
+        std::string const gates = fields[15].GetCppString();
+        for (size_t start = 0; start < gates.size();)
+        {
+            size_t const comma = gates.find(',', start);
+            talent.rankQuests.push_back(uint32(std::strtoul(gates.substr(start, comma - start).c_str(), nullptr, 10)));
+            start = comma == std::string::npos ? gates.size() : comma + 1;
+        }
 
         if (effect >= MAX_BONK_TALENT_EFFECT)
         {

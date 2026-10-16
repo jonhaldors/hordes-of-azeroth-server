@@ -24,6 +24,8 @@ class BonkRun;
 class Creature;
 class Player;
 enum BonkShop : uint8;
+enum BonkQuestReward : uint8;
+enum BonkUpgradeUtility : uint8;
 struct BonkMasteryBonuses;
 struct BonkRunBonuses;
 struct BonkTier;
@@ -71,11 +73,17 @@ class BonkPlayer
         uint32 GetShards() const { return m_shards; }
         void AddShards(uint32 count);
         uint8 GetUpgradeRank(uint32 upgradeId) const;
+        // What the camp upgrades of one utility add up to (dash range and
+        // the like), at camp and in runs.
+        float GetUpgradeUtility(BonkUpgradeUtility utility) const;
         uint8 GetTalentRank(uint32 talentId) const;
         bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
         // Dark Fortunes (difficulty toggles) switched on.
         uint32 CountDarkFortunes() const { return uint32(m_enabledTalents.size()); }
         bool BuyUpgrade(uint32 upgradeId, std::string& message);
+        // A spell, passive or card whose quest is done, bought with gold at
+        // the Spellbook (Core loop v2 phase E).
+        bool BuyUnlock(BonkQuestReward type, uint32 id, std::string& message);
         bool BuyTalent(uint32 talentId, std::string& message);
         // Free full refunds: every upgrade's gold, every talent's shards.
         bool ResetUpgrades(std::string& message);

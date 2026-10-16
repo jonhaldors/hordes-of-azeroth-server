@@ -666,6 +666,16 @@ uint8 BonkPlayer::GetUpgradeRank(uint32 upgradeId) const
     return itr != m_upgradeRanks.end() ? itr->second : 0;
 }
 
+float BonkPlayer::GetUpgradeUtility(BonkUpgradeUtility utility) const
+{
+    float total = 0.0f;
+    for (auto const& itr : m_upgradeRanks)
+        if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(itr.first))
+            if (upgrade->utility == int8(utility))
+                total += upgrade->valuePerRank * std::min(itr.second, upgrade->maxRank);
+    return total;
+}
+
 uint8 BonkPlayer::GetTalentRank(uint32 talentId) const
 {
     auto itr = m_talentRanks.find(talentId);
@@ -765,6 +775,49 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
     return true;
 }
 
+bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message)
+{
+    std::string name;
+    switch (type)
+    {
+        case BONK_REWARD_WEAPON:
+            if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(id))
+                name = weapon->name;
+            break;
+        case BONK_REWARD_PASSIVE:
+            if (BonkPassive const* passive = sBonkMgr.GetPassive(id))
+                name = passive->name;
+            break;
+        case BONK_REWARD_CARD:
+            if (BonkCard const* card = sBonkMgr.GetCard(id))
+                name = card->name;
+            break;
+        default:
+            break;
+    }
+    if (name.empty())
+    {
+        message = "There is no such thing to buy.";
+        return false;
+    }
+
+    uint32 const account = m_player->GetSession()->GetAccountId();
+    if (!sBonkQuests.IsForSale(account, type, id))
+    {
+        if (!sBonkQuests.IsLocked(account, type, id))
+            message = "You already have " + name + ".";
+        else if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(type, id))
+            message = "Finish the quest " + quest->name + " to unlock " + name + ".";
+        return false;
+    }
+
+    if (!Spend(BonkQuests::GetUnlockPrice(type, id), message))
+        return false;
+    sBonkQuests.Buy(account, type, id);
+    message = name + " unlocked!";
+    return true;
+}
+
 bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
 {
     BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
@@ -789,6 +842,19 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     {
         message = RequirementText(required->name, talent->layout.requiredRank, required->maxRank);
         return false;
+    }
+
+    // Some ranks wait on quests done (the slot fortunes, Core loop v2 phase E).
+    if (rank < talent->rankQuests.size())
+    {
+        uint32 const needed = talent->rankQuests[rank];
+        uint32 const done = sBonkQuests.GetCompletedCount(m_player->GetSession()->GetAccountId());
+        if (done < needed)
+        {
+            message = "Rank " + std::to_string(rank + 1) + " of " + talent->name + " needs " + std::to_string(needed) + " quests done. You have done " +
+                std::to_string(done) + ".";
+            return false;
+        }
     }
 
     if (!SpendShards(talent->GetCost(rank), message))
@@ -1163,8 +1229,13 @@ void BonkPlayer::SendShop(bool open) const
         {
             BonkTalent const& talent = itr.second;
             uint8 const rank = GetTalentRank(talent.id);
+            // A rank still waiting on quests says how many.
+            std::string description = talent.description;
+            if (rank < talent.maxRank && rank < talent.rankQuests.size() &&
+                sBonkQuests.GetCompletedCount(m_player->GetSession()->GetAccountId()) < talent.rankQuests[rank])
+                description += " Next rank after " + std::to_string(talent.rankQuests[rank]) + " quests done.";
             sendNode(talent.id, talent.layout, rank, talent.maxRank, talent.GetCost(rank), rank ? talent.GetCost(rank - 1) : 0, talent.IsToggle(),
-                IsTalentEnabled(talent.id), talent.name, talent.description, talent.valuePerRank);
+                IsTalentEnabled(talent.id), talent.name, description, talent.valuePerRank);
         }
     }
 
@@ -1177,7 +1248,13 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
 
     for (auto const& itr : m_upgradeRanks)
         if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(itr.first))
-            bonuses.passives[upgrade->effect] += upgrade->valuePerRank * std::min(itr.second, upgrade->maxRank);
+        {
+            float const value = upgrade->valuePerRank * std::min(itr.second, upgrade->maxRank);
+            if (upgrade->utility >= 0)
+                bonuses.utility[upgrade->utility] += value;
+            else
+                bonuses.passives[upgrade->effect] += value;
+        }
 
     // Class Mastery nodes that add to a passive count like camp upgrades.
     BonkMasteryBonuses const mastery = GetMasteryBonuses();

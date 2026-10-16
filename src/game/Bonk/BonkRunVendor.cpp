@@ -6,8 +6,8 @@
  * mini-boss is up. He stands at a spawn point some way off, under a vendor
  * objective whose pin counts down the minute he stays. Clicked, he pauses
  * the run like a level-up and shows his shelf: three cards from the
- * level-up pool (spell ranks roll their rarity with Luck) and a special
- * slot, a Reroll, Banish or Skip charge. Everything costs Valor, about 1.5x
+ * level-up pool (spell ranks roll their rarity with Luck), a Darkmoon Card
+ * drawn as a chest's, and a special slot, a Reroll, Banish or Skip charge. Everything costs Valor, about 1.5x
  * the current chest price; rarer spell ranks cost more. Any number may be
  * bought while the Valor lasts.
  *
@@ -18,7 +18,7 @@
  * Addon: "vendor~valor~rerollCost~secondsLeft~name", then for each slot
  * "vslot~index~kind~rank~maxRank~name~icon~description~rarity~locked~price~state"
  * (kind, rank, maxRank and rarity as the level-up's opt, kind c for a
- * charge; state 0 for sale, 1 bought, 2 no longer fits the build), then
+ * charge, d for a Darkmoon Card with its copy and max copies; state 0 for sale, 1 bought, 2 no longer fits the build), then
  * "vendorend"; "vendorclose" when it closes. `.bonk vendor buy <slot>`,
  * `.bonk vendor lock <slot>`, `.bonk vendor reroll` and `.bonk vendor close`
  * answer it.
@@ -38,6 +38,7 @@
 namespace
 {
     uint32 const BONK_VENDOR_ENTRY         = 900010;    // Zixil
+    size_t const BONK_VENDOR_DARKMOON_SLOTS = 1;        // Darkmoon Cards on his shelf
     uint32 const BONK_VENDOR_SECONDS       = 60;        // he stays this long
     uint32 const BONK_VENDOR_EARLIEST      = 120;       // stage seconds: he comes from 2:00...
     uint32 const BONK_VENDOR_LATEST        = 480;       // ...to 8:00...
@@ -186,19 +187,28 @@ void BonkRun::StockVendor(bool reroll)
         m_vendorKept.clear();
     }
 
-    std::vector<Offer> kept, shown;
+    // Spell and passive cards apart from Darkmoon Cards: each has its draw.
+    std::vector<Offer> kept, shown, keptDarkmoon, shownDarkmoon;
     for (VendorSlot const& slot : locked)
         if (!slot.isCharge)
-            kept.push_back(slot.card);
+            (slot.card.isCard ? keptDarkmoon : kept).push_back(slot.card);
     if (reroll)
         for (VendorSlot const& slot : m_vendorStock)
             if (!slot.isCharge)
-                shown.push_back(slot.card);
+                (slot.card.isCard ? shownDarkmoon : shown).push_back(slot.card);
 
     // The level-up's draw: locked cards first, as they are now, then new
     // ones, a reroll's last ones only once fresh ones run out.
     std::vector<Offer> cards;
     OfferUpgrades(OFFER_LEVEL, reroll ? &shown : nullptr, &kept, &cards);
+
+    // And a Darkmoon Card, drawn as a chest's (Core loop v2 phase E).
+    if (!sBonkMgr.GetCards().empty())
+    {
+        std::vector<Offer> darkmoon;
+        OfferCards(BONK_VENDOR_DARKMOON_SLOTS, reroll ? &shownDarkmoon : nullptr, &keptDarkmoon, &darkmoon);
+        cards.insert(cards.end(), darkmoon.begin(), darkmoon.end());
+    }
 
     m_vendorStock.clear();
     for (Offer const& card : cards)
@@ -207,7 +217,7 @@ void BonkRun::StockVendor(bool reroll)
         slot.card = card;
         slot.price = GetVendorPrice(&card);
         for (VendorSlot const& old : locked)
-            if (!old.isCharge && old.card.isWeapon == card.isWeapon && old.card.id == card.id)
+            if (!old.isCharge && old.card.isWeapon == card.isWeapon && old.card.isCard == card.isCard && old.card.id == card.id)
             {
                 slot.price = old.price;
                 slot.locked = true;
@@ -250,15 +260,16 @@ uint32 BonkRun::GetVendorPrice(Offer const* card) const
     if (card)
     {
         scale = BONK_VENDOR_CARD_PRICE;
-        if (card->isWeapon && card->step != BONK_STEP_NEW && card->rarity < MAX_BONK_RARITY)
+        if ((card->isCard || (card->isWeapon && card->step != BONK_STEP_NEW)) && card->rarity < MAX_BONK_RARITY)
             scale *= BONK_VENDOR_RARITY_PRICE[card->rarity];
     }
-    return std::max(1u, uint32(GetChestCost() * scale + 0.5f));
+    // Haggle works here as at a chest.
+    return std::max(1u, uint32(GetChestPrice() * scale + 0.5f));
 }
 
 uint32 BonkRun::GetVendorRerollCost() const
 {
-    return std::max(1u, uint32(GetChestCost() * BONK_VENDOR_REROLL_PRICE * (1.0f + BONK_VENDOR_REROLL_GROWTH * m_vendorRerolls) + 0.5f));
+    return std::max(1u, uint32(GetChestPrice() * BONK_VENDOR_REROLL_PRICE * (1.0f + BONK_VENDOR_REROLL_GROWTH * m_vendorRerolls) + 0.5f));
 }
 
 void BonkRun::OpenVendor(Creature* vendor)
@@ -352,6 +363,12 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
 
 void BonkRun::ApplyVendorCard(Offer const& card)
 {
+    if (card.isCard)
+    {
+        if (BonkCard const* darkmoon = sBonkMgr.GetCard(card.id))
+            AddCard(*darkmoon);
+        return;
+    }
     if (card.isWeapon)
     {
         if (OwnedWeapon* owned = FindOwned(card.id))
@@ -476,13 +493,19 @@ void BonkRun::SendVendor() const
             {
                 Offer const& card = slot.card;
                 name = DescribeOffer(card, &icon);
-                kind = card.step == BONK_STEP_EVOLVE ? "e" : card.isWeapon ? "w" : "p";
+                // d: a Darkmoon Card (c is a charge here); its rank is the copy.
+                kind = card.isCard ? "d" : card.step == BONK_STEP_EVOLVE ? "e" : card.isWeapon ? "w" : "p";
                 rank = card.newLevel;
-                if (!card.isWeapon)
+                if (card.isCard)
+                {
+                    if (BonkCard const* darkmoon = sBonkMgr.GetCard(card.id))
+                        maxRank = darkmoon->maxCopies;
+                }
+                else if (!card.isWeapon)
                     if (BonkPassive const* passive = sBonkMgr.GetPassive(card.id))
                         maxRank = passive->maxRank;
                 description = DescribeStep(card);
-                if (card.isWeapon && card.step != BONK_STEP_NEW)
+                if (card.isCard || (card.isWeapon && card.step != BONK_STEP_NEW))
                     rarity = std::to_string(card.rarity);
             }
             bonk->SendAddon("vslot~" + std::to_string(i + 1) + "~" + kind + "~" + std::to_string(rank) + "~" + std::to_string(maxRank) + "~" +

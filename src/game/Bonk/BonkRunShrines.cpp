@@ -5,7 +5,8 @@
  * A stage places a few at spawn points as they gather (more on open ground:
  * BONK_SHRINE_COUNT by map type), each with a shrine objective, so they show
  * as blue pillars and on the map. Each goes once it is used:
- * - Ley Line: a blue rune ring; standing in it for BONK_LEY_CAPTURE_MS
+ * - Ley Line: a blue rune ring; standing in it for BONK_LEY_CAPTURE_MS (less
+ *   with the Attunement upgrade, which also makes a Moonwell last longer)
  *   (leaving pauses it, the addon shows a capture bar) offers three stat
  *   buffs for the run, rarity rolled with Luck; the run pauses for the pick,
  *   like a level-up, and picks stack.
@@ -60,6 +61,7 @@ namespace
     uint32 const BONK_LEY_CAPTURE_MS       = 8000;
     uint32 const BONK_LEY_SEND_MS          = 250;       // the capture bar's updates
     uint32 const BONK_LEY_CHOICES          = 3;
+    float const BONK_LEY_CARD_CHANCE       = 35.0f;     // % that one choice is a Darkmoon Card
 
     float const BONK_GREED_REWARD          = 5.0f;      // % gold and tickets a stack
     float const BONK_GREED_CROWD           = 5.0f;      // % enemies, times n(n+1)/2
@@ -266,9 +268,11 @@ void BonkRun::UpdateLeyLine(size_t index, uint32 diff)
         return;
     }
 
+    // Attunement: captured sooner.
+    uint32 const captureMs = uint32(BONK_LEY_CAPTURE_MS / (1.0f + GetUtility(BONK_UTILITY_SHRINE_SPEED) / 100.0f));
     shrine.progressMs += diff;
     m_captureSendMs += diff;
-    if (shrine.progressMs >= BONK_LEY_CAPTURE_MS)
+    if (shrine.progressMs >= captureMs)
     {
         bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~100");
         bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~-1");
@@ -283,7 +287,7 @@ void BonkRun::UpdateLeyLine(size_t index, uint32 diff)
         m_captureSendMs = 0;
         m_captureShown = true;
         bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~" +
-            std::to_string(shrine.progressMs * 100 / BONK_LEY_CAPTURE_MS));
+            std::to_string(shrine.progressMs * 100 / captureMs));
     }
 }
 
@@ -325,6 +329,20 @@ void BonkRun::OfferLeyBuffs()
     if (m_leyOffer.empty())
         return;
 
+    // Now and then the last choice is a Darkmoon Card, drawn as a chest's.
+    if (roll_chance_f(BONK_LEY_CARD_CHANCE) && !sBonkMgr.GetCards().empty())
+    {
+        std::vector<Offer> const none;
+        std::vector<Offer> drawn;
+        if (OfferCards(1, nullptr, &none, &drawn) && !drawn.empty())
+        {
+            LeyBuff card;
+            card.cardId = drawn.front().id;
+            card.rarity = drawn.front().rarity;
+            m_leyOffer.back() = card;
+        }
+    }
+
     SetPaused(true);
     SendLeyOffer();
 }
@@ -334,11 +352,20 @@ void BonkRun::SendLeyOffer() const
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (bonk->IsAddonReady())
     {
-        // leyoffer~count, then leyopt~index~name~icon~description~rarity, leyofferend.
+        // leyoffer~count, then leyopt~index~name~icon~description~rarity (a
+        // Darkmoon Card adds ~c~copy~maxCopies), leyofferend.
         bonk->SendAddon("leyoffer~" + std::to_string(m_leyOffer.size()));
         for (size_t i = 0; i < m_leyOffer.size(); ++i)
         {
             LeyBuff const& buff = m_leyOffer[i];
+            if (buff.cardId)
+            {
+                // ~c~copy~maxCopies: the addon dresses it as a Darkmoon Card.
+                if (BonkCard const* card = sBonkMgr.GetCard(buff.cardId))
+                    bonk->SendAddon("leyopt~" + std::to_string(i + 1) + "~" + card->name + "~" + card->icon + "~" + card->description + "~" +
+                        std::to_string(buff.rarity) + "~c~" + std::to_string(GetCardCopies(card->id) + 1) + "~" + std::to_string(uint32(card->maxCopies)));
+                continue;
+            }
             LeyStat const* stat = GetLeyStat(buff.effect);
             if (!stat)
                 continue;
@@ -359,8 +386,15 @@ void BonkRun::SendLeyOffer() const
     ChatHandler handler(m_player);
     handler.SendSysMessage("Ley Line! Choose a blessing with .bonk leypick <number>:");
     for (size_t i = 0; i < m_leyOffer.size(); ++i)
-        if (LeyStat const* stat = GetLeyStat(m_leyOffer[i].effect))
+    {
+        if (m_leyOffer[i].cardId)
+        {
+            if (BonkCard const* card = sBonkMgr.GetCard(m_leyOffer[i].cardId))
+                handler.PSendSysMessage("%u. %s: %s", uint32(i + 1), card->name.c_str(), card->description.c_str());
+        }
+        else if (LeyStat const* stat = GetLeyStat(m_leyOffer[i].effect))
             handler.PSendSysMessage("%u. %s", uint32(i + 1), FormatLeyValue(*stat, m_leyOffer[i].value).c_str());
+    }
 }
 
 bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
@@ -378,13 +412,23 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
 
     LeyBuff const buff = m_leyOffer[index - 1];
     m_leyOffer.clear();
-    m_shrineBonuses[buff.effect] += buff.value;
-    ApplyPassives();
-
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->SendAddon("leyofferclose");
-    if (LeyStat const* stat = GetLeyStat(buff.effect))
-        bonk->Notify("Ley Line: " + FormatLeyValue(*stat, buff.value) + "!");
+    if (buff.cardId)
+    {
+        if (BonkCard const* card = sBonkMgr.GetCard(buff.cardId))
+        {
+            AddCard(*card);
+            bonk->Notify("Ley Line: " + card->name + "!");
+        }
+    }
+    else
+    {
+        m_shrineBonuses[buff.effect] += buff.value;
+        ApplyPassives();
+        if (LeyStat const* stat = GetLeyStat(buff.effect))
+            bonk->Notify("Ley Line: " + FormatLeyValue(*stat, buff.value) + "!");
+    }
     if (m_offer.empty())
         SetPaused(false);
     SendState();
@@ -463,7 +507,7 @@ void BonkRun::UseShrine(GameObject* go)
                 if (shrine.active)
                     break;
                 shrine.active = true;
-                shrine.leftMs = BONK_MOONWELL_SECONDS * IN_MILLISECONDS;
+                shrine.leftMs = GetMoonwellSeconds() * IN_MILLISECONDS;
                 shrine.tickMs = IN_MILLISECONDS;    // the first heal at once
                 bonk->Notify("The Moonwell's waters stir!");
                 break;
@@ -534,7 +578,7 @@ void BonkRun::UpdateMoonwell(size_t index, uint32 diff)
 
     if (shrine.leftMs <= diff)
     {
-        bonk->SendAddon("moonwell~0~0~" + std::to_string(BONK_MOONWELL_SECONDS));
+        bonk->SendAddon("moonwell~0~0~" + std::to_string(GetMoonwellSeconds()));
         bonk->Notify("The Moonwell runs dry.");
         RemoveShrine(index);
         return;
@@ -547,7 +591,7 @@ void BonkRun::UpdateMoonwell(size_t index, uint32 diff)
         if (shrine.progressMs)
         {
             shrine.progressMs = 0;
-            bonk->SendAddon("moonwell~0~0~" + std::to_string(BONK_MOONWELL_SECONDS));
+            bonk->SendAddon("moonwell~0~0~" + std::to_string(GetMoonwellSeconds()));
         }
         return;
     }
@@ -565,7 +609,13 @@ void BonkRun::UpdateMoonwell(size_t index, uint32 diff)
             m_player->ModifyHealth(int32(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * BONK_MOONWELL_HEAL)))));
     }
     bonk->SendAddon("moonwell~" + std::to_string((shrine.leftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS) + "~1~" +
-        std::to_string(BONK_MOONWELL_SECONDS));
+        std::to_string(GetMoonwellSeconds()));
+}
+
+uint32 BonkRun::GetMoonwellSeconds() const
+{
+    // Attunement: its waters stir longer.
+    return uint32(BONK_MOONWELL_SECONDS * (1.0f + GetUtility(BONK_UTILITY_SHRINE_SPEED) / 100.0f) + 0.5f);
 }
 
 bool BonkRun::IsInMoonwell(float x, float y) const

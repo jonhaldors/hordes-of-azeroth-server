@@ -144,31 +144,63 @@ void BonkCodex::Send(Player* player, std::string const& npc)
     uint32 const account = player->GetSession()->GetAccountId();
     bonk->SendAddon("cdx~" + npc + "~" + std::to_string(player->GetClassMask()));
 
-    // cdxw~id~name~icon~classMask~starterMask~evolvesFrom~locked,
+    // `locked`: 0 owned (or never locked), 1 waiting on its quest, 2 for
+    // sale at `price` copper (its quest done, Core loop v2 phase E).
+    auto lockState = [account](BonkQuestReward type, uint32 id, uint32& price)
+    {
+        price = 0;
+        if (sBonkQuests.IsForSale(account, type, id))
+        {
+            price = BonkQuests::GetUnlockPrice(type, id);
+            return "2";
+        }
+        return sBonkQuests.IsLocked(account, type, id) ? "1" : "0";
+    };
+
+    // cdxw~id~name~icon~classMask~starterMask~evolvesFrom~locked~price,
     // then cdxwd~id~description and cdxwg~id~growth. Long text has lines of
     // its own to keep each message short.
     for (auto const& itr : sBonkMgr.GetWeapons())
     {
         BonkWeapon const& weapon = itr.second;
         std::string const id = std::to_string(weapon.id);
-        bool const locked = sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, weapon.id);
+        uint32 price;
+        std::string const locked = lockState(BONK_REWARD_WEAPON, weapon.id, price);
         bonk->SendAddon("cdxw~" + id + "~" + weapon.name + "~" + weapon.icon + "~" + std::to_string(weapon.classMask) + "~" +
-            std::to_string(weapon.starterClassMask) + "~" + std::to_string(weapon.evolvesFrom) + "~" + (locked ? "1" : "0"));
+            std::to_string(weapon.starterClassMask) + "~" + std::to_string(weapon.evolvesFrom) + "~" + locked + "~" + std::to_string(price));
         bonk->SendAddon("cdxwd~" + id + "~" + weapon.description);
         bonk->SendAddon("cdxwg~" + id + "~" + DescribeGrowth(weapon));
-        if (locked)
+        if (locked == "1")
             SendLock(bonk, "w", weapon.id, BONK_REWARD_WEAPON);
     }
 
-    // cdxp~id~name~icon~maxRank~locked~description
+    // cdxp~id~name~icon~maxRank~locked~description~price
     for (auto const& itr : sBonkMgr.GetPassives())
     {
         BonkPassive const& passive = itr.second;
-        bool const locked = sBonkQuests.IsLocked(account, BONK_REWARD_PASSIVE, passive.id);
+        uint32 price;
+        std::string const locked = lockState(BONK_REWARD_PASSIVE, passive.id, price);
         bonk->SendAddon("cdxp~" + std::to_string(passive.id) + "~" + passive.name + "~" + passive.icon + "~" +
-            std::to_string(passive.maxRank) + "~" + (locked ? "1" : "0") + "~" + sBonkMgr.DescribePassive(passive));
-        if (locked)
+            std::to_string(passive.maxRank) + "~" + locked + "~" + sBonkMgr.DescribePassive(passive) + "~" + std::to_string(price));
+        if (locked == "1")
             SendLock(bonk, "p", passive.id, BONK_REWARD_PASSIVE);
+    }
+
+    // cdxc~id~name~icon~rarity~maxCopies~locked~price, then
+    // cdxcd~id~description: the Darkmoon Cards chests can offer.
+    for (auto const& itr : sBonkMgr.GetCards())
+    {
+        BonkCard const& card = itr.second;
+        if (!card.inChests)
+            continue;
+        uint32 price;
+        std::string const locked = lockState(BONK_REWARD_CARD, card.id, price);
+        std::string const id = std::to_string(card.id);
+        bonk->SendAddon("cdxc~" + id + "~" + card.name + "~" + card.icon + "~" + std::to_string(uint32(card.rarity)) + "~" +
+            std::to_string(uint32(card.maxCopies)) + "~" + locked + "~" + std::to_string(price));
+        bonk->SendAddon("cdxcd~" + id + "~" + card.description);
+        if (locked == "1")
+            SendLock(bonk, "c", card.id, BONK_REWARD_CARD);
     }
 
     bonk->SendAddon("cdxend");
