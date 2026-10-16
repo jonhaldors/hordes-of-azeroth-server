@@ -125,6 +125,7 @@ void BonkMgr::Load()
     LoadPowerups();
     LoadCards();
     LoadItemCards();
+    LoadGlyphs();
     LoadGear();
     LoadShopTrees();
     LoadUpgrades();
@@ -862,8 +863,8 @@ void BonkMgr::LoadMobs()
     }
 
     uint32 abilities = 0;
-    result = WorldDatabase.Query("SELECT `entry`, `spell_id`, `target`, `cooldown_ms`, `first_ms`, `min_range`, `max_range`, `damage` "
-        "FROM `bonk_mob_ability` ORDER BY `entry`, `spell_id`");
+    result = WorldDatabase.Query("SELECT `entry`, `spell_id`, `target`, `cooldown_ms`, `first_ms`, `min_range`, `max_range`, `damage`, "
+        "`shape`, `count`, `size`, `below_health` FROM `bonk_mob_ability` ORDER BY `entry`, `spell_id`");
     if (result)
     {
         do
@@ -879,6 +880,10 @@ void BonkMgr::LoadMobs()
             ability.minRange = fields[5].GetFloat();
             ability.maxRange = fields[6].GetFloat();
             ability.damage = fields[7].GetFloat();
+            ability.shape = BonkAbilityShape(std::min<uint8>(fields[8].GetUInt8(), MAX_BONK_ABILITY_SHAPE - 1));
+            ability.count = fields[9].GetUInt32();
+            ability.size = fields[10].GetFloat();
+            ability.belowHealth = fields[11].GetFloat();
 
             SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(ability.spellId);
             if (!spellInfo)
@@ -941,7 +946,7 @@ void BonkMgr::LoadPowerups()
 {
     m_powerups.clear();
 
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `spell_id`, `weight` FROM `bonk_powerup`"));
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `spell_id`, `weight`, `effect`, `value` FROM `bonk_powerup`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk power-ups.");
@@ -956,6 +961,14 @@ void BonkMgr::LoadPowerups()
         powerup.entry = fields[0].GetUInt32();
         powerup.spellId = fields[1].GetUInt32();
         powerup.weight = std::max(1u, fields[2].GetUInt32());
+        uint32 const effect = fields[3].GetUInt32();
+        powerup.value = fields[4].GetFloat();
+        if (effect >= MAX_BONK_POWERUP_EFFECT)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_powerup`: power-up %u has unknown effect %u, skipped.", powerup.entry, effect);
+            continue;
+        }
+        powerup.effect = BonkPowerupEffect(effect);
 
         if (!sObjectMgr.GetGameObjectTemplate(powerup.entry))
         {
@@ -963,7 +976,8 @@ void BonkMgr::LoadPowerups()
             continue;
         }
 
-        if (!sSpellMgr.GetSpellEntry(powerup.spellId))
+        if ((powerup.spellId || powerup.effect == BONK_POWERUP_SPELL || powerup.effect == BONK_POWERUP_HOLY_NOVA) &&
+            !sSpellMgr.GetSpellEntry(powerup.spellId))
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_powerup`: power-up %u uses unknown spell %u, skipped.", powerup.entry, powerup.spellId);
             continue;
@@ -1492,6 +1506,57 @@ BonkCard const* BonkMgr::GetCard(uint32 id) const
 {
     auto itr = m_cards.find(id);
     return itr != m_cards.end() ? &itr->second : nullptr;
+}
+
+BonkGlyph const* BonkMgr::GetGlyph(uint32 id) const
+{
+    auto itr = m_glyphs.find(id);
+    return itr != m_glyphs.end() ? &itr->second : nullptr;
+}
+
+void BonkMgr::LoadGlyphs()
+{
+    m_glyphs.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `icon`, `description`, `drawback`, `rarity`, `effect`, `value1`, `value2`, `value3`, `card_id`, `starter` FROM `bonk_glyph`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk glyphs");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+        BonkGlyph glyph;
+        glyph.id = fields[0].GetUInt32();
+        glyph.name = fields[1].GetCppString();
+        glyph.icon = fields[2].GetCppString();
+        glyph.description = fields[3].GetCppString();
+        glyph.drawback = fields[4].GetCppString();
+        uint32 const rarity = fields[5].GetUInt32();
+        uint32 const effect = fields[6].GetUInt32();
+        for (uint8 i = 0; i < 3; ++i)
+            glyph.values[i] = fields[7 + i].GetFloat();
+        glyph.cardId = fields[10].GetUInt32();
+        glyph.starter = fields[11].GetBool();
+        if (rarity >= MAX_BONK_RARITY || effect >= MAX_BONK_GLYPH_EFFECT)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_glyph`: glyph %u has unknown rarity %u or effect %u, skipped.", glyph.id, rarity, effect);
+            continue;
+        }
+        if (glyph.cardId && !GetCard(glyph.cardId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_glyph`: glyph %u gives missing card %u, skipped.", glyph.id, glyph.cardId);
+            continue;
+        }
+        glyph.rarity = BonkRarity(rarity);
+        glyph.effect = BonkGlyphEffect(effect);
+        m_glyphs[glyph.id] = glyph;
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk glyphs", uint32(m_glyphs.size()));
 }
 
 uint32 BonkMgr::GetItemCard(uint32 itemEntry) const

@@ -187,12 +187,27 @@ namespace
     // The Extraction Vault stands this far to the side of the stage portal.
     float const BONK_VAULT_SIDE     = 4.0f;
 
+    // A boss's adds come up in a ring this far round it.
+    float const BONK_PHASE_ADD_MIN  = 8.0f;
+    float const BONK_PHASE_ADD_MAX  = 12.0f;
+
+    // The Glyph of Goblin Engineering's rigged chest (Explosion's impact).
+    uint32 const BONK_KIT_CHEST_TRAP = 286;
+    // Restoration: no such power-up with the Glyph of the Twisted Nether.
+    uint32 const BONK_POWERUP_RESTORATION = 900004;
+
+    // Pickups' bursts on the hero (SpellVisualKit): Holy Nova's and Frost
+    // Nova's casts.
+    uint32 const BONK_KIT_HOLY_NOVA  = 3154;
+    uint32 const BONK_KIT_FROST_NOVA = 160;
+
     // Starting spots (Phase F4): a run starts at a learned one at random once
-    // a map has a few. Each has the arena all round it this far out and keeps
-    // this far from the others.
+    // a map has a few. Each has the arena all round it this far out (less in
+    // a dungeon's narrower halls) and keeps this far from the others.
     size_t const BONK_START_MIN_LEARNED = 4;
     size_t const BONK_START_MAX_LEARNED = 15;
     float const BONK_START_EDGE         = 60.0f;
+    float const BONK_START_EDGE_ENCLOSED = 25.0f;
     float const BONK_START_SPREAD       = 80.0f;
     size_t const BONK_OFFER_SIZE   = 3;
     uint32 const BONK_RUN_XP_SEND_MS = 200;     // the XP bar's updates while orbs come in
@@ -816,6 +831,7 @@ void BonkRun::LearnStarts(std::vector<BonkSpot> const& spots)
     if (spots.empty() || !m_player->IsInWorld())
         return;
     TerrainInfo const* terrain = m_player->GetMap()->GetTerrain();
+    float const edge = m_map.type == BONK_MAP_OPEN ? BONK_START_EDGE : BONK_START_EDGE_ENCLOSED;
     for (BonkSpot const& spot : spots)
     {
         if (m_map.type == BONK_MAP_OPEN && !terrain->IsOutdoors(spot.x, spot.y, spot.z + 1.0f))
@@ -824,8 +840,8 @@ void BonkRun::LearnStarts(std::vector<BonkSpot> const& spots)
         for (uint32 i = 0; i < 8 && inside; ++i)
         {
             float const angle = i * M_PI_F / 4.0f;
-            float const x = spot.x + BONK_START_EDGE * std::cos(angle);
-            float const y = spot.y + BONK_START_EDGE * std::sin(angle);
+            float const x = spot.x + edge * std::cos(angle);
+            float const y = spot.y + edge * std::sin(angle);
             float const z = m_player->GetMap()->GetHeight(x, y, spot.z + 20.0f, true, 60.0f);
             if (z <= INVALID_HEIGHT || (m_map.zoneId && terrain->GetZoneId(x, y, z) != m_map.zoneId) || terrain->IsInWater(x, y, z + 1.0f))
                 inside = false;
@@ -848,7 +864,14 @@ bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
     std::vector<BonkMapStart> const starts = sBonkMgr.GetMapStarts(map.id);
     if (starts.size() >= BONK_START_MIN_LEARNED)
     {
-        BonkMapStart const& start = starts[urand(0, uint32(starts.size()) - 1)];
+        // The next stage of a dungeon mode is on the same map: somewhere
+        // other than where the last one ended.
+        std::vector<BonkMapStart const*> away;
+        if (m_player->GetMapId() == map.mapId)
+            for (BonkMapStart const& start : starts)
+                if (m_player->GetDistance2d(start.x, start.y) > BONK_START_SPREAD)
+                    away.push_back(&start);
+        BonkMapStart const& start = away.empty() ? starts[urand(0, uint32(starts.size()) - 1)] : *away[urand(0, uint32(away.size()) - 1)];
         x = start.x;
         y = start.y;
         z = start.z + 0.5f;
@@ -1019,6 +1042,9 @@ void BonkRun::StartStage()
         // Camp upgrades: a card to start with, and levels up front.
         GiveStartCard();
         GiveStartLevels();
+
+        // The first Glyph, before anything else.
+        QueueGlyphPick();
     }
     else
     {
@@ -1086,6 +1112,9 @@ void BonkRun::SendFullState() const
         SendLeyOffer();
     if (m_vendorOpen)
         SendVendor();
+    SendGlyphs();
+    if (!m_glyphOffer.empty())
+        SendGlyphOffer();
     if (m_miniEventActive)
         SendMiniEventTimer(true);
     m_player->GetBonkPlayer()->SendDash();
@@ -1095,7 +1124,10 @@ void BonkRun::UpdateRunning(uint32 diff)
 {
     if (!m_player->IsAlive())
     {
-        if (m_revives)
+        BonkGlyph const* shield = GetGlyph(BONK_GLYPH_DIVINE_SHIELD);
+        if (shield && m_divineShieldStage != m_stage)
+            Revive(false, shield);
+        else if (m_revives)
             Revive();
         else if (m_soulstones)
             Revive(true);
@@ -1118,9 +1150,11 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateBoundary(diff);
     UpdateRecovery(diff);
     UpdateCards(diff);
+    UpdateGlyphs(diff);
     UpdateShield(diff);
     UpdateNecrotic(diff);
     UpdatePools(diff);
+    UpdateVoidZones(diff);
     UpdatePowerups(diff, true);
     UpdateObjectives(diff);
     UpdateOrbs(diff);
@@ -1177,12 +1211,15 @@ void BonkRun::UpdateOffers()
         m_lastLevel = level;
     }
 
-    if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_gearOfferEntry)
+    if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_gearOfferEntry || !m_glyphOffer.empty())
         return;
 
-    // Chests first: the player just walked up to one; then gear they picked
-    // up. Ley Line blessings last, one at a time like the rest.
-    if (!m_pendingChestChoices.empty())
+    // A Glyph before all, then chests: the player just walked up to one;
+    // then gear they picked up. Ley Line blessings last, one at a time like
+    // the rest.
+    if (m_pendingGlyphPicks)
+        OfferGlyphs();
+    else if (!m_pendingChestChoices.empty())
         OfferUpgrades(OFFER_CHEST);
     else if (!m_pendingGear.empty())
         OfferGear();
@@ -2142,8 +2179,9 @@ void BonkRun::UpdateStragglers(uint32 diff)
         if (!mob || !mob->IsAlive() || mob->HasCreatureState(CSTATE_DESPAWNING) || mob->IsWithinDistInMap(m_player, BONK_STRAY_DISTANCE) ||
             IsAhead(mob->GetPositionX(), mob->GetPositionY(), forward))
             continue;
-        // A mini-event's goblin or bounty is chased, not brought along.
-        if (guid == m_miniEvent.target)
+        // A mini-event's goblin, bounty, kobolds, shards or portal are
+        // chased, not brought along.
+        if (IsMiniEventTarget(guid))
             continue;
         auto const itr = m_farSince.find(guid);
         uint32 const since = itr != m_farSince.end() ? itr->second : now;
@@ -2527,6 +2565,66 @@ void BonkRun::OnAffixedDeath(Creature* mob)
     }
 }
 
+void BonkRun::SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites)
+{
+    // In a ring round the boss, the stage's own enemies; elites on harder
+    // difficulties.
+    for (uint32 i = 0; i < count + elites; ++i)
+    {
+        if (m_mobs.size() >= m_tier.maxAlive)
+            return;
+        BonkMapCreature const* pick = PickCreature(i < count ? BONK_SPAWN_NORMAL : BONK_SPAWN_ELITE);
+        if (!pick)
+            continue;
+        float const angle = 2.0f * M_PI_F * i / float(count + elites) + frand(-0.3f, 0.3f);
+        float const distance = frand(BONK_PHASE_ADD_MIN, BONK_PHASE_ADD_MAX);
+        float const x = boss->GetPositionX() + distance * std::cos(angle);
+        float const y = boss->GetPositionY() + distance * std::sin(angle);
+        float const z = m_player->GetMap()->GetHeight(x, y, boss->GetPositionZ() + 5.0f, true, 15.0f);
+        if (z <= INVALID_HEIGHT || !boss->IsWithinLOS(x, y, z + 2.0f))
+            continue;
+        if (Creature* mob = SpawnMobAt(*pick, x, y, z))
+            if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+                ai->Arrive();
+    }
+}
+
+void BonkRun::StartVoidZone(ObjectGuid source, float x, float y, float z, float radius, uint32 damage, uint32 durationMs)
+{
+    if (m_state != STATE_RUNNING || m_paused)
+        return;
+    VoidZone zone;
+    zone.source = source;
+    zone.x = x;
+    zone.y = y;
+    zone.z = z;
+    zone.radius = radius;
+    zone.damage = damage;
+    zone.leftMs = durationMs;
+    zone.tickMs = 0;
+    m_voidZones.push_back(zone);
+    // The circle stays up while it burns.
+    AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, durationMs);
+}
+
+void BonkRun::UpdateVoidZones(uint32 diff)
+{
+    for (auto itr = m_voidZones.begin(); itr != m_voidZones.end();)
+    {
+        itr->tickMs += diff;
+        if (itr->tickMs >= IN_MILLISECONDS)
+        {
+            itr->tickMs -= IN_MILLISECONDS;
+            Erupt(itr->source, itr->x, itr->y, itr->z, itr->radius, itr->damage);
+        }
+        itr->leftMs = itr->leftMs > diff ? itr->leftMs - diff : 0;
+        if (itr->leftMs)
+            ++itr;
+        else
+            itr = m_voidZones.erase(itr);
+    }
+}
+
 void BonkRun::UpdatePools(uint32 diff)
 {
     if (m_pools.empty())
@@ -2691,7 +2789,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
     // Power, a shout's Power and Mastery add up rather than multiply; a
     // mark on the enemy, Hunter's Mark and the spell's keyword payoff
     // multiply everything.
-    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim)) * powerShare;
+    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower()) * powerShare;
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark;
@@ -2777,14 +2875,16 @@ void BonkRun::AwardMastery()
     m_player->GetBonkPlayer()->AddMasteryXp(m_rewardMs / (MINUTE * IN_MILLISECONDS) * m_tier.masteryXpMinute + m_masteryXp);
 }
 
-void BonkRun::Revive(bool soulstone)
+void BonkRun::Revive(bool soulstone, BonkGlyph const* glyph)
 {
-    if (soulstone)
+    if (glyph)
+        m_divineShieldStage = m_stage;
+    else if (soulstone)
         --m_soulstones;
     else
         --m_revives;
     BonkCard const* stone = m_cardByEffect[BONK_CARD_SOULSTONE];
-    m_player->ResurrectPlayer(soulstone && stone ? stone->values[0] / 100.0f : 0.5f);
+    m_player->ResurrectPlayer(glyph ? glyph->values[0] / 100.0f : soulstone && stone ? stone->values[0] / 100.0f : 0.5f);
     m_player->SpawnCorpseBones();
     m_player->CastSpell(m_player, BONK_SPELL_REVIVE_SHIELD, true);
 
@@ -2797,7 +2897,9 @@ void BonkRun::Revive(bool soulstone)
                 if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
                     if (ai->GetKind() == BONK_SPAWN_NORMAL)
                         mob->DespawnOrUnsummon();
-    if (soulstone)
+    if (glyph)
+        m_player->GetBonkPlayer()->Notify("Divine Shield! Once more this stage.");
+    else if (soulstone)
         m_player->GetBonkPlayer()->Notify(m_soulstones ? "Soulstone! " + std::to_string(m_soulstones) + " left." : "Soulstone!");
     else
         m_player->GetBonkPlayer()->Notify(m_revives ? "Second wind! " + std::to_string(m_revives) + " left." : "Second wind!");
@@ -3009,16 +3111,21 @@ uint32 BonkRun::GetChestCost() const
 
 uint32 BonkRun::GetChestPrice() const
 {
-    float const haggle = std::min(GetUtility(BONK_UTILITY_HAGGLE), BONK_MAX_HAGGLE);
+    // Haggle, and the Glyph of Thrift.
+    float const haggle = std::min(GetUtility(BONK_UTILITY_HAGGLE), BONK_MAX_HAGGLE) + GetGlyphValue(BONK_GLYPH_THRIFT, 0);
     return std::max(1u, uint32(GetChestCost() * (1.0f - haggle / 100.0f) + 0.5f));
 }
 
 void BonkRun::SpawnPowerup()
 {
+    // The Glyph of the Twisted Nether: no healing ones.
+    bool const noHeals = GetGlyph(BONK_GLYPH_NO_HEALS) != nullptr;
+    auto allowed = [noHeals](BonkPowerup const& powerup) { return !noHeals || powerup.entry != BONK_POWERUP_RESTORATION; };
     std::vector<BonkPowerup> const& powerups = sBonkMgr.GetPowerups();
     uint32 totalWeight = 0;
     for (BonkPowerup const& powerup : powerups)
-        totalWeight += powerup.weight;
+        if (allowed(powerup))
+            totalWeight += powerup.weight;
     if (!totalWeight)
         return;
 
@@ -3026,6 +3133,8 @@ void BonkRun::SpawnPowerup()
     BonkPowerup const* chosen = nullptr;
     for (BonkPowerup const& powerup : powerups)
     {
+        if (!allowed(powerup))
+            continue;
         if (roll <= powerup.weight)
         {
             chosen = &powerup;
@@ -3043,7 +3152,9 @@ void BonkRun::SpawnPowerup()
             return;
         if (!m_player->IsWithinLOS(x, y, z))
             continue;
-        if (GameObject* go = PlaceObject(chosen->entry, x, y, z, BONK_POWERUP_LIFETIME_SEC))
+        // The Glyph of the Packrat: they lie about longer.
+        uint32 const lifetime = uint32(BONK_POWERUP_LIFETIME_SEC * (1.0f + GetGlyphValue(BONK_GLYPH_PACKRAT, 0) / 100.0f));
+        if (GameObject* go = PlaceObject(chosen->entry, x, y, z, lifetime))
             m_powerups.push_back(go->GetObjectGuid());
         return;
     }
@@ -3079,13 +3190,14 @@ void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
 
         auto powerup = std::find_if(sBonkMgr.GetPowerups().begin(), sBonkMgr.GetPowerups().end(),
             [go](BonkPowerup const& p) { return p.entry == go->GetEntry(); });
-        if (powerup != sBonkMgr.GetPowerups().end())
-        {
-            m_player->CastSpell(m_player, powerup->spellId, true);
-            m_player->GetBonkPlayer()->Notify(std::string(go->GetGOInfo()->name) + "!");
-        }
+        std::string const name = go->GetGOInfo()->name;
         go->Delete();
         itr = m_powerups.erase(itr);
+        if (powerup != sBonkMgr.GetPowerups().end())
+        {
+            m_player->GetBonkPlayer()->Notify(name + "!");
+            UsePowerup(*powerup);
+        }
     }
 
     if (!spawn || !m_map.powerupIntervalSeconds)
@@ -3098,6 +3210,44 @@ void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
 
     if (m_powerups.size() < m_map.powerupMax)
         SpawnPowerup();
+}
+
+void BonkRun::UsePowerup(BonkPowerup const& powerup)
+{
+    switch (powerup.effect)
+    {
+        case BONK_POWERUP_MAGNET:
+            CollectAllOrbs();
+            break;
+        case BONK_POWERUP_HOLY_NOVA:
+        {
+            // Every normal enemy close by dies; elites and bosses are left be.
+            SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(powerup.spellId);
+            if (!spellInfo)
+                break;
+            m_player->SendPlaySpellVisualKit(BONK_KIT_HOLY_NOVA);
+            for (Creature* mob : GetMobsInRange(powerup.value))
+            {
+                BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+                if (ai && ai->GetKind() == BONK_SPAWN_NORMAL && mob->IsAlive())
+                    DealSpellHit(spellInfo, mob, float(mob->GetMaxHealth()) * 2.0f);
+            }
+            break;
+        }
+        case BONK_POWERUP_FROST_NOVA:
+            // Frozen's own rules: elites and bosses shrug it off.
+            m_player->SendPlaySpellVisualKit(BONK_KIT_FROST_NOVA);
+            for (Creature* mob : GetMobsInRange(powerup.value))
+                ApplyKeyword(mob, BONK_KEYWORD_FROZEN, 1);
+            break;
+        case BONK_POWERUP_VALOR:
+            m_coins += std::max(1u, uint32(GetChestCost() * powerup.value + 0.5f));
+            SendState();
+            break;
+        default:
+            m_player->CastSpell(m_player, powerup.spellId, true);
+            break;
+    }
 }
 
 void BonkRun::DespawnObjects()
@@ -3123,6 +3273,7 @@ void BonkRun::DespawnObjects()
     DespawnVault();
     m_chests.clear();
     m_powerups.clear();
+    m_voidZones.clear();
     m_shardDrops.clear();
     m_healDrops.clear();
     m_gearDrops.clear();
@@ -3184,6 +3335,14 @@ void BonkRun::UseChest(GameObject* chest)
     }
 
     m_chests.erase(itr);
+    // The Glyph of Goblin Engineering: now and then a chest was rigged.
+    if (BonkGlyph const* rigged = GetGlyph(BONK_GLYPH_CHEST_TRAP))
+        if (roll_chance_f(rigged->values[0]) && m_player->IsAlive())
+        {
+            m_player->SendPlaySpellVisualKit(BONK_KIT_CHEST_TRAP);
+            m_player->EnvironmentalDamage(DAMAGE_FIRE, std::max(1u, uint32(m_player->GetMaxHealth() * rigged->values[1] / 100.0f)));
+            bonk->Notify("Boom! That chest was rigged.");
+        }
     auto choices = m_chestChoices.find(chest->GetObjectGuid());
     m_pendingChestChoices.push_back(choices != m_chestChoices.end() ? choices->second : uint32(BONK_OFFER_SIZE));
     if (choices != m_chestChoices.end())
@@ -3392,7 +3551,13 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     // Darkmoon Cards.
     total += m_cardStats[effect];
     // Ley Line blessings, for the rest of the run.
-    return total + m_shrineBonuses[effect];
+    total += m_shrineBonuses[effect];
+    // Glyphs: Bloodlust's burst of Haste; Berserker Rage halves Armor.
+    if (effect == BONK_PASSIVE_HASTE && m_glyphHasteUntilMs > m_totalMs)
+        total += GetGlyphValue(BONK_GLYPH_KILL_HASTE, 1);
+    if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && GetGlyph(BONK_GLYPH_HALF_ARMOR))
+        total *= 0.5f;
+    return total;
 }
 
 float BonkRun::GetStatCap(BonkPassiveEffect effect)
@@ -5118,7 +5283,7 @@ void BonkRun::ThrowTrap(OwnedWeapon& owned, float x, float y, float z)
     m_pendingCasts.push_back(spring);
 }
 
-void BonkRun::DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster)
+void BonkRun::DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster, bool forceCrit)
 {
     if (!caster)
         caster = m_player;
@@ -5128,7 +5293,7 @@ void BonkRun::DealSpellHit(SpellEntry const* spellInfo, Unit* target, float dama
     // It rolls its own crit, then the enemy's modifiers, the combat log and
     // the damage, as a spell hit.
     SpellNonMeleeDamage hit(caster, target, spellInfo->Id, SpellSchools(spellInfo->School));
-    bool const crit = spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo));
+    bool const crit = forceCrit || (spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo)));
     caster->CalculateSpellDamage(&hit, damage, spellInfo, EFFECT_INDEX_0, BASE_ATTACK, nullptr, crit);
     target->CalculateAbsorbResistBlock(caster, &hit, spellInfo, BASE_ATTACK, nullptr);
     caster->DealDamageMods(target, hit.damage, &hit.absorb);
@@ -6046,6 +6211,50 @@ void BonkRun::CollectAllOrbs()
         GiveExperience(collected);
 }
 
+bool BonkRun::FindLyingOrb(float minDistance, float maxDistance, float& x, float& y, float& z) const
+{
+    std::vector<Creature const*> lying;
+    Map* map = m_player->GetMap();
+    for (Orb const& orb : m_orbs)
+        if (!orb.pulled && !orb.mergeId)
+            if (Creature const* creature = map->GetCreature(orb.guid))
+            {
+                float const distance = m_player->GetDistance2d(creature);
+                if (distance >= minDistance && distance <= maxDistance)
+                    lying.push_back(creature);
+            }
+    if (lying.empty())
+        return false;
+    Creature const* pick = lying[urand(0, uint32(lying.size()) - 1)];
+    x = pick->GetPositionX();
+    y = pick->GetPositionY();
+    z = pick->GetPositionZ();
+    return true;
+}
+
+uint32 BonkRun::StealOrbs(float x, float y, float range)
+{
+    // Not one flying to the hero, nor one in a merge (its anchor neither).
+    std::set<ObjectGuid> anchors;
+    for (OrbMerge const& merge : m_orbMerges)
+        anchors.insert(merge.anchor);
+    uint32 experience = 0;
+    Map* map = m_player->GetMap();
+    for (auto itr = m_orbs.begin(); itr != m_orbs.end();)
+    {
+        Creature* creature = map->GetCreature(itr->guid);
+        if (!creature || itr->pulled || itr->mergeId || anchors.count(itr->guid) || creature->GetDistance2d(x, y) > range)
+        {
+            ++itr;
+            continue;
+        }
+        experience += itr->experience;
+        VanishOrb(creature);
+        itr = m_orbs.erase(itr);
+    }
+    return experience;
+}
+
 void BonkRun::DespawnOrbs()
 {
     if (Map* map = m_player->FindMap())
@@ -6148,6 +6357,9 @@ void BonkRun::CollectAllShards()
 
 void BonkRun::DropHeal(Creature const* mob, BonkSpawnKind kind)
 {
+    // The Glyph of the Twisted Nether: no turkey legs.
+    if (GetGlyph(BONK_GLYPH_NO_HEALS))
+        return;
     float chance = 100.0f;
     if (kind == BONK_SPAWN_NORMAL)
         chance = BONK_HEAL_CHANCE_NORMAL;
@@ -6306,6 +6518,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     if (m_state != STATE_RUNNING)
         return;
 
+    // Kobolds, shards and a portal pay through their event, not as elites.
+    bool const eventGroup = !m_miniEvent.targets.empty() && IsMiniEventTarget(mob->GetObjectGuid());
     OnMiniEventTargetKilled(mob);
 
     ++m_kills;
@@ -6373,8 +6587,11 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
 
     if (kind != BONK_SPAWN_NORMAL)
     {
-        DropChest(mob, kind);
-        DropGear(mob, kind);
+        if (!eventGroup)
+        {
+            DropChest(mob, kind);
+            DropGear(mob, kind);
+        }
         OnAffixedDeath(mob);
         m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()) + "~" + std::to_string(mob->GetPlateId()) + "~" +
             BonkMobAI::GetUnitGuidText(mob));
@@ -6382,6 +6599,10 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
 
     DropShards(mob, kind);
     DropHeal(mob, kind);
+    OnGlyphKill(mob, kind);
+    // The second Glyph comes after the run's first mini-boss.
+    if (kind == BONK_SPAWN_MINIBOSS)
+        QueueGlyphPick();
 
     if (mob->GetObjectGuid() == m_bossGuid)
         OpenPortal(mob);
@@ -6623,6 +6844,10 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     else
         offerSize += size_t(GetUtility(BONK_UTILITY_LEVEL_CHOICES));
     offerSize = std::min(offerSize, BONK_MAX_OFFER_SIZE);
+    // The Glyph of the Gambler: fewer choices at a level-up.
+    if (source == OFFER_LEVEL)
+        if (BonkGlyph const* gambler = GetGlyph(BONK_GLYPH_GAMBLER))
+            offerSize = std::max<size_t>(1, std::min(offerSize, size_t(gambler->values[0])));
 
     // Chests hold Darkmoon Cards (Core loop v2); spells and passives come
     // from level-ups.
@@ -6796,6 +7021,16 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
             RollUpgrades(*owned, card);
         }
     }
+
+    // The Glyph of the Gambler: but each a rarity higher.
+    if (source == OFFER_LEVEL && GetGlyph(BONK_GLYPH_GAMBLER))
+        for (Offer& card : cards)
+            if (card.isWeapon && card.step == BONK_STEP_RANK && !card.locked && card.rarity < BONK_RARITY_EPIC)
+                if (OwnedWeapon const* owned = FindOwned(card.id))
+                {
+                    card.rarity = BonkRarity(card.rarity + 1);
+                    RollUpgrades(*owned, card);
+                }
 
     if (drawn)
     {
@@ -6999,9 +7234,9 @@ bool BonkRun::Reroll(std::string& error)
         return false;
     }
 
-    if (!m_rerolls)
+    if (!m_rerolls || GetGlyph(BONK_GLYPH_GAMBLER))
     {
-        error = "No rerolls left.";
+        error = m_rerolls ? "The Gambler never rerolls." : "No rerolls left.";
         SendOffer();
         return false;
     }
@@ -7340,7 +7575,7 @@ void BonkRun::SetMenuOpen(bool open)
     }
     // Closed: on again, unless a choice is still up (a level-up, a chest, a
     // Ley Line, the vendor or a loot sack), which keeps its own pause.
-    if (m_offer.empty() && m_leyOffer.empty() && !m_vendorOpen && !m_gearOfferEntry)
+    if (m_offer.empty() && m_leyOffer.empty() && !m_vendorOpen && !m_gearOfferEntry && m_glyphOffer.empty())
         SetPaused(false);
     UpdateOffers();
 }
@@ -7376,9 +7611,13 @@ void BonkRun::SetPaused(bool paused)
                     ai->SetFrozen(paused);
 
         // The client fills a warning on its own clock, so one held over a
-        // pause would look full long before it fired: drop them instead.
+        // pause would look full long before it fired: drop them instead,
+        // and the void zones they draw.
         if (paused)
+        {
             m_telegraphs.Clear(m_player);
+            m_voidZones.clear();
+        }
 
         // Beasts hold still too; they find their prey again after.
         for (OwnedWeapon const& owned : m_weapons)

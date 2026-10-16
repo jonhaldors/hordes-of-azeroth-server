@@ -31,6 +31,7 @@ namespace
     // cost more on top.
     uint32 const BONK_UNLOCK_BASE_PRICE = 2500;
     float const BONK_UNLOCK_CARD_RARITY[MAX_BONK_RARITY] = { 1.0f, 1.25f, 1.5f, 2.0f, 2.0f };     // common to legendary
+    float const BONK_UNLOCK_GLYPH_RARITY[MAX_BONK_RARITY] = { 1.5f, 2.0f, 3.0f, 4.0f, 6.0f };    // a run's big picks cost more
 
     char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
 
@@ -138,6 +139,7 @@ void BonkQuests::Load()
             case BONK_REWARD_CAPSTONE:  rewardExists = sBonkMastery.GetNode(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_TITLE:     rewardExists = m_titles.count(quest.rewardValue) != 0; break;
             case BONK_REWARD_CARD:      rewardExists = sBonkMgr.GetCard(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_GLYPH:     rewardExists = sBonkMgr.GetGlyph(quest.rewardValue) != nullptr; break;
             default: break;
         }
         if (!rewardExists)
@@ -221,6 +223,11 @@ void BonkQuests::Save(uint32 account)
 
 bool BonkQuests::IsLocked(uint32 account, BonkQuestReward type, uint32 id) const
 {
+    // The starter Glyphs come with every account.
+    if (type == BONK_REWARD_GLYPH)
+        if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
+            if (glyph->starter)
+                return false;
     BonkQuest const* quest = GetUnlockingQuest(type, id);
     if (!quest)
         return false;
@@ -270,6 +277,10 @@ uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 i
         case BONK_REWARD_CARD:
             if (BonkCard const* card = sBonkMgr.GetCard(id))
                 scale = BONK_UNLOCK_CARD_RARITY[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)];
+            break;
+        case BONK_REWARD_GLYPH:
+            if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
+                scale = BONK_UNLOCK_GLYPH_RARITY[std::min<uint32>(glyph->rarity, MAX_BONK_RARITY - 1)];
             break;
         default:
             return 0;
@@ -661,6 +672,13 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             {
                 *icon = card->icon;
                 return "Unlocks the card " + card->name + ", to buy at the Spellbook";
+            }
+            break;
+        case BONK_REWARD_GLYPH:
+            if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(quest.rewardValue))
+            {
+                *icon = glyph->icon;
+                return "Unlocks the " + glyph->name + ", to buy at the Spellbook";
             }
             break;
         case BONK_REWARD_TITLE:

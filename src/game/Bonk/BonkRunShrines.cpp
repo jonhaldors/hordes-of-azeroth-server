@@ -269,7 +269,7 @@ void BonkRun::UpdateLeyLine(size_t index, uint32 diff)
     }
 
     // Attunement: captured sooner.
-    uint32 const captureMs = uint32(BONK_LEY_CAPTURE_MS / (1.0f + GetUtility(BONK_UTILITY_SHRINE_SPEED) / 100.0f));
+    uint32 const captureMs = uint32(BONK_LEY_CAPTURE_MS / (1.0f + (GetUtility(BONK_UTILITY_SHRINE_SPEED) + GetGlyphValue(BONK_GLYPH_LEY_LINE, 0)) / 100.0f));
     shrine.progressMs += diff;
     m_captureSendMs += diff;
     if (shrine.progressMs >= captureMs)
@@ -313,7 +313,8 @@ void BonkRun::OfferLeyBuffs()
     float const uncommon = rare + 30.0f + 0.4f * luck;
 
     m_leyOffer.clear();
-    for (uint32 i = 0; i < BONK_LEY_CHOICES && !pool.empty(); ++i)
+    uint32 const choices = BONK_LEY_CHOICES + uint32(GetGlyphValue(BONK_GLYPH_LEY_LINE, 1));
+    for (uint32 i = 0; i < choices && !pool.empty(); ++i)
     {
         size_t const pick = urand(0, uint32(pool.size()) - 1);
         LeyStat const* stat = pool[pick];

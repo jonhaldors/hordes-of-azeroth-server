@@ -272,9 +272,11 @@ bool ChatHandler::HandleBonkUnlockCommand(char* args)
         type = BONK_REWARD_PASSIVE;
     else if (kind && !strcmp(kind, "c"))
         type = BONK_REWARD_CARD;
+    else if (kind && !strcmp(kind, "g"))
+        type = BONK_REWARD_GLYPH;
     if (type == MAX_BONK_REWARD || !ExtractUInt32(&args, id))
     {
-        SendSysMessage("Use .bonk unlock w|p|c <id>.");
+        SendSysMessage("Use .bonk unlock w|p|c|g <id>.");
         SetSentErrorMessage(true);
         return false;
     }
@@ -286,6 +288,27 @@ bool ChatHandler::HandleBonkUnlockCommand(char* args)
     bonk->Notify(message);
     BonkCodex::Send(player, "");
     return bought;
+}
+
+bool ChatHandler::HandleBonkGlyphCommand(char* args)
+{
+    // .bonk glyph <n>: the Glyph choice that is up.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    uint32 choice = 0;
+    if (!run || !ExtractUInt32(&args, choice))
+    {
+        SendSysMessage(run ? "Use .bonk glyph <number>." : "You are not in a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    std::string error;
+    if (!run->ChooseGlyph(choice, error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
 }
 
 bool ChatHandler::HandleBonkGearCommand(char* args)
@@ -395,6 +418,7 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     bonk->SendTierList();
     bonk->SendGearInfo();
     BonkMobAI::SendAffixInfo(bonk);
+    bonk->SendGlyphInfo();
     bonk->SendMasteryState();
     bonk->SendWallet();
     bonk->SendDash();

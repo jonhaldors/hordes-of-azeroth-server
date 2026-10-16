@@ -86,6 +86,14 @@ class BonkMobAI : public CreatureAI
         // `headStartMs` first, so the hero can close in.
         void SetFleeing(bool blinks, uint32 headStartMs = 0);
         bool IsFleeing() const { return m_fleeing; }
+        // A Necrotic Shard or a demon portal: it stands where it is and
+        // never attacks; the run's event spawns its adds.
+        void SetStationary();
+        // A stampede's beast: a red line `length` long at `angle` from where
+        // it stands for `windupMs`, then a dash along it that runs the hero
+        // over like a charger's (`damage` in melee hits); it is gone at the
+        // end, or when the run pauses.
+        void StartStampede(Player* owner, float angle, float length, uint32 windupMs, float damage);
 
         void MoveInLineOfSight(Unit*) override {}
         void AttackStart(Unit* victim) override;
@@ -120,12 +128,20 @@ class BonkMobAI : public CreatureAI
         void Cast(BonkMobAbility const& ability, Player* owner, bool triggered);
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);
+        // Bosses' phases (Phase 3): a stage boss calls adds at 66% and 33%
+        // health and enrages at 33%; from Heroic it then lays void zones
+        // under the hero, and on Mythic it shields itself at 66%. A
+        // mini-boss calls adds at 50%.
+        void UpdatePhases(uint32 diff, Player* owner);
         void Explode(Player* owner);
         // Areas around the enemy (a Thunderclap, a Fire Nova, an exploder's
         // blast): it stops, a red circle shows how far the spell reaches,
         // and the spell goes off as the circle fills, so a hero outside it
         // is never hit. `abilityIndex` -1: an exploder's blast.
         void StartArea(int32 abilityIndex, Player* owner);
+        // A signature move (BonkAbilityShape): a cone or a ring winds up like
+        // an area; a barrage and a trail go off at once.
+        void StartShape(int32 abilityIndex, Player* owner);
         // While one winds up: true, and the enemy does nothing else.
         bool UpdateArea(uint32 diff, Player* owner);
         // Casters: a bolt at where the player stands, under a red circle.
@@ -157,6 +173,10 @@ class BonkMobAI : public CreatureAI
         int32 m_eruptionTimer = 3000;       // the first comes a little after it appears
         uint32 m_bolsterStacks = 0;
         bool m_enraged = false;     // Raging, below its health mark
+        uint8 m_phase = 0;                  // boss phases passed
+        bool m_phaseEnraged = false;        // a stage boss's last phase
+        bool m_voidZones = false;           // laying void zones
+        int32 m_voidTimer = 0;
         bool m_frozen = false;
         bool m_cried = false;               // its aggro reaction was sent, or passed over
         bool m_exploded = false;
@@ -166,6 +186,7 @@ class BonkMobAI : public CreatureAI
         int32 m_areaAbility = -1;
         int32 m_areaTimer = 0;
         float m_areaX = 0.0f, m_areaY = 0.0f;
+        float m_areaOrientation = 0.0f;    // a cone's
         int32 m_arriveTimer = 0;           // standing where the run moved it
         enum ChargeState : uint8 { CHARGE_NONE, CHARGE_WINDUP, CHARGE_DASH };
         ChargeState m_chargeState = CHARGE_NONE;
@@ -192,6 +213,8 @@ class BonkMobAI : public CreatureAI
         bool m_blinkPending = false;        // hit: blinks at its next update
         int32 m_fleeTimer = 0;              // to its next step away
         bool m_fleeStanding = false;        // still at its head start
+        bool m_stationary = false;          // SetStationary
+        bool m_stampede = false;            // StartStampede
         int32 m_blinkTimer = 0;             // to its next blink
 
         // Install's nameplate number for the next summon; per thread, as maps

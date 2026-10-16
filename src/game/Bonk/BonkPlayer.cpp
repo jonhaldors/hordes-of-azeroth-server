@@ -792,6 +792,10 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
             if (BonkCard const* card = sBonkMgr.GetCard(id))
                 name = card->name;
             break;
+        case BONK_REWARD_GLYPH:
+            if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
+                name = glyph->name;
+            break;
         default:
             break;
     }
@@ -1479,6 +1483,18 @@ void BonkPlayer::SendAddon(std::string const& line) const
         return;
 
     ChatHandler(m_player).SendSysMessage(("BONK~" + line).c_str());
+}
+
+void BonkPlayer::SendGlyphInfo() const
+{
+    // glyphinfo~id~name~icon~rarity~description~drawback: every Glyph, for
+    // the pick window, the sockets and the codex.
+    for (auto const& itr : sBonkMgr.GetGlyphs())
+    {
+        BonkGlyph const& glyph = itr.second;
+        SendAddon("glyphinfo~" + std::to_string(glyph.id) + "~" + glyph.name + "~" + glyph.icon + "~" + std::to_string(uint32(glyph.rarity)) + "~" +
+            glyph.description + "~" + glyph.drawback);
+    }
 }
 
 void BonkPlayer::Notify(std::string const& text) const

@@ -94,6 +94,7 @@ enum BonkQuestReward : uint8
     BONK_REWARD_CAPSTONE  = 9,        // bonk_mastery.id: a talent capstone
     BONK_REWARD_TITLE     = 10,       // bonk_title.id (shown with the cosmetics, later)
     BONK_REWARD_CARD      = 11,       // bonk_card.id: chests may offer it
+    BONK_REWARD_GLYPH     = 12,       // bonk_glyph.id: runs may offer it
     MAX_BONK_REWARD
 };
 
@@ -147,7 +148,10 @@ class BonkQuests
         // The kinds of unlock bought with gold after their quest.
         // Quests the account has finished.
         uint32 GetCompletedCount(uint32 account) const { return CountCompleted(account); }
-        static bool IsBought(BonkQuestReward type) { return type == BONK_REWARD_WEAPON || type == BONK_REWARD_PASSIVE || type == BONK_REWARD_CARD; }
+        static bool IsBought(BonkQuestReward type)
+        {
+            return type == BONK_REWARD_WEAPON || type == BONK_REWARD_PASSIVE || type == BONK_REWARD_CARD || type == BONK_REWARD_GLYPH;
+        }
         // Its price in copper for `account` (0 for something that is not for
         // sale): each unlock paid for raises the next (Phase F).
         uint32 GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 id) const;

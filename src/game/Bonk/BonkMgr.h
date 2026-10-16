@@ -235,12 +235,27 @@ struct BonkMapStart
     float x = 0.0f, y = 0.0f, z = 0.0f;
 };
 
-// Battleground-style buff lying in the arena; walking over it casts the spell.
+// What a power-up does when walked over (bonk_powerup.effect; Phase 3
+// pickups).
+enum BonkPowerupEffect : uint8
+{
+    BONK_POWERUP_SPELL      = 0,    // casts its spell on the hero (Restoration, Berserking, Speed)
+    BONK_POWERUP_MAGNET     = 1,    // pulls in every experience orb (Goblin Magnet)
+    BONK_POWERUP_HOLY_NOVA  = 2,    // slays the normal enemies within `value` yards with its spell
+    BONK_POWERUP_FROST_NOVA = 3,    // freezes the enemies within `value` yards (Frozen's rules)
+    BONK_POWERUP_VALOR      = 4,    // `value` times a chest's price in Valor
+    MAX_BONK_POWERUP_EFFECT
+};
+
+// Battleground-style buff lying in the arena; walking over it casts the spell
+// or does its effect.
 struct BonkPowerup
 {
     uint32 entry = 0;               // gameobject_template, only its looks are used
-    uint32 spellId = 0;
+    uint32 spellId = 0;             // 0 for an effect that needs none
     uint32 weight = 1;
+    BonkPowerupEffect effect = BONK_POWERUP_SPELL;
+    float value = 0.0f;
 };
 
 // A difficulty: a pool of maps played one after another, each stage harder.
@@ -678,6 +693,19 @@ enum BonkAbilityTarget : uint8
     BONK_ABILITY_SELF   = 1,    // on the enemy itself: areas around it, buffs
 };
 
+// A boss's signature move (bonk_mob_ability.shape, Phase 3): instead of
+// casting its spell, the enemy lays a shaped warning and hits whoever is in
+// it when it fills, for `damage` melee hits. The spell only names it.
+enum BonkAbilityShape : uint8
+{
+    BONK_SHAPE_SPELL   = 0,     // casts its spell (areas round it warned as a circle)
+    BONK_SHAPE_CONE    = 1,     // a frontal cone `size` long, 90 degrees wide, at the hero
+    BONK_SHAPE_RING    = 2,     // a ring round it, `size` across; safe within half of it
+    BONK_SHAPE_BARRAGE = 3,     // `count` circles `size` wide round the hero, one after another
+    BONK_SHAPE_TRAIL   = 4,     // `count` of the stage's enemies come up round it
+    MAX_BONK_ABILITY_SHAPE
+};
+
 // A spell an enemy casts on a cooldown (bonk_mob_ability).
 struct BonkMobAbility
 {
@@ -689,6 +717,10 @@ struct BonkMobAbility
     float maxRange = 30.0f;         // ...and at most this far away
     float damage = 0.0f;            // hit damage in the enemy's melee hits, 0 = the spell's own
     int32 damageEffectIndex = -1;
+    BonkAbilityShape shape = BONK_SHAPE_SPELL;
+    uint32 count = 0;               // barrage circles, trail enemies
+    float size = 0.0f;              // cone length, ring and barrage radius
+    float belowHealth = 100.0f;     // only once the enemy is below this % of its health
 };
 
 struct BonkMob
@@ -907,6 +939,43 @@ struct BonkCard
     bool inChests = true;           // false: only worn gear gives it (a legendary's effect, bonk_item_card)
 };
 
+// Glyphs (Phase 3, BonkRunGlyphs.cpp): the two big picks of a run. A Glyph
+// may give a hidden card (its stats or a card effect) and has at most one
+// effect of its own, read where it applies.
+enum BonkGlyphEffect : uint8
+{
+    BONK_GLYPH_NONE           = 0,    // its card only
+    BONK_GLYPH_PACKRAT        = 1,    // power-ups last value1 % longer
+    BONK_GLYPH_THRIFT         = 2,    // chests cost value1 % less
+    BONK_GLYPH_SECOND_WIND    = 3,    // an elite or better dying within value2 yd heals value1 % of max health
+    BONK_GLYPH_LEY_LINE       = 4,    // Ley Lines capture value1 % faster and offer value2 more blessings
+    BONK_GLYPH_KILL_HASTE     = 5,    // every value1 kills, +value2 % Haste for value3 ms
+    BONK_GLYPH_CHEST_TRAP     = 6,    // value1 % of chests blow up for value2 % of max health (a drawback)
+    BONK_GLYPH_HALF_ARMOR     = 7,    // Armor is halved (a drawback)
+    BONK_GLYPH_DIVINE_SHIELD  = 8,    // once a stage, death brings the hero back at value1 % health
+    BONK_GLYPH_SOUL_HARVEST   = 9,    // every value1 kills, the next hit deals value2 times its damage
+    BONK_GLYPH_VENGEANCE      = 10,   // +1 % Power for every value1 % of health missing
+    BONK_GLYPH_NO_HEALS       = 11,   // no turkey legs and no Restoration power-ups (a drawback)
+    BONK_GLYPH_GAMBLER        = 12,   // level-ups a rarity higher, value1 choices, no rerolls (a drawback)
+    BONK_GLYPH_STORM          = 13,   // every value1 ms lightning strikes value2 enemies for value3 times a normal enemy's health, always a crit
+    BONK_GLYPH_METEOR         = 14,   // every value1 ms a meteor on the thickest crowd: value2 times a normal enemy's health within value3 yd
+    MAX_BONK_GLYPH_EFFECT
+};
+
+struct BonkGlyph
+{
+    uint32 id = 0;
+    std::string name;
+    std::string icon;
+    std::string description;
+    std::string drawback;           // empty: none
+    BonkRarity rarity = BONK_RARITY_COMMON;
+    BonkGlyphEffect effect = BONK_GLYPH_NONE;
+    float values[3] = {};
+    uint32 cardId = 0;              // a hidden card it gives (bonk_card, in_chests 0), 0 for none
+    bool starter = false;           // a fresh account has it; the rest come from quests
+};
+
 // Gear that drops in runs (Core loop v2, phase D; BonkRunGear.cpp): worn for
 // the run; greens and blues turn into gold at its end, the extractable ones
 // go home as `keepEntry` by mail.
@@ -968,6 +1037,8 @@ class BonkMgr
 
         BonkCard const* GetCard(uint32 id) const;
         std::map<uint32, BonkCard> const& GetCards() const { return m_cards; }
+        std::map<uint32, BonkGlyph> const& GetGlyphs() const { return m_glyphs; }
+        BonkGlyph const* GetGlyph(uint32 id) const;
 
         // The card an item's wearer holds while it is worn (a legendary's
         // effect), 0 for none.
@@ -1011,6 +1082,7 @@ class BonkMgr
         void LoadPowerups();
         void LoadCards();
         void LoadItemCards();
+        void LoadGlyphs();
         void LoadGear();
         void LoadShopTrees();
         void LoadUpgrades();
@@ -1036,6 +1108,7 @@ class BonkMgr
         std::vector<BonkPowerup> m_powerups;
         std::map<uint32, BonkCard> m_cards;
         std::map<uint32, uint32> m_itemCards;   // item entry -> card id
+        std::map<uint32, BonkGlyph> m_glyphs;
         std::map<uint32, BonkGear> m_gear;
         std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;

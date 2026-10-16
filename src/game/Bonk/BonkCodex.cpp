@@ -203,6 +203,16 @@ void BonkCodex::Send(Player* player, std::string const& npc)
             SendLock(bonk, "c", card.id, BONK_REWARD_CARD);
     }
 
+    // cdxg~id~locked~price: the Glyphs (their text came with glyphinfo).
+    for (auto const& itr : sBonkMgr.GetGlyphs())
+    {
+        uint32 price;
+        std::string const locked = lockState(BONK_REWARD_GLYPH, itr.first, price);
+        bonk->SendAddon("cdxg~" + std::to_string(itr.first) + "~" + locked + "~" + std::to_string(price));
+        if (locked == "1")
+            SendLock(bonk, "g", itr.first, BONK_REWARD_GLYPH);
+    }
+
     bonk->SendAddon("cdxend");
 }
 

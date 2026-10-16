@@ -218,6 +218,7 @@ class ChatHandler
         bool HandleBonkGodCommand(char* args);
         bool HandleBonkCardCommand(char* args);
         bool HandleBonkGearCommand(char* args);
+        bool HandleBonkGlyphCommand(char* args);
         bool HandleBonkUnlockCommand(char* args);
         bool HandleBonkMenuCommand(char* args);
         bool HandleBonkVaultCommand(char* args);

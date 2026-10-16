@@ -586,6 +586,9 @@ void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
 
 void BonkRun::ModifyHeroHit(Unit* victim, uint32& damage)
 {
+    // The Glyph of Soul Harvest: an empowered hit.
+    if (!m_cardProc)
+        ModifyGlyphHit(victim, damage);
     // Gnomish Death Ray: now and then a hit lands many times over.
     if (!damage || m_cardProc || !HasCard(BONK_CARD_DEATH_RAY) || !roll_chance_f(GetCardChance(BONK_CARD_DEATH_RAY)))
         return;
@@ -672,13 +675,16 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
 void BonkRun::SendCards() const
 {
     BonkPlayer* bonk = m_player->GetBonkPlayer();
+    // A Glyph's card is the Glyph's: the sockets show it, not the row.
     std::string line = "cards~";
     for (OwnedCard const& owned : m_cards)
-        line += std::to_string(owned.card->id) + ":" + std::to_string(owned.copies) + ":" + std::to_string(owned.card->rarity) + ":" +
-            owned.card->icon + ":" + std::to_string(owned.card->maxCopies) + ",";
+        if (!m_glyphCardIds.count(owned.card->id))
+            line += std::to_string(owned.card->id) + ":" + std::to_string(owned.copies) + ":" + std::to_string(owned.card->rarity) + ":" +
+                owned.card->icon + ":" + std::to_string(owned.card->maxCopies) + ",";
     bonk->SendAddon(line);
     for (OwnedCard const& owned : m_cards)
-        bonk->SendAddon("cardtip~" + std::to_string(owned.card->id) + "~" + owned.card->name + "~" + owned.card->description);
+        if (!m_glyphCardIds.count(owned.card->id))
+            bonk->SendAddon("cardtip~" + std::to_string(owned.card->id) + "~" + owned.card->name + "~" + owned.card->description);
     SendCardCooldowns();
     SendCardStatus(true);
 }

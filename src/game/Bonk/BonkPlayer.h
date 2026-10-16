@@ -207,6 +207,8 @@ class BonkPlayer
         void SendAddon(std::string const& line) const;
         // Short message: a center-screen notice with the addon, chat without it.
         void Notify(std::string const& text) const;
+        // Every Glyph's text, for the addon (at hello).
+        void SendGlyphInfo() const;
 
         // The Shift dash (BonkPlayerDash.cpp, `.bonk dash`), at camp and in
         // runs: false if the hero can't dash now (a paused run, stunned,

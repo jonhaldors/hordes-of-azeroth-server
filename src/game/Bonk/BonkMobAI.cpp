@@ -118,6 +118,11 @@ namespace
     float const BONK_CHARGE_KNOCKBACK_SPEED = 8.0f;
     float const BONK_CHARGE_KNOCKBACK_LIFT  = 4.0f;
     uint32 const BONK_SPELL_CHARGE_HIT  = 24257;    // Jeklik's Crushing Blow: a plain physical hit
+    // Signature moves: a barrage's circles land one after another round the
+    // hero, the first on them.
+    float const BONK_BARRAGE_SPREAD     = 10.0f;
+    uint32 const BONK_BARRAGE_STAGGER_MS = 300;
+    float const BONK_SHAPE_DAMAGE       = 1.5f;     // melee hits, where the ability gives none
 
     // Casters' bolts: a circle this big where the player will be when the
     // bolt lands, aimed as the cast ends (at least this long before, so a
@@ -166,6 +171,23 @@ namespace
     float const BONK_FRENZIED_SPEED     = 1.5f;     // times the enemy's attack speed
     float const BONK_FORTIFIED_HEALTH   = 1.5f;
     float const BONK_FORTIFIED_SCALE    = 1.15f;
+    // Boss phases: health marks, adds, the last phase's enrage, void zones
+    // (a red circle under the hero, then burning ground for a while), and
+    // Mythic's shield to break.
+    float const BONK_PHASE_BOSS[2]      = { 66.0f, 33.0f };
+    float const BONK_PHASE_MINIBOSS     = 50.0f;
+    uint32 const BONK_PHASE_ADDS        = 5;        // a stage boss's wave, two more a step of difficulty
+    uint32 const BONK_PHASE_MINI_ADDS   = 3;        // a mini-boss's, one more a step
+    float const BONK_PHASE_ENRAGE       = 1.25f;    // times its damage in the last phase
+    float const BONK_PHASE_SHIELD       = 0.25f;    // Mythic: absorbs this share of max health
+    int32 const BONK_VOID_FIRST_MS      = 3000;
+    int32 const BONK_VOID_INTERVAL      = 7000;
+    float const BONK_VOID_RANGE         = 40.0f;
+    float const BONK_VOID_RADIUS        = 5.0f;
+    uint32 const BONK_VOID_WARN_MS      = 1500;
+    uint32 const BONK_VOID_DURATION_MS  = 8000;
+    float const BONK_VOID_DAMAGE        = 0.4f;     // melee hits, each second inside
+
     float const BONK_RAGING_HEALTH      = 30.0f;    // % of max health it enrages below
     float const BONK_RAGING_DAMAGE      = 1.5f;     // times its damage once enraged
     uint32 const BONK_SPELL_RAGING      = 20368;    // Tag: Red Skulls, while enraged
@@ -494,7 +516,7 @@ void BonkMobAI::AttackStart(Unit* victim)
     // stands where the run moved it (a hit on it would start the chase),
     // nor while it winds up or dashes: a hit then would set it running.
     Player* owner = GetOwner();
-    if (!owner || victim != owner || m_arriveTimer > 0 || m_fleeing || m_chargeState != CHARGE_NONE)
+    if (!owner || victim != owner || m_arriveTimer > 0 || m_fleeing || m_stationary || m_chargeState != CHARGE_NONE)
         return;
 
     CreatureAI::AttackStart(victim);
@@ -555,6 +577,9 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         UpdateFlee(diff, owner);
         return;
     }
+    // A shard or a portal only ever stands there.
+    if (m_stationary)
+        return;
 
     // A charger winding up or dashing does nothing else.
     if (UpdateCharge(diff, owner))
@@ -582,6 +607,7 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         return;
     }
 
+    UpdatePhases(diff, owner);
     UpdateAffixes(diff, owner);
     UpdateAbilities(diff, owner);
     // Without melee leeway (BonkRun::SpawnMobAt): only what it touches.
@@ -598,6 +624,12 @@ void BonkMobAI::SetFrozen(bool frozen)
 
     if (frozen)
     {
+        // A stampede is called off by the pause (its warning is gone).
+        if (m_stampede)
+        {
+            m_creature->DespawnOrUnsummon(1);
+            return;
+        }
         // A charge's or a bolt's warning is dropped by the pause; a charge
         // starts over after, a bolt waiting for its moment is not cast.
         if (m_chargeState != CHARGE_NONE)
@@ -624,6 +656,9 @@ void BonkMobAI::SetFrozen(bool frozen)
         return;
     }
 
+    // A shard or a portal stays rooted.
+    if (m_stationary)
+        return;
     m_creature->ClearUnitState(UNIT_STATE_ROOT);
     m_creature->SetRooted(false);
     if (m_fleeing && !m_fleeStanding)
@@ -784,10 +819,18 @@ void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
         BonkMobAbility const& ability = m_mob->abilities[i];
         if (m_abilityTimers[i] > 0 || distance < ability.minRange || distance > ability.maxRange)
             continue;
+        if (m_creature->GetHealthPercent() > ability.belowHealth)
+            continue;
         if (ability.target == BONK_ABILITY_PLAYER && !m_creature->IsWithinLOSInMap(owner))
             continue;
 
         m_abilityTimers[i] = int32(ability.cooldownMs * frand(0.85f, 1.15f));
+        // A signature move lays its own warning.
+        if (ability.shape != BONK_SHAPE_SPELL)
+        {
+            StartShape(int32(i), owner);
+            return;
+        }
         // An area round it waits under a red circle first.
         SpellEntry const* spellInfo = ability.target == BONK_ABILITY_SELF ? sSpellMgr.GetSpellEntry(ability.spellId) : nullptr;
         if (spellInfo && GetAreaReach(spellInfo) > 0.0f)
@@ -922,6 +965,67 @@ void BonkMobAI::StartArea(int32 abilityIndex, Player* owner)
     run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, m_areaX, m_areaY, m_creature->GetPositionZ(), 0.0f, size, BONK_AREA_WARN_MS);
 }
 
+void BonkMobAI::StartShape(int32 abilityIndex, Player* owner)
+{
+    BonkRun* run = owner->GetBonkPlayer()->GetRun();
+    if (!run || !m_mob || abilityIndex < 0 || abilityIndex >= int32(m_mob->abilities.size()))
+        return;
+    BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
+    float const size = std::max(1.0f, ability.size);
+    uint32 const damage = uint32(std::max(1.0f, GetMeleeHit() * (ability.damage > 0.0f ? ability.damage : BONK_SHAPE_DAMAGE)));
+
+    switch (ability.shape)
+    {
+        case BONK_SHAPE_BARRAGE:
+        {
+            // Circles round the hero, the first where they will be, the rest
+            // a little later each: keep moving.
+            ObjectGuid const guid = m_creature->GetObjectGuid();
+            for (uint32 i = 0; i < std::max(1u, ability.count); ++i)
+            {
+                uint32 const warnMs = BONK_AREA_WARN_MS + i * BONK_BARRAGE_STAGGER_MS;
+                float x, y, z;
+                PredictPlayer(owner, i ? 0 : warnMs, x, y, z);
+                if (i)
+                {
+                    float const angle = frand(0.0f, 2.0f * M_PI_F);
+                    float const distance = frand(size, BONK_BARRAGE_SPREAD);
+                    float const ax = x + distance * std::cos(angle), ay = y + distance * std::sin(angle);
+                    float const az = m_creature->GetMap()->GetHeight(ax, ay, z + 5.0f, true, 15.0f);
+                    if (az <= INVALID_HEIGHT)
+                        continue;
+                    x = ax;
+                    y = ay;
+                    z = az;
+                }
+                run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
+                    [run, guid, x, y, z, size, damage]() { run->Erupt(guid, x, y, z, size, damage); });
+            }
+            return;
+        }
+        case BONK_SHAPE_TRAIL:
+            run->SpawnPhaseAdds(m_creature, std::max(1u, ability.count), 0);
+            return;
+        default:
+            break;
+    }
+
+    // A cone at the hero or a ring round it: it stops and winds up.
+    m_areaWinding = true;
+    m_areaAbility = abilityIndex;
+    m_areaTimer = BONK_AREA_WARN_MS;
+    m_areaX = m_creature->GetPositionX();
+    m_areaY = m_creature->GetPositionY();
+    m_areaOrientation = m_creature->GetAngle(owner);
+    m_creature->AttackStop();
+    m_creature->StopMoving();
+    m_creature->GetMotionMaster()->Clear(false);
+    m_creature->GetMotionMaster()->MoveIdle();
+    m_creature->SetFacingTo(m_areaOrientation);
+    run->AddTelegraph(ability.shape == BONK_SHAPE_CONE ? BONK_TELEGRAPH_CONE : BONK_TELEGRAPH_RING, m_areaX, m_areaY, m_creature->GetPositionZ(),
+        m_areaOrientation, size, BONK_AREA_WARN_MS);
+}
+
 bool BonkMobAI::UpdateArea(uint32 diff, Player* owner)
 {
     if (!m_areaWinding)
@@ -944,7 +1048,23 @@ bool BonkMobAI::UpdateArea(uint32 diff, Player* owner)
             Explode(owner);
             return true;
         }
-        Cast(m_mob->abilities[m_areaAbility], owner, true);
+        BonkMobAbility const& ability = m_mob->abilities[m_areaAbility];
+        if (ability.shape == BONK_SHAPE_CONE || ability.shape == BONK_SHAPE_RING)
+        {
+            // Whoever is in the shape as it fills is hit.
+            m_creature->HandleEmote(ability.shape == BONK_SHAPE_CONE ? EMOTE_ONESHOT_ATTACK1H : EMOTE_ONESHOT_BATTLEROAR);
+            float x, y, z;
+            PredictPlayer(owner, 0, x, y, z);
+            BonkTelegraphShape const shape = ability.shape == BONK_SHAPE_CONE ? BONK_TELEGRAPH_CONE : BONK_TELEGRAPH_RING;
+            if (owner->IsAlive() && !owner->GetBonkPlayer()->IsDashInvulnerable() &&
+                IsInBonkTelegraph(shape, m_areaX, m_areaY, m_areaOrientation, ability.size, x, y))
+            {
+                int32 const damage = std::max(1, int32(GetMeleeHit() * (ability.damage > 0.0f ? ability.damage : BONK_SHAPE_DAMAGE)));
+                m_creature->CastCustomSpell(owner, BONK_SPELL_CHARGE_HIT, damage, {}, {}, true);
+            }
+        }
+        else
+            Cast(ability, owner, true);
     }
 
     // After the chase again, as after a charge.
@@ -1074,6 +1194,12 @@ void BonkMobAI::UpdateDash(Player* owner)
 void BonkMobAI::EndCharge(Player* owner)
 {
     m_chargeState = CHARGE_NONE;
+    // A stampede's beast runs on out of the fight.
+    if (m_stampede)
+    {
+        m_creature->DespawnOrUnsummon(1);
+        return;
+    }
     BonkRun* run = owner->GetBonkPlayer()->GetRun();
     m_chargeTimer = run && run->GetTier().chargeIntervalMs ? int32(run->GetTier().chargeIntervalMs) : BONK_CHARGE_INTERVAL;
     AttackStart(owner);
@@ -1103,6 +1229,8 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
             float multiplier = (1.0f + BONK_BOLSTER_BONUS * m_bolsterStacks) * run->GetMobDamageMultiplier(m_creature);
             if (m_enraged)
                 multiplier *= BONK_RAGING_DAMAGE;
+            if (m_phaseEnraged)
+                multiplier *= BONK_PHASE_ENRAGE;
             run->OnHeroStruck(m_creature);
             damage = std::max(1u, uint32(damage * multiplier));
             if (HasAffix(AFFIX_NECROTIC))
@@ -1131,6 +1259,106 @@ void BonkMobAI::DamageTaken(Unit* attacker, uint32& damage)
         run->ModifyHeroHit(m_creature, damage);
         run->OnWeaponDamage(std::min(damage, m_creature->GetHealth()));
     }
+}
+
+void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
+{
+    if (m_kind != BONK_SPAWN_BOSS && m_kind != BONK_SPAWN_MINIBOSS)
+        return;
+    BonkRun* run = owner->GetBonkPlayer()->GetRun();
+    if (!run)
+        return;
+
+    bool const boss = m_kind == BONK_SPAWN_BOSS;
+    uint8 const phases = boss ? 2 : 1;
+    uint32 const step = run->GetDifficultyStep();
+    BonkPlayer* bonk = owner->GetBonkPlayer();
+    std::string const name = m_creature->GetName();
+    if (m_phase < phases && m_creature->GetHealthPercent() < (boss ? BONK_PHASE_BOSS[m_phase] : BONK_PHASE_MINIBOSS))
+    {
+        ++m_phase;
+        run->SpawnPhaseAdds(m_creature, boss ? BONK_PHASE_ADDS + 2 * step : BONK_PHASE_MINI_ADDS + step, boss ? step : 0);
+        bonk->Notify(name + " calls for aid!");
+
+        // Mythic: a shield to break, with the first wave.
+        if (boss && m_phase == 1 && step >= 2)
+        {
+            int32 const absorb = std::max(1, int32(m_creature->GetMaxHealth() * BONK_PHASE_SHIELD));
+            m_creature->CastCustomSpell(m_creature, BONK_SPELL_SHIELD, absorb, {}, {}, true);
+            bonk->Notify(name + " shields itself: break the shield!");
+        }
+
+        // The last phase: enraged, and from Heroic the ground burns.
+        if (boss && m_phase == phases)
+        {
+            m_phaseEnraged = true;
+            m_creature->AddAura(BONK_SPELL_RAGING);
+            bonk->Notify(name + " is enraged!");
+            if (step >= 1)
+            {
+                m_voidZones = true;
+                m_voidTimer = BONK_VOID_FIRST_MS;
+            }
+        }
+    }
+
+    if (!m_voidZones)
+        return;
+    m_voidTimer -= int32(diff);
+    if (m_voidTimer > 0 || !m_creature->IsWithinDistInMap(owner, BONK_VOID_RANGE))
+        return;
+    m_voidTimer = BONK_VOID_INTERVAL;
+    float const x = owner->GetPositionX(), y = owner->GetPositionY(), z = owner->GetPositionZ();
+    ObjectGuid const guid = m_creature->GetObjectGuid();
+    uint32 const damage = uint32(std::max(1.0f, GetMeleeHit() * BONK_VOID_DAMAGE));
+    run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_VOID_RADIUS, BONK_VOID_WARN_MS,
+        [run, guid, x, y, z, damage]() { run->StartVoidZone(guid, x, y, z, BONK_VOID_RADIUS, damage, BONK_VOID_DURATION_MS); });
+}
+
+void BonkMobAI::SetStationary()
+{
+    m_stationary = true;
+    m_creature->AttackStop();
+    m_creature->StopMoving();
+    m_creature->GetMotionMaster()->Clear(false);
+    m_creature->GetMotionMaster()->MoveIdle();
+    m_creature->AddUnitState(UNIT_STATE_ROOT);
+    m_creature->SetRooted(true);
+}
+
+void BonkMobAI::StartStampede(Player* owner, float angle, float length, uint32 windupMs, float damage)
+{
+    BonkRun* run = owner->GetBonkPlayer()->GetRun();
+    if (!run)
+        return;
+
+    // Along its lane as far as the ground allows; a lane cut short by a
+    // wall or a cliff still runs what it can.
+    m_stampede = true;
+    m_chargeX = m_creature->GetPositionX();
+    m_chargeY = m_creature->GetPositionY();
+    m_chargeZ = m_creature->GetPositionZ();
+    m_chargeAngle = angle;
+    m_dashX = m_chargeX + length * std::cos(angle);
+    m_dashY = m_chargeY + length * std::sin(angle);
+    m_dashZ = m_chargeZ;
+    m_creature->GetMap()->GetWalkHitPosition(nullptr, m_chargeX, m_chargeY, m_chargeZ, m_dashX, m_dashY, m_dashZ);
+    m_chargeLength = m_creature->GetDistance2d(m_dashX, m_dashY);
+    if (m_chargeLength < BONK_CHARGE_MIN_RANGE)
+    {
+        m_creature->DespawnOrUnsummon(1);
+        return;
+    }
+
+    m_chargeState = CHARGE_WINDUP;
+    m_chargeTimer = int32(windupMs);
+    m_chargeDamage = damage;
+    m_creature->AttackStop();
+    m_creature->StopMoving();
+    m_creature->GetMotionMaster()->Clear(false);
+    m_creature->GetMotionMaster()->MoveIdle();
+    m_creature->SetFacingTo(angle);
+    run->AddTelegraph(BONK_TELEGRAPH_LINE, m_chargeX, m_chargeY, m_chargeZ, angle, m_chargeLength, windupMs);
 }
 
 void BonkMobAI::SetFleeing(bool blinks, uint32 headStartMs)

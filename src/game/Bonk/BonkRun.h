@@ -45,6 +45,10 @@ enum BonkMiniEventType : uint8
     BONK_MINI_EVENT_HORDE  = 0,     // a ring of enemies surrounds the hero and closes in
     BONK_MINI_EVENT_GOBLIN = 1,     // a treasure goblin runs from the hero; caught, Valor and a chest
     BONK_MINI_EVENT_BOUNTY = 2,     // a tougher elite with a skull; killed in time, a chest
+    BONK_MINI_EVENT_KOBOLDS  = 3,   // kobolds grab the orbs lying about and run; killed, the experience and more
+    BONK_MINI_EVENT_SCOURGE  = 4,   // Necrotic Shards raise undead until destroyed; Valor and experience a shard
+    BONK_MINI_EVENT_PORTAL   = 5,   // a demon portal sends waves until destroyed; a chest
+    BONK_MINI_EVENT_STAMPEDE = 6,   // a wall of beasts charges across the hero's way, warned; a hazard only
     MAX_BONK_MINI_EVENT
 };
 
@@ -178,6 +182,8 @@ class BonkRun
         // Run gear (BonkRunGear.cpp): the open gear choice, answered by
         // `.bonk gear equip` or `.bonk gear salvage`.
         bool ChooseGear(bool equip, std::string& error);
+        // Glyphs (BonkRunGlyphs.cpp): the choice that is up, `.bonk glyph <n>`.
+        bool ChooseGlyph(uint32 choice, std::string& error);
         // The hero used `item` (WorldSession::HandleUseItemOpcode): true if
         // the run handled it (the Hearthstone opens its extraction ring).
         bool UseItem(Item* item);
@@ -246,6 +252,13 @@ class BonkRun
         // hero, now taken; false if there is none yet.
         bool TakeSpawnPoint(float minDistance, float maxDistance, BonkSpot& spot) { return m_spawnPoints.Take(m_player, minDistance, maxDistance, spot); }
         BonkSpawnPoints const& GetSpawnPoints() const { return m_spawnPoints; }
+        // Boss phases (BonkMobAI::UpdatePhases): the difficulty's step, 0 to
+        // 2; a wave round a boss; a void zone, burning ground that hits the
+        // hero for `damage` (the enemy's own, as Erupt) each second inside,
+        // for `durationMs`, under a red circle. Paused or a new stage, gone.
+        uint32 GetDifficultyStep() const { return std::min(2u, m_tier.eliteAffixes ? m_tier.eliteAffixes - 1 : 0u); }
+        void SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites);
+        void StartVoidZone(ObjectGuid source, float x, float y, float z, float radius, uint32 damage, uint32 durationMs);
         // Volcanic: fire bursts up where a warning was, and the enemy that
         // called it hits the hero for `damage` if they are still inside.
         void Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius, uint32 damage);
@@ -383,6 +396,25 @@ class BonkRun
         bool SpawnHorde();
         bool SpawnTreasureGoblin();
         bool SpawnBounty();
+        bool SpawnKoboldThieves();
+        bool SpawnScourgeInvasion();
+        bool SpawnDemonPortal();
+        bool SpawnStampede();
+        // Kobolds, shards, a portal: several targets (or one that stands),
+        // under way until they are all dead or the time is up.
+        void StartMiniEventGroup(std::string const& label, uint32 seconds);
+        void UpdateMiniEventGroup(uint32 diff);
+        void OnMiniEventGroupKilled(Creature* mob);
+        // Adds round a shard or a portal.
+        void SpawnEventAdds(Creature const* source, uint32 count, uint32 eliteCount);
+        // Whether `guid` is a mini-event's target (chased, never brought
+        // along as a straggler).
+        bool IsMiniEventTarget(ObjectGuid const& guid) const;
+        // Kobold thieves (BonkRun.cpp, beside the orbs): an orb lying
+        // `minDistance` to `maxDistance` from the hero, and taking every
+        // orb within `range` of a spot; their experience.
+        bool FindLyingOrb(float minDistance, float maxDistance, float& x, float& y, float& z) const;
+        uint32 StealOrbs(float x, float y, float range);
         // A goblin or a bounty: under way until it dies or its time is up.
         void StartMiniEventTarget(Creature* target, std::string const& label, uint32 seconds);
         void UpdateMiniEventTarget(uint32 diff);
@@ -438,6 +470,17 @@ class BonkRun
         // Affixes that act when an elite dies: Bolstering and Sanguine.
         void OnAffixedDeath(Creature* mob);
         void UpdatePools(uint32 diff);
+        struct VoidZone
+        {
+            ObjectGuid source;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            float radius = 0.0f;
+            uint32 damage = 0;
+            uint32 leftMs = 0;
+            uint32 tickMs = 0;
+        };
+        std::vector<VoidZone> m_voidZones;
+        void UpdateVoidZones(uint32 diff);
         void DespawnPools();
         void RunEvent(BonkMapEvent const& event);
         void OpenPortal(Creature* boss);
@@ -529,8 +572,39 @@ class BonkRun
         uint32 GetChestPrice() const;
         // A camp upgrade's utility, as brought into this run.
         float GetUtility(BonkUpgradeUtility utility) const { return m_bonuses.utility[utility]; }
+        // Glyphs (BonkRunGlyphs.cpp): one to pick at the start, one after
+        // the first mini-boss.
+        void QueueGlyphPick();
+        void OfferGlyphs();
+        void SendGlyphOffer() const;
+        void SendGlyphs() const;
+        BonkRarity RollGlyphRarity() const;
+        // The run's Glyph with `effect`, if it has one, and its values.
+        BonkGlyph const* GetGlyph(BonkGlyphEffect effect) const;
+        float GetGlyphValue(BonkGlyphEffect effect, uint8 index) const;
+        // Vengeance's Power, for health missing.
+        float GetGlyphPower() const;
+        void OnGlyphKill(Creature const* mob, BonkSpawnKind kind);
+        // Soul Harvest's empowered hit.
+        void ModifyGlyphHit(Unit* victim, uint32& damage);
+        void UpdateGlyphs(uint32 diff);
+        void StrikeStorm(BonkGlyph const& glyph);
+        void DropMeteor(BonkGlyph const& glyph);
+        std::vector<BonkGlyph const*> m_glyphs;         // taken, in order
+        std::vector<uint32> m_glyphOffer;               // the choice up now
+        uint32 m_pendingGlyphPicks = 0;
+        uint32 m_glyphPicksGiven = 0;                   // offered this run
+        std::set<uint32> m_glyphCardIds;                // cards Glyphs gave: not in the card row
+        uint32 m_glyphKills = 0;
+        uint32 m_glyphHasteUntilMs = 0;                 // Bloodlust, run time
+        bool m_soulHarvestReady = false;
+        uint32 m_divineShieldStage = 0;                 // the stage Divine Shield last saved the hero in
+        int32 m_glyphStormTimer = 0;
+        int32 m_glyphMeteorTimer = 0;
+
         void SpawnPowerup();
         void UpdatePowerups(uint32 diff, bool spawn);
+        void UsePowerup(BonkPowerup const& powerup);
         void UpdateObjectives(uint32 diff);
         void DespawnObjects();
 
@@ -600,7 +674,7 @@ class BonkRun
         // damage only, with its own crit roll, as a spell hit; the weapon's
         // keyword follows through BonkOnDamage.
         // `caster`: who deals it (a summon), the hero if null.
-        void DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster = nullptr);
+        void DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster = nullptr, bool forceCrit = false);
         // Aimed Shot: every enemy in a line from the hero at `angle`, as
         // wide as the weapon's area lets it be.
         std::vector<Creature*> GetMobsInLine(OwnedWeapon const& owned, float range, float angle) const;
@@ -878,7 +952,8 @@ class BonkRun
         void SendOffer() const;
 
         // Second Wind, or with `soulstone` a Soulstone card (at its health).
-        void Revive(bool soulstone = false);
+        // `glyph`: Divine Shield's, once a stage.
+        void Revive(bool soulstone = false, BonkGlyph const* glyph = nullptr);
         void UpdateGear();
         // The spawn curve's elite interval now (more elites with the talent), 0 = none.
         uint32 GetEliteIntervalMs() const;
@@ -967,6 +1042,12 @@ class BonkRun
             uint32 objectiveId = 0;
             BonkSpot spot;
             ObjectGuid target;              // a goblin or a bounty
+            std::vector<ObjectGuid> targets;    // kobolds, shards, a portal (StartMiniEventGroup)
+            std::map<ObjectGuid, uint32> stolen;    // kobolds: the experience each carries
+            std::map<ObjectGuid, uint32> objectives;    // shards, a portal: their pins
+            int32 spawnMs = 0;              // shards, a portal: to their next adds
+            uint32 waves = 0;               // a portal's so far
+            uint32 total = 0;               // targets it started with
             std::string label;              // its timer's
             uint32 leftMs = 0;
             uint32 totalSeconds = 0;
