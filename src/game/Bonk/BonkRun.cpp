@@ -187,6 +187,9 @@ namespace
     // The Extraction Vault stands this far to the side of the stage portal.
     float const BONK_VAULT_SIDE     = 4.0f;
 
+    // Casters' bolts in the air at once, at most.
+    size_t const BONK_MAX_BOLTS     = 12;
+
     // A boss's adds come up in a ring this far round it.
     float const BONK_PHASE_ADD_MIN  = 8.0f;
     float const BONK_PHASE_ADD_MAX  = 12.0f;
@@ -498,6 +501,16 @@ namespace
         creature->GetMotionMaster()->Initialize();
         creature->SetAI(new NullCreatureAI(creature));
         creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
+    }
+
+    // A mini-event's caravan: friendly to everyone and out of every fight
+    // (its raiders' blows are the run's to count), but seen, with its name.
+    void InstallCaravanAI(Creature* creature)
+    {
+        creature->GetMotionMaster()->Initialize();
+        creature->SetAI(new NullCreatureAI(creature));
+        creature->SetFactionTemplateId(BONK_ORB_FACTION);
+        creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
     }
 
     // An enemy bolt's stand-in target: enemies must be able to cast at it, so
@@ -986,6 +999,8 @@ void BonkRun::StartStage()
     m_overtimeReported = 0;
     m_bossArrivals.clear();
     m_heldEvents.clear();
+    // Maybe something hidden this stage.
+    RollHidden();
     m_gruntRadius = 0.0f;
     m_bossSpawned = false;
     m_bossGuid.Clear();
@@ -1169,6 +1184,7 @@ void BonkRun::UpdateRunning(uint32 diff)
         return;
     UpdateMiniEvents(diff);
     UpdateShrines(diff);
+    UpdateHidden(diff);
     UpdateVendor(diff);
     if (m_state != STATE_RUNNING)
         return;
@@ -3274,6 +3290,7 @@ void BonkRun::DespawnObjects()
     m_chests.clear();
     m_powerups.clear();
     m_voidZones.clear();
+    ClearHidden();
     m_shardDrops.clear();
     m_healDrops.clear();
     m_gearDrops.clear();
@@ -4992,6 +5009,16 @@ void BonkRun::Erupt(ObjectGuid mobGuid, float x, float y, float z, float radius,
     mob->CastCustomSpell(m_player, BONK_SPELL_ERUPTION_HIT, int32(std::max(1u, damage)), {}, {}, true);
 }
 
+bool BonkRun::ReserveBolt(uint32 landMs)
+{
+    m_boltLandings.erase(std::remove_if(m_boltLandings.begin(), m_boltLandings.end(), [this](uint32 at) { return at <= m_totalMs; }),
+        m_boltLandings.end());
+    if (m_boltLandings.size() >= BONK_MAX_BOLTS)
+        return false;
+    m_boltLandings.push_back(m_totalMs + landMs);
+    return true;
+}
+
 ObjectGuid BonkRun::PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs)
 {
     Creature* target = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, lifetimeMs, false, 0, &InstallBoltTargetAI);
@@ -6211,6 +6238,12 @@ void BonkRun::CollectAllOrbs()
         GiveExperience(collected);
 }
 
+Creature* BonkRun::SummonCaravan(uint32 entry, float x, float y, float z, float orientation)
+{
+    return m_player->SummonCreature(entry, x, y, z, orientation, TEMPSUMMON_TIMED_DESPAWN, 10 * MINUTE * IN_MILLISECONDS, false, 0,
+        &InstallCaravanAI);
+}
+
 bool BonkRun::FindLyingOrb(float minDistance, float maxDistance, float& x, float& y, float& z) const
 {
     std::vector<Creature const*> lying;
@@ -6519,7 +6552,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
         return;
 
     // Kobolds, shards and a portal pay through their event, not as elites.
-    bool const eventGroup = !m_miniEvent.targets.empty() && IsMiniEventTarget(mob->GetObjectGuid());
+    bool const eventGroup = m_miniEventActive &&
+        std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), mob->GetObjectGuid()) != m_miniEvent.targets.end();
     OnMiniEventTargetKilled(mob);
 
     ++m_kills;
@@ -6600,6 +6634,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     DropShards(mob, kind);
     DropHeal(mob, kind);
     OnGlyphKill(mob, kind);
+    OnHiddenKilled(mob);
     // The second Glyph comes after the run's first mini-boss.
     if (kind == BONK_SPAWN_MINIBOSS)
         QueueGlyphPick();
@@ -7618,6 +7653,9 @@ void BonkRun::SetPaused(bool paused)
             m_telegraphs.Clear(m_player);
             m_voidZones.clear();
         }
+        // A caravan stops and goes on with the run.
+        if (m_miniEventActive && m_miniEvent.type == BONK_MINI_EVENT_CARAVAN)
+            PauseCaravan(paused);
 
         // Beasts hold still too; they find their prey again after.
         for (OwnedWeapon const& owned : m_weapons)

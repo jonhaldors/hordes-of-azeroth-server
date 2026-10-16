@@ -15,6 +15,7 @@
 #include "SpellMgr.h"
 #include "WorldSession.h"
 
+#include <ctime>
 #include <bitset>
 #include <vector>
 
@@ -185,11 +186,37 @@ void BonkQuests::OnLogin(Player* player)
         } while (result->NextRow());
     }
 
+    std::set<uint64> disabled;
+    result = CharacterDatabase.PQuery("SELECT `type`, `id` FROM `bonk_account_disabled` WHERE `account` = %u", account);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            disabled.insert(UnlockKey(BonkQuestReward(fields[0].GetUInt8()), fields[1].GetUInt32()));
+        } while (result->NextRow());
+    }
+
+    std::map<uint32, BestiaryEntry> bestiary;
+    result = CharacterDatabase.PQuery("SELECT `entry`, `kills`, `first_kill` FROM `bonk_account_bestiary` WHERE `account` = %u", account);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            BestiaryEntry& seen = bestiary[fields[0].GetUInt32()];
+            seen.kills = fields[1].GetUInt32();
+            seen.firstKill = fields[2].GetUInt64();
+        } while (result->NextRow());
+    }
+
     {
         std::lock_guard<std::mutex> guard(m_lock);
         m_accounts[account] = std::move(loaded);
         m_owned[account] = std::move(owned);
         m_paid[account] = paid;
+        m_disabled[account] = std::move(disabled);
+        m_bestiary[account] = std::move(bestiary);
     }
 
     // Stages reached and Mastery earned before there were quests count as well.
@@ -219,6 +246,88 @@ void BonkQuests::Save(uint32 account)
     for (auto const& row : rows)
         CharacterDatabase.PExecute("REPLACE INTO `bonk_account_quest` (`account`, `quest`, `progress`, `completed`) VALUES (%u, %u, %u, 0)",
             account, row.first, row.second);
+
+    // The bestiary's new kills.
+    std::vector<std::pair<uint32, BestiaryEntry>> seen;
+    {
+        std::lock_guard<std::mutex> guard(m_lock);
+        auto itr = m_bestiary.find(account);
+        if (itr != m_bestiary.end())
+            for (auto& entry : itr->second)
+                if (entry.second.dirty)
+                {
+                    entry.second.dirty = false;
+                    seen.emplace_back(entry.first, entry.second);
+                }
+    }
+    for (auto const& entry : seen)
+        CharacterDatabase.PExecute("REPLACE INTO `bonk_account_bestiary` (`account`, `entry`, `kills`, `first_kill`) VALUES (%u, %u, %u, " UI64FMTD ")",
+            account, entry.first, entry.second.kills, entry.second.firstKill);
+}
+
+bool BonkQuests::IsDisabled(uint32 account, BonkQuestReward type, uint32 id) const
+{
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto itr = m_disabled.find(account);
+    return itr != m_disabled.end() && itr->second.count(UnlockKey(type, id)) != 0;
+}
+
+bool BonkQuests::SetDisabled(uint32 account, BonkQuestReward type, uint32 id, bool disabled, uint32 slots, std::string& error)
+{
+    if (disabled && !IsTogglable(type))
+    {
+        error = "Only Darkmoon Cards and Glyphs can be switched off.";
+        return false;
+    }
+    if (disabled && IsLocked(account, type, id))
+    {
+        error = "Only what you have unlocked can be switched off.";
+        return false;
+    }
+    if (disabled && GetDisabled(account).size() >= slots)
+    {
+        error = slots ? "You can switch off " + std::to_string(slots) + (slots == 1 ? " thing" : " things") +
+            ". Stacked Deck at the Upgrades vendor allows more." : "Buy Stacked Deck at the Upgrades vendor to switch cards and Glyphs off.";
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> guard(m_lock);
+        if (disabled)
+            m_disabled[account].insert(UnlockKey(type, id));
+        else
+            m_disabled[account].erase(UnlockKey(type, id));
+    }
+    if (disabled)
+        CharacterDatabase.PExecute("REPLACE INTO `bonk_account_disabled` (`account`, `type`, `id`) VALUES (%u, %u, %u)", account, uint32(type), id);
+    else
+        CharacterDatabase.PExecute("DELETE FROM `bonk_account_disabled` WHERE `account` = %u AND `type` = %u AND `id` = %u", account, uint32(type), id);
+    return true;
+}
+
+void BonkQuests::TrimDisabled(uint32 account, uint32 slots)
+{
+    std::vector<std::pair<BonkQuestReward, uint32>> const disabled = GetDisabled(account);
+    std::string error;
+    for (size_t i = slots; i < disabled.size(); ++i)
+        SetDisabled(account, disabled[i].first, disabled[i].second, false, slots, error);
+}
+
+std::vector<std::pair<BonkQuestReward, uint32>> BonkQuests::GetDisabled(uint32 account) const
+{
+    std::vector<std::pair<BonkQuestReward, uint32>> list;
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto itr = m_disabled.find(account);
+    if (itr != m_disabled.end())
+        for (uint64 key : itr->second)
+            list.emplace_back(BonkQuestReward(key >> 32), uint32(key & 0xFFFFFFFF));
+    return list;
+}
+
+std::map<uint32, BonkQuests::BestiaryEntry> BonkQuests::GetBestiary(uint32 account) const
+{
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto itr = m_bestiary.find(account);
+    return itr != m_bestiary.end() ? itr->second : std::map<uint32, BestiaryEntry>();
 }
 
 bool BonkQuests::IsLocked(uint32 account, BonkQuestReward type, uint32 id) const
@@ -433,6 +542,16 @@ uint32 BonkQuests::GetShownProgress(BonkQuest const& quest, Progress const& entr
 
 void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType, uint32 entry, bool standing)
 {
+    // The bestiary counts it.
+    {
+        std::lock_guard<std::mutex> guard(m_lock);
+        BestiaryEntry& seen = m_bestiary[player->GetSession()->GetAccountId()][entry];
+        if (!seen.kills)
+            seen.firstKill = uint64(time(nullptr));
+        ++seen.kills;
+        seen.dirty = true;
+    }
+
     uint32 const weapon = GetRootWeapon(killingSpell);
     uint32 const level = player->GetLevel();
     SpellEntry const* spellInfo = killingSpell ? sSpellMgr.GetSpellEntry(killingSpell) : nullptr;

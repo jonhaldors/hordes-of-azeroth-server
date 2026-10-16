@@ -25,6 +25,10 @@
  *   shard on harder difficulties, an elite guarding each on the hardest.
  * - Demon portal: a portal a walk away sends demons until destroyed; a
  *   chest. More health and felguard elites on harder difficulties.
+ * - Kodo caravan: a caravan kodo walks about 120 yards past the hero while
+ *   raiders come up round it every few seconds and go for it; every raider
+ *   at its side lands a blow a second. It arrives (a chest with more
+ *   choices) or falls; less to fall on harder difficulties, more raiders.
  * - Stampede: a wall of beasts (the map's chargers, or kodos) charges across
  *   where the hero stands after a red warning; a second wall crosses it on
  *   the hardest. A hazard, no reward.
@@ -43,6 +47,7 @@
 #include "Utilities/Random.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace
@@ -132,7 +137,22 @@ namespace
     uint32 const BONK_STAMPEDE_SECOND_MS     = 1200;    // the crossing wall on the hardest, this much later
     float const BONK_STAMPEDE_DAMAGE         = 2.0f;    // in melee hits, as a charger's
 
-    char const* const MINI_EVENT_NAMES[MAX_BONK_MINI_EVENT] = { "horde", "goblin", "bounty", "kobolds", "scourge", "portal", "stampede" };
+    // Kodo caravan.
+    uint32 const BONK_CARAVAN_ENTRY          = 11564;   // Gizelton Caravan Kodo
+    float const BONK_CARAVAN_START           = 25.0f;   // it turns up this far from the hero...
+    float const BONK_CARAVAN_LENGTH          = 120.0f;  // ...and walks this far past them
+    float const BONK_CARAVAN_LEG             = 20.0f;   // in legs this long
+    float const BONK_CARAVAN_SPEED           = 3.5f;    // yards a second, a kodo's amble
+    uint32 const BONK_CARAVAN_SPARE_SECONDS  = 20;      // on top of the walk, then it is lost
+    uint32 const BONK_CARAVAN_BLOWS[3]       = { 70, 55, 45 };     // it falls at this many
+    float const BONK_CARAVAN_REACH           = 5.0f;    // a raider this close lands a blow a second
+    int32 const BONK_CARAVAN_WAVE_MS         = 7000;
+    uint32 const BONK_CARAVAN_RAIDERS        = 2;       // a wave, one more a step of difficulty
+    float const BONK_CARAVAN_RAID_DISTANCE   = 22.0f;
+    uint32 const BONK_CARAVAN_CHEST_CHOICES  = 4;       // and one more a step
+    char const* const BONK_CARAVAN_ICON      = "Ability_Mount_Kodo_01";
+
+    char const* const MINI_EVENT_NAMES[MAX_BONK_MINI_EVENT] = { "horde", "goblin", "bounty", "kobolds", "scourge", "portal", "stampede", "caravan" };
 
 }
 
@@ -202,6 +222,7 @@ bool BonkRun::StartMiniEvent(BonkMiniEventType type)
         case BONK_MINI_EVENT_SCOURGE:  started = SpawnScourgeInvasion(); break;
         case BONK_MINI_EVENT_PORTAL:   started = SpawnDemonPortal(); break;
         case BONK_MINI_EVENT_STAMPEDE: started = SpawnStampede(); break;
+        case BONK_MINI_EVENT_CARAVAN:  started = SpawnCaravan(); break;
         default:                     break;
     }
     // Whatever was set up for a mob that never came is not left for the next.
@@ -426,7 +447,9 @@ bool BonkRun::IsMiniEventTarget(ObjectGuid const& guid) const
 {
     if (!m_miniEventActive)
         return false;
-    return guid == m_miniEvent.target || std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), guid) != m_miniEvent.targets.end();
+    // A caravan's raiders too: they stay with the caravan.
+    return guid == m_miniEvent.target || std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), guid) != m_miniEvent.targets.end() ||
+        std::find(m_miniEvent.raiders.begin(), m_miniEvent.raiders.end(), guid) != m_miniEvent.raiders.end();
 }
 
 bool BonkRun::SpawnKoboldThieves()
@@ -675,6 +698,21 @@ void BonkRun::StartMiniEventGroup(std::string const& label, uint32 seconds)
 
 void BonkRun::UpdateMiniEventGroup(uint32 diff)
 {
+    // A caravan runs its own course.
+    if (m_miniEvent.type == BONK_MINI_EVENT_CARAVAN)
+    {
+        if (UpdateCaravan(diff))
+            return;
+        if (m_miniEvent.leftMs > diff)
+        {
+            m_miniEvent.leftMs -= diff;
+            SendMiniEventTimer();
+        }
+        else
+            EndCaravan(false);
+        return;
+    }
+
     // Gone some other way (a despawn): no longer waited for.
     Map* map = m_player->GetMap();
     for (auto itr = m_miniEvent.targets.begin(); itr != m_miniEvent.targets.end();)
@@ -796,5 +834,201 @@ void BonkRun::OnMiniEventGroupKilled(Creature* mob)
         bonk->Notify("The invasion is turned back!");
     else if (m_miniEvent.type == BONK_MINI_EVENT_KOBOLDS)
         bonk->Notify("Every kobold thief caught!");
+    EndMiniEvent();
+}
+
+bool BonkRun::SpawnCaravan()
+{
+    // It turns up to one side of the hero and walks past them, as far as
+    // the ground lets it.
+    uint32 const step = GetDifficultyStep();
+    float const angle = frand(0.0f, 2.0f * M_PI_F);
+    float x, y, z;
+    if (!FindSpawnPositionAt(angle, BONK_CARAVAN_START, x, y, z))
+        return false;
+    float const heading = angle + M_PI_F + frand(-0.4f, 0.4f);
+    std::vector<BonkSpot> path;
+    float px = x, py = y, pz = z;
+    for (float walked = BONK_CARAVAN_LEG; walked <= BONK_CARAVAN_LENGTH; walked += BONK_CARAVAN_LEG)
+    {
+        float nx = x + walked * std::cos(heading), ny = y + walked * std::sin(heading), nz = pz;
+        m_player->GetMap()->GetWalkHitPosition(nullptr, px, py, pz, nx, ny, nz);
+        if (std::hypot(nx - px, ny - py) < BONK_CARAVAN_LEG / 2.0f)
+            break;      // a wall or a cliff: it stops there
+        BonkSpot spot;
+        spot.x = nx;
+        spot.y = ny;
+        spot.z = nz;
+        path.push_back(spot);
+        px = nx;
+        py = ny;
+        pz = nz;
+    }
+    if (path.size() < 3)
+        return false;
+
+    Creature* caravan = SummonCaravan(BONK_CARAVAN_ENTRY, x, y, z, heading);
+    if (!caravan)
+        return false;
+
+    m_miniEvent.targets.assign(1, caravan->GetObjectGuid());
+    m_miniEvent.path = path;
+    m_miniEvent.pathIndex = 0;
+    m_miniEvent.raiders.clear();
+    m_miniEvent.tickMs = 0;
+    m_miniEvent.blows = 0;
+    m_miniEvent.maxBlows = BONK_CARAVAN_BLOWS[step];
+    m_miniEvent.warned = 0;
+    m_miniEvent.spawnMs = BONK_CARAVAN_WAVE_MS / 2;
+    m_miniEvent.waves = 0;
+    caravan->GetMotionMaster()->MovePoint(1, path[0].x, path[0].y, path[0].z, MOVE_PATHFINDING | MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
+
+    uint32 const seconds = uint32(BONK_CARAVAN_LEG * path.size() / BONK_CARAVAN_SPEED) + BONK_CARAVAN_SPARE_SECONDS;
+    m_miniEvent.objectives[caravan->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, caravan, "Kodo Caravan", seconds,
+        BONK_CARAVAN_ICON, "Keep the raiders off it until it gets through: a chest with more choices.");
+    StartMiniEventGroup("Kodo Caravan", seconds);
+    m_player->GetBonkPlayer()->Notify("A caravan! Keep the raiders off it until it gets through.");
+    return true;
+}
+
+bool BonkRun::UpdateCaravan(uint32 diff)
+{
+    Map* map = m_player->GetMap();
+    Creature* caravan = m_miniEvent.targets.empty() ? nullptr : map->GetCreature(m_miniEvent.targets.front());
+    if (!caravan || !caravan->IsAlive())
+    {
+        EndCaravan(false);
+        return true;
+    }
+
+    // On to the next leg once it gets to this one; through, it arrives.
+    BonkSpot const& leg = m_miniEvent.path[m_miniEvent.pathIndex];
+    if (caravan->GetDistance2d(leg.x, leg.y) < 2.0f)
+    {
+        if (++m_miniEvent.pathIndex >= m_miniEvent.path.size())
+        {
+            EndCaravan(true);
+            return true;
+        }
+        BonkSpot const& next = m_miniEvent.path[m_miniEvent.pathIndex];
+        caravan->GetMotionMaster()->MovePoint(1, next.x, next.y, next.z, MOVE_PATHFINDING | MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
+    }
+    else if (!caravan->IsMoving())
+        caravan->GetMotionMaster()->MovePoint(1, leg.x, leg.y, leg.z, MOVE_PATHFINDING | MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
+
+    // Raiders come up round it.
+    uint32 const step = GetDifficultyStep();
+    m_miniEvent.spawnMs -= int32(diff);
+    if (m_miniEvent.spawnMs <= 0)
+    {
+        m_miniEvent.spawnMs += BONK_CARAVAN_WAVE_MS;
+        ++m_miniEvent.waves;
+        uint32 const count = BONK_CARAVAN_RAIDERS + step;
+        bool const elite = step >= 2 && m_miniEvent.waves % 2 == 0;
+        for (uint32 i = 0; i < count + (elite ? 1 : 0); ++i)
+        {
+            if (m_mobs.size() >= m_tier.maxAlive)
+                break;
+            BonkMapCreature const* pick = PickCreature(i < count ? BONK_SPAWN_NORMAL : BONK_SPAWN_ELITE);
+            if (!pick)
+                continue;
+            float const angle = frand(0.0f, 2.0f * M_PI_F);
+            float const rx = caravan->GetPositionX() + BONK_CARAVAN_RAID_DISTANCE * std::cos(angle);
+            float const ry = caravan->GetPositionY() + BONK_CARAVAN_RAID_DISTANCE * std::sin(angle);
+            float const rz = map->GetHeight(rx, ry, caravan->GetPositionZ() + 10.0f, true, 30.0f);
+            if (rz <= INVALID_HEIGHT)
+                continue;
+            if (Creature* raider = SpawnMobAt(*pick, rx, ry, rz))
+                if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(raider->AI()))
+                {
+                    ai->SetRaidTarget(caravan->GetObjectGuid());
+                    m_miniEvent.raiders.push_back(raider->GetObjectGuid());
+                }
+        }
+    }
+
+    // Every raider at its side lands a blow a second.
+    m_miniEvent.tickMs += diff;
+    if (m_miniEvent.tickMs < IN_MILLISECONDS)
+        return false;
+    m_miniEvent.tickMs -= IN_MILLISECONDS;
+    uint32 blows = 0;
+    for (auto itr = m_miniEvent.raiders.begin(); itr != m_miniEvent.raiders.end();)
+    {
+        Creature* raider = map->GetCreature(*itr);
+        if (!raider || !raider->IsAlive())
+        {
+            itr = m_miniEvent.raiders.erase(itr);
+            continue;
+        }
+        if (raider->IsWithinDistInMap(caravan, BONK_CARAVAN_REACH))
+        {
+            raider->SetFacingToObject(caravan);
+            raider->HandleEmote(EMOTE_ONESHOT_ATTACK1H);
+            ++blows;
+        }
+        ++itr;
+    }
+    if (!blows)
+        return false;
+    m_miniEvent.blows += blows;
+    uint32 const left = m_miniEvent.blows >= m_miniEvent.maxBlows ? 0 : m_miniEvent.maxBlows - m_miniEvent.blows;
+    caravan->SetHealth(std::max(1u, uint32(uint64(caravan->GetMaxHealth()) * left / m_miniEvent.maxBlows)));
+    if (!left)
+    {
+        EndCaravan(false);
+        return true;
+    }
+    // Warnings at half and a quarter.
+    uint8 const mark = left * 4 <= m_miniEvent.maxBlows ? 2 : left * 2 <= m_miniEvent.maxBlows ? 1 : 0;
+    if (mark > m_miniEvent.warned)
+    {
+        m_miniEvent.warned = mark;
+        m_player->GetBonkPlayer()->Notify(mark == 2 ? "The caravan is about to fall!" : "The caravan is under attack!");
+    }
+    return false;
+}
+
+void BonkRun::PauseCaravan(bool paused)
+{
+    Creature* caravan = m_miniEvent.targets.empty() ? nullptr : m_player->GetMap()->GetCreature(m_miniEvent.targets.front());
+    if (!caravan)
+        return;
+    if (paused)
+    {
+        caravan->StopMoving();
+        caravan->GetMotionMaster()->Clear(false);
+        caravan->GetMotionMaster()->MoveIdle();
+    }
+    // Going on: UpdateCaravan sends it to its leg again.
+}
+
+void BonkRun::EndCaravan(bool arrived)
+{
+    Map* map = m_player->GetMap();
+    Creature* caravan = m_miniEvent.targets.empty() ? nullptr : map->GetCreature(m_miniEvent.targets.front());
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    // Its raiders turn on the hero.
+    for (ObjectGuid const& guid : m_miniEvent.raiders)
+        if (Creature* raider = map->GetCreature(guid))
+            if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(raider->AI()))
+                ai->ClearRaidTarget();
+    if (caravan)
+    {
+        if (arrived)
+        {
+            SpawnChest(true, caravan->GetPositionX(), caravan->GetPositionY(), caravan->GetPositionZ(), BONK_CARAVAN_CHEST_CHOICES + GetDifficultyStep());
+            sBonkQuests.OnProgress(m_player, BONK_QUEST_MINI_EVENTS, BONK_MINI_EVENT_CARAVAN, 1);
+            bonk->Notify("The caravan got through: a chest!");
+        }
+        else
+        {
+            caravan->CastSpell(caravan, BONK_SPELL_SPAWN_SMOKE, true);
+            bonk->Notify("The caravan is lost.");
+        }
+        caravan->DespawnOrUnsummon(arrived ? 3000 : 500);
+    }
+    else
+        bonk->Notify("The caravan is lost.");
     EndMiniEvent();
 }

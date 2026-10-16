@@ -92,7 +92,7 @@ void BonkRun::OfferGlyphs()
     for (auto const& itr : sBonkMgr.GetGlyphs())
     {
         BonkGlyph const& glyph = itr.second;
-        if (sBonkQuests.IsLocked(account, BONK_REWARD_GLYPH, glyph.id) ||
+        if (!sBonkQuests.IsInPool(account, BONK_REWARD_GLYPH, glyph.id) ||
             std::find(m_glyphs.begin(), m_glyphs.end(), &glyph) != m_glyphs.end())
             continue;
         pool.push_back(&glyph);

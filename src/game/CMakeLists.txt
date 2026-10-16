@@ -35,6 +35,7 @@ set (game_SRCS
     Bonk/BonkRunEvents.cpp
     Bonk/BonkRunGear.cpp
     Bonk/BonkRunGlyphs.cpp
+    Bonk/BonkRunHidden.cpp
     Bonk/BonkRunShrines.cpp
     Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp

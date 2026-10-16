@@ -209,6 +209,18 @@ class BonkPlayer
         void Notify(std::string const& text) const;
         // Every Glyph's text, for the addon (at hello).
         void SendGlyphInfo() const;
+        // The Bestiary's portrait bake (a GM's dev tool, `.bonk bake`): the
+        // enemies of a map (its key), "hidden", or "all", one at a time in
+        // front of the GM as harmless dummies; "bake~entry~name~index~total"
+        // for the addon's bake mode, which shoots each and asks for the next
+        // (`.bonk bake next`); "bakeend" when done or stopped.
+        bool StartBake(std::string const& what, std::string& error);
+        void BakeNext();
+        void StopBake();
+        // Cards and Glyphs this account may switch off (Stacked Deck's ranks),
+        // and the switched-off ones trimmed to it.
+        uint32 GetPoolToggleSlots() const;
+        void TrimPoolToggles() const;
 
         // The Shift dash (BonkPlayerDash.cpp, `.bonk dash`), at camp and in
         // runs: false if the hero can't dash now (a paused run, stunned,
@@ -296,6 +308,9 @@ class BonkPlayer
         std::set<uint32> m_enabledTalents;      // difficulty toggles switched on
         uint32 m_shards = 0;
         uint32 m_masteryXp = 0;
+        std::vector<uint32> m_bakeQueue;        // the portrait bake's enemies
+        size_t m_bakeIndex = 0;
+        ObjectGuid m_bakeGuid;                  // the one in front of the GM now
         std::map<uint32, uint8> m_masteryRanks;  // this class's Mastery nodes
         BonkShop m_shop{};                      // last shop spoken to; none at first
         ObjectGuid m_shopNpc;

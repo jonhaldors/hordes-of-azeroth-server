@@ -15,11 +15,13 @@
 #include "DBCStores.h"
 #include "Log.h"
 #include "Map.h"
+#include "NullCreatureAI.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "World.h"
 #include "WorldSession.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -959,6 +961,11 @@ bool BonkPlayer::RefundUpgrade(uint32 upgradeId, std::string& message)
 
     // The top rank back at what it costs now, like the full refund.
     uint32 const refunded = upgrade->GetCost(rank - 1);
+    struct TrimAfter
+    {
+        BonkPlayer const* bonk;
+        ~TrimAfter() { bonk->TrimPoolToggles(); }
+    } const trimAfter{ this };
     if (rank > 1)
     {
         m_upgradeRanks[upgradeId] = rank - 1;
@@ -1391,6 +1398,8 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkMap cons
         return false;
     }
 
+    // Switched off past what Stacked Deck allows (ranks refunded): back on.
+    TrimPoolToggles();
     m_run.reset(new BonkRun(m_player, tier, dungeon));
     if (!m_run->Begin(error))
     {
@@ -1483,6 +1492,123 @@ void BonkPlayer::SendAddon(std::string const& line) const
         return;
 
     ChatHandler(m_player).SendSysMessage(("BONK~" + line).c_str());
+}
+
+namespace
+{
+    // The portrait bake's dummy: no AI, friendly, out of every fight, but
+    // selectable (the addon targets it by name).
+    void InstallBakeAI(Creature* creature)
+    {
+        creature->GetMotionMaster()->Initialize();
+        creature->SetAI(new NullCreatureAI(creature));
+        creature->SetFactionTemplateId(35);
+        creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    }
+
+    float const BONK_BAKE_DISTANCE = 6.0f;
+    uint32 const BONK_BAKE_LIFETIME_MS = 60 * IN_MILLISECONDS;
+}
+
+bool BonkPlayer::StartBake(std::string const& what, std::string& error)
+{
+    if (m_run)
+    {
+        error = "Not during a run.";
+        return false;
+    }
+
+    // Every enemy a run can meet there, each once, in the maps' order; the
+    // hidden encounters' finds with their maps.
+    std::vector<uint32> queue;
+    auto add = [&queue](uint32 entry)
+    {
+        if (entry && std::find(queue.begin(), queue.end(), entry) == queue.end())
+            queue.push_back(entry);
+    };
+    bool const all = what == "all";
+    for (auto const& itr : sBonkMgr.GetMaps())
+    {
+        BonkMap const& map = itr.second;
+        if (!all && map.key != what)
+            continue;
+        for (BonkMapCreature const& creature : map.creatures)
+            add(creature.entry);
+        for (BonkHidden const& hidden : sBonkMgr.GetHiddenEncounters())
+            if (hidden.mapId == map.id)
+                add(hidden.bossEntry);
+    }
+    if (what == "hidden")
+        for (BonkHidden const& hidden : sBonkMgr.GetHiddenEncounters())
+            add(hidden.bossEntry);
+    if (queue.empty())
+    {
+        error = "No enemies for '" + what + "'. Use a map key (westfall, barrens...), hidden or all.";
+        return false;
+    }
+
+    StopBake();
+    m_bakeQueue = std::move(queue);
+    m_bakeIndex = 0;
+    SendAddon("bakestart~" + what + "~" + std::to_string(m_bakeQueue.size()));
+    BakeNext();
+    return true;
+}
+
+void BonkPlayer::BakeNext()
+{
+    if (Creature* old = m_bakeGuid.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(m_bakeGuid))
+        old->DespawnOrUnsummon();
+    m_bakeGuid.Clear();
+
+    // The next one with a template, a few yards in front, facing the GM.
+    while (m_bakeIndex < m_bakeQueue.size())
+    {
+        uint32 const entry = m_bakeQueue[m_bakeIndex++];
+        CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(entry);
+        if (!info)
+            continue;
+        float const o = m_player->GetOrientation();
+        float const x = m_player->GetPositionX() + BONK_BAKE_DISTANCE * std::cos(o);
+        float const y = m_player->GetPositionY() + BONK_BAKE_DISTANCE * std::sin(o);
+        float z = m_player->GetMap()->GetHeight(x, y, m_player->GetPositionZ() + 5.0f, true, 15.0f);
+        if (z <= INVALID_HEIGHT)
+            z = m_player->GetPositionZ();
+        Creature* dummy = m_player->SummonCreature(entry, x, y, z, o + M_PI_F, TEMPSUMMON_TIMED_DESPAWN, BONK_BAKE_LIFETIME_MS, false, 0,
+            &InstallBakeAI);
+        if (!dummy)
+            continue;
+        m_bakeGuid = dummy->GetObjectGuid();
+        SendAddon("bake~" + std::to_string(entry) + "~" + info->name + "~" + std::to_string(m_bakeIndex) + "~" + std::to_string(m_bakeQueue.size()));
+        if (!m_addonReady)
+            ChatHandler(m_player).PSendSysMessage("Bake %u/%u: %s (%u). .bonk bake next", uint32(m_bakeIndex), uint32(m_bakeQueue.size()),
+                info->name.c_str(), entry);
+        return;
+    }
+
+    StopBake();
+}
+
+void BonkPlayer::StopBake()
+{
+    if (Creature* old = m_bakeGuid.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(m_bakeGuid))
+        old->DespawnOrUnsummon();
+    bool const baking = !m_bakeQueue.empty();
+    m_bakeGuid.Clear();
+    m_bakeQueue.clear();
+    m_bakeIndex = 0;
+    if (baking)
+        SendAddon("bakeend");
+}
+
+uint32 BonkPlayer::GetPoolToggleSlots() const
+{
+    return uint32(GetUpgradeUtility(BONK_UTILITY_POOL_TOGGLES));
+}
+
+void BonkPlayer::TrimPoolToggles() const
+{
+    sBonkQuests.TrimDisabled(m_player->GetSession()->GetAccountId(), GetPoolToggleSlots());
 }
 
 void BonkPlayer::SendGlyphInfo() const

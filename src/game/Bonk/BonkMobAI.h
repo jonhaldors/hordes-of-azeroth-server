@@ -89,6 +89,10 @@ class BonkMobAI : public CreatureAI
         // A Necrotic Shard or a demon portal: it stands where it is and
         // never attacks; the run's event spawns its adds.
         void SetStationary();
+        // A caravan's raider: it goes for `target` (the run's caravan), not
+        // the hero, until that is gone.
+        void SetRaidTarget(ObjectGuid target);
+        void ClearRaidTarget() { m_raidTarget.Clear(); }
         // A stampede's beast: a red line `length` long at `angle` from where
         // it stands for `windupMs`, then a dash along it that runs the hero
         // over like a charger's (`damage` in melee hits); it is gone at the
@@ -214,6 +218,7 @@ class BonkMobAI : public CreatureAI
         int32 m_fleeTimer = 0;              // to its next step away
         bool m_fleeStanding = false;        // still at its head start
         bool m_stationary = false;          // SetStationary
+        ObjectGuid m_raidTarget;            // SetRaidTarget
         bool m_stampede = false;            // StartStampede
         int32 m_blinkTimer = 0;             // to its next blink
 

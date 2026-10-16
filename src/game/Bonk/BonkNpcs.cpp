@@ -330,6 +330,14 @@ bool GOGossipSelect_go_bonk_portal(Player* player, GameObject* go, uint32 /*send
     return true;
 }
 
+// A hidden encounter's object (a suspicious bush): poked, it springs.
+bool GOHello_go_bonk_hidden(Player* player, GameObject* go)
+{
+    if (BonkRun* run = player->GetBonkPlayer()->GetRun())
+        run->UseHidden(go);
+    return true;
+}
+
 bool GOHello_go_bonk_vault(Player* player, GameObject* go)
 {
     BonkRun* run = player->GetBonkPlayer()->GetRun();
@@ -420,6 +428,11 @@ void AddSC_bonk_npcs()
     newscript->Name = "go_bonk_portal";
     newscript->pGOHello = &GOHello_go_bonk_portal;
     newscript->pGOGossipSelect = &GOGossipSelect_go_bonk_portal;
+    newscript->RegisterSelf();
+
+    newscript = new Script;
+    newscript->Name = "go_bonk_hidden";
+    newscript->pGOHello = &GOHello_go_bonk_hidden;
     newscript->RegisterSelf();
 
     newscript = new Script;

@@ -156,7 +156,7 @@ bool BonkRun::IsCardInPool(BonkCard const& card) const
 {
     // A legendary's own card never comes from chests; the rest once the
     // account has it (the starter set, or bought after its quest).
-    return card.inChests && !sBonkQuests.IsLocked(m_player->GetSession()->GetAccountId(), BONK_REWARD_CARD, card.id);
+    return card.inChests && sBonkQuests.IsInPool(m_player->GetSession()->GetAccountId(), BONK_REWARD_CARD, card.id);
 }
 
 void BonkRun::GiveStartCard()

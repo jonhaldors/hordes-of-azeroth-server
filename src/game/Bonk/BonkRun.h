@@ -49,6 +49,7 @@ enum BonkMiniEventType : uint8
     BONK_MINI_EVENT_SCOURGE  = 4,   // Necrotic Shards raise undead until destroyed; Valor and experience a shard
     BONK_MINI_EVENT_PORTAL   = 5,   // a demon portal sends waves until destroyed; a chest
     BONK_MINI_EVENT_STAMPEDE = 6,   // a wall of beasts charges across the hero's way, warned; a hazard only
+    BONK_MINI_EVENT_CARAVAN  = 7,   // a kodo caravan walks past while raiders go for it; kept alive, a chest
     MAX_BONK_MINI_EVENT
 };
 
@@ -184,6 +185,9 @@ class BonkRun
         bool ChooseGear(bool equip, std::string& error);
         // Glyphs (BonkRunGlyphs.cpp): the choice that is up, `.bonk glyph <n>`.
         bool ChooseGlyph(uint32 choice, std::string& error);
+        // A hidden encounter's object used (BonkRunHidden.cpp): true if it
+        // was this stage's.
+        bool UseHidden(GameObject* go);
         // The hero used `item` (WorldSession::HandleUseItemOpcode): true if
         // the run handled it (the Hearthstone opens its extraction ring).
         bool UseItem(Item* item);
@@ -267,6 +271,9 @@ class BonkRun
         // never sees it), and the bolt landing: `damage` from `spellId` if
         // the hero is still within `radius`.
         ObjectGuid PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs);
+        // A caster's bolt that lands in `landMs`: false once BONK_MAX_BOLTS are
+        // in the air (readable, and lighter on the server).
+        bool ReserveBolt(uint32 landMs);
         void LandBolt(ObjectGuid mobGuid, ObjectGuid targetGuid, uint32 spellId, float x, float y, float radius, uint32 damage);
         // Damage times this on a crit: a spell crit adds 50%, a weapon crit
         // 100%, plus Crit Damage, and 50% more on rooted enemies with a
@@ -400,6 +407,15 @@ class BonkRun
         bool SpawnScourgeInvasion();
         bool SpawnDemonPortal();
         bool SpawnStampede();
+        bool SpawnCaravan();
+        // The caravan under way: its walk, its raiders and their blows; true
+        // once it is over (arrived or lost).
+        bool UpdateCaravan(uint32 diff);
+        void PauseCaravan(bool paused);
+        void EndCaravan(bool arrived);
+        // The caravan itself (BonkRun.cpp, beside the other helpers): friendly,
+        // no AI, walking where the run sends it.
+        Creature* SummonCaravan(uint32 entry, float x, float y, float z, float orientation);
         // Kobolds, shards, a portal: several targets (or one that stands),
         // under way until they are all dead or the time is up.
         void StartMiniEventGroup(std::string const& label, uint32 seconds);
@@ -480,6 +496,7 @@ class BonkRun
             uint32 tickMs = 0;
         };
         std::vector<VoidZone> m_voidZones;
+        std::vector<uint32> m_boltLandings;     // run time each bolt in the air lands
         void UpdateVoidZones(uint32 diff);
         void DespawnPools();
         void RunEvent(BonkMapEvent const& event);
@@ -572,6 +589,25 @@ class BonkRun
         uint32 GetChestPrice() const;
         // A camp upgrade's utility, as brought into this run.
         float GetUtility(BonkUpgradeUtility utility) const { return m_bonuses.utility[utility]; }
+        // Hidden encounters (BonkRunHidden.cpp): rolled at each stage's
+        // start, placed once a spawn point turns up, sprung by the hero.
+        struct HiddenEncounter
+        {
+            BonkHidden const* hidden = nullptr;
+            bool placed = false;
+            bool triggered = false;
+            uint32 placeTimer = 0;
+            BonkSpot spot;
+            ObjectGuid object;
+            ObjectGuid boss;
+        };
+        HiddenEncounter m_hidden;
+        void RollHidden();
+        void UpdateHidden(uint32 diff);
+        void TriggerHidden();
+        void OnHiddenKilled(Creature const* mob);
+        void ClearHidden();
+
         // Glyphs (BonkRunGlyphs.cpp): one to pick at the start, one after
         // the first mini-boss.
         void QueueGlyphPick();
@@ -1048,6 +1084,14 @@ class BonkRun
             int32 spawnMs = 0;              // shards, a portal: to their next adds
             uint32 waves = 0;               // a portal's so far
             uint32 total = 0;               // targets it started with
+            // A caravan: where it walks, how far it got, its raiders, its blows.
+            std::vector<BonkSpot> path;
+            size_t pathIndex = 0;
+            std::vector<ObjectGuid> raiders;
+            uint32 tickMs = 0;
+            uint32 blows = 0;               // taken so far
+            uint32 maxBlows = 0;            // it falls at this many
+            uint8 warned = 0;               // health warnings given
             std::string label;              // its timer's
             uint32 leftMs = 0;
             uint32 totalSeconds = 0;

@@ -118,6 +118,9 @@ namespace
     float const BONK_CHARGE_KNOCKBACK_SPEED = 8.0f;
     float const BONK_CHARGE_KNOCKBACK_LIFT  = 4.0f;
     uint32 const BONK_SPELL_CHARGE_HIT  = 24257;    // Jeklik's Crushing Blow: a plain physical hit
+    // How far ahead casters aim, by the difficulty's step: a share of where
+    // the player will be.
+    float const BONK_BOLT_LEAD_BY_STEP[3] = { 0.0f, 0.5f, 1.0f };
     // Signature moves: a barrage's circles land one after another round the
     // hero, the first on them.
     float const BONK_BARRAGE_SPREAD     = 10.0f;
@@ -516,7 +519,7 @@ void BonkMobAI::AttackStart(Unit* victim)
     // stands where the run moved it (a hit on it would start the chase),
     // nor while it winds up or dashes: a hit then would set it running.
     Player* owner = GetOwner();
-    if (!owner || victim != owner || m_arriveTimer > 0 || m_fleeing || m_stationary || m_chargeState != CHARGE_NONE)
+    if (!owner || victim != owner || m_arriveTimer > 0 || m_fleeing || m_stationary || !m_raidTarget.IsEmpty() || m_chargeState != CHARGE_NONE)
         return;
 
     CreatureAI::AttackStart(victim);
@@ -580,6 +583,20 @@ void BonkMobAI::UpdateAI(uint32 const diff)
     // A shard or a portal only ever stands there.
     if (m_stationary)
         return;
+
+    // A caravan's raider goes for the caravan (the run counts its blows).
+    if (!m_raidTarget.IsEmpty())
+    {
+        Creature* target = m_creature->GetMap()->GetCreature(m_raidTarget);
+        if (target && target->IsAlive())
+        {
+            if (m_creature->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
+                m_creature->GetMotionMaster()->MoveChase(target);
+            return;
+        }
+        m_raidTarget.Clear();
+        AttackStart(owner);
+    }
 
     // A charger winding up or dashing does nothing else.
     if (UpdateCharge(diff, owner))
@@ -718,6 +735,9 @@ void BonkMobAI::AimBolt(BonkMobAbility const& ability, SpellEntry const* spellIn
     uint32 const flight = GetBoltFlightMs(spellInfo, m_creature->GetDistance(x, y, z));
     uint32 const lead = std::max(BONK_BOLT_AIM_BEFORE_MS, BONK_BOLT_MIN_WARN_MS > flight ? BONK_BOLT_MIN_WARN_MS - flight : 0);
 
+    // Only so many bolts in the air at once: past that, this cast is skipped.
+    if (!run->ReserveBolt(std::max(castTime, lead) + flight))
+        return;
     ObjectGuid const target = run->PlaceBoltTarget(x, y, z, std::max(castTime, lead) + 2 * flight + BONK_BOLT_TARGET_LINGER_MS);
     if (target.IsEmpty())
         return;
@@ -764,11 +784,14 @@ void BonkMobAI::AimBoltNow(Player* owner)
 
     // Where the player will be when it lands: the rest of the cast, then the
     // flight to there (worked out from where they are, then once more).
+    // Normal aims at where the player stands; Heroic leads them by half,
+    // Mythic all the way (feature plan, dodgeable enemy spells).
+    float const lead = BONK_BOLT_LEAD_BY_STEP[std::min(2u, run->GetDifficultyStep())];
     float x, y, z;
     uint32 flight = GetBoltFlightMs(spellInfo, m_creature->GetDistance(owner));
-    PredictPlayer(owner, m_boltLead + flight, x, y, z);
+    PredictPlayer(owner, uint32((m_boltLead + flight) * lead), x, y, z);
     flight = GetBoltFlightMs(spellInfo, m_creature->GetDistance(x, y, z));
-    PredictPlayer(owner, m_boltLead + flight, x, y, z);
+    PredictPlayer(owner, uint32((m_boltLead + flight) * lead), x, y, z);
     target->NearTeleportTo(x, y, z, 0.0f);
 
     ObjectGuid const guid = m_creature->GetObjectGuid();
@@ -1313,6 +1336,15 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
     uint32 const damage = uint32(std::max(1.0f, GetMeleeHit() * BONK_VOID_DAMAGE));
     run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_VOID_RADIUS, BONK_VOID_WARN_MS,
         [run, guid, x, y, z, damage]() { run->StartVoidZone(guid, x, y, z, BONK_VOID_RADIUS, damage, BONK_VOID_DURATION_MS); });
+}
+
+void BonkMobAI::SetRaidTarget(ObjectGuid target)
+{
+    m_raidTarget = target;
+    m_creature->AttackStop();
+    m_creature->GetMotionMaster()->Clear(false);
+    if (Creature* caravan = m_creature->GetMap()->GetCreature(target))
+        m_creature->GetMotionMaster()->MoveChase(caravan);
 }
 
 void BonkMobAI::SetStationary()

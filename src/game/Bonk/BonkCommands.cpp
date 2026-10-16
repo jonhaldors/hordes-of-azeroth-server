@@ -290,6 +290,67 @@ bool ChatHandler::HandleBonkUnlockCommand(char* args)
     return bought;
 }
 
+bool ChatHandler::HandleBonkBakeCommand(char* args)
+{
+    // .bonk bake <map key|hidden|all> | next | stop: the Bestiary's portrait
+    // bake (a GM's dev tool; the addon's bake mode answers `next`).
+    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
+    std::string const what = args && *args ? args : "";
+    if (what == "next")
+    {
+        bonk->BakeNext();
+        return true;
+    }
+    if (what == "stop")
+    {
+        bonk->StopBake();
+        return true;
+    }
+    std::string error;
+    if (what.empty() || !bonk->StartBake(what, error))
+    {
+        SendSysMessage(what.empty() ? "Use .bonk bake <map key|hidden|all>, next or stop." : error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
+}
+
+bool ChatHandler::HandleBonkPoolCommand(char* args)
+{
+    // .bonk pool c|g <id> on|off: the codex's pool toggle (cards and Glyphs,
+    // as many as Stacked Deck allows), then the codex again.
+    char* kind = ExtractLiteralArg(&args);
+    uint32 id = 0;
+    BonkQuestReward type = MAX_BONK_REWARD;
+    if (kind && !strcmp(kind, "w"))
+        type = BONK_REWARD_WEAPON;
+    else if (kind && !strcmp(kind, "p"))
+        type = BONK_REWARD_PASSIVE;
+    else if (kind && !strcmp(kind, "c"))
+        type = BONK_REWARD_CARD;
+    else if (kind && !strcmp(kind, "g"))
+        type = BONK_REWARD_GLYPH;
+    char* state = nullptr;
+    if (type != MAX_BONK_REWARD && ExtractUInt32(&args, id))
+        state = ExtractLiteralArg(&args);
+    if (!state || (strcmp(state, "on") && strcmp(state, "off")))
+    {
+        SendSysMessage("Use .bonk pool c|g <id> on|off.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    Player* player = m_session->GetPlayer();
+    std::string error;
+    bool const done = sBonkQuests.SetDisabled(player->GetSession()->GetAccountId(), type, id, !strcmp(state, "off"),
+        player->GetBonkPlayer()->GetPoolToggleSlots(), error);
+    if (!done)
+        player->GetBonkPlayer()->Notify(error);
+    BonkCodex::Send(player, "");
+    return done;
+}
+
 bool ChatHandler::HandleBonkGlyphCommand(char* args)
 {
     // .bonk glyph <n>: the Glyph choice that is up.

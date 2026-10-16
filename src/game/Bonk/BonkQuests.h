@@ -143,6 +143,24 @@ class BonkQuests
         // spell, passive or card (Core loop v2 phase E) also has to be bought
         // at the Spellbook once its quest is done; until then it is for sale.
         bool IsLocked(uint32 account, BonkQuestReward type, uint32 id) const;
+        // The pool toggle (Phase 4, codex): an unlocked Darkmoon Card or Glyph
+        // the player switched off never comes up in a run (user, 2026-10-16:
+        // cards and Glyphs only, as many as Stacked Deck's ranks, `slots`).
+        bool IsDisabled(uint32 account, BonkQuestReward type, uint32 id) const;
+        bool IsInPool(uint32 account, BonkQuestReward type, uint32 id) const { return !IsLocked(account, type, id) && !IsDisabled(account, type, id); }
+        static bool IsTogglable(BonkQuestReward type) { return type == BONK_REWARD_CARD || type == BONK_REWARD_GLYPH; }
+        bool SetDisabled(uint32 account, BonkQuestReward type, uint32 id, bool disabled, uint32 slots, std::string& error);
+        // Past `slots` (ranks refunded): the latest switched back on.
+        void TrimDisabled(uint32 account, uint32 slots);
+        std::vector<std::pair<BonkQuestReward, uint32>> GetDisabled(uint32 account) const;
+        // The bestiary (Phase 4, codex): kills per enemy, and the first.
+        struct BestiaryEntry
+        {
+            uint32 kills = 0;
+            uint64 firstKill = 0;       // unix time
+            bool dirty = false;
+        };
+        std::map<uint32, BestiaryEntry> GetBestiary(uint32 account) const;
         bool IsForSale(uint32 account, BonkQuestReward type, uint32 id) const;
         BonkQuest const* GetUnlockingQuest(BonkQuestReward type, uint32 id) const;
         // The kinds of unlock bought with gold after their quest.
@@ -221,6 +239,8 @@ class BonkQuests
         std::map<uint32, AccountProgress> m_accounts;
         std::map<uint32, std::set<uint64>> m_owned;     // bought unlocks by account (bonk_account_unlock)
         std::map<uint32, uint32> m_paid;                // of them, those paid for with gold (not kept from before)
+        std::map<uint32, std::set<uint64>> m_disabled;  // switched off by account (bonk_account_disabled)
+        std::map<uint32, std::map<uint32, BestiaryEntry>> m_bestiary;  // by account, creature entry (bonk_account_bestiary)
 };
 
 #define sBonkQuests MaNGOS::Singleton<BonkQuests>::Instance()

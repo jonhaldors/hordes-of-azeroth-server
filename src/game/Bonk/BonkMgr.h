@@ -784,6 +784,7 @@ enum BonkUpgradeUtility : uint8
     BONK_UTILITY_START_LEVEL   = 10,    // + level a run starts at
     BONK_UTILITY_START_CARD    = 11,    // a random card at the start of a run: 1 common, 2 uncommon
     BONK_UTILITY_PACK_MULE     = 12,    // + Extraction Vault slots
+    BONK_UTILITY_POOL_TOGGLES  = 13,    // + Darkmoon Cards or Glyphs that can be switched off (Stacked Deck)
     MAX_BONK_UPGRADE_UTILITY
 };
 uint8 const BONK_UPGRADE_UTILITY_BASE = 100;
@@ -939,6 +940,28 @@ struct BonkCard
     bool inChests = true;           // false: only worn gear gives it (a legendary's effect, bonk_item_card)
 };
 
+// Hidden encounters (Phase 4, BonkRunHidden.cpp): now and then a stage hides
+// something at a spot a walk away, with no pin.
+uint8 const BONK_HIDDEN_USE_TRIGGER  = 0;   // the hero uses its object (a bush)
+uint8 const BONK_HIDDEN_NEAR_TRIGGER = 1;   // the hero comes near it (a camp)
+
+struct BonkHidden
+{
+    uint32 id = 0;                  // the Discovery quests' target
+    std::string name;
+    uint32 mapId = 0;               // bonk_map.id it can turn up on
+    float chance = 0.0f;            // % a stage
+    uint8 trigger = BONK_HIDDEN_USE_TRIGGER;
+    uint32 objectEntry = 0;         // gameobject_template: what marks the spot
+    uint32 bossEntry = 0;           // a mini-boss
+    float bossScale = 1.0f;
+    uint32 addEntry = 0;            // its band, normal enemies
+    uint32 addCount = 0;
+    uint32 chestChoices = 3;
+    std::string yell;               // the boss's, as it shows itself
+    std::string foundText;          // the hero's notice
+};
+
 // Glyphs (Phase 3, BonkRunGlyphs.cpp): the two big picks of a run. A Glyph
 // may give a hidden card (its stats or a card effect) and has at most one
 // effect of its own, read where it applies.
@@ -1038,6 +1061,7 @@ class BonkMgr
         BonkCard const* GetCard(uint32 id) const;
         std::map<uint32, BonkCard> const& GetCards() const { return m_cards; }
         std::map<uint32, BonkGlyph> const& GetGlyphs() const { return m_glyphs; }
+        std::vector<BonkHidden> const& GetHiddenEncounters() const { return m_hiddenEncounters; }
         BonkGlyph const* GetGlyph(uint32 id) const;
 
         // The card an item's wearer holds while it is worn (a legendary's
@@ -1083,6 +1107,7 @@ class BonkMgr
         void LoadCards();
         void LoadItemCards();
         void LoadGlyphs();
+        void LoadHiddenEncounters();
         void LoadGear();
         void LoadShopTrees();
         void LoadUpgrades();
@@ -1109,6 +1134,7 @@ class BonkMgr
         std::map<uint32, BonkCard> m_cards;
         std::map<uint32, uint32> m_itemCards;   // item entry -> card id
         std::map<uint32, BonkGlyph> m_glyphs;
+        std::vector<BonkHidden> m_hiddenEncounters;
         std::map<uint32, BonkGear> m_gear;
         std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;

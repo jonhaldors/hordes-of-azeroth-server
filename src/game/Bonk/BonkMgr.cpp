@@ -126,6 +126,7 @@ void BonkMgr::Load()
     LoadCards();
     LoadItemCards();
     LoadGlyphs();
+    LoadHiddenEncounters();
     LoadGear();
     LoadShopTrees();
     LoadUpgrades();
@@ -1506,6 +1507,48 @@ BonkCard const* BonkMgr::GetCard(uint32 id) const
 {
     auto itr = m_cards.find(id);
     return itr != m_cards.end() ? &itr->second : nullptr;
+}
+
+void BonkMgr::LoadHiddenEncounters()
+{
+    m_hiddenEncounters.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `map_id`, `chance`, `trigger`, `object_entry`, `boss_entry`, `boss_scale`, `add_entry`, `add_count`, "
+        "`chest_choices`, `yell`, `found_text` FROM `bonk_hidden`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk hidden encounters");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+        BonkHidden hidden;
+        hidden.id = fields[0].GetUInt32();
+        hidden.name = fields[1].GetCppString();
+        hidden.mapId = fields[2].GetUInt32();
+        hidden.chance = fields[3].GetFloat();
+        hidden.trigger = fields[4].GetUInt8() ? BONK_HIDDEN_NEAR_TRIGGER : BONK_HIDDEN_USE_TRIGGER;
+        hidden.objectEntry = fields[5].GetUInt32();
+        hidden.bossEntry = fields[6].GetUInt32();
+        hidden.bossScale = std::max(1.0f, fields[7].GetFloat());
+        hidden.addEntry = fields[8].GetUInt32();
+        hidden.addCount = fields[9].GetUInt32();
+        hidden.chestChoices = std::max(1u, fields[10].GetUInt32());
+        hidden.yell = fields[11].GetCppString();
+        hidden.foundText = fields[12].GetCppString();
+        if (!sObjectMgr.GetGameObjectTemplate(hidden.objectEntry) || !sObjectMgr.GetCreatureTemplate(hidden.bossEntry) ||
+            (hidden.addEntry && !sObjectMgr.GetCreatureTemplate(hidden.addEntry)))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_hidden`: encounter %u names a missing object or creature, skipped.", hidden.id);
+            continue;
+        }
+        m_hiddenEncounters.push_back(hidden);
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk hidden encounters", uint32(m_hiddenEncounters.size()));
 }
 
 BonkGlyph const* BonkMgr::GetGlyph(uint32 id) const

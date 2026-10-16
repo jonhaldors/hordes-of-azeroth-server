@@ -7,6 +7,7 @@
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
 #include "Creature.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
@@ -201,6 +202,44 @@ void BonkCodex::Send(Player* player, std::string const& npc)
         bonk->SendAddon("cdxcd~" + id + "~" + card.description);
         if (locked == "1")
             SendLock(bonk, "c", card.id, BONK_REWARD_CARD);
+    }
+
+    // The pool toggle: cdxpool~open~used~slots (Stacked Deck's ranks; cards
+    // and Glyphs only), then cdxoff~kind~id for each switched off (c or g).
+    bonk->TrimPoolToggles();
+    uint32 const slots = bonk->GetPoolToggleSlots();
+    bonk->SendAddon("cdxpool~" + std::string(slots ? "1" : "0") + "~" + std::to_string(sBonkQuests.GetDisabled(account).size()) + "~" +
+        std::to_string(slots));
+    for (auto const& off : sBonkQuests.GetDisabled(account))
+    {
+        char const* kind = off.first == BONK_REWARD_WEAPON ? "w" : off.first == BONK_REWARD_PASSIVE ? "p" : off.first == BONK_REWARD_CARD ? "c" : "g";
+        bonk->SendAddon("cdxoff~" + std::string(kind) + "~" + std::to_string(off.second));
+    }
+
+    // The bestiary: cdxb~entry~kills~kind~map~name for every enemy a run can
+    // meet (name empty until one is killed; kind its highest: 0 normal, 1
+    // elite, 2 boss, 3 mini-boss; map where it is first met).
+    std::map<uint32, BonkQuests::BestiaryEntry> const bestiary = sBonkQuests.GetBestiary(account);
+    std::map<uint32, std::pair<uint32, std::string>> enemies;    // entry -> kind, map
+    for (auto const& map : sBonkMgr.GetMaps())
+        for (BonkMapCreature const& creature : map.second.creatures)
+        {
+            auto itr = enemies.find(creature.entry);
+            if (itr == enemies.end())
+                enemies[creature.entry] = { uint32(creature.kind), map.second.name };
+            else if (uint32(creature.kind) > itr->second.first)
+                itr->second.first = uint32(creature.kind);
+        }
+    for (BonkHidden const& hidden : sBonkMgr.GetHiddenEncounters())
+        if (BonkMap const* map = sBonkMgr.GetMap(hidden.mapId))
+            enemies.emplace(hidden.bossEntry, std::make_pair(uint32(BONK_SPAWN_MINIBOSS), map->name));
+    for (auto const& enemy : enemies)
+    {
+        auto const seen = bestiary.find(enemy.first);
+        uint32 const kills = seen != bestiary.end() ? seen->second.kills : 0;
+        CreatureInfo const* info = kills ? sObjectMgr.GetCreatureTemplate(enemy.first) : nullptr;
+        bonk->SendAddon("cdxb~" + std::to_string(enemy.first) + "~" + std::to_string(kills) + "~" + std::to_string(enemy.second.first) + "~" +
+            enemy.second.second + "~" + (info ? info->name : ""));
     }
 
     // cdxg~id~locked~price: the Glyphs (their text came with glyphinfo).
