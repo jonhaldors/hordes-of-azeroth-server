@@ -76,8 +76,9 @@ class BonkMobAI : public CreatureAI
         // A Bolstering enemy died nearby: more health, damage and size.
         void Bolster();
         // A treasure goblin: it runs from the player and never attacks;
-        // `blinks`: hit, it blinks further away now and then.
-        void SetFleeing(bool blinks);
+        // `blinks`: hit, it blinks further away now and then. It stands
+        // `headStartMs` first, so the hero can close in.
+        void SetFleeing(bool blinks, uint32 headStartMs = 0);
         bool IsFleeing() const { return m_fleeing; }
 
         void MoveInLineOfSight(Unit*) override {}
@@ -114,6 +115,13 @@ class BonkMobAI : public CreatureAI
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);
         void Explode(Player* owner);
+        // Areas around the enemy (a Thunderclap, a Fire Nova, an exploder's
+        // blast): it stops, a red circle shows how far the spell reaches,
+        // and the spell goes off as the circle fills, so a hero outside it
+        // is never hit. `abilityIndex` -1: an exploder's blast.
+        void StartArea(int32 abilityIndex, Player* owner);
+        // While one winds up: true, and the enemy does nothing else.
+        bool UpdateArea(uint32 diff, Player* owner);
         // Casters: a bolt at where the player stands, under a red circle.
         void AimBolt(BonkMobAbility const& ability, SpellEntry const* spellInfo, Player* owner, BonkRun* run);
         void UpdateBolt(uint32 diff, Player* owner);
@@ -146,6 +154,12 @@ class BonkMobAI : public CreatureAI
         bool m_frozen = false;
         bool m_cried = false;               // its aggro reaction was sent, or passed over
         bool m_exploded = false;
+        // An area winding up (StartArea): which ability (-1 the exploder's
+        // blast), until it goes off, and where the enemy stands for it.
+        bool m_areaWinding = false;
+        int32 m_areaAbility = -1;
+        int32 m_areaTimer = 0;
+        float m_areaX = 0.0f, m_areaY = 0.0f;
         int32 m_arriveTimer = 0;           // standing where the run moved it
         enum ChargeState : uint8 { CHARGE_NONE, CHARGE_WINDUP, CHARGE_DASH };
         ChargeState m_chargeState = CHARGE_NONE;
@@ -171,6 +185,7 @@ class BonkMobAI : public CreatureAI
         bool m_blinks = false;
         bool m_blinkPending = false;        // hit: blinks at its next update
         int32 m_fleeTimer = 0;              // to its next step away
+        bool m_fleeStanding = false;        // still at its head start
         int32 m_blinkTimer = 0;             // to its next blink
 
         // Install's nameplate number for the next summon; per thread, as maps

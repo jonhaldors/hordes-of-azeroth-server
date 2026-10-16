@@ -2000,6 +2000,7 @@ void Spell::EffectPersistentAA(SpellEffectIndex effIdx)
         pCaster = m_caster;
 
     float radius = GetSpellRadius(sSpellRadiusStore.LookupEntry(m_spellInfo->EffectRadiusIndex[effIdx]));
+    bool bonkNormalOnly = false;
 
     if (Unit* pUnit = pCaster->ToUnit())
     {
@@ -2008,6 +2009,8 @@ void Spell::EffectPersistentAA(SpellEffectIndex effIdx)
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RADIUS, radius);
             // Vanilla Bonk: area weapons (Consecration) grow with their level.
             radius *= modOwner->GetBonkPlayer()->GetAreaScale(m_spellInfo->Id);
+            // Vanilla Bonk: some weapons' areas hold normal enemies only.
+            bonkNormalOnly = modOwner->GetBonkPlayer()->HoldsNormalEnemiesOnly(m_spellInfo->Id);
         }
     }
 
@@ -2020,6 +2023,7 @@ void Spell::EffectPersistentAA(SpellEffectIndex effIdx)
     }
     // Custom base points carry over to the aura it applies.
     dynObj->SetBasePoints(m_currentBasePoints[effIdx]);
+    dynObj->SetBonkNormalOnly(bonkNormalOnly);
 
     pCaster->AddDynObject(dynObj);
     pCaster->GetMap()->Add(dynObj);

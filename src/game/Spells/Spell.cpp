@@ -4685,6 +4685,18 @@ void Spell::WriteAmmoToPacket(uint32& ammoDisplayId, uint32& ammoInventoryType)
                         ammoInventoryType = pProto->InventoryType;
                     }
                 }
+                // Vanilla Bonk: no ammo, so arrows or bullets as a
+                // creature's (below), and shots still show their missile.
+                else if (pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_GUN)
+                {
+                    ammoDisplayId = 5998;
+                    ammoInventoryType = INVTYPE_AMMO;
+                }
+                else if (pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_BOW || pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW)
+                {
+                    ammoDisplayId = 5996;
+                    ammoInventoryType = INVTYPE_AMMO;
+                }
             }
         }
     }
@@ -7513,6 +7525,11 @@ SpellCastResult Spell::CheckItems()
                 Item *pItem = pCaster->GetWeaponForAttack(m_attackType, true, false);
                 if (!pItem)
                     return SPELL_FAILED_EQUIPPED_ITEM;
+
+                // Vanilla Bonk: bows, guns and crossbows fire without ammo
+                // (user, 2026-10-16).
+                if (pItem->GetProto()->SubClass != ITEM_SUBCLASS_WEAPON_THROWN)
+                    break;
 
                 switch (pItem->GetProto()->SubClass)
                 {

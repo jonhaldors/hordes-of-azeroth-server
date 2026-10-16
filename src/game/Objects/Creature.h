@@ -336,6 +336,10 @@ class Creature : public Unit
         // where they are now (ChaseMovementGenerator).
         void SetBonkEnemy(bool enabled) { m_bonkEnemy = enabled; }
         bool IsBonkEnemy() const { return m_bonkEnemy; }
+        // Vanilla Bonk: a run enemy that is no elite, mini-boss or boss.
+        // Some weapons' areas hold only these (DynamicObjectUpdater).
+        void SetBonkNormal(bool normal) { m_bonkNormal = normal; }
+        bool IsBonkNormal() const { return m_bonkNormal; }
         // Vanilla Bonk: sent to clients as not selectable (no nameplate, no
         // click), while the server still lets spells target it. Set before
         // it enters the world.
@@ -705,6 +709,7 @@ class Creature : public Unit
         float m_baseRunSpeedRate;
         uint32 m_plateId = 0;       // SetPlateId
         bool m_bonkEnemy = false;      // SetBonkEnemy
+        bool m_bonkNormal = false;     // SetBonkNormal
         bool m_clientUnselectable = false;     // SetClientUnselectable
 
     private:

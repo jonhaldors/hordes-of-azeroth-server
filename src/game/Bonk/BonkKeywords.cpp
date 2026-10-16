@@ -37,6 +37,10 @@ namespace
     // enemy passes it on (to the BONK_KEYWORD_SPREAD_TARGETS nearest).
     float const BONK_MAX_HUNTERS_MARK        = 30.0f;
     float const BONK_MARK_SPREAD_RANGE       = 10.0f;
+    // Frost Trap's slow: the damage an enemy it holds takes before its
+    // ranks, and the most it adds.
+    float const BONK_SLOWED_DAMAGE           = 5.0f;
+    float const BONK_MAX_SLOWED_DAMAGE       = 30.0f;
 
     BonkMobAI const* GetRunAI(Unit const* unit)
     {
@@ -55,9 +59,11 @@ void BonkRun::OnWeaponHit(Unit* victim, SpellEntry const* spell)
     if (m_state != STATE_RUNNING || !spell || !GetRunAI(victim))
         return;
 
+    // A pet's family keyword comes from its strikes (BonkRun::PetStrike),
+    // not from every bite.
     OwnedWeapon const* owned = FindOwnedBySpell(spell->Id);
     PendingKeyword pending;
-    if (!owned || !GetWeaponKeyword(*owned, pending))
+    if (!owned || owned->weapon.behavior == BONK_BEHAVIOR_PET || !GetWeaponKeyword(*owned, pending))
         return;
 
     // Not from inside the damage: applied at the next update.
@@ -71,6 +77,7 @@ bool BonkRun::GetWeaponKeyword(OwnedWeapon const& owned, PendingKeyword& keyword
     // the spell that called it).
     BonkWeapon const& weapon = owned.weapon;
     keyword.keyword = weapon.applies;
+    keyword.spellId = weapon.spellId;
     uint32 stacks = weapon.applyStacks;
     if (weapon.behavior == BONK_BEHAVIOR_PET && keyword.keyword == BONK_KEYWORD_NONE)
         if (BonkPetFamily const* family = GetPetFamily())
@@ -117,11 +124,16 @@ void BonkRun::OnKillingBlow(Unit* victim)
         if (stacks == mob->second.end() || stacks->second.empty())
             continue;
         int64 sum = 0;
+        std::map<uint32, uint32> bySpell;
         for (DotStack const& stack : stacks->second)
+        {
             sum += stack.points;
+            ++bySpell[stack.spellId];
+        }
         DyingKeyword& dying = carried[itr.first];
         dying.stacks = uint32(stacks->second.size());
         dying.points = int32(sum / int64(dying.stacks));
+        dying.spellId = std::max_element(bySpell.begin(), bySpell.end(), [](auto const& a, auto const& b) { return a.second < b.second; })->first;
     }
     if (!carried.empty())
         m_dyingKeywords[victim->GetObjectGuid()] = std::move(carried);
@@ -136,12 +148,12 @@ void BonkRun::UpdateKeywords(uint32 diff)
         Map* map = m_player->GetMap();
         for (PendingKeyword const& keyword : pending)
             if (Creature* mob = map->GetCreature(keyword.mob))
-                ApplyKeyword(mob, keyword.keyword, keyword.stacks, keyword.durationMs, keyword.damageScale);
+                ApplyKeyword(mob, keyword.keyword, keyword.stacks, keyword.durationMs, keyword.damageScale, keyword.spellId);
     }
     UpdateDotStacks(diff);
 }
 
-bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs, float damageScale)
+bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs, float damageScale, uint32 sourceSpellId)
 {
     BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
     if (!info || !stacks || !mob || !mob->IsAlive() || !GetRunAI(mob) || !m_player->IsInWorld())
@@ -156,7 +168,7 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
     // applied with.
     if (info->IsDamageOverTime())
     {
-        AddDotStacks(mob, *info, stacks, length, std::max(1, int32(GetKeywordPoints(*info) * damageScale + 0.5f)));
+        AddDotStacks(mob, *info, stacks, length, std::max(1, int32(GetKeywordPoints(*info) * damageScale + 0.5f)), sourceSpellId);
         return true;
     }
 
@@ -173,18 +185,53 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
     return AddKeywordAura(mob, *info, total, length) != nullptr;
 }
 
-void BonkRun::AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points)
+void BonkRun::AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points, uint32 spellId)
 {
     std::vector<DotStack>& list = m_dotStacks[mob->GetObjectGuid()][info.id];
     DotStack stack;
     stack.untilMs = WorldTimer::getMSTime() + std::max(1u, durationMs);
     stack.points = points;
+    stack.spellId = spellId;
     list.insert(list.end(), stacks, stack);
 
     // Past what the client can show, the oldest go first.
     if (list.size() > BONK_MAX_DOT_STACKS)
         list.erase(list.begin(), list.begin() + (list.size() - BONK_MAX_DOT_STACKS));
     SyncDotAura(mob, info, list);
+}
+
+void BonkRun::CreditDamageOverTime(Unit const* victim, uint32 spellId, uint32 damage, std::vector<std::pair<uint32, uint32>>& credits) const
+{
+    BonkKeywordInfo const* info = sBonkMgr.GetKeywordBySpell(spellId);
+    if (!info || !info->IsDamageOverTime())
+        return;
+    auto mob = m_dotStacks.find(victim->GetObjectGuid());
+    if (mob == m_dotStacks.end())
+        return;
+    auto stacks = mob->second.find(info->id);
+    if (stacks == mob->second.end() || stacks->second.empty())
+        return;
+
+    // Each spell's share of the tick is its stacks' share of the damage;
+    // stacks of no spell (`.bonk keyword`) count for the keyword itself.
+    std::map<uint32, int64> bySpell;
+    int64 total = 0;
+    for (DotStack const& stack : stacks->second)
+    {
+        bySpell[stack.spellId ? stack.spellId : spellId] += stack.points;
+        total += stack.points;
+    }
+    if (total <= 0)
+        return;
+    uint32 given = 0;
+    for (auto const& itr : bySpell)
+    {
+        uint32 const share = uint32(int64(damage) * itr.second / total);
+        credits.emplace_back(itr.first, share);
+        given += share;
+    }
+    std::sort(credits.begin(), credits.end(), [](auto const& a, auto const& b) { return a.second > b.second; });
+    credits.front().second += damage - given;
 }
 
 void BonkRun::UpdateDotStacks(uint32 diff)
@@ -388,6 +435,8 @@ float BonkRun::GetKeywordDamageMultiplier(SpellEntry const* spell, Unit const* v
     float multiplier = 1.0f;
     if (GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK))
         multiplier *= 1.0f + GetHuntersMarkBonus() / 100.0f;
+    // Held by the hero's slow (Frost Trap): more damage from everything.
+    multiplier *= 1.0f + GetSlowedBonus(victim) / 100.0f;
 
     // The spell's payoff: more damage for each stack of its keyword on the
     // enemy, or for each different keyword on it. Never for each stack of
@@ -406,6 +455,18 @@ float BonkRun::GetKeywordDamageMultiplier(SpellEntry const* spell, Unit const* v
                 multiplier *= 1.0f + owned->weapon.usesPct * count / 100.0f;
             }
     return multiplier;
+}
+
+float BonkRun::GetSlowedBonus(Unit const* victim) const
+{
+    // The hero's areas that only hold normal enemies and deal no damage
+    // (Frost Trap's slow): an enemy held by one takes more damage. Like
+    // Hunter's Mark, its damage ranks grow it and its upgrade adds to it.
+    float bonus = 0.0f;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY) && owned.weapon.damageFraction <= 0.0f && victim->HasAura(owned.weapon.spellId))
+            bonus = std::max(bonus, BONK_SLOWED_DAMAGE * (1.0f + owned.damageBonus / 100.0f) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_SLOWED));
+    return std::min(bonus, BONK_MAX_SLOWED_DAMAGE);
 }
 
 float BonkRun::GetHuntersMarkBonus() const
@@ -545,7 +606,7 @@ void BonkRun::SpreadKeywords(Creature const* dead)
                 break;
             if (!next->IsAlive() || !GetRunAI(next))
                 continue;
-            AddDotStacks(next, *info, half, info->durationMs, keyword.second.points);
+            AddDotStacks(next, *info, half, info->durationMs, keyword.second.points, keyword.second.spellId);
             ++spread;
         }
     }

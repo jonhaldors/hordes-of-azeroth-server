@@ -210,6 +210,60 @@ bool ChatHandler::HandleBonkSkipCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkGearCommand(char* args)
+{
+    // The gear a run just dropped: wear it for the run, or salvage it.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+    {
+        SendSysMessage("You are not in a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    std::string const choice = args ? args : "";
+    if (choice != "equip" && choice != "salvage")
+    {
+        SendSysMessage("Use .bonk gear equip or .bonk gear salvage.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    std::string error;
+    if (!run->ChooseGear(choice == "equip", error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
+}
+
+bool ChatHandler::HandleBonkCardCommand(char* args)
+{
+    // GM testing aid: take a Darkmoon Card as if a chest gave it.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+    {
+        SendSysMessage("You are not in a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 cardId = 0;
+    if (!ExtractUInt32(&args, cardId))
+        return false;
+
+    std::string error;
+    if (!run->GiveCard(cardId, error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
+}
+
 bool ChatHandler::HandleBonkGodCommand(char* /*args*/)
 {
     // GM testing aid: toggle god mode (damage stops at 1 health). It stays on

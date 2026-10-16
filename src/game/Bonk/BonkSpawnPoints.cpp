@@ -25,10 +25,39 @@ namespace
     float const BONK_SPOT_WATER_DEPTH    = 1.0f;    // deeper water than this is no spot
     float const BONK_SPOT_MAX_DETOUR     = 1.6f;    // the path may be this much longer than the straight line
     float const BONK_SPOT_SNAP           = 3.0f;    // the path must end this close to the spot
+    // Open, level ground: within BONK_SPOT_FLAT_RADIUS the ground stays
+    // within BONK_SPOT_FLAT_RISE of the spot (no ledge on a slope), and it
+    // is no hilltop, standing BONK_SPOT_HILL_RISE over most of the ground
+    // BONK_SPOT_HILL_RADIUS round (user, 2026-10-16: the vendor stood on top
+    // of a Barrens hill; the navmesh lets heroes walk up those).
+    float const BONK_SPOT_FLAT_RADIUS    = 6.0f;
+    float const BONK_SPOT_FLAT_RISE      = 2.5f;
+    float const BONK_SPOT_HILL_RADIUS    = 30.0f;
+    float const BONK_SPOT_HILL_RISE      = 8.0f;
+    uint32 const BONK_SPOT_HILL_SIDES    = 5;       // of 8 directions lower by that much: a hilltop
 
     float DistanceSq(float x1, float y1, float x2, float y2)
     {
         return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2);
+    }
+
+    bool IsOpenGround(Map const* map, float x, float y, float z)
+    {
+        uint32 lowerSides = 0;
+        for (uint32 i = 0; i < 8; ++i)
+        {
+            float const angle = i * M_PI_F / 4.0f;
+            float const cosine = std::cos(angle), sine = std::sin(angle);
+            float const nearZ = map->GetHeight(x + BONK_SPOT_FLAT_RADIUS * cosine, y + BONK_SPOT_FLAT_RADIUS * sine,
+                z + BONK_SPOT_FLAT_RISE * 2.0f, true, BONK_SPOT_FLAT_RISE * 4.0f);
+            if (nearZ <= INVALID_HEIGHT || std::fabs(nearZ - z) > BONK_SPOT_FLAT_RISE)
+                return false;
+            float const farZ = map->GetHeight(x + BONK_SPOT_HILL_RADIUS * cosine, y + BONK_SPOT_HILL_RADIUS * sine,
+                z + BONK_SPOT_GROUND_ABOVE, true, BONK_SPOT_GROUND_DEPTH);
+            if (farZ > INVALID_HEIGHT && farZ < z - BONK_SPOT_HILL_RISE)
+                ++lowerSides;
+        }
+        return lowerSides < BONK_SPOT_HILL_SIDES;
     }
 }
 
@@ -110,6 +139,8 @@ bool BonkSpawnPoints::TryCandidate(Player* hero, uint32 zoneId)
         if (!IsClear(x, y))
             return false;
     }
+    if (!IsOpenGround(map, x, y, z))
+        return false;
 
     BonkSpot spot;
     spot.x = x;

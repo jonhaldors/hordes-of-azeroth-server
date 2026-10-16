@@ -34,6 +34,13 @@ namespace
     // client closes it a little sooner.
     float const BONK_SHOP_RANGE = 15.0f;
 
+    // Darkmoon Satchel: the starter kit's 24-slot bag (migration 20261015280000).
+    uint32 const BONK_ITEM_STARTER_BAG = 900225;
+    // The run's Hearthstone (BonkRunGear.cpp): never outlives its run.
+    uint32 const BONK_ITEM_RUN_HEARTHSTONE = 900230;
+    uint32 const BONK_ITEM_OLD_ARROWS = 900226;     // Darkmoon Arrow, from before ammo went
+    uint32 const BONK_ITEM_OLD_BULLETS = 900227;    // Darkmoon Shot
+
     // 3, 2.5 or 0.25: no trailing zeros for the addon to strip.
     std::string FormatStat(float value)
     {
@@ -85,6 +92,12 @@ void BonkPlayer::OnLogin()
         CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `gold`) VALUES (%u, %u)", accountId, m_player->GetMoney());
     m_goldLoaded = true;
 
+    // Every zone is discovered from the start: no fog on the world map, and
+    // no discovery text or experience (Player::CheckAreaExploreAndOutdoor
+    // finds nothing new), as the core's .explorecheat sets them.
+    for (uint8 i = 0; i < PLAYER_EXPLORED_ZONES_SIZE; ++i)
+        m_player->SetUInt32Value(PLAYER_EXPLORED_ZONES_1 + i, 0xFFFFFFFF);
+
     m_bestStages.clear();
     result = CharacterDatabase.PQuery("SELECT `tier`, `best_stage` FROM `bonk_account_tier` WHERE `account` = %u", accountId);
     if (result)
@@ -113,9 +126,62 @@ void BonkPlayer::OnLogin()
     LoadMastery();
     sBonkQuests.OnLogin(m_player);
 
-    // Runs never survive a logout.
+    // Runs never survive a logout, nor does their gear (a crash mid-run can
+    // leave some behind).
     ResetCharacter();
     m_campCheckPending = true;
+    for (auto const& itr : sBonkMgr.GetGear())
+        if (m_player->HasItemCount(itr.first, 1, true))
+            m_player->DestroyItemCount(itr.first, 255, true, false, true);
+    if (m_player->HasItemCount(BONK_ITEM_RUN_HEARTHSTONE, 1, true))
+        m_player->DestroyItemCount(BONK_ITEM_RUN_HEARTHSTONE, 255, true, false, true);
+    // No ammo in Vanilla Bonk (user, 2026-10-16): shots fire from the bow,
+    // gun or crossbow alone. The Darkmoon Arrows and Shot that characters
+    // were given go, and the ammo slot is emptied.
+    for (uint32 ammo : { BONK_ITEM_OLD_ARROWS, BONK_ITEM_OLD_BULLETS })
+        if (uint32 const count = m_player->GetItemCount(ammo, true))
+            m_player->DestroyItemCount(ammo, count, true, false, true);
+    if (m_player->GetUInt32Value(PLAYER_AMMO_ID))
+        m_player->RemoveAmmo();
+
+    GiveStarterBags();
+    TeachWeaponSkills();
+}
+
+void BonkPlayer::TeachWeaponSkills()
+{
+    // Melee classes never get ranged weapons, Hunters never melee ones, and
+    // Paladins never dual wield (user, 2026-10-16).
+    uint32 const swords = 201, twoHandedSwords = 202, maces = 198, twoHandedMaces = 199, daggers = 1180, staves = 227;
+    uint32 const bows = 264, guns = 266, crossbows = 5011, shield = 9116, dualWield = 674;
+    std::vector<uint32> spells;
+    switch (m_player->GetClass())
+    {
+        case CLASS_WARRIOR: spells = { swords, twoHandedSwords, shield, dualWield }; break;
+        case CLASS_PALADIN: spells = { maces, swords, twoHandedMaces, twoHandedSwords, shield }; break;
+        case CLASS_SHAMAN:  spells = { maces, twoHandedMaces, shield }; break;
+        case CLASS_ROGUE:   spells = { daggers, swords, dualWield }; break;
+        case CLASS_HUNTER:  spells = { bows, guns, crossbows }; break;
+        case CLASS_DRUID:   spells = { staves, twoHandedMaces }; break;
+        case CLASS_MAGE:
+        case CLASS_WARLOCK: spells = { staves, swords, daggers }; break;
+        case CLASS_PRIEST:  spells = { staves, maces }; break;
+        default: break;
+    }
+    for (uint32 spell : spells)
+        if (!m_player->HasSpell(spell))
+            m_player->LearnSpell(spell, false);
+}
+
+void BonkPlayer::GiveStarterBags()
+{
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+        if (!m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            m_player->StoreNewItemInBestSlots(BONK_ITEM_STARTER_BAG, 1);
+
+    uint8 const bankBagSlots = BANK_SLOT_BAG_END - BANK_SLOT_BAG_START;
+    if (m_player->GetBankBagSlotCount() < bankBagSlots)
+        m_player->SetBankBagSlotCount(bankBagSlots);
 }
 
 void BonkPlayer::LoadPurchases()
@@ -1143,6 +1209,8 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
             case BONK_TALENT_SKIP:         bonuses.skips += uint32(value); break;
             case BONK_TALENT_REVIVE:       bonuses.revives += uint32(value); break;
             case BONK_TALENT_START_COINS:  bonuses.startCoins += uint32(value); break;
+            case BONK_TALENT_SPELL_SLOT:   bonuses.spellSlots += uint32(value); break;
+            case BONK_TALENT_PASSIVE_SLOT: bonuses.passiveSlots += uint32(value); break;
             default: break;
         }
     }

@@ -1,6 +1,7 @@
 #include "BonkObjectives.h"
 
 #include "BonkPlayer.h"
+#include "Creature.h"
 #include "GameObject.h"
 #include "Map.h"
 #include "Player.h"
@@ -22,6 +23,10 @@ namespace
     float const BONK_PILLAR_LOWER = 25.0f;
     float const BONK_PILLAR_RAISE = 40.0f;
     uint32 const BONK_PILLAR_CHECK_MS = 500;
+    // A pin on a creature moves once it is this far from where it showed,
+    // and the minimap is pinged on it this often (a ping shows 5 s).
+    float const BONK_FOLLOW_MOVE = 2.0f;
+    uint32 const BONK_FOLLOW_PING_MS = 6000;
 
     float DistanceSq(Player const* hero, BonkObjective const& objective)
     {
@@ -77,6 +82,26 @@ uint32 BonkObjectives::Add(Player* hero, BonkObjectiveKind kind, float x, float 
     return objective.id;
 }
 
+uint32 BonkObjectives::Follow(Player* hero, BonkObjectiveKind kind, Creature const* target, std::string const& label, uint32 seconds,
+    std::string const& icon, std::string const& description)
+{
+    BonkObjective objective;
+    objective.id = m_nextId++;
+    objective.kind = kind;
+    target->GetPosition(objective.x, objective.y, objective.z);
+    objective.label = label;
+    objective.icon = icon;
+    objective.description = description;
+    objective.leftMs = seconds * IN_MILLISECONDS;
+    objective.follows = target->GetObjectGuid();
+    objective.pingMs = BONK_FOLLOW_PING_MS;
+
+    m_objectives.push_back(objective);
+    Send(hero, objective);
+    Ping(hero, objective);
+    return objective.id;
+}
+
 void BonkObjectives::Remove(Player* hero, uint32 id)
 {
     auto const itr = std::find_if(m_objectives.begin(), m_objectives.end(), [id](BonkObjective const& objective) { return objective.id == id; });
@@ -98,12 +123,39 @@ void BonkObjectives::Clear(Player* hero)
 
 std::vector<BonkObjective> BonkObjectives::Update(Player* hero, uint32 diff)
 {
+    // Pins on creatures go where they went, and ping now and then.
+    for (BonkObjective& objective : m_objectives)
+    {
+        if (objective.follows.IsEmpty())
+            continue;
+        Creature const* target = hero->GetMap()->GetCreature(objective.follows);
+        if (!target || !target->IsAlive())
+            continue;
+        float const dx = target->GetPositionX() - objective.x;
+        float const dy = target->GetPositionY() - objective.y;
+        bool const moved = dx * dx + dy * dy > BONK_FOLLOW_MOVE * BONK_FOLLOW_MOVE;
+        if (moved)
+        {
+            target->GetPosition(objective.x, objective.y, objective.z);
+            Send(hero, objective);
+        }
+        if (objective.pingMs > diff)
+            objective.pingMs -= diff;
+        else
+        {
+            objective.pingMs = BONK_FOLLOW_PING_MS;
+            Ping(hero, objective);
+        }
+    }
+
     m_pillarTimer += diff;
     if (m_pillarTimer >= BONK_PILLAR_CHECK_MS)
     {
         m_pillarTimer = 0;
         for (BonkObjective& objective : m_objectives)
         {
+            if (!objective.follows.IsEmpty())
+                continue;
             float const distanceSq = DistanceSq(hero, objective);
             if (!objective.pillar.IsEmpty() && distanceSq < BONK_PILLAR_LOWER * BONK_PILLAR_LOWER)
             {
@@ -159,6 +211,14 @@ void BonkObjectives::Send(Player* hero, BonkObjective const& objective) const
     hero->GetBonkPlayer()->SendAddon("objective~" + std::to_string(objective.id) + "~" + GetBonkObjectiveKindName(objective.kind) + "~" +
         FormatCoordinate(objective.x) + "~" + FormatCoordinate(objective.y) + "~" + std::to_string(hero->GetMapId()) + "~" +
         objective.label + "~" + std::to_string(seconds) + "~" + objective.icon + "~" + objective.description);
+}
+
+void BonkObjectives::Ping(Player* hero, BonkObjective const& objective) const
+{
+    // The addon's rings swell from the pin, on the rim too, and follow it
+    // (the stock MSG_MINIMAP_PING sits on one spot inside the disc, and a
+    // solo client may not show one from a non-party guid).
+    hero->GetBonkPlayer()->SendAddon("objectiveping~" + std::to_string(objective.id));
 }
 
 void BonkObjectives::RaisePillar(Player* hero, BonkObjective& objective) const

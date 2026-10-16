@@ -135,6 +135,11 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
 
         if (((Creature*)target)->IsInEvadeMode())
             return;
+
+        // Vanilla Bonk: a run weapon's area that holds normal enemies only
+        // (Frost Trap's slow) passes elites, mini-bosses and bosses by.
+        if (i_dynobject.IsBonkNormalOnly() && ((Creature*)target)->IsBonkEnemy() && !((Creature*)target)->IsBonkNormal())
+            return;
     }
     else
     {

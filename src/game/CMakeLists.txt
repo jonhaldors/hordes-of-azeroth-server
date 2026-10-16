@@ -31,7 +31,9 @@ set (game_SRCS
     Bonk/BonkPlayerDash.cpp
     Bonk/BonkQuests.cpp
     Bonk/BonkRun.cpp
+    Bonk/BonkRunCards.cpp
     Bonk/BonkRunEvents.cpp
+    Bonk/BonkRunGear.cpp
     Bonk/BonkRunShrines.cpp
     Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp

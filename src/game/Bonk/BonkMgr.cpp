@@ -103,6 +103,9 @@ void BonkMgr::Load()
     LoadWeapons();
     LoadPassives();
     LoadPowerups();
+    LoadCards();
+    LoadItemCards();
+    LoadGear();
     LoadShopTrees();
     LoadUpgrades();
     LoadTalents();
@@ -690,7 +693,7 @@ void BonkMgr::LoadWeapons()
             case BONK_BEHAVIOR_DEMORALIZE:
             case BONK_BEHAVIOR_BUFF:
             case BONK_BEHAVIOR_PET:
-            case BONK_BEHAVIOR_WRATH:   // its beasts' roars deal the damage
+            case BONK_BEHAVIOR_WRATH:   // Pack Leader: its wolf's bites deal the damage
                 damageless = true;
                 break;
             default:
@@ -699,6 +702,11 @@ void BonkMgr::LoadWeapons()
         // A spell that only puts its keyword on enemies (Serpent Sting's
         // Poison, a flare's Mark): its own spell is just its look.
         if (weapon.applies != BONK_KEYWORD_NONE && weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
+            damageless = true;
+        // A ground area that only holds normal enemies and deals no damage
+        // (Frost Trap's slow): its ranks grow the damage they take
+        // (BonkRun::GetSlowedBonus).
+        if (weapon.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY) && weapon.damageFraction <= 0.0f && weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
             damageless = true;
         if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage && !damageless)
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: spell %u of weapon %u has no damage effect; it will use its own values.", weapon.spellId, weapon.id);
@@ -766,6 +774,12 @@ void BonkMgr::LoadWeapons()
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u applies no keyword, so more stacks would do nothing; skipped.", weaponId);
                 continue;
             }
+            if ((upgrade == BONK_SPELL_UPGRADE_SLOWED && !weapon->second.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY)) ||
+                (upgrade == BONK_SPELL_UPGRADE_FRENZY && weapon->second.behavior != BONK_BEHAVIOR_WRATH))
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u neither slows nor howls, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
+                continue;
+            }
             BonkWeaponUpgrade entry;
             entry.upgrade = BonkSpellUpgrade(upgrade);
             entry.step = step;
@@ -793,8 +807,11 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         case BONK_SPELL_UPGRADE_HASTE:      return percent + " Haste for this spell";
         case BONK_SPELL_UPGRADE_DURATION:   return percent + " duration";
         case BONK_SPELL_UPGRADE_MARK:       return percent + " damage taken by marked enemies";
-        case BONK_SPELL_UPGRADE_PET_DAMAGE: return percent + " damage dealt by its " + weapon.GetTargetNoun() + "s";
+        case BONK_SPELL_UPGRADE_PET_DAMAGE:     // Pack Leader has one wolf
+            return percent + " damage dealt by its " + weapon.GetTargetNoun() + (weapon.behavior == BONK_BEHAVIOR_WRATH ? "" : "s");
         case BONK_SPELL_UPGRADE_PET_SIZE:   return percent + " " + weapon.GetTargetNoun() + " size";
+        case BONK_SPELL_UPGRADE_SLOWED:     return percent + " damage taken by enemies it slows";
+        case BONK_SPELL_UPGRADE_FRENZY:     return percent + " damage dealt by frenzied pets";
         case BONK_SPELL_UPGRADE_STACKS:
         {
             BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(weapon.applies);
@@ -933,6 +950,55 @@ void BonkMgr::LoadPowerups()
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk power-ups", uint32(m_powerups.size()));
+}
+
+void BonkMgr::LoadCards()
+{
+    m_cards.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `id`, `name`, `icon`, `description`, `rarity`, `stat1`, `stat1_value`, `stat2`, `stat2_value`, "
+        "`effect`, `value1`, `value2`, `value3`, `cooldown_ms`, `max_copies`, `in_chests` FROM `bonk_card`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk cards.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkCard card;
+        card.id = fields[0].GetUInt32();
+        card.name = fields[1].GetCppString();
+        card.icon = fields[2].GetCppString();
+        card.description = fields[3].GetCppString();
+        uint8 const rarity = fields[4].GetUInt8();
+        uint8 const effect = fields[9].GetUInt8();
+        if (rarity >= MAX_BONK_RARITY || effect >= MAX_BONK_CARD_EFFECT)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_card`: card %u has rarity %u or effect %u out of range, skipped.", card.id, rarity, effect);
+            continue;
+        }
+        card.rarity = BonkRarity(rarity);
+        card.effect = BonkCardEffect(effect);
+        for (uint8 i = 0; i < 2; ++i)
+        {
+            uint8 const stat = fields[5 + 2 * i].GetUInt8();
+            card.stats[i] = stat < MAX_BONK_PASSIVE_EFFECT ? BonkPassiveEffect(stat) : MAX_BONK_PASSIVE_EFFECT;
+            card.statValues[i] = fields[6 + 2 * i].GetFloat();
+        }
+        for (uint8 i = 0; i < 3; ++i)
+            card.values[i] = fields[10 + i].GetFloat();
+        card.cooldownMs = fields[13].GetUInt32();
+        card.maxCopies = fields[14].GetUInt8();
+        card.inChests = fields[15].GetUInt8() != 0;
+
+        m_cards[card.id] = card;
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk cards", uint32(m_cards.size()));
 }
 
 std::string FormatBonkMoney(uint32 copper)
@@ -1347,6 +1413,90 @@ BonkPassive const* BonkMgr::GetPassive(uint32 id) const
     return itr != m_passives.end() ? &itr->second : nullptr;
 }
 
+BonkCard const* BonkMgr::GetCard(uint32 id) const
+{
+    auto itr = m_cards.find(id);
+    return itr != m_cards.end() ? &itr->second : nullptr;
+}
+
+uint32 BonkMgr::GetItemCard(uint32 itemEntry) const
+{
+    auto itr = m_itemCards.find(itemEntry);
+    return itr != m_itemCards.end() ? itr->second : 0;
+}
+
+void BonkMgr::LoadItemCards()
+{
+    m_itemCards.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `card_id` FROM `bonk_item_card`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk item cards.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 const entry = fields[0].GetUInt32();
+        uint32 const cardId = fields[1].GetUInt32();
+        if (!sObjectMgr.GetItemPrototype(entry) || !GetCard(cardId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_item_card`: item %u or card %u does not exist, skipped.", entry, cardId);
+            continue;
+        }
+        m_itemCards[entry] = cardId;
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk item cards", uint32(m_itemCards.size()));
+}
+
+BonkGear const* BonkMgr::GetGear(uint32 entry) const
+{
+    auto itr = m_gear.find(entry);
+    return itr != m_gear.end() ? &itr->second : nullptr;
+}
+
+void BonkMgr::LoadGear()
+{
+    m_gear.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `quality`, `keep_entry` FROM `bonk_gear`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk run gear.");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        BonkGear gear;
+        gear.entry = fields[0].GetUInt32();
+        gear.quality = fields[1].GetUInt8();
+        gear.keepEntry = fields[2].GetUInt32();
+
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(gear.entry);
+        if (!proto)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_gear`: item %u does not exist, skipped.", gear.entry);
+            continue;
+        }
+        if (gear.keepEntry && !sObjectMgr.GetItemPrototype(gear.keepEntry))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_gear`: item %u keeps as missing item %u; it can't be extracted.", gear.entry, gear.keepEntry);
+            gear.keepEntry = 0;
+        }
+        gear.allowableClass = uint32(proto->AllowableClass);
+
+        m_gear[gear.entry] = gear;
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk run gear", uint32(m_gear.size()));
+}
+
 std::string BonkMgr::DescribePassive(BonkPassive const& passive) const
 {
     for (auto const& itr : m_passives)
@@ -1425,6 +1575,46 @@ void BonkMgr::LoadPetFamilies()
     if (!m_petFamilies.count(BONK_PET_FAMILY_CAT))
         sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_family`: the default family %u (Cat) is missing; Call Pet summons nothing.", BONK_PET_FAMILY_CAT);
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk pet families", uint32(m_petFamilies.size()));
+
+    LoadPetAbilities();
+}
+
+void BonkMgr::LoadPetAbilities()
+{
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `family`, `spell_id`, `kind`, `cooldown_ms`, `damage`, `stacks`, `value` FROM `bonk_pet_ability`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk pet abilities: pets only bite.");
+        return;
+    }
+
+    uint32 count = 0;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 const familyId = fields[0].GetUInt32();
+        BonkPetAbility ability;
+        ability.spellId = fields[1].GetUInt32();
+        uint8 const kind = fields[2].GetUInt8();
+        ability.cooldownMs = fields[3].GetUInt32();
+        ability.damage = std::max(0.0f, fields[4].GetFloat());
+        ability.stacks = fields[5].GetUInt8();
+        ability.value = fields[6].GetFloat();
+
+        auto family = m_petFamilies.find(familyId);
+        if (family == m_petFamilies.end() || kind >= MAX_BONK_PET_ABILITY_KIND || !sSpellMgr.GetSpellEntry(ability.spellId) || ability.cooldownMs < 500)
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_ability`: family %u, spell %u, kind %u is not valid (unknown family, kind or spell, or a cooldown under 500 ms); skipped.",
+                familyId, ability.spellId, uint32(kind));
+            continue;
+        }
+        ability.kind = BonkPetAbilityKind(kind);
+        family->second.abilities.push_back(ability);
+        ++count;
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk pet abilities", count);
 }
 
 BonkPetFamily const* BonkMgr::GetPetFamily(uint32 id) const

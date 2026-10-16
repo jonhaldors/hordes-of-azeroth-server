@@ -31,7 +31,7 @@ uint32 const BONK_GO_CHEST      = 900001;   // costs Valor to open
 uint32 const BONK_GO_CHEST_FREE = 900002;   // dropped by elites and bosses
 uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
 uint32 const BONK_GO_SHARD      = 900007;   // a dropped Talent Shard, taken by walking over it
-uint32 const BONK_GO_HEAL       = 900008;   // a dropped Turkey Leg, eaten by walking over it while hurt
+uint32 const BONK_GO_HEAL       = 900008;   // the Turkey Leg as a game object (unused since 2026-10-16: BONK_HEAL_PICKUP)
 
 // Experience orbs dropped by kills (creature templates, only their looks are
 // used, jewels from the client patch, tools/telegraphs/Pickups.cs): blue for
@@ -43,8 +43,11 @@ uint32 const BONK_ORB_HUGE  = 900102;
 uint32 const BONK_ORB_GRAND = 900103;
 // An invisible marker where a Sanguine enemy died; its pool's look is an aura on it.
 uint32 const BONK_SANGUINE_POOL = 900110;
-// An invisible marker under a turkey leg or Talent Shard; its highlight is an aura on it.
+// An invisible marker under a Talent Shard or a gear drop; its highlight is an aura on it.
 uint32 const BONK_PICKUP_MARKER = 900111;
+// A dropped Turkey Leg (display 17994, the food doodad as a creature): it
+// flies to a hurt hero and is eaten on touch, as experience orbs are taken.
+uint32 const BONK_HEAL_PICKUP = 900116;
 // A hero's bolt in flight, wearing its spell's missile model (bonk_projectile);
 // the spells it casts on enemies it touches are the hero's.
 uint32 const BONK_PROJECTILE = 900113;
@@ -298,6 +301,7 @@ enum BonkWeaponFlags : uint32
     BONK_WEAPON_FLAG_KNOCKBACK        = 0x08,  // knocks the enemies it hits away from the hero
     BONK_WEAPON_FLAG_EXPLODE_ON_DEATH = 0x10,  // MARK: alt bursts where a marked enemy dies, and the mark moves on
     BONK_WEAPON_FLAG_KILL_WITH_ALT    = 0x20,  // kill_below_pct kills are cast with alt
+    BONK_WEAPON_FLAG_NORMAL_ONLY      = 0x40,  // its ground area holds normal enemies only, not elites or bosses (Frost Trap's slow)
 };
 
 float const BONK_CLEAVE_RADIUS    = 6.0f;   // a cleave or pierce hits enemies this close to its target
@@ -339,11 +343,13 @@ enum BonkSpellUpgrade : uint8
     BONK_SPELL_UPGRADE_PET_DAMAGE   = 7,      // % more damage from its beasts
     BONK_SPELL_UPGRADE_PET_SIZE     = 8,      // % bigger beasts
     BONK_SPELL_UPGRADE_STACKS       = 9,      // more stacks of its keyword on every hit or tick
+    BONK_SPELL_UPGRADE_SLOWED       = 10,     // % more damage taken by enemies it slows
+    BONK_SPELL_UPGRADE_FRENZY       = 11,     // % more damage from the pets its howl frenzies
     MAX_BONK_SPELL_UPGRADE
 };
 
 // The most a spell can gain of each upgrade, 0 = no cap.
-float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f };
+float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f, 15.0f, 0.0f };
 // Spell cleave strikes this many enemies near each target, within BONK_CLEAVE_RADIUS.
 uint32 const BONK_SPELL_CLEAVE_TARGETS = 2;
 
@@ -401,7 +407,7 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_BURST         = 18,   // value more shots at each target, quickly after the first
     BONK_BEHAVIOR_TRAP          = 19,   // a trap (value: its gameobject) that goes off when an enemy steps on it; range is its radius
     BONK_BEHAVIOR_PET           = 20,   // beasts that fight for the hero: a hit's damage every tick_ms, value their size
-    BONK_BEHAVIOR_WRATH         = 21,   // spectral beasts (value: their creature) leap into the largest groups and roar; pets frenzy for duration_ms
+    BONK_BEHAVIOR_WRATH         = 21,   // Pack Leader: one wolf (value: its creature) fights for the hero, a hit's damage every tick_ms; every cooldown it howls and the hero's other pets frenzy for duration_ms
     MAX_BONK_BEHAVIOR
 };
 
@@ -527,6 +533,8 @@ struct BonkWeapon
             return "trap";
         if (behavior == BONK_BEHAVIOR_PET)
             return "beast";
+        if (behavior == BONK_BEHAVIOR_WRATH)
+            return "wolf";
         return target == BONK_TARGET_GROUND ? "pack" : "target";
     }
     // `count` of them, for tooltips: "3 targets", "lands on 2 packs".
@@ -551,6 +559,26 @@ float const BONK_SUMMON_POWER_SHARE  = 0.6f;
 // with the Stable Master.
 uint32 const BONK_PET_FAMILY_CAT = 1;
 
+// What a pet family does besides biting, by itself (bonk_pet_ability): its
+// own 1.12 pet skills.
+enum BonkPetAbilityKind : uint8
+{
+    BONK_PET_ABILITY_STRIKE = 0,    // its spell at its prey in reach: `damage` bites' worth, `stacks` of the family's keyword
+    BONK_PET_ABILITY_DASH   = 1,    // its spell on itself (a speed buff) for `value` ms while its prey is far
+    BONK_PET_ABILITY_POUNCE = 2,    // a new prey at least `value` yd off: it leaps there and its spell hits for `damage` bites' worth
+    MAX_BONK_PET_ABILITY_KIND
+};
+
+struct BonkPetAbility
+{
+    uint32 spellId = 0;
+    BonkPetAbilityKind kind = BONK_PET_ABILITY_STRIKE;
+    uint32 cooldownMs = 0;          // before Haste
+    float damage = 0.0f;            // bites' worth
+    uint8 stacks = 0;               // of the family's keyword
+    float value = 0.0f;             // the kind's own
+};
+
 struct BonkPetFamily
 {
     uint32 id = 0;
@@ -558,10 +586,12 @@ struct BonkPetFamily
     uint32 entry = 0;               // its creature
     float scale = 1.0f;             // its size before summon size and Area
     // Between bites, before Haste. Its spell's damage a second stays the
-    // same, so a faster family bites more often for less.
+    // same, shared between its bites and its strikes, so a faster family
+    // bites more often for less.
     uint32 attackMs = 1500;
-    BonkKeyword applies = BONK_KEYWORD_NONE;    // put on every enemy it bites
+    BonkKeyword applies = BONK_KEYWORD_NONE;    // put on enemies by its strikes (their stacks)
     uint8 applyStacks = 0;
+    std::vector<BonkPetAbility> abilities;
 };
 
 // The hero's stats. Every source adds into one total per stat: worn gear,
@@ -718,6 +748,8 @@ enum BonkTalentEffect : uint8
     BONK_TALENT_REVIVE       = 6,   // revives per run
     BONK_TALENT_START_COINS  = 7,   // Valor at the start of a run
     BONK_TALENT_SKIP         = 8,   // upgrade choices that can be skipped per run, for a little Valor
+    BONK_TALENT_SPELL_SLOT   = 9,   // spell slots in a run beyond the starting ones
+    BONK_TALENT_PASSIVE_SLOT = 10,  // passive slots in a run beyond the starting ones
     MAX_BONK_TALENT_EFFECT
 };
 
@@ -753,6 +785,8 @@ struct BonkRunBonuses
     uint32 skips = 0;
     uint32 revives = 0;
     uint32 startCoins = 0;
+    uint32 spellSlots = 0;          // beyond the starting ones
+    uint32 passiveSlots = 0;
 };
 
 // Camp gear: what one item adds to each stat while worn.
@@ -781,6 +815,65 @@ struct BonkItemSet
 struct BonkGearTotals
 {
     float passives[MAX_BONK_PASSIVE_EFFECT] = {};
+};
+
+// Darkmoon Cards (Core loop v2): run-only items that stack, offered by
+// chests (BonkRunCards.cpp). A card adds up to two stats, like a passive's
+// rank, and may carry one effect. Copies add their stats and amounts;
+// chances stack with diminishing returns (1 - (1 - chance)^copies).
+enum BonkCardEffect : uint8
+{
+    BONK_CARD_NONE          = 0,    // stats only
+    BONK_CARD_HEALTHSTONE   = 1,    // below value1 % health, heal value2 %; cooldown, each further copy value3 % shorter
+    BONK_CARD_BANDAGE       = 2,    // after value2 s without a hit, regain value1 % of max health a second
+    BONK_CARD_CAMPFIRE      = 3,    // after value2 s standing still, regain value1 % of max health a second
+    BONK_CARD_JERKY         = 4,    // turkey legs drop value1 % more often and heal value2 % more
+    BONK_CARD_CRIT_HEAL     = 5,    // a crit has value1 % chance to heal value2 %; at most value3 % a second
+    BONK_CARD_OVERHEAL      = 6,    // healing past full health becomes Shield, up to value1 % of max health
+    BONK_CARD_SHIELD_NOVA   = 7,    // the Shield breaking scorches enemies within value2 yd for value1 times a normal enemy's health
+    BONK_CARD_THORNS        = 8,    // an enemy that hits the hero takes value1 % of the hit back
+    BONK_CARD_HIT_IMMUNE    = 9,    // after a hit, immune for value1 ms; cooldown, each further copy value3 % shorter
+    BONK_CARD_SWIFTNESS     = 10,   // below value1 % health, +value2 % movement speed for value3 ms; cooldown
+    BONK_CARD_SOULSTONE     = 11,   // cheats death once a copy: back at value1 % health
+    BONK_CARD_FIRE_BURST    = 12,   // value1 % chance a hit erupts: value2 times the hit to enemies within value3 yd of the target
+    BONK_CARD_ECHO          = 13,   // value1 % chance a spell goes off again
+    BONK_CARD_CHAIN         = 14,   // value1 % chance a hit calls lightning: value2 times the hit, jumping to value3 enemies
+    BONK_CARD_DEATH_RAY     = 15,   // value1 % chance a hit deals value2 times its damage
+    BONK_CARD_KILL_POWER    = 16,   // +value1 % Power a kill, up to value2 % a copy
+    BONK_CARD_POWER_SURGE   = 17,   // +value1 % Power for value2 ms, every cooldown
+    BONK_CARD_BIG_GAME      = 18,   // +value1 % damage to elites, mini-bosses and bosses
+    BONK_CARD_VALOR         = 19,   // +value1 % Valor
+    BONK_CARD_MAGNET        = 20,   // every cooldown (each further copy value3 % shorter), every XP orb flies in
+    BONK_CARD_FREE_CHEST    = 21,   // value1 % chance a chest costs nothing
+    BONK_CARD_SHADOW_BURST  = 22,   // value1 % chance a hit unleashes shadow: value2 times the hit within value3 yd of the target, a tenth of it healing the hero
+    MAX_BONK_CARD_EFFECT
+};
+
+struct BonkCard
+{
+    uint32 id = 0;
+    std::string name;
+    std::string icon;
+    std::string description;
+    BonkRarity rarity = BONK_RARITY_COMMON;
+    BonkPassiveEffect stats[2] = { MAX_BONK_PASSIVE_EFFECT, MAX_BONK_PASSIVE_EFFECT };     // MAX: none
+    float statValues[2] = {};
+    BonkCardEffect effect = BONK_CARD_NONE;
+    float values[3] = {};
+    uint32 cooldownMs = 0;
+    uint8 maxCopies = 0;            // chests stop offering it at this many; 0: no cap
+    bool inChests = true;           // false: only worn gear gives it (a legendary's effect, bonk_item_card)
+};
+
+// Gear that drops in runs (Core loop v2, phase D; BonkRunGear.cpp): worn for
+// the run; greens and blues turn into gold at its end, the extractable ones
+// go home as `keepEntry` by mail.
+struct BonkGear
+{
+    uint32 entry = 0;               // item_template: the run copy
+    uint8 quality = 2;              // ItemQualities: 2 green, 3 blue, 4 epic, 5 legendary
+    uint32 keepEntry = 0;           // the permanent copy; 0: not extractable
+    uint32 allowableClass = 0;      // class mask, from the item
 };
 
 class BonkMgr
@@ -822,6 +915,17 @@ class BonkMgr
 
         std::vector<BonkPowerup> const& GetPowerups() const { return m_powerups; }
 
+        BonkCard const* GetCard(uint32 id) const;
+        std::map<uint32, BonkCard> const& GetCards() const { return m_cards; }
+
+        // The card an item's wearer holds while it is worn (a legendary's
+        // effect), 0 for none.
+        uint32 GetItemCard(uint32 itemEntry) const;
+
+        // Run gear by its run copy's entry.
+        BonkGear const* GetGear(uint32 entry) const;
+        std::map<uint32, BonkGear> const& GetGear() const { return m_gear; }
+
         std::map<uint32, BonkShopTree> const& GetShopTrees() const { return m_shopTrees; }
 
         BonkUpgrade const* GetUpgrade(uint32 id) const;
@@ -854,6 +958,9 @@ class BonkMgr
         void LoadWeapons();
         void LoadPassives();
         void LoadPowerups();
+        void LoadCards();
+        void LoadItemCards();
+        void LoadGear();
         void LoadShopTrees();
         void LoadUpgrades();
         void LoadTalents();
@@ -863,6 +970,7 @@ class BonkMgr
         void LoadWaves();
         void LoadScaling();
         void LoadPetFamilies();
+        void LoadPetAbilities();
 
         // Drops tree slots and requirements that don't fit, with a log line each.
         template <class Entry>
@@ -875,6 +983,9 @@ class BonkMgr
         std::map<uint32, BonkProjectileInfo> m_projectiles;     // by spell id
         std::map<uint32, BonkPassive> m_passives;
         std::vector<BonkPowerup> m_powerups;
+        std::map<uint32, BonkCard> m_cards;
+        std::map<uint32, uint32> m_itemCards;   // item entry -> card id
+        std::map<uint32, BonkGear> m_gear;
         std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;
         std::map<uint32, BonkTalent> m_talents;

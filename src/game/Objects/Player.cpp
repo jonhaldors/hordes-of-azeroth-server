@@ -9698,14 +9698,17 @@ InventoryResult Player::CanEquipItem(uint8 slot, uint16& dest, ItemPrototype con
             // - It will no longer be possible to swap any equipment while stunned.
             // May be here should be more stronger checks; STUNNED checked
             // ROOT, CONFUSED, DISTRACTED, FLEEING this needs to be checked.
+            // Vanilla Bonk: gear a run puts on or back goes on whatever the
+            // hero is doing (they are always in combat in a run).
+            bool const runGear = m_bonkPlayer && m_bonkPlayer->IsEquippingGear();
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
-            if (HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_PENDING_STUNNED))
+            if (!runGear && HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_PENDING_STUNNED))
                 return EQUIP_ERR_YOU_ARE_STUNNED;
 #endif
 
             // do not allow equipping gear except weapons, offhands, projectiles, relics in
             // - combat
-            if (!pProto->CanChangeEquipStateInCombat())
+            if (!pProto->CanChangeEquipStateInCombat() && !runGear)
             {
                 if (IsInCombat())
                     return EQUIP_ERR_NOT_IN_COMBAT;
@@ -9719,7 +9722,7 @@ InventoryResult Player::CanEquipItem(uint8 slot, uint16& dest, ItemPrototype con
                 return EQUIP_ERR_CANT_DO_RIGHT_NOW;
 #endif
 
-            if (IsInCombat() && pProto->Class == ITEM_CLASS_WEAPON && m_weaponChangeTimer != 0)
+            if (IsInCombat() && pProto->Class == ITEM_CLASS_WEAPON && m_weaponChangeTimer != 0 && !runGear)
                 return EQUIP_ERR_CANT_DO_RIGHT_NOW;         // maybe exist better err
 
             // Check is possibly not in vanilla.
@@ -9829,7 +9832,8 @@ InventoryResult Player::CanUnequipItem(uint16 pos, bool swap) const
 #endif
 
     // do not allow unequipping gear except weapons, offhands, projectiles, relics in combat
-    if (!pProto->CanChangeEquipStateInCombat())
+    // (Vanilla Bonk: unless a run is swapping gear, BonkPlayer::IsEquippingGear)
+    if (!pProto->CanChangeEquipStateInCombat() && !(m_bonkPlayer && m_bonkPlayer->IsEquippingGear()))
     {
         if (IsInCombat())
             return EQUIP_ERR_NOT_IN_COMBAT;

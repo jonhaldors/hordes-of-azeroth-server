@@ -31,9 +31,13 @@ struct BonkRunStats
     };
 
     std::map<uint32, Spell> bySpell;            // spell id (0 = melee) -> damage and killing blows
+    // spell id -> the damage over time it put on (the keyword's spell id) ->
+    // that part of its damage and killing blows (already in bySpell too)
+    std::map<uint32, std::map<uint32, Spell>> dotBySpell;
     uint64 damageTaken = 0;
     uint32 kindKills[MAX_BONK_SPAWN_KIND] = {};
     std::map<ObjectGuid, uint32> killingSpells; // enemy -> spell of the blow that killed it, until counted
+    std::map<ObjectGuid, uint32> killingDots;   // enemy -> keyword spell, when that blow was its damage over time
 };
 
 // A weapon the run owned, for the results screen.
@@ -58,7 +62,9 @@ namespace BonkStats
     // The spells a weapon deals damage with: its own, its alt spell and the
     // spells either of them triggers.
     std::vector<uint32> GetWeaponSpells(BonkWeapon const& weapon);
-    // sum~damageTaken~elites~minibosses~bosses, sumw~icon~name~level~max~evolved~damage~kills..., sumend
+    // sum~damageTaken~elites~minibosses~bosses, sumw~icon~name~level~max~evolved~damage~kills
+    // (each followed by sums~icon~name~damage~kills for the damage over time
+    // in it)..., sumend
     void SendSummary(Player* player, std::vector<BonkSummaryWeapon> const& weapons);
 
     // boss~name~healthPercent~kind, or boss~ when no boss or mini-boss is up.

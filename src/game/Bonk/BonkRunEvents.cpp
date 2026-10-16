@@ -52,7 +52,9 @@ namespace
     float const BONK_GOBLIN_SCALE            = 1.2f;
     uint32 const BONK_GOBLIN_GUARDS          = 2;       // on the hardest difficulty
     float const BONK_GOBLIN_GUARD_SPREAD     = 4.0f;
-    char const* const BONK_GOBLIN_ICON       = "INV_Misc_Coin_01";
+    uint32 const BONK_GOBLIN_HEAD_START_MS   = 2000;    // it stands this long before it runs
+    // A skull on its nameplate and its minimap pin (user, 2026-10-16: hard to find).
+    char const* const BONK_GOBLIN_ICON       = "INV_Misc_Bone_HumanSkull_01";
 
     uint32 const BONK_BOUNTY_SECONDS         = 60;
     float const BONK_BOUNTY_MIN_DISTANCE     = 35.0f;
@@ -183,7 +185,7 @@ bool BonkRun::SpawnTreasureGoblin()
     if (!mob)
         return false;
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
-        ai->SetFleeing(step >= 1);
+        ai->SetFleeing(step >= 1, BONK_GOBLIN_HEAD_START_MS);
 
     // The hardest difficulty: elites at its side.
     if (step >= 2)
@@ -198,6 +200,9 @@ bool BonkRun::SpawnTreasureGoblin()
             }
 
     StartMiniEventTarget(mob, "Treasure Goblin", BONK_GOBLIN_SECONDS);
+    // Pinned on the minimap wherever it runs, and the minimap pinged on it.
+    m_miniEvent.objectiveId = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Treasure Goblin", BONK_GOBLIN_SECONDS,
+        BONK_GOBLIN_ICON, "Catch it before it gets away: Valor and a chest.");
     m_player->GetBonkPlayer()->Notify("A treasure goblin! Catch it before it gets away!");
     return true;
 }

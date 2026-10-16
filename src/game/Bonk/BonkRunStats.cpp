@@ -63,6 +63,12 @@ uint32 BonkStats::CountKill(ObjectGuid player, ObjectGuid enemy, BonkSpawnKind k
         stats.killingSpells.erase(itr);
     }
     ++stats.bySpell[spellId].kills;
+    auto dot = stats.killingDots.find(enemy);
+    if (dot != stats.killingDots.end())
+    {
+        ++stats.dotBySpell[spellId][dot->second].kills;
+        stats.killingDots.erase(dot);
+    }
     return spellId;
 }
 
@@ -126,6 +132,28 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
         }
         bonk->SendAddon("sumw~" + weapon.icon + "~" + weapon.name + "~" + std::to_string(weapon.level) + "~" + std::to_string(weapon.maxLevel) + "~" +
             (weapon.evolved ? "1" : "0") + "~" + std::to_string(damage) + "~" + std::to_string(kills));
+
+        // The damage over time it put on, part of the row above.
+        std::map<uint32, BonkRunStats::Spell> dots;
+        for (uint32 spellId : spellIds)
+        {
+            auto itr = stats.dotBySpell.find(spellId);
+            if (itr == stats.dotBySpell.end())
+                continue;
+            for (auto const& dot : itr->second)
+            {
+                dots[dot.first].damage += dot.second.damage;
+                dots[dot.first].kills += dot.second.kills;
+            }
+        }
+        for (auto const& dot : dots)
+        {
+            BonkKeywordInfo const* keyword = sBonkMgr.GetKeywordBySpell(dot.first);
+            SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(dot.first);
+            std::string const icon = keyword && !keyword->icon.empty() ? keyword->icon : "INV_Misc_QuestionMark";
+            std::string const name = keyword ? keyword->name : spellInfo ? spellInfo->SpellName[0] : "Spell " + std::to_string(dot.first);
+            bonk->SendAddon("sums~" + icon + "~" + name + "~" + std::to_string(dot.second.damage) + "~" + std::to_string(dot.second.kills));
+        }
     }
 
     // The hero's own weapon swings, keywords (Burning, Bleed, Poison) by
@@ -234,9 +262,20 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (!victim->IsCreature() || !InRun(player))
             return;
 
+        // Damage over time counts for the spells that put its stacks on
+        // (Serpent Sting's Poison, the cat's Bleed), shared by their damage;
+        // a kill for the largest share.
+        BonkRun* run = player->GetBonkPlayer()->GetRun();
+        std::vector<std::pair<uint32, uint32>> credits;
+        if (spellProto)
+            run->CreditDamageOverTime(victim, spellProto->Id, dealt, credits);
+        // The keyword's spell, when this was damage over time a spell put on.
+        uint32 const dotSpellId = !credits.empty() ? spellProto->Id : 0;
+        if (credits.empty())
+            credits.emplace_back(spellProto ? spellProto->Id : 0, dealt);
+
         // Keywords: the spell's goes on the enemy; a killing blow notes its
         // damage over time stacks, to spread when it dies.
-        BonkRun* run = player->GetBonkPlayer()->GetRun();
         if (damage >= health)
             run->OnKillingBlow(victim);
         else
@@ -244,13 +283,25 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         // A frenzied pet's bite (a swing, never its own cleave) strikes on.
         if (owner && swing)
             run->OnPetBite(attacker->ToCreature(), victim);
+        // The hero's own hits and spells (their projectiles too) set off
+        // Darkmoon Cards; summons' bites and abilities never do.
+        if (!owner || attacker->GetEntry() == BONK_PROJECTILE)
+            run->OnHeroHit(victim, dealt, spellProto);
 
-        uint32 const spellId = spellProto ? spellProto->Id : 0;
         std::lock_guard<std::mutex> guard(s_lock);
         BonkRunStats& stats = s_stats[player->GetObjectGuid()];
-        stats.bySpell[spellId].damage += dealt;
+        for (auto const& credit : credits)
+        {
+            stats.bySpell[credit.first].damage += credit.second;
+            if (dotSpellId && credit.first != dotSpellId)
+                stats.dotBySpell[credit.first][dotSpellId].damage += credit.second;
+        }
         if (damage >= health)
-            stats.killingSpells[victim->GetObjectGuid()] = spellId;
+        {
+            stats.killingSpells[victim->GetObjectGuid()] = credits.front().first;
+            if (dotSpellId && credits.front().first != dotSpellId)
+                stats.killingDots[victim->GetObjectGuid()] = dotSpellId;
+        }
     }
     else if (Player* player = victim->ToPlayer())
     {

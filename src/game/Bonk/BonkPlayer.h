@@ -122,6 +122,10 @@ class BonkPlayer
         // Set while a run fires an auto-weapon, so the cast takes no ammo.
         void SetFiringWeapon(bool firing) { m_firingWeapon = firing; }
         bool IsFiringWeapon() const { return m_firingWeapon; }
+        // Set while a run puts gear on or back: a run hero is always in
+        // combat, where 1.12 allows no armor changes (Player::CanEquipItem).
+        void SetEquippingGear(bool equipping) { m_equippingGear = equipping; }
+        bool IsEquippingGear() const { return m_equippingGear; }
         // How a run's weapons change their spells, by spell id. Spell reads
         // these whenever the player casts one; players cast no spells of
         // their own.
@@ -134,6 +138,7 @@ class BonkPlayer
             int32 weaponDamage = 0;     // replaces a weapon-damage spell's swing, 0 = keep it
             uint32 tickMs = 0;          // damage over time ticks this often, 0 = the spell's own rate
             float tickScale = 1.0f;     // then multiplies the tick interval (Haste)
+            bool normalEnemiesOnly = false;     // its ground area holds normal enemies only (DynamicObject)
         };
         SpellTweak& TweakSpell(uint32 spellId) { return m_spellTweaks[spellId]; }
         void ClearSpellTweaks() { m_spellTweaks.clear(); }
@@ -146,6 +151,11 @@ class BonkPlayer
         {
             SpellTweak const* tweak = FindSpellTweak(spellId);
             return tweak ? tweak->chainBonus : 0;
+        }
+        bool HoldsNormalEnemiesOnly(uint32 spellId) const
+        {
+            SpellTweak const* tweak = FindSpellTweak(spellId);
+            return tweak && tweak->normalEnemiesOnly;
         }
         int32 AdjustDuration(uint32 spellId, int32 duration) const
         {
@@ -228,6 +238,12 @@ class BonkPlayer
 
         void LoadPurchases();
         void LoadMastery();
+        // Fills empty bag slots with Darkmoon Satchels and opens every bank
+        // bag slot, for characters made before the starter kit carried them.
+        void GiveStarterBags();
+        // The weapon skills for the class's weapons (Feature Plan, Weapons),
+        // which vanilla only partly teaches at level 1.
+        void TeachWeaponSkills();
         std::string GetClassName() const;
         bool Spend(uint32 copper, std::string& message);
         bool SpendShards(uint32 count, std::string& message);
@@ -246,6 +262,7 @@ class BonkPlayer
         BonkTelegraphs m_previewTelegraphs;     // PreviewTelegraph
         bool m_addonReady = false;
         bool m_firingWeapon = false;
+        bool m_equippingGear = false;
         std::map<uint32, SpellTweak> m_spellTweaks;
         SpellTweak const* FindSpellTweak(uint32 spellId) const
         {

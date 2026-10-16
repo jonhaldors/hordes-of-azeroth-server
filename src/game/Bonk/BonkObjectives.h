@@ -7,7 +7,8 @@
  * BONK_GO_OBJECTIVE + kind, so their looks are world data). The pillar only
  * guides: it goes once the hero is close (the hero would stand inside it)
  * and comes back if they walk away. The addon pins each objective on the
- * minimap and the world map:
+ * minimap and the world map ("objectiveping~id" rings one, for a creature
+ * on the move):
  * "objective~id~kind~x~y~mapId~label~seconds~icon~description" when one
  * appears (seconds: how long until it leaves, 0 = it stays; icon: its own
  * pin, empty for the kind's; description: what it does, for the pin's
@@ -24,6 +25,7 @@
 #include <string>
 #include <vector>
 
+class Creature;
 class Player;
 
 enum BonkObjectiveKind : uint8
@@ -49,6 +51,10 @@ struct BonkObjective
     std::string description;    // what it does, one line
     uint32 leftMs = 0;          // until it leaves; 0 = it stays
     ObjectGuid pillar;          // empty while the hero is close
+    // A creature it marks (a treasure goblin): no pillar, and the pin moves
+    // with it; the minimap is pinged where it is now and then.
+    ObjectGuid follows;
+    uint32 pingMs = 0;          // to the next ping
 };
 
 class BonkObjectives
@@ -56,6 +62,10 @@ class BonkObjectives
     public:
         // Marks a spot; returns the objective's id.
         uint32 Add(Player* hero, BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds,
+            std::string const& icon = "", std::string const& description = "");
+        // Marks a creature on the move; returns the objective's id. The
+        // minimap is pinged on it at once.
+        uint32 Follow(Player* hero, BonkObjectiveKind kind, Creature const* target, std::string const& label, uint32 seconds,
             std::string const& icon = "", std::string const& description = "");
         // Takes one away (gone from the world, the map and the minimap).
         void Remove(Player* hero, uint32 id);
@@ -78,6 +88,8 @@ class BonkObjectives
         void Send(Player* hero, BonkObjective const& objective) const;
         void Despawn(Player* hero, BonkObjective const& objective) const;
         void RaisePillar(Player* hero, BonkObjective& objective) const;
+        // Rings swell from its pin on the minimap: "objectiveping~id".
+        void Ping(Player* hero, BonkObjective const& objective) const;
 
         std::vector<BonkObjective> m_objectives;
         uint32 m_nextId = 1;

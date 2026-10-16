@@ -30,6 +30,8 @@
 #include "SpellAuras.h"
 #include "GameObject.h"
 #include "Map.h"
+#include "Bonk/BonkPlayer.h"
+#include "Bonk/BonkRun.h"
 
 using namespace Spells;
 
@@ -83,6 +85,12 @@ void WorldSession::HandleUseItemOpcode(WorldPackets::Spell::UseItem const& packe
         pUser->SendEquipError(EQUIP_ERR_ITEM_NOT_FOUND, pItem, nullptr);
         return;
     }
+
+    // Vanilla Bonk: a run's own items (the Hearthstone's extraction ring)
+    // work without casting their spell.
+    if (BonkRun* run = pUser->GetBonkPlayer()->GetRun())
+        if (run->UseItem(pItem))
+            return;
 
     if (pUser->IsInCombat())
     {

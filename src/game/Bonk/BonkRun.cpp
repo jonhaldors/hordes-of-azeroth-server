@@ -71,7 +71,7 @@ namespace
     // Leech: each hit has its % chance to heal this % of max health, at most
     // the cap's % a second, whatever the swarm hit at once.
     float const BONK_LEECH_HEAL            = 1.0f;
-    float const BONK_LEECH_CAP             = 2.0f;
+    float const BONK_LEECH_CAP             = 3.0f;
     float const BONK_SHARD_PICKUP_RANGE    = 3.0f;
     float const BONK_SHARD_SCATTER         = 2.0f;     // lands this far from where the enemy died
     uint32 const BONK_SHARD_CHECK_MS       = 250;
@@ -107,17 +107,19 @@ namespace
     // "Ahead of the player": this far either side of their heading and this
     // close. At most this share of the enemies alive (and never fewer than
     // the minimum) may be there; new ones go to the sides or behind.
+    // A hero running one way must run into enemies (user, 2026-10-16: the
+    // pack was easy to outrun): nearly half may be ahead.
     float const BONK_FRONT_ARC             = M_PI_F / 3.0f;
     float const BONK_FRONT_RANGE           = 95.0f;
-    float const BONK_FRONT_SHARE           = 0.3f;
+    float const BONK_FRONT_SHARE           = 0.45f;
     uint32 const BONK_FRONT_MIN            = 5;
-    // Enemies ahead (on screen) appear this far off, just inside the 100
+    // Enemies ahead (on screen) appear this far off, well inside the 100
     // yards the client is shown creatures from, and walk in from there; to
     // the sides and behind, at the map's spawn distance. Where the ground
     // ahead has no spot that far (indoors), the first tries give way to the
     // map's distance.
-    float const BONK_FAR_MIN_DISTANCE      = 75.0f;
-    float const BONK_FAR_MAX_DISTANCE      = 90.0f;
+    float const BONK_FAR_MIN_DISTANCE      = 50.0f;
+    float const BONK_FAR_MAX_DISTANCE      = 65.0f;
     uint32 const BONK_FAR_TRIES            = 6;
     // Enemies this far from the player for this long, and not ahead of them,
     // are left behind. They come back ahead of the player in packs of 3-5,
@@ -126,8 +128,8 @@ namespace
     // any enemy. Fewer than a pack go anyway after a while; with no room
     // ahead for longer, they come back at the player's side instead.
     uint32 const BONK_STRAGGLER_TICK_MS    = 500;
-    float const BONK_STRAY_DISTANCE        = 70.0f;
-    uint32 const BONK_STRAY_MS             = 5000;
+    float const BONK_STRAY_DISTANCE        = 55.0f;
+    uint32 const BONK_STRAY_MS             = 3000;
     uint32 const BONK_PACK_MIN             = 3;
     uint32 const BONK_PACK_MAX             = 5;
     float const BONK_PACK_RADIUS           = 3.0f;
@@ -171,9 +173,14 @@ namespace
     float const BONK_ORB_LIFT              = 0.5f;
     float const BONK_ORB_RISE_SPEED        = 2.0f;     // yards per second
 
-    size_t const BONK_MAX_WEAPONS  = 5;
-    size_t const BONK_MAX_PASSIVES = 6;
+    // Slots a run starts with; Sayge's Spell Slot and Passive Slot open
+    // more, up to the maximum.
+    size_t const BONK_START_SPELL_SLOTS   = 3;
+    size_t const BONK_MAX_SPELL_SLOTS     = 5;
+    size_t const BONK_START_PASSIVE_SLOTS = 3;
+    size_t const BONK_MAX_PASSIVE_SLOTS   = 6;
     size_t const BONK_OFFER_SIZE   = 3;
+    uint32 const BONK_RUN_XP_SEND_MS = 200;     // the XP bar's updates while orbs come in
     // Every choice has at least one spell rank of this rarity or better.
     BonkRarity const BONK_LEVEL_MIN_RARITY = BONK_RARITY_UNCOMMON;
     BonkRarity const BONK_CHEST_MIN_RARITY = BONK_RARITY_RARE;
@@ -232,17 +239,11 @@ namespace
     // must stand to count as one group to aim at.
     float const BONK_LINE_WIDTH            = 3.0f;
     float const BONK_LINE_GROUP_RADIUS     = 8.0f;
-    // Bestial Wrath: the spectral beast's leap (a dash: 1.12 has no jumps
-    // for creatures, MotionMaster::MoveJump does nothing), its roar's reach
-    // before Area and summon size, how long it stays after, and the frenzied
-    // pets: their damage, and the reach and arc in front of them their bites
-    // strike.
-    float const BONK_WRATH_LEAP_SPEED      = 30.0f;    // yards a second, as fast as a charger's dash
-    float const BONK_WRATH_RADIUS          = 8.0f;
-    uint32 const BONK_WRATH_LINGER_MS      = 1500;
-    uint32 const BONK_DISPLAY_SPECTRAL_BEAST = 4613;   // Ghost Wolf
-    float const BONK_BEAST_SCALE           = 0.8f;
-    uint32 const BONK_BEAST_READY_MS       = 2500;     // the client's fade-in of a new creature, with a margin
+    // Pack Leader: its wolf's size and swing (it bites like the Cat), and
+    // the pets its howl frenzies: their damage before its frenzy upgrades,
+    // and the reach and arc in front of them their bites strike.
+    float const BONK_WOLF_SCALE            = 0.8f;
+    uint32 const BONK_WOLF_ATTACK_MS       = 1000;
     uint32 const BONK_SPELL_BESTIAL_WRATH  = 19574;    // the frenzied pets' look
     float const BONK_FRENZY_DAMAGE         = 2.0f;
     float const BONK_FRENZY_REACH          = 5.0f;
@@ -255,22 +256,64 @@ namespace
     uint32 const BONK_DETERRENCE_MS        = 8000;
     int32 const BONK_DETERRENCE_COOLDOWN_MS = 60000;
     // Beasts (their creature is the pet family's): how near the hero they
-    // look for prey (summons stay within about 15 yd), how far they may
-    // stray before they are brought back, and how often they look.
-    float const BONK_PET_HUNT_RANGE        = 15.0f;
-    float const BONK_PET_LEASH_RANGE       = 40.0f;
+    // look for prey (as far as the hero's own shots reach: a pet goes back
+    // to the hero only with no enemy that near), how far they may stray
+    // before they are brought back, and how often they look.
+    float const BONK_PET_HUNT_RANGE        = 35.0f;
+    float const BONK_PET_LEASH_RANGE       = 50.0f;
     uint32 const BONK_PET_CHECK_MS         = 250;
     // Times a creature's run speed, before the hero's Move Speed (summons
-    // get it, docs/Spells.md): faster than any run enemy but a Swift one, and
-    // keeps up with the hero. On its prey a beast paces itself to it
-    // (ChaseMovementGenerator), always a little faster than the prey.
-    float const BONK_PET_SPEED             = 1.4f;
+    // get it, docs/Spells.md): faster than any run enemy, a Swift one too
+    // (0.95 times 1.5 at most), and than the hero. On its prey a beast paces
+    // itself to it (ChaseMovementGenerator), always a little faster.
+    float const BONK_PET_SPEED             = 1.8f;
+    // A pet with no big enemy about picks the one with the most health this
+    // near it; it dashes while its prey is further than this; it pounces
+    // this fast, along the ground (1.12 has no jumps for creatures), and
+    // its pounce lands within this much more than its reach.
+    float const BONK_PET_PICK_RANGE        = 10.0f;
+    float const BONK_PET_DASH_RANGE        = 12.0f;
+    float const BONK_POUNCE_SPEED          = 30.0f;
+    float const BONK_POUNCE_GIVE           = 3.0f;
 
     float GetSummonSpeedRate(float moveSpeed)
     {
         return BONK_PET_SPEED * (1.0f + std::max(0.0f, moveSpeed) / 100.0f);
     }
     uint32 const BONK_SPELL_BLEED_HEAL     = 23881;    // Bloodthirst: names Bloodthirst's heal in combat text
+
+    // The run bolts' cast animations. The client patch gives these spells a
+    // visual whose cast kit has no body animation, so the missile leaves the
+    // hand at once (tools/telegraphs/CastVisuals.cs); their own cast kit,
+    // pushed to the hero on its own (SMSG_PLAY_SPELL_VISUAL), still plays the
+    // hands' animation, at most once in this long so one cast doesn't cut the
+    // last one's short.
+    struct BonkCastAnimation
+    {
+        uint32 spellId;
+        uint32 kitId;                                       // SpellVisualKit.dbc: the original cast kit
+    };
+    BonkCastAnimation const BONK_CAST_ANIMATIONS[] = {
+        { 116, 202 },       // Frostbolt
+        { 133, 38 },        // Fireball
+        { 11366, 38 },      // Pyroblast
+        { 7268, 4509 },     // Arcane Missiles
+        { 16075, 1184 },    // Throwing Axe
+        { 403, 72 },        // Lightning Bolt
+        { 686, 118 },       // Shadow Bolt
+        { 5176, 3291 },     // Wrath
+        { 24239, 6409 },    // Hammer of Wrath
+        { 24099, 181 },     // Poisoned Blades
+    };
+    uint32 const BONK_CAST_ANIMATION_GAP_MS = 600;
+
+    uint32 GetCastAnimationKit(uint32 spellId)
+    {
+        for (BonkCastAnimation const& animation : BONK_CAST_ANIMATIONS)
+            if (animation.spellId == spellId)
+                return animation.kitId;
+        return 0;
+    }
     // Volcanic: the burst's look (a dummy, on an invisible marker), and the
     // enemy's hit on a hero who stayed in it.
     uint32 const BONK_SPELL_ERUPTION_LOOK  = 19823;    // Fire Nova Visual
@@ -306,13 +349,13 @@ namespace
     float const BONK_HEAL_CHANCE_NORMAL  = 0.5f;
     float const BONK_HEAL_CHANCE_ELITE   = 35.0f;
     float const BONK_HEAL_AMOUNT         = 0.20f;
-    uint32 const BONK_HEAL_CHECK_MS      = 250;
+    uint32 const BONK_HEAL_CHECK_MS      = 100;     // as the orbs: they fly in and are eaten
     size_t const BONK_MAX_HEAL_DROPS     = 20;
 
-    // Highlights on markers under pickups, so they stand out in a crowd.
+    // Highlights on pickups, so they stand out in a crowd: worn by a turkey
+    // leg itself, by a marker under a shard.
     uint32 const BONK_SPELL_HEAL_SPARKLE = 6758;    // Party Fever: an eating sparkle on turkey legs
     uint32 const BONK_SPELL_SHARD_BEAM   = 25824;   // Spotlight: a moonbeam on Talent Shards
-    float const BONK_HEAL_SPARKLE_SCALE  = 1.0f;
     float const BONK_SHARD_BEAM_SCALE    = 0.5f;
     // A taken orb goes invisible at once and is gone a moment later; removed
     // outright, the client would fade it out over a second or two.
@@ -339,16 +382,19 @@ namespace
     float const BONK_MASTERY_SIPHON_CAP     = 3.0f;
     int32 const BONK_CLEARCAST_DELAY_MS     = 300;
 
-    // Times a normal enemy's health at the same moment. Tuned so that, with a
-    // typical build, an elite takes a few seconds, a mini-boss about ten and
-    // a stage boss 30-50 seconds of the player's single-target damage.
+    // Times a normal enemy's health at the same moment. Aimed so that, with a
+    // typical build, an elite takes 3-5 seconds, a mini-boss 10-15 and a
+    // stage boss 60-90 of the player's single-target damage (Balance spec).
+    // The boss was 30 and died within 30 s on the old level pace; Core loop
+    // v2 more than doubles the hero's power by 10:00. Tune from the
+    // "Bonk boss:" lines in LevelUp.log.
     float GetKindHealth(BonkSpawnKind kind)
     {
         switch (kind)
         {
             case BONK_SPAWN_ELITE:    return 4.0f;
             case BONK_SPAWN_MINIBOSS: return 10.0f;
-            case BONK_SPAWN_BOSS:     return 30.0f;
+            case BONK_SPAWN_BOSS:     return 150.0f;
             default:                  return 1.0f;
         }
     }
@@ -510,17 +556,6 @@ namespace
     {
         creature->GetMotionMaster()->Initialize();
         creature->SetAI(new BonkPetAI(creature));
-    }
-
-    // Bestial Wrath's spectral beast, unseen until it leaps (helpers are set
-    // up before they reach the client, so it never shows a name or box).
-    void InstallBeastAI(Creature* creature)
-    {
-        creature->GetMotionMaster()->Initialize();
-        creature->SetAI(new BonkPetAI(creature));
-        creature->SetDisplayId(BONK_DISPLAY_INVISIBLE);
-        creature->SetFactionTemplateId(35);
-        creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
     }
 
     // Its biggest effect radius, 0 for none.
@@ -897,11 +932,14 @@ void BonkRun::StartStage()
         for (uint32 weaponId : m_mastery.startSpells)
         {
             BonkWeapon const* weapon = sBonkMgr.GetWeapon(weaponId);
-            if (!weapon || m_weapons.size() >= BONK_MAX_WEAPONS || sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, weaponId))
+            if (!weapon || m_weapons.size() >= GetSpellSlots() || sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, weaponId))
                 continue;
             if (std::none_of(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned) { return owned.weapon.id == weaponId; }))
                 AddWeapon(*weapon);
         }
+
+        // What the hero wore coming in goes back on when the run ends.
+        SnapshotBroughtGear();
 
         // Permanent upgrades may already need their auras.
         ApplyPassives();
@@ -961,6 +999,8 @@ void BonkRun::SendFullState() const
         std::to_string(GetFirstMinibossSecond()) + "~" + DescribeTimelineMarks());
     SendLoadout();
     SendState();
+    SendRunXp();
+    SendCards();
     if (!m_offer.empty())
         SendOffer();
     m_objectives.Resend(m_player);
@@ -981,6 +1021,8 @@ void BonkRun::UpdateRunning(uint32 diff)
     {
         if (m_revives)
             Revive();
+        else if (m_soulstones)
+            Revive(true);
         else
             Finish(false);
         return;
@@ -999,6 +1041,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateHeading(diff);
     UpdateBoundary(diff);
     UpdateRecovery(diff);
+    UpdateCards(diff);
     UpdateShield(diff);
     UpdateNecrotic(diff);
     UpdatePools(diff);
@@ -1007,6 +1050,10 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateOrbs(diff);
     UpdateShards(diff);
     UpdateHeals(diff);
+    UpdateGearDrops(diff);
+    UpdateHearth(diff);
+    if (m_state != STATE_RUNNING)
+        return;
     UpdateEvents();
     if (m_state != STATE_RUNNING)
         return;
@@ -1054,13 +1101,15 @@ void BonkRun::UpdateOffers()
         m_lastLevel = level;
     }
 
-    if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen)
+    if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_gearOfferEntry)
         return;
 
-    // Chests first: the player just walked up to one. Ley Line blessings
-    // last, one at a time like the rest.
+    // Chests first: the player just walked up to one; then gear they picked
+    // up. Ley Line blessings last, one at a time like the rest.
     if (!m_pendingChestChoices.empty())
         OfferUpgrades(OFFER_CHEST);
+    else if (!m_pendingGear.empty())
+        OfferGear();
     else if (m_pendingLevels)
         OfferUpgrades(OFFER_LEVEL);
     else if (m_pendingLeyOffers)
@@ -1137,8 +1186,9 @@ void BonkRun::UpdateRecovery(uint32 diff)
     if (percent > 0.0f)
         heal += std::max(1u, uint32(m_player->GetMaxHealth() * percent / 100.0f));
 
-    if (heal && m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth())
-        m_player->ModifyHealth(int32(ReduceHealing(heal)));
+    // At full health it only matters with Lifegiving Gem (HealHero).
+    if (heal && m_player->IsAlive())
+        HealHero(ReduceHealing(heal));
 
     // Bloodthirst: what the bleeds took this second, as one heal.
     uint32 const bleedHeal = uint32(m_bleedHeal);
@@ -1173,6 +1223,10 @@ void BonkRun::ReportQuestCounts()
             sBonkQuests.OnProgress(m_player, type, 0, unreported);
         unreported = 0;
     };
+    // The last orbs' experience, if the bar hasn't heard it yet.
+    if (m_runXpDirty)
+        UpdateRunXp(true);
+
     // The run log.
     if (m_player->IsAlive())
         m_minuteLowestHealth = std::min(m_minuteLowestHealth, uint32(m_player->GetHealthPercent()));
@@ -1597,7 +1651,7 @@ void BonkRun::LogMinute()
     sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
         "Bonk minute: %s at run minute %u (stage %u, %s, %s, class %u): level %u, %u kills (+%u), took %u damage (%.0f%% of max health), "
         "healed %u (%.0f%%), lowest health %u%%, %u enemies alive, block \"%s\"",
-        m_player->GetName(), m_nextLogMinute, m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), m_player->GetLevel(),
+        m_player->GetName(), m_nextLogMinute, m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), m_player->GetLevel() + m_overcapLevel,
         m_kills, m_kills - m_minuteKills, m_minuteDamage, m_minuteDamage * 100.0f / maxHealth, m_minuteHealed, m_minuteHealed * 100.0f / maxHealth,
         m_minuteLowestHealth, uint32(m_mobs.size()), GetWave().name.c_str());
     ++m_nextLogMinute;
@@ -1616,9 +1670,22 @@ void BonkRun::LogDeath()
     sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
         "Bonk death: %s at run minute %.2f (stage %u, %s, %s, class %u), level %u, %u kills: last hit by %s for %u; "
         "%u damage in the last 10 s from %u hits (%.0f%% of max health); %u enemies alive, block \"%s\"",
-        m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), m_player->GetLevel(),
-        m_kills, m_lastStriker.empty() ? "?" : m_lastStriker.c_str(), m_lastStrikeDamage, recent, uint32(m_recentHits.size()),
-        recent * 100.0f / std::max(1.0f, float(m_player->GetMaxHealth())), uint32(m_mobs.size()), GetWave().name.c_str());
+        m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()),
+        m_player->GetLevel() + m_overcapLevel, m_kills, m_lastStriker.empty() ? "?" : m_lastStriker.c_str(), m_lastStrikeDamage, recent,
+        uint32(m_recentHits.size()), recent * 100.0f / std::max(1.0f, float(m_player->GetMaxHealth())), uint32(m_mobs.size()), GetWave().name.c_str());
+}
+
+void BonkRun::LogBossFight(Creature const* mob, BonkSpawnKind kind, BossArrival const& arrival)
+{
+    // For tuning boss toughness (GetKindHealth): how long it lived once it
+    // arrived, and what the fight cost the hero.
+    uint32 const taken = m_damageTaken - arrival.damageTaken;
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+        "Bonk boss: %s kills %s (%s) at run minute %.2f (stage %u, %s, %s, class %u), level %u: %.1f s after it arrived; "
+        "took %u damage meanwhile (%.0f%% of max health), health now %u%%",
+        m_player->GetName(), mob->GetName(), kind == BONK_SPAWN_BOSS ? "boss" : "mini-boss", GetRunMinutes(), m_stage, m_map.key.c_str(),
+        m_tier.key.c_str(), uint32(m_player->GetClass()), m_player->GetLevel() + m_overcapLevel, (m_totalMs - arrival.ms) / 1000.0f, taken,
+        taken * 100.0f / std::max(1.0f, float(m_player->GetMaxHealth())), uint32(m_player->GetHealthPercent()));
 }
 
 uint32 BonkRun::GetFirstMinibossSecond() const
@@ -2246,11 +2313,18 @@ void BonkRun::UpdateGear()
     // Set bonuses can raise passives that live on auras (speed, health).
     if (passivesChanged)
         ApplyPassives();
+
+    // A worn legendary's effect, as a card.
+    SyncGearCards();
 }
 
 uint32 BonkRun::MitigateDamage(uint32 damage)
 {
     if (!damage)
+        return 0;
+
+    // Insignia of the Alliance: a moment immune after a hit.
+    if (IsCardImmune())
         return 0;
 
     m_hurt = true;
@@ -2282,13 +2356,17 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
         uint32 const absorbed = std::min(m_shield, damage);
         m_shield -= absorbed;
         damage -= absorbed;
+        if (!m_shield)
+            OnShieldBroken();
     }
     if (!m_shield && !m_spellShield)
         m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
 
     m_minuteDamage += damage;
+    m_damageTaken += damage;
     m_lastStrikeDamage = damage;
     m_recentHits.emplace_back(m_totalMs, damage);
+    OnCardHitTaken();
     return damage;
 }
 
@@ -2537,7 +2615,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
     // Power, a shout's Power and Mastery add up rather than multiply; a
     // mark on the enemy, Hunter's Mark and the spell's keyword payoff
     // multiply everything.
-    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower()) * powerShare;
+    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim)) * powerShare;
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark;
@@ -2623,10 +2701,14 @@ void BonkRun::AwardMastery()
     m_player->GetBonkPlayer()->AddMasteryXp(m_rewardMs / (MINUTE * IN_MILLISECONDS) * m_tier.masteryXpMinute + m_masteryXp);
 }
 
-void BonkRun::Revive()
+void BonkRun::Revive(bool soulstone)
 {
-    --m_revives;
-    m_player->ResurrectPlayer(0.5f);
+    if (soulstone)
+        --m_soulstones;
+    else
+        --m_revives;
+    BonkCard const* stone = m_cardByEffect[BONK_CARD_SOULSTONE];
+    m_player->ResurrectPlayer(soulstone && stone ? stone->values[0] / 100.0f : 0.5f);
     m_player->SpawnCorpseBones();
     m_player->CastSpell(m_player, BONK_SPELL_REVIVE_SHIELD, true);
 
@@ -2639,7 +2721,10 @@ void BonkRun::Revive()
                 if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
                     if (ai->GetKind() == BONK_SPAWN_NORMAL)
                         mob->DespawnOrUnsummon();
-    m_player->GetBonkPlayer()->Notify(m_revives ? "Second wind! " + std::to_string(m_revives) + " left." : "Second wind!");
+    if (soulstone)
+        m_player->GetBonkPlayer()->Notify(m_soulstones ? "Soulstone! " + std::to_string(m_soulstones) + " left." : "Soulstone!");
+    else
+        m_player->GetBonkPlayer()->Notify(m_revives ? "Second wind! " + std::to_string(m_revives) + " left." : "Second wind!");
     SendState();
 }
 
@@ -2701,7 +2786,10 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     mob->SetFactionTemplateId(BONK_ENEMY_FACTION);
     mob->SetBaseSpeedRate(MOVE_WALK, creature.speed);
     mob->SetBaseSpeedRate(MOVE_RUN, creature.speed);
-    if (creature.scale > 0.0f && creature.scale != 1.0f)
+    // Enemies are only ever made bigger, never smaller: a creature reads at
+    // its own size, trash comes from a zone's small creatures and bruisers
+    // from its big ones, so a tanky enemy looks tanky at a glance.
+    if (creature.scale > 1.0f)
     {
         mob->SetObjectScale(mob->GetObjectScale() * creature.scale);
         // Melee reach and size follow the new scale.
@@ -2733,7 +2821,7 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
 
     m_mobs.push_back(mob->GetObjectGuid());
     if (creature.kind == BONK_SPAWN_BOSS || creature.kind == BONK_SPAWN_MINIBOSS)
-        m_bossArrivals[mob->GetObjectGuid()] = m_totalMs;
+        m_bossArrivals[mob->GetObjectGuid()] = { m_totalMs, m_damageTaken };
     if (creature.kind == BONK_SPAWN_BOSS)
         m_bossGuid = mob->GetObjectGuid();
     return mob;
@@ -2943,6 +3031,9 @@ void BonkRun::DespawnObjects()
         for (ShardDrop const& drop : m_shardDrops)
             RemovePickup(drop.guid, drop.marker);
         for (HealDrop const& drop : m_healDrops)
+            if (Creature* leg = map->GetCreature(drop.guid))
+                leg->DespawnOrUnsummon();
+        for (GearDrop const& drop : m_gearDrops)
             RemovePickup(drop.guid, drop.marker);
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
             portal->Delete();
@@ -2951,6 +3042,7 @@ void BonkRun::DespawnObjects()
     m_powerups.clear();
     m_shardDrops.clear();
     m_healDrops.clear();
+    m_gearDrops.clear();
     m_portalGuid.Clear();
 }
 
@@ -2970,7 +3062,9 @@ void BonkRun::RemoveObjective(uint32 id)
 {
     if (BonkObjective const* objective = m_objectives.Get(id))
     {
-        m_spawnPoints.Release(objective->x, objective->y);
+        // One on a creature never held a spawn point.
+        if (objective->follows.IsEmpty())
+            m_spawnPoints.Release(objective->x, objective->y);
         m_objectives.Remove(m_player, id);
     }
 }
@@ -2993,8 +3087,15 @@ void BonkRun::UseChest(GameObject* chest)
             bonk->Notify("This chest costs " + std::to_string(cost) + " Valor. You have " + std::to_string(m_coins) + ".");
             return;
         }
-        m_coins -= cost;
-        ++m_chestsBought;
+        // Arcanite Skeleton Key: now and then a chest the hero can pay for
+        // opens for nothing.
+        if (RollFreeChest())
+            bonk->Notify("Arcanite Skeleton Key: this one's free!");
+        else
+        {
+            m_coins -= cost;
+            ++m_chestsBought;
+        }
         sBonkQuests.OnProgress(m_player, BONK_QUEST_CHESTS_BOUGHT, 0, 1);
     }
 
@@ -3027,6 +3128,7 @@ void BonkRun::OpenPortal(Creature* boss)
     GiveGold(m_map.stageGold * m_stage);
     sBonkQuests.OnProgress(m_player, BONK_QUEST_DARK_FORTUNES, 0, m_player->GetBonkPlayer()->CountDarkFortunes(), true);
     CollectAllOrbs();
+    CollectAllGear();
 
     BonkMap const* next = ChooseNextMap();
     m_nextMapId = next ? next->id : 0;
@@ -3178,6 +3280,8 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
                 total += owned.weapon.behaviorValue;
     // `.bonk stress`: a maxed hero.
     total += m_stress.bonuses[effect];
+    // Darkmoon Cards.
+    total += m_cardStats[effect];
     // Ley Line blessings, for the rest of the run.
     return total + m_shrineBonuses[effect];
 }
@@ -3260,7 +3364,16 @@ void BonkRun::UpdateWeapons(uint32 diff)
     {
         owned.timer -= int32(diff);
         if (owned.timer <= 0)
+        {
             FireWeapon(owned);
+            // Ironfoe: now and then the spell goes off again at once.
+            if (m_state == STATE_RUNNING && HasCard(BONK_CARD_ECHO) && roll_chance_f(GetCardChance(BONK_CARD_ECHO)))
+            {
+                int32 const timer = owned.timer;
+                FireWeapon(owned);
+                owned.timer = timer;
+            }
+        }
 
         if (m_state != STATE_RUNNING)
             return;
@@ -3347,13 +3460,25 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
     if (source)
         source->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], true, nullptr, nullptr, m_player->GetObjectGuid());
     else
+    {
         m_player->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], true);
+        // A bolt's hands, played apart from its missile.
+        if (uint32 const kit = GetCastAnimationKit(spellInfo->Id))
+        {
+            uint32 const animationNow = WorldTimer::getMSTime();
+            if (WorldTimer::getMSTimeDiff(m_castAnimationMs, animationNow) >= BONK_CAST_ANIMATION_GAP_MS)
+            {
+                m_castAnimationMs = animationNow;
+                m_player->SendPlaySpellVisualKit(kit);
+            }
+        }
+    }
 
     // A spell that deals no damage (Serpent Sting: its look, then Poison)
     // puts its keyword on the enemy itself.
     PendingKeyword keyword;
     if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage && GetWeaponKeyword(owned, keyword))
-        ApplyKeyword(target, keyword.keyword, keyword.stacks, keyword.durationMs, keyword.damageScale);
+        ApplyKeyword(target, keyword.keyword, keyword.stacks, keyword.durationMs, keyword.damageScale, keyword.spellId);
 
     if (followUp)
         return;
@@ -3630,6 +3755,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         tweak.tickMs = weapon.tickMs;
         // The spell's own Haste speeds its ticks too.
         tweak.tickScale = 1.0f / GetWeaponHasteRate(owned);
+        tweak.normalEnemiesOnly = weapon.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY);
     }
     BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(weapon.spellId);
     uint32 const now = WorldTimer::getMSTime();
@@ -3652,6 +3778,16 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     {
         UpdatePets(owned);
         owned.timer = GetWeaponCooldown(owned);
+        return;
+    }
+
+    // Pack Leader: its wolf is called and kept up like a pet; every
+    // cooldown it howls, once enemies are about, and the hero's other pets
+    // frenzy. Without its wolf (no room under the summon cap) it waits.
+    if (weapon.behavior == BONK_BEHAVIOR_WRATH)
+    {
+        UpdatePets(owned);
+        owned.timer = Howl(owned) ? GetWeaponCooldown(owned) : 250;
         return;
     }
 
@@ -3732,14 +3868,6 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     {
         LaunchOrb(owned);
         owned.timer = GetWeaponCooldown(owned);
-        return;
-    }
-
-    // Spectral beasts leap into the largest groups; the pets frenzy. Until
-    // the beasts are ready (their fade-in), it waits.
-    if (weapon.behavior == BONK_BEHAVIOR_WRATH)
-    {
-        owned.timer = UnleashWrath(owned, mobs) ? GetWeaponCooldown(owned) : 250;
         return;
     }
 
@@ -3882,7 +4010,11 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
                 continue;
             }
 
-            CastAtGround(m_player, castInfo, basePoints, spot->GetPositionX(), spot->GetPositionY(), spot->GetPositionZ());
+            // A spell that only puts its keyword on enemies leaves nothing on
+            // the ground: the keyword's look on them shows it (a flare would
+            // burn there as long as the Mark lasts).
+            if (!keywordOnly)
+                CastAtGround(m_player, castInfo, basePoints, spot->GetPositionX(), spot->GetPositionY(), spot->GetPositionZ());
 
             PendingKeyword keyword;
             if (keywordOnly && GetWeaponKeyword(owned, keyword))
@@ -3890,7 +4022,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
                 std::vector<Creature*> inside = GetMobsInRange(radius, spot);
                 inside.push_back(spot);
                 for (Creature* mob : inside)
-                    ApplyKeyword(mob, keyword.keyword, keyword.stacks, keyword.durationMs, keyword.damageScale);
+                    ApplyKeyword(mob, keyword.keyword, keyword.stacks, keyword.durationMs, keyword.damageScale, keyword.spellId);
             }
 
             // Something more lands on the same spot a little later.
@@ -4180,18 +4312,27 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             continue;
         }
 
-        // A spectral beast landed: it roars; a moment later it is unseen
-        // again, back at the hero's side.
-        if (cast.roar || cast.hideBeast)
+        // A pet lands its pounce: its strike if its prey is still there
+        // (with a little give: the prey walked on), then on to biting.
+        if (cast.pounce)
         {
-            if (Creature* beast = map->GetCreature(cast.target))
-                if (beast->IsAlive())
-                {
-                    if (cast.roar)
-                        Roar(*owned, beast);
-                    else
-                        HideBeast(beast);
-                }
+            Creature* pet = map->GetCreature(cast.source);
+            Creature* prey = map->GetCreature(cast.target);
+            BonkPetFamily const* family = GetPetFamily();
+            if (!pet || !pet->IsAlive() || !family)
+                continue;
+            m_petStates[cast.source].busyUntilMs = 0;
+            if (prey && prey->IsAlive())
+            {
+                for (BonkPetAbility const& ability : family->abilities)
+                    if (ability.kind == BONK_PET_ABILITY_POUNCE)
+                    {
+                        if (pet->CanReachWithMeleeAutoAttack(prey, BONK_POUNCE_GIVE))
+                            PetStrike(*owned, pet, prey, ability);
+                        break;
+                    }
+                pet->AI()->AttackStart(prey);
+            }
             continue;
         }
 
@@ -4203,7 +4344,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             BonkPetFamily const* family = GetPetFamily();
             if (!pet || !pet->IsAlive() || !family)
                 continue;
-            float const damage = GetWeaponDamage(*owned) * family->attackMs / float(std::max(500u, owned->weapon.tickMs)) * BONK_FRENZY_DAMAGE;
+            float const damage = GetWeaponDamage(*owned) * family->attackMs / float(std::max(500u, owned->weapon.tickMs)) * GetFrenzyDamage();
             for (Creature* mob : GetMobsInRange(BONK_FRENZY_REACH * GetSummonScale(*owned, 1.0f), pet))
                 if (mob->GetObjectGuid() != cast.target && pet->HasInArc(mob, BONK_FRENZY_ARC))
                     DealSpellHit(info, mob, damage, pet);
@@ -4904,129 +5045,31 @@ std::vector<Creature*> BonkRun::GetMobsInLine(OwnedWeapon const& owned, float ra
     return mobs;
 }
 
-bool BonkRun::UnleashWrath(OwnedWeapon& owned, std::vector<Creature*> const& mobs)
+bool BonkRun::Howl(OwnedWeapon& owned)
 {
-    // The beasts wait unseen at the hero's side from when the spell was
-    // taken: the client fades in anything new over two seconds, but a
-    // creature that has been there a while changes its look at once
-    // (BonkTelegraph.h). One leaps for each of the largest groups (Count
-    // adds one), roars where it lands, and is unseen again a moment later.
-    BonkWeapon const& weapon = owned.weapon;
-    KeepBeasts(owned);
-    Map* map = m_player->GetMap();
-    uint32 const now = WorldTimer::getMSTime();
-    std::vector<Beast*> ready;
-    for (Beast& beast : m_beasts)
-        if (int32(now - beast.readyAtMs) >= 0 && int32(now - beast.busyUntilMs) >= 0 && map->GetCreature(beast.guid))
-            ready.push_back(&beast);
-    float const scale = GetSummonScale(owned, 1.0f);
-    std::vector<Creature*> const spots = ready.empty() ? std::vector<Creature*>() : PickGroundSpots(mobs, BONK_WRATH_RADIUS * scale, uint32(ready.size()));
-    if (spots.empty())
+    // Pack Leader's wolf howls once enemies are about: the hero's other
+    // pets (never the wolf itself) frenzy, with double damage and bites that
+    // strike every enemy in front of them (OnPetBite), for a while.
+    Creature* wolf = owned.pets.empty() ? nullptr : m_player->GetMap()->GetCreature(owned.pets.front());
+    if (!wolf || !wolf->IsAlive() || GetMobsInRange(BONK_PET_HUNT_RANGE).empty())
         return false;
 
-    for (size_t i = 0; i < spots.size(); ++i)
-    {
-        // It dashes there along the ground, the way chargers do
-        // (BonkMobAI::Dash), round walls; it roars once it has arrived.
-        Creature* beast = map->GetCreature(ready[i]->guid);
-        float const x = spots[i]->GetPositionX(), y = spots[i]->GetPositionY(), z = spots[i]->GetPositionZ();
-        beast->SetDisplayId(BONK_DISPLAY_SPECTRAL_BEAST);
-        beast->GetMotionMaster()->Clear(false);
-        beast->GetMotionMaster()->MovePoint(0, x, y, z, MOVE_PATHFINDING | MOVE_RUN_MODE | MOVE_FORCE_DESTINATION, BONK_WRATH_LEAP_SPEED);
-        uint32 const flightMs = (beast->movespline->Finalized() ? uint32(beast->GetDistance2d(x, y) / BONK_WRATH_LEAP_SPEED * IN_MILLISECONDS) :
-            uint32(beast->movespline->Duration())) + 100;
-        ready[i]->busyUntilMs = now + flightMs + BONK_WRATH_LINGER_MS;
-
-        PendingCast roar;
-        roar.weaponId = weapon.id;
-        roar.spellId = weapon.spellId;
-        roar.leftMs = int32(flightMs);
-        roar.roar = true;
-        roar.target = beast->GetObjectGuid();
-        m_pendingCasts.push_back(roar);
-
-        PendingCast hide = roar;
-        hide.leftMs = int32(flightMs + BONK_WRATH_LINGER_MS);
-        hide.roar = false;
-        hide.hideBeast = true;
-        m_pendingCasts.push_back(hide);
-    }
-
-    // The hero's pets frenzy: double damage, and bites that strike every
-    // enemy in front of them (OnPetBite), for a while.
-    m_petFrenzyUntil = now + uint32(weapon.durationMs * GetWeaponDurationScale(owned));
+    wolf->HandleEmote(EMOTE_ONESHOT_ROAR);
+    m_petFrenzyUntil = WorldTimer::getMSTime() + uint32(owned.weapon.durationMs * GetWeaponDurationScale(owned));
     for (OwnedWeapon& other : m_weapons)
         if (other.weapon.behavior == BONK_BEHAVIOR_PET)
             UpdatePets(other);
     return true;
 }
 
-void BonkRun::KeepBeasts(OwnedWeapon const& owned)
+float BonkRun::GetFrenzyDamage() const
 {
-    // As many as there would be leaps (Count adds one), summoned unseen;
-    // each is ready once the client has faded it in. The idle ones follow
-    // the hero, as fast as pets so a leap starts at the hero's side, at the
-    // size their next leap will have.
-    Map* map = m_player->GetMap();
-    m_beasts.erase(std::remove_if(m_beasts.begin(), m_beasts.end(), [map](Beast const& beast) { return !map->GetCreature(beast.guid); }), m_beasts.end());
-    uint32 const wanted = 1 + uint32(GetStat(BONK_PASSIVE_AMOUNT));
-    uint32 const now = WorldTimer::getMSTime();
-    while (m_beasts.size() < wanted && m_player->IsAlive())
-    {
-        Creature* creature = m_player->SummonCreature(uint32(owned.weapon.behaviorValue), m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(),
-            m_player->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, false, 0, &InstallBeastAI);
-        if (!creature)
-            break;
-        // The hero's, so its roar is a summon's (crit, a share of Power)
-        // and counts for the spell.
-        creature->SetOwnerGuid(m_player->GetObjectGuid());
-        creature->SetUInt32Value(UNIT_CREATED_BY_SPELL, owned.weapon.spellId);
-        creature->SetLevel(m_player->GetLevel());
-        creature->GetMotionMaster()->MoveFollow(m_player, 2.0f, frand(0.0f, 2.0f * M_PI_F));
-        Beast beast;
-        beast.guid = creature->GetObjectGuid();
-        beast.readyAtMs = now + BONK_BEAST_READY_MS;
-        beast.busyUntilMs = now;
-        m_beasts.push_back(beast);
-    }
-    while (m_beasts.size() > wanted && int32(now - m_beasts.back().busyUntilMs) >= 0)
-    {
-        if (Creature* creature = map->GetCreature(m_beasts.back().guid))
-            creature->DespawnOrUnsummon();
-        m_beasts.pop_back();
-    }
-
-    float const scale = GetSummonScale(owned, BONK_BEAST_SCALE);
-    float const speed = GetSummonSpeedRate(GetStat(BONK_PASSIVE_MOVE_SPEED));
-    for (Beast const& beast : m_beasts)
-        if (int32(now - beast.busyUntilMs) >= 0)
-            if (Creature* creature = map->GetCreature(beast.guid))
-            {
-                if (creature->GetObjectScale() != scale)
-                    creature->SetObjectScale(scale);
-                if (creature->GetBaseRunSpeedRate() != speed)
-                    creature->SetBaseSpeedRate(MOVE_RUN, speed);
-                if (!creature->IsWithinDistInMap(m_player, BONK_PET_LEASH_RANGE))
-                    creature->NearTeleportTo(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), creature->GetOrientation());
-            }
-}
-
-void BonkRun::HideBeast(Creature* beast)
-{
-    beast->SetDisplayId(BONK_DISPLAY_INVISIBLE);
-    beast->GetMotionMaster()->Clear(false);
-    beast->GetMotionMaster()->MoveFollow(m_player, 2.0f, frand(0.0f, 2.0f * M_PI_F));
-}
-
-void BonkRun::Roar(OwnedWeapon& owned, Creature* beast)
-{
-    // Every enemy around where it landed, its roar's reach growing with
-    // Area and summon size. The beast deals it: a summon's share of Power.
-    beast->HandleEmote(EMOTE_ONESHOT_ROAR);
-    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(owned.weapon.spellId);
-    float const damage = GetWeaponDamage(owned);
-    for (Creature* mob : GetMobsInRange(BONK_WRATH_RADIUS * GetSummonScale(owned, 1.0f), beast))
-        DealSpellHit(spellInfo, mob, damage, beast);
+    // Double damage, and more with Pack Leader's frenzy upgrades.
+    float damage = BONK_FRENZY_DAMAGE;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.behavior == BONK_BEHAVIOR_WRATH)
+            damage += GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_FRENZY) / 100.0f;
+    return damage;
 }
 
 bool BonkRun::IsPetFrenzied() const
@@ -5039,9 +5082,10 @@ void BonkRun::OnPetBite(Creature* pet, Unit* victim)
     if (m_state != STATE_RUNNING || !pet || !victim || !IsPetFrenzied() || !IsSummon(pet))
         return;
 
-    // Not from inside the damage: at the next update.
+    // Not from inside the damage: at the next update. Pack Leader's wolf
+    // is never frenzied itself.
     for (OwnedWeapon const& owned : m_weapons)
-        if (std::find(owned.pets.begin(), owned.pets.end(), pet->GetObjectGuid()) != owned.pets.end())
+        if (owned.weapon.behavior == BONK_BEHAVIOR_PET && std::find(owned.pets.begin(), owned.pets.end(), pet->GetObjectGuid()) != owned.pets.end())
         {
             PendingCast cleave;
             cleave.weaponId = owned.weapon.id;
@@ -5071,18 +5115,27 @@ void BonkRun::UpdateDefensive(uint32 diff)
 
 void BonkRun::UpdatePets(OwnedWeapon& owned)
 {
+    // Call Pet's beasts are the hero's pet family, as many as Count says;
+    // Pack Leader has one wolf (its creature: behavior_value), whatever
+    // Count says, which bites like the Cat and is never frenzied itself.
     BonkWeapon const& weapon = owned.weapon;
-    BonkPetFamily const* family = GetPetFamily();
+    bool const wolf = weapon.behavior == BONK_BEHAVIOR_WRATH;
+    BonkPetFamily const* family = wolf ? nullptr : GetPetFamily();
+    uint32 const entry = wolf ? uint32(weapon.behaviorValue) : family ? family->entry : 0;
+    uint32 const attackMs = wolf ? BONK_WOLF_ATTACK_MS : family ? family->attackMs : 0;
     Map* map = m_player->GetMap();
-    owned.pets.erase(std::remove_if(owned.pets.begin(), owned.pets.end(), [map](ObjectGuid const& guid)
+    owned.pets.erase(std::remove_if(owned.pets.begin(), owned.pets.end(), [this, map](ObjectGuid const& guid)
     {
         Creature* pet = map->GetCreature(guid);
-        return !pet || !pet->IsAlive();
+        if (pet && pet->IsAlive())
+            return false;
+        m_petStates.erase(guid);
+        return true;
     }), owned.pets.end());
 
     // One more each call until there are enough, so a lost one comes back;
     // never past the hero's summon cap.
-    uint32 const wanted = family ? std::min(GetWeaponTargets(owned), GetSummonRoom(owned)) : 0;
+    uint32 const wanted = entry ? std::min(wolf ? 1u : GetWeaponTargets(owned), GetSummonRoom(owned)) : 0;
     if (owned.pets.size() < wanted && m_player->IsAlive())
     {
         float const angle = frand(0.0f, 2.0f * M_PI_F);
@@ -5090,7 +5143,7 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
         float y = m_player->GetPositionY() + 2.0f * std::sin(angle);
         float z = m_player->GetPositionZ();
         m_player->GetMap()->GetWalkHitPosition(nullptr, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), x, y, z);
-        if (Creature* pet = m_player->SummonCreature(family->entry, x, y, z, m_player->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN,
+        if (Creature* pet = m_player->SummonCreature(entry, x, y, z, m_player->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN,
             BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, false, 0, &InstallPetAI))
         {
             // The hero's: their crit and Power, and run enemies ignore it.
@@ -5110,18 +5163,20 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
             pet->DespawnOrUnsummon();
         owned.pets.pop_back();
     }
-    if (!family)
+    if (!entry)
         return;
 
-    // The spell's damage a second, spread over the family's bites: a fast
-    // family bites more often for less. Haste and faster ranks make every
-    // family bite more often; the evolution makes them bigger and frenzied.
+    // The spell's damage a second, spread over the beast's bites (and a
+    // family's strikes, GetPetBiteDamage): a fast family bites more often
+    // for less. Haste and faster ranks make every beast bite more often;
+    // Pack Leader's howl makes the pets frenzied.
     uint32 const spellMs = std::max(500u, weapon.tickMs);
-    bool const frenzied = IsPetFrenzied();
-    float const damage = GetWeaponDamage(owned) * family->attackMs / float(spellMs) * (frenzied ? BONK_FRENZY_DAMAGE : 1.0f);
+    bool const frenzied = !wolf && IsPetFrenzied();
+    float const bite = wolf ? GetWeaponDamage(owned) * attackMs / float(spellMs) : GetPetBiteDamage(owned, *family);
+    float const damage = bite * (frenzied ? GetFrenzyDamage() : 1.0f);
     float const pace = GetWeaponCooldown(owned) / float(std::max(1u, weapon.cooldownMs));
-    uint32 const swing = std::max(300u, uint32(family->attackMs * pace));
-    float const scale = GetSummonScale(owned, family->scale * (weapon.behaviorValue > 0.0f ? weapon.behaviorValue : 1.0f));
+    uint32 const swing = std::max(300u, uint32(attackMs * pace));
+    float const scale = GetSummonScale(owned, wolf ? BONK_WOLF_SCALE : family->scale * (weapon.behaviorValue > 0.0f ? weapon.behaviorValue : 1.0f));
     float const speed = GetSummonSpeedRate(GetStat(BONK_PASSIVE_MOVE_SPEED));
     for (ObjectGuid const& guid : owned.pets)
         if (Creature* pet = map->GetCreature(guid))
@@ -5145,7 +5200,7 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
             }
             if (weapon.altSpellId && !pet->HasAura(weapon.altSpellId))
                 pet->AddAura(weapon.altSpellId, ADD_AURA_PERMANENT);
-            // Bestial Wrath's frenzy shows (its look only; the damage is
+            // The frenzy shows (Bestial Wrath's look only; the damage is
             // worked out above).
             if (frenzied && !pet->HasAura(BONK_SPELL_BESTIAL_WRATH))
                 pet->AddAura(BONK_SPELL_BESTIAL_WRATH);
@@ -5158,9 +5213,6 @@ bool BonkRun::IsSummon(Unit const* unit) const
 {
     if (!unit || !unit->IsCreature())
         return false;
-    for (Beast const& beast : m_beasts)
-        if (beast.guid == unit->GetObjectGuid())
-            return true;
     for (OwnedWeapon const& owned : m_weapons)
         if (std::find(owned.pets.begin(), owned.pets.end(), unit->GetObjectGuid()) != owned.pets.end())
             return true;
@@ -5192,6 +5244,132 @@ BonkPetFamily const* BonkRun::GetPetFamily() const
     return sBonkMgr.GetPetFamily(BONK_PET_FAMILY_CAT);
 }
 
+float BonkRun::GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& family) const
+{
+    // Bites and strikes in bites' worth a second; Haste speeds both alike,
+    // so the share stays.
+    float rate = IN_MILLISECONDS / float(family.attackMs);
+    for (BonkPetAbility const& ability : family.abilities)
+        if (ability.kind == BONK_PET_ABILITY_STRIKE)
+            rate += ability.damage * IN_MILLISECONDS / float(ability.cooldownMs);
+    uint32 const spellMs = std::max(500u, owned.weapon.tickMs);
+    return GetWeaponDamage(owned) * IN_MILLISECONDS / float(spellMs) / rate;
+}
+
+void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
+{
+    BonkPetFamily const* family = GetPetFamily();
+    if (!family || family->abilities.empty() || !prey->IsAlive())
+        return;
+
+    // Ready again sooner with Haste, as its bites come sooner. One strike a
+    // look, so two never land together.
+    PetState& state = m_petStates[pet->GetObjectGuid()];
+    state.readyAtMs.resize(family->abilities.size(), 0);
+    uint32 const now = WorldTimer::getMSTime();
+    float const pace = GetWeaponCooldown(owned) / float(std::max(1u, owned.weapon.cooldownMs));
+    bool const inReach = pet->CanReachWithMeleeAutoAttack(prey);
+    for (size_t i = 0; i < family->abilities.size(); ++i)
+    {
+        BonkPetAbility const& ability = family->abilities[i];
+        if (int32(now - state.readyAtMs[i]) < 0)
+            continue;
+        if (ability.kind == BONK_PET_ABILITY_STRIKE && inReach)
+        {
+            PetStrike(owned, pet, prey, ability);
+            state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
+            return;
+        }
+        // A dash while its prey is far: its speed buff, for a while.
+        if (ability.kind == BONK_PET_ABILITY_DASH && !pet->IsWithinDistInMap(prey, BONK_PET_DASH_RANGE))
+        {
+            if (SpellAuraHolder* holder = pet->AddAura(ability.spellId))
+            {
+                int32 const lasts = std::max(500, int32(ability.value));
+                holder->SetAuraMaxDuration(lasts);
+                holder->SetAuraDuration(lasts);
+                holder->RefreshHolder();
+            }
+            state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
+        }
+    }
+}
+
+void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkPetAbility const& ability)
+{
+    BonkPetFamily const* family = GetPetFamily();
+    if (!family)
+        return;
+
+    // Its own spell, for its look and its hit: worth `damage` bites, more
+    // when frenzied. Power, Crit and the enemy's modifiers count as for any
+    // of the hero's hits (BonkRun::FromAttack takes in summons).
+    float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
+    int32 const damage = std::max(1, int32(GetPetBiteDamage(owned, *family) * ability.damage * frenzy));
+    pet->SetFacingToObject(prey);
+    pet->CastCustomSpell(prey, ability.spellId, damage, {}, {}, true);
+
+    // The family's keyword (the Cat's Claw: Bleed), more with the spell's
+    // stack upgrades; it counts for Call Pet on the results screen.
+    PendingKeyword keyword;
+    if (ability.stacks && prey->IsAlive() && GetWeaponKeyword(owned, keyword))
+        ApplyKeyword(prey, keyword.keyword, ability.stacks + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS)), keyword.durationMs,
+            keyword.damageScale, keyword.spellId);
+}
+
+bool BonkRun::Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey)
+{
+    BonkPetFamily const* family = GetPetFamily();
+    if (!family)
+        return false;
+
+    PetState& state = m_petStates[pet->GetObjectGuid()];
+    state.readyAtMs.resize(family->abilities.size(), 0);
+    uint32 const now = WorldTimer::getMSTime();
+    for (size_t i = 0; i < family->abilities.size(); ++i)
+    {
+        BonkPetAbility const& ability = family->abilities[i];
+        if (ability.kind != BONK_PET_ABILITY_POUNCE || int32(now - state.readyAtMs[i]) < 0 ||
+            pet->IsWithinDistInMap(prey, ability.value) || !pet->IsWithinLOSInMap(prey))
+            continue;
+
+        // It leaps along the ground to arm's length from where its prey
+        // will be when it lands, and strikes there (UpdatePendingCasts).
+        float const flightMs = pet->GetDistance(prey) / BONK_POUNCE_SPEED * IN_MILLISECONDS;
+        float x, y, z, o;
+        if (!prey->ExtrapolateMovement(prey->m_movementInfo, uint32(flightMs), x, y, z, o))
+            prey->GetPosition(x, y, z);
+        float const reach = pet->GetCombatReachToTarget(prey, false, 0.0f, true) / 2.0f;
+        float const dx = pet->GetPositionX() - x;
+        float const dy = pet->GetPositionY() - y;
+        float const length = std::sqrt(dx * dx + dy * dy);
+        if (length > reach)
+        {
+            x += dx / length * reach;
+            y += dy / length * reach;
+        }
+        pet->AttackStop();
+        pet->GetMotionMaster()->Clear(false);
+        pet->GetMotionMaster()->MovePoint(0, x, y, z, MOVE_PATHFINDING | MOVE_RUN_MODE | MOVE_FORCE_DESTINATION, BONK_POUNCE_SPEED);
+        uint32 const landMs = (pet->movespline->Finalized() ? uint32(flightMs) : uint32(pet->movespline->Duration())) + 50;
+
+        float const pace = GetWeaponCooldown(owned) / float(std::max(1u, owned.weapon.cooldownMs));
+        state.busyUntilMs = now + landMs;
+        state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
+
+        PendingCast land;
+        land.weaponId = owned.weapon.id;
+        land.spellId = owned.weapon.spellId;
+        land.leftMs = int32(landMs);
+        land.pounce = true;
+        land.source = pet->GetObjectGuid();
+        land.target = prey->GetObjectGuid();
+        m_pendingCasts.push_back(land);
+        return true;
+    }
+    return false;
+}
+
 void BonkRun::UpdatePetTargets(uint32 diff)
 {
     m_petTimer += diff;
@@ -5208,16 +5386,31 @@ void BonkRun::UpdatePetTargets(uint32 diff)
                 UpdatePets(owned);
     }
 
+    // Pets always go for an enemy while there is one near the hero, the
+    // biggest kind first (bosses, mini-bosses, elites: every pet goes for
+    // them), else the one no other pet is on with the most health near the
+    // pet (not one the hero's shots are about to kill), else the nearest
+    // free one, so several pets spread over the pack.
+    std::vector<Creature*> const prey = GetMobsInRange(BONK_PET_HUNT_RANGE);
+    uint32 biggest = 0;
+    for (Creature* mob : prey)
+        biggest = std::max(biggest, GetKindRank(mob));
+
     Map* map = m_player->GetMap();
-    // A pet's prey stays its prey while it lives and stays near the hero;
-    // the others look for a new one.
+    uint32 const now = WorldTimer::getMSTime();
+    // A pet's prey stays its prey while it lives and stays near the hero,
+    // unless a bigger enemy is about; the others look for a new one. A
+    // pouncing pet lands first (UpdatePendingCasts).
     std::vector<ObjectGuid> hunted;
-    std::vector<Creature*> seeking;
+    std::vector<std::pair<OwnedWeapon*, Creature*>> seeking;
     for (OwnedWeapon& owned : m_weapons)
         for (ObjectGuid const& guid : owned.pets)
         {
             Creature* pet = map->GetCreature(guid);
             if (!pet || !pet->IsAlive())
+                continue;
+            auto state = m_petStates.find(guid);
+            if (state != m_petStates.end() && int32(state->second.busyUntilMs - now) > 0)
                 continue;
 
             // Too far behind: back to the hero's side.
@@ -5228,27 +5421,26 @@ void BonkRun::UpdatePetTargets(uint32 diff)
                 continue;
             }
 
-            Unit* victim = pet->GetVictim();
-            if (victim && victim->IsAlive() && victim->IsWithinDistInMap(m_player, BONK_PET_HUNT_RANGE))
+            Creature* victim = pet->GetVictim() ? pet->GetVictim()->ToCreature() : nullptr;
+            if (victim && victim->IsAlive() && victim->IsWithinDistInMap(m_player, BONK_PET_HUNT_RANGE) && GetKindRank(victim) >= biggest)
+            {
                 hunted.push_back(victim->GetObjectGuid());
+                if (owned.weapon.behavior == BONK_BEHAVIOR_PET)
+                    UsePetAbilities(owned, pet, victim);
+            }
             else
-                seeking.push_back(pet);
+                seeking.emplace_back(&owned, pet);
         }
     if (seeking.empty())
         return;
 
-    // Of the enemies near the hero, the one nearest the pet that no other pet
-    // is on, Marked enemies first, so a pet goes from kill to kill (the
-    // enemies nearest the hero are the ones the hero's own shots kill
-    // first) and several pets spread over the pack; once every one is taken,
-    // the nearest.
-    std::vector<Creature*> const prey = GetMobsInRange(BONK_PET_HUNT_RANGE);
     auto isFree = [&hunted](Creature* mob)
     {
         return std::find(hunted.begin(), hunted.end(), mob->GetObjectGuid()) == hunted.end();
     };
-    for (Creature* pet : seeking)
+    for (auto const& seeker : seeking)
     {
+        Creature* pet = seeker.second;
         if (!prey.empty())
         {
             auto nearest = [pet, &prey](auto const& wanted)
@@ -5266,16 +5458,24 @@ void BonkRun::UpdatePetTargets(uint32 diff)
                 }
                 return found;
             };
-            Creature* target = nearest([this, &isFree](Creature* mob)
+            Creature* target = nullptr;
+            if (biggest > 0)
+                target = nearest([biggest](Creature* mob) { return GetKindRank(mob) == biggest; });
+            else
             {
-                return isFree(mob) && (GetMarkBonus(mob) > 0.0f || GetKeywordStacks(mob, BONK_KEYWORD_HUNTERS_MARK));
-            });
-            if (!target)
-                target = nearest(isFree);
-            if (!target)
-                target = nearest([](Creature*) { return true; });
+                for (Creature* mob : prey)
+                    if (isFree(mob) && pet->IsWithinDistInMap(mob, BONK_PET_PICK_RANGE) && (!target || mob->GetHealth() > target->GetHealth()))
+                        target = mob;
+                if (!target)
+                    target = nearest(isFree);
+                if (!target)
+                    target = nearest([](Creature*) { return true; });
+            }
             hunted.push_back(target->GetObjectGuid());
-            pet->AI()->AttackStart(target);
+            // A new prey far off: a beast that can pounces on it.
+            if (pet->GetVictim() != target &&
+                !(seeker.first->weapon.behavior == BONK_BEHAVIOR_PET && Pounce(*seeker.first, pet, target)))
+                pet->AI()->AttackStart(target);
             continue;
         }
         // Nothing to hunt: at the hero's heel.
@@ -5299,11 +5499,7 @@ void BonkRun::DespawnPets()
                     pet->DespawnOrUnsummon();
         owned.pets.clear();
     }
-    if (map)
-        for (Beast const& beast : m_beasts)
-            if (Creature* creature = map->GetCreature(beast.guid))
-                creature->DespawnOrUnsummon();
-    m_beasts.clear();
+    m_petStates.clear();
     m_petFrenzyUntil = 0;
 }
 
@@ -5355,16 +5551,75 @@ void BonkRun::ApplyPassives()
     SendStats();
 }
 
+void BonkRun::SendRunXp() const
+{
+    uint32 const maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
+    uint32 const xp = m_player->GetLevel() >= maxLevel ? m_overcapXp : m_player->GetUInt32Value(PLAYER_XP);
+    m_player->GetBonkPlayer()->SendAddon("runxp~" + std::to_string(m_player->GetLevel() + m_overcapLevel) + "~" + std::to_string(xp) + "~" +
+        std::to_string(GetNextLevelXp()));
+}
+
+void BonkRun::UpdateRunXp(bool levelled)
+{
+    // Orbs come in many a second: the bar follows at a few updates a second.
+    uint32 const now = WorldTimer::getMSTime();
+    if (levelled || WorldTimer::getMSTimeDiff(m_runXpSentAt, now) >= BONK_RUN_XP_SEND_MS)
+    {
+        SendRunXp();
+        m_runXpSentAt = now;
+        m_runXpDirty = false;
+    }
+    else
+        m_runXpDirty = true;
+}
+
+uint32 BonkRun::GetNextLevelXp() const
+{
+    uint32 const maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
+    if (m_player->GetLevel() < maxLevel)
+        return m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+    return sObjectMgr.GetXPForLevel(maxLevel - 1);
+}
+
 void BonkRun::GiveExperience(uint32 xp)
 {
     uint32 const maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
     uint32 level = m_player->GetLevel();
-    if (!xp || level >= maxLevel)
+    if (!xp)
         return;
+
+    uint32 const health = m_player->GetHealth();
+
+    // Past the cap the character stays at it, and the run counts levels on:
+    // each one is a pick and the usual share of a heal.
+    if (level >= maxLevel)
+    {
+        uint32 const next = GetNextLevelXp();
+        if (!next)
+            return;
+        uint32 const startOvercap = m_overcapLevel;
+        m_overcapXp += xp;
+        while (m_overcapXp >= next)
+        {
+            m_overcapXp -= next;
+            ++m_overcapLevel;
+            ++m_pendingLevels;
+            sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+                "Bonk level: %s reaches level %u at run minute %.2f (stage %u, %s, %s), %u kills, class %u, +%g%% experience",
+                m_player->GetName(), level + m_overcapLevel, GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), m_kills,
+                uint32(m_player->GetClass()), GetPassiveTotal(BONK_PASSIVE_GROWTH));
+        }
+        if (m_overcapLevel != startOvercap && m_player->IsAlive())
+        {
+            uint32 const heal = ReduceHealing(uint32(m_player->GetMaxHealth() * BONK_LEVEL_UP_HEAL * (m_overcapLevel - startOvercap)));
+            m_player->SetHealth(std::min(health + heal, m_player->GetMaxHealth()));
+        }
+        UpdateRunXp(m_overcapLevel != startOvercap);
+        return;
+    }
 
     // Same as Player::GiveXP without the chat line for every kill, and
     // without the full heal a level up normally gives.
-    uint32 const health = m_player->GetHealth();
     uint32 const startLevel = level;
     uint32 current = m_player->GetUInt32Value(PLAYER_XP) + xp;
     uint32 next = m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
@@ -5391,6 +5646,7 @@ void BonkRun::GiveExperience(uint32 xp)
         uint32 const heal = ReduceHealing(uint32(m_player->GetMaxHealth() * BONK_LEVEL_UP_HEAL * (level - startLevel)));
         m_player->SetHealth(std::min(health + heal, m_player->GetMaxHealth()));
     }
+    UpdateRunXp(level != startLevel);
 }
 
 void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
@@ -5635,6 +5891,28 @@ void BonkRun::UpdateOrbs(uint32 diff)
         GiveExperience(collected);
 }
 
+void BonkRun::PullAllOrbs()
+{
+    // Every orb on the ground flies to the hero (Gnomish Magnet); UpdateOrbs
+    // re-aims them as the hero moves and takes them on arrival.
+    Map* map = m_player->GetMap();
+    float heroX, heroY, heroZ;
+    GetHeroPositionNow(m_player, heroX, heroY, heroZ);
+    for (Orb& orb : m_orbs)
+    {
+        if (orb.pulled)
+            continue;
+        if (Creature* creature = map->GetCreature(orb.guid))
+        {
+            orb.pulled = true;
+            orb.aimX = heroX;
+            orb.aimY = heroY;
+            orb.aimZ = heroZ + 0.5f;
+            creature->MonsterMoveWithSpeed(orb.aimX, orb.aimY, orb.aimZ, -10.0f, BONK_ORB_FLY_SPEED, MOVE_FLY_MODE);
+        }
+    }
+}
+
 void BonkRun::CollectAllOrbs()
 {
     uint32 collected = 0;
@@ -5752,6 +6030,8 @@ void BonkRun::DropHeal(Creature const* mob, BonkSpawnKind kind)
         chance = BONK_HEAL_CHANCE_NORMAL;
     else if (kind == BONK_SPAWN_ELITE)
         chance = BONK_HEAL_CHANCE_ELITE;
+    // Tough Jerky: more of them.
+    chance *= 1.0f + GetCardTotal(BONK_CARD_JERKY, 0) / 100.0f;
     if (m_healDrops.size() >= BONK_MAX_HEAL_DROPS || !roll_chance_f(chance))
         return;
 
@@ -5767,13 +6047,16 @@ void BonkRun::DropHeal(Creature const* mob, BonkSpawnKind kind)
         z = mob->GetPositionZ();
     }
 
-    if (GameObject* go = PlaceObject(BONK_GO_HEAL, x, y, z, BONK_OBJECT_LIFETIME_SEC))
-    {
-        HealDrop drop;
-        drop.guid = go->GetObjectGuid();
-        drop.marker = PlaceMarker(go, BONK_SPELL_HEAL_SPARKLE, BONK_HEAL_SPARKLE_SCALE);
-        m_healDrops.push_back(drop);
-    }
+    // A creature, not a game object, so it can fly to the hero (the client
+    // only moves units smoothly); it wears its own sparkle.
+    Creature* leg = m_player->SummonCreature(BONK_HEAL_PICKUP, x, y, z, frand(0.0f, 2.0f * M_PI_F),
+        TEMPSUMMON_TIMED_DESPAWN, BONK_ORB_LIFETIME_MS, false, 0, &InstallOrbAI);
+    if (!leg)
+        return;
+    leg->AddAura(BONK_SPELL_HEAL_SPARKLE, ADD_AURA_PERMANENT);
+    HealDrop drop;
+    drop.guid = leg->GetObjectGuid();
+    m_healDrops.push_back(drop);
 }
 
 void BonkRun::UpdateHeals(uint32 diff)
@@ -5783,33 +6066,59 @@ void BonkRun::UpdateHeals(uint32 diff)
         return;
     m_healTimer = 0;
 
-    // Left lying while the hero is unhurt: one may be needed later.
+    // Left lying while the hero is unhurt: one may be needed later. A hurt
+    // hero draws them in from the pickup range, as the experience orbs, and
+    // eats one on touching it.
     bool hurt = m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth();
     float const range = GetMagnetRange();
     Map* map = m_player->GetMap();
+    float heroX, heroY, heroZ;
+    GetHeroPositionNow(m_player, heroX, heroY, heroZ);
     for (auto itr = m_healDrops.begin(); itr != m_healDrops.end();)
     {
-        GameObject* go = map->GetGameObject(itr->guid);
-        if (!go || !go->isSpawned())
+        Creature* leg = map->GetCreature(itr->guid);
+        if (!leg)
         {
-            RemovePickup(itr->guid, itr->marker);
             itr = m_healDrops.erase(itr);
             continue;
         }
-        if (!hurt || m_player->GetDistance(go) > range)
+        if (!hurt)
         {
+            // Healed meanwhile: one on its way stops where it is.
+            if (itr->pulled)
+            {
+                itr->pulled = false;
+                leg->StopMoving();
+            }
             ++itr;
             continue;
         }
 
-        uint32 const heal = ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * BONK_HEAL_AMOUNT)));
-        if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_HEAL_TEXT))
-            m_player->DealHeal(m_player, heal, spellInfo);
-        else
-            m_player->ModifyHealth(int32(heal));
-        RemovePickup(itr->guid, itr->marker);
-        itr = m_healDrops.erase(itr);
-        hurt = m_player->GetHealth() < m_player->GetMaxHealth();
+        float const distance = GetHeroDistance(m_player, heroX, heroY, heroZ, leg);
+        if (distance <= BONK_ORB_PICKUP_RANGE)
+        {
+            // Tough Jerky: each heals more.
+            float const amount = BONK_HEAL_AMOUNT * (1.0f + GetCardTotal(BONK_CARD_JERKY, 1) / 100.0f);
+            HealHero(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * amount))), BONK_SPELL_HEAL_TEXT);
+            VanishOrb(leg);
+            itr = m_healDrops.erase(itr);
+            hurt = m_player->GetHealth() < m_player->GetMaxHealth();
+            continue;
+        }
+
+        // Straight at where the hero is now, re-aimed as they move (UpdateOrbs).
+        float const x = heroX, y = heroY, z = heroZ + 0.5f;
+        if (!itr->pulled ? distance <= range :
+            (x - itr->aimX) * (x - itr->aimX) + (y - itr->aimY) * (y - itr->aimY) + (z - itr->aimZ) * (z - itr->aimZ) >
+                BONK_ORB_REAIM_DISTANCE * BONK_ORB_REAIM_DISTANCE)
+        {
+            itr->pulled = true;
+            itr->aimX = x;
+            itr->aimY = y;
+            itr->aimZ = z;
+            leg->MonsterMoveWithSpeed(x, y, z, -10.0f, BONK_ORB_FLY_SPEED, MOVE_FLY_MODE);
+        }
+        ++itr;
     }
 }
 
@@ -5874,14 +6183,17 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     SpreadFrom(mob);
     SpreadKeywords(mob);
     OnMarkedDeath(mob);
+    // Pets on it look for new prey at once.
+    m_petTimer = BONK_PET_CHECK_MS;
     uint32 const killingSpell = BonkStats::CountKill(m_player->GetObjectGuid(), mob->GetObjectGuid(), kind);
     float heading;
     sBonkQuests.OnKill(m_player, kind, killingSpell, mob->GetCreatureType(), mob->GetEntry(), !GetHeading(heading));
     auto const arrival = m_bossArrivals.find(mob->GetObjectGuid());
     if (arrival != m_bossArrivals.end())
     {
-        sBonkQuests.OnBossFight(m_player, kind, (m_totalMs - arrival->second) / IN_MILLISECONDS, !m_hurt || m_lastHurtMs < arrival->second,
+        sBonkQuests.OnBossFight(m_player, kind, (m_totalMs - arrival->second.ms) / IN_MILLISECONDS, !m_hurt || m_lastHurtMs < arrival->second.ms,
             uint32(m_player->GetHealthPercent()));
+        LogBossFight(mob, kind, arrival->second);
         m_bossArrivals.erase(arrival);
     }
     if (kind == BONK_SPAWN_BOSS)
@@ -5893,14 +6205,21 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
         m_masteryXp += m_tier.masteryXpBoss * GetBonkMapRewardPercent(m_map.type) / 100;
     uint32 const reward = GetKindReward(kind);
     GiveGold(m_map.goldPerKill * reward);
-    m_coins += m_map.coinsPerKill * reward;
+    // Fat Goblin Purse: more Valor (carried over, so small kills add up).
+    m_cardValorCarry += m_map.coinsPerKill * reward * (1.0f + GetCardTotal(BONK_CARD_VALOR, 0) / 100.0f);
+    m_coins += uint32(m_cardValorCarry);
+    m_cardValorCarry -= float(uint32(m_cardValorCarry));
+    // Bloodlust Brooch counts kills.
+    if (HasCard(BONK_CARD_KILL_POWER))
+        ++m_cardKills;
 
     if (kind != BONK_SPAWN_BOSS)
     {
-        // Level 1 takes about 14 kills' worth, level 10 about 80, level 20
-        // about 155: aimed at level 12 by 5 minutes and 25 by 10.
-        uint32 const level = m_player->GetLevel();
-        float const killsForLevel = 6.0f + 7.5f * level;
+        // Level 1 takes about 6 kills' worth, level 10 about 19, level 30
+        // about 49 (a swarmer is half a kill): aimed at level 8-10 by 2
+        // minutes, 20 by 5 and 35-40 by 10 (Core loop v2).
+        uint32 const level = m_player->GetLevel() + m_overcapLevel;
+        float const killsForLevel = 4.0f + 1.5f * level;
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
 
         // Normal enemies by archetype: swarmers give half, bruisers a green
@@ -5914,7 +6233,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
             experience *= archetype.experience;
             colour = archetype.orb;
         }
-        uint32 xp = uint32(std::ceil(m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / killsForLevel * experience * growth));
+        uint32 xp = uint32(std::ceil(GetNextLevelXp() / killsForLevel * experience * growth));
         // A Moonwell doubles what dies inside it.
         if (IsInMoonwell(mob->GetPositionX(), mob->GetPositionY()))
             xp *= 2;
@@ -5924,6 +6243,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
     if (kind != BONK_SPAWN_NORMAL)
     {
         DropChest(mob, kind);
+        DropGear(mob, kind);
         OnAffixedDeath(mob);
         m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()) + "~" + std::to_string(mob->GetPlateId()) + "~" +
             BonkMobAI::GetUnitGuidText(mob));
@@ -5994,7 +6314,8 @@ void BonkRun::RollUpgrades(OwnedWeapon const& owned, Offer& offer) const
 {
     // Rare and Epic ranks add steps from the spell's own list, at random;
     // an Epic's two can be the same. Capped upgrades are left out, counting
-    // a step this card already rolled.
+    // a step this card already rolled, and so is hitting twice but on an
+    // Epic (user, Oct 15: an endgame stat).
     for (BonkSpellUpgrade& upgrade : offer.upgrades)
         upgrade = BONK_SPELL_UPGRADE_NONE;
     if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY)
@@ -6006,6 +6327,8 @@ void BonkRun::RollUpgrades(OwnedWeapon const& owned, Offer& offer) const
         std::vector<BonkWeaponUpgrade const*> options;
         for (BonkWeaponUpgrade const& upgrade : owned.weapon.upgrades)
         {
+            if (upgrade.upgrade == BONK_SPELL_UPGRADE_HIT_TWICE && offer.rarity != BONK_RARITY_EPIC)
+                continue;
             float const cap = BONK_SPELL_UPGRADE_CAP[upgrade.upgrade];
             if (cap > 0.0f && owned.upgrades[upgrade.upgrade] + rolled[upgrade.upgrade] + upgrade.step > cap + 0.001f)
                 continue;
@@ -6062,6 +6385,13 @@ void BonkRun::ApplyStep(OwnedWeapon& owned, Offer const& offer)
         else
             owned.damageBonus += BONK_RANK_SPARE_DAMAGE;
     }
+
+    // Beasts bite as hard as their spells' ranks say at once (a Pack
+    // Leader rank also grows the other pets' frenzy).
+    if (owned.weapon.behavior == BONK_BEHAVIOR_PET || owned.weapon.behavior == BONK_BEHAVIOR_WRATH)
+        for (OwnedWeapon& other : m_weapons)
+            if (other.weapon.behavior == BONK_BEHAVIOR_PET || other.weapon.behavior == BONK_BEHAVIOR_WRATH)
+                UpdatePets(other);
 }
 
 bool BonkRun::IsPassiveAllowed(BonkPassive const& passive) const
@@ -6077,6 +6407,16 @@ bool BonkRun::IsPassiveAllowed(BonkPassive const& passive) const
     return true;
 }
 
+size_t BonkRun::GetSpellSlots() const
+{
+    return std::min(BONK_MAX_SPELL_SLOTS, BONK_START_SPELL_SLOTS + m_bonuses.spellSlots);
+}
+
+size_t BonkRun::GetPassiveSlots() const
+{
+    return std::min(BONK_MAX_PASSIVE_SLOTS, BONK_START_PASSIVE_SLOTS + m_bonuses.passiveSlots);
+}
+
 bool BonkRun::IsPassiveCapped(BonkPassive const& passive) const
 {
     // A stat already at its cap (Dodge, Hit, Count, Area, Haste) gains nothing from more.
@@ -6086,6 +6426,17 @@ bool BonkRun::IsPassiveCapped(BonkPassive const& passive) const
 
 bool BonkRun::RefreshKeptOffer(Offer& offer) const
 {
+    // A card fits until the hero holds its most copies; it brings one more
+    // than the hero holds now.
+    if (offer.isCard)
+    {
+        BonkCard const* card = sBonkMgr.GetCard(offer.id);
+        if (!card || m_banished.count(GetBanishKey(offer)) || (card->maxCopies && GetCardCopies(offer.id) >= card->maxCopies))
+            return false;
+        offer.newLevel = GetCardCopies(offer.id) + 1;
+        return true;
+    }
+
     if (offer.isWeapon)
     {
         if (m_banished.count({ true, offer.id }))
@@ -6093,7 +6444,7 @@ bool BonkRun::RefreshKeptOffer(Offer& offer) const
 
         OwnedWeapon const* owned = FindOwned(offer.id);
         if (offer.step == BONK_STEP_NEW)
-            return !owned && m_weapons.size() < BONK_MAX_WEAPONS &&
+            return !owned && m_weapons.size() < GetSpellSlots() &&
                 std::none_of(m_weapons.begin(), m_weapons.end(), [&](OwnedWeapon const& w) { return w.weapon.evolvesFrom == offer.id; });
         if (!owned)
             return false;
@@ -6117,7 +6468,7 @@ bool BonkRun::RefreshKeptOffer(Offer& offer) const
     auto rank = m_passiveRanks.find(offer.id);
     uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
     size_t const ownedPassives = std::count_if(m_passiveRanks.begin(), m_passiveRanks.end(), [](auto const& itr) { return itr.second > 0; });
-    if (current >= passive->maxRank || (!current && ownedPassives >= BONK_MAX_PASSIVES))
+    if (current >= passive->maxRank || (!current && ownedPassives >= GetPassiveSlots()))
         return false;
     offer.newLevel = current + 1;
     return true;
@@ -6135,6 +6486,11 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     // An elite chest offers a card more for every affix the elite had.
     size_t const offerSize = source == OFFER_CHEST && !m_pendingChestChoices.empty() ?
         std::min<size_t>(m_pendingChestChoices.front(), BONK_MAX_OFFER_SIZE) : BONK_OFFER_SIZE;
+
+    // Chests hold Darkmoon Cards (Core loop v2); spells and passives come
+    // from level-ups.
+    if (source == OFFER_CHEST && !sBonkMgr.GetCards().empty())
+        return OfferCards(offerSize, avoid, kept, drawn);
 
     // Locked cards stay: from this choice on a reroll or banish, or from the
     // last chest.
@@ -6174,7 +6530,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     // New spells while a slot is free. An evolved spell's base counts as owned.
     uint32 const classMask = m_player->GetClassMask();
     uint32 const account = m_player->GetSession()->GetAccountId();
-    if (m_weapons.size() < BONK_MAX_WEAPONS)
+    if (m_weapons.size() < GetSpellSlots())
         for (auto const& itr : sBonkMgr.GetWeapons())
         {
             BonkWeapon const& weapon = itr.second;
@@ -6197,7 +6553,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     {
         auto rank = m_passiveRanks.find(itr.first);
         uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
-        if (current >= itr.second.maxRank || (!current && ownedPassives >= BONK_MAX_PASSIVES))
+        if (current >= itr.second.maxRank || (!current && ownedPassives >= GetPassiveSlots()))
             continue;
         if (m_banished.count({ false, itr.first }) || isCard(false, itr.first) || sBonkQuests.IsLocked(account, BONK_REWARD_PASSIVE, itr.first))
             continue;
@@ -6256,6 +6612,30 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
         }
     }
 
+    // A level-up always holds a passive while one can still be taken, so
+    // stats and sustain don't lose every pick to spells. It takes the place
+    // of the last spell card that isn't locked or an owed Legendary rank.
+    if (source == OFFER_LEVEL && std::none_of(cards.begin(), cards.end(), [](Offer const& card) { return !card.isWeapon; }))
+    {
+        std::vector<Offer> passives;
+        for (std::vector<Candidate> const* pool : { &candidates, &repeats })
+            for (Candidate const& candidate : *pool)
+                if (!candidate.offer.isWeapon)
+                    passives.push_back(candidate.offer);
+        if (!passives.empty())
+        {
+            Offer const& passive = passives[urand(0, uint32(passives.size() - 1))];
+            auto replaced = std::find_if(cards.rbegin(), cards.rend(), [](Offer const& card)
+            {
+                return !card.locked && card.step != BONK_STEP_EVOLVE;
+            });
+            if (cards.size() < offerSize)
+                cards.push_back(passive);
+            else if (replaced != cards.rend())
+                *replaced = passive;
+        }
+    }
+
     // Never only plain picks: one spell rank is at least `minimum` when
     // there is a spell rank on offer.
     bool met = false;
@@ -6307,6 +6687,14 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
 
 std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon) const
 {
+    if (offer.isCard)
+    {
+        BonkCard const* card = sBonkMgr.GetCard(offer.id);
+        if (icon)
+            *icon = card ? card->icon : "";
+        return card ? card->name : "?";
+    }
+
     if (offer.isWeapon)
     {
         BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id);
@@ -6330,6 +6718,13 @@ std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon) const
 
 std::string BonkRun::DescribeStep(Offer const& offer) const
 {
+    // The addon shows the copies held in the card's corner.
+    if (offer.isCard)
+    {
+        BonkCard const* card = sBonkMgr.GetCard(offer.id);
+        return card ? card->description : "";
+    }
+
     if (!offer.isWeapon)
     {
         BonkPassive const* passive = sBonkMgr.GetPassive(offer.id);
@@ -6400,14 +6795,19 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
 
     // For tuning ranks: what was taken and when (LevelUp.log).
     {
-        std::string const rarity = offer.isWeapon && offer.step != BONK_STEP_NEW ? GetBonkRarityName(offer.rarity) : "new";
+        std::string const rarity = (offer.isWeapon && offer.step != BONK_STEP_NEW) || offer.isCard ? GetBonkRarityName(offer.rarity) : "new";
         sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
             "Bonk pick: %s takes %s rank %u (%s, %s) at run minute %.2f, level %u: %s",
             m_player->GetName(), DescribeOffer(offer, nullptr).c_str(), offer.newLevel, rarity.c_str(),
             m_offerSource == OFFER_CHEST ? "chest" : "level", GetRunMinutes(), m_player->GetLevel(), DescribeStep(offer).c_str());
     }
 
-    if (offer.isWeapon)
+    if (offer.isCard)
+    {
+        if (BonkCard const* card = sBonkMgr.GetCard(offer.id))
+            AddCard(*card);
+    }
+    else if (offer.isWeapon)
     {
         if (OwnedWeapon* owned = FindOwned(offer.id))
             ApplyStep(*owned, offer);
@@ -6501,7 +6901,7 @@ bool BonkRun::Banish(uint32 choice, std::string& error)
     }
 
     Offer const offer = m_offer[choice - 1];
-    m_banished.insert({ offer.isWeapon, offer.id });
+    m_banished.insert(GetBanishKey(offer));
     m_player->GetBonkPlayer()->Notify(DescribeOffer(offer, nullptr) + " is banished for this run.");
     --m_banishes;
 
@@ -6590,13 +6990,14 @@ std::string BonkRun::DescribeWeaponStats() const
 void BonkRun::SendLoadout() const
 {
     // w:<icon>:<rank>:0,... (e: for evolved) then p:<icon>:<rank>:<max>,...;
-    // spell ranks have no maximum.
+    // spell ranks have no maximum. Then the open spell and passive slots.
     std::string line = "loadout~";
     for (auto const& owned : m_weapons)
         line += std::string(owned.weapon.evolvesFrom ? "e:" : "w:") + owned.weapon.icon + ":" + std::to_string(owned.rank) + ":0,";
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             line += "p:" + passive->icon + ":" + std::to_string(itr.second) + ":" + std::to_string(passive->maxRank) + ",";
+    line += "~" + std::to_string(GetSpellSlots()) + "~" + std::to_string(GetPassiveSlots());
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->SendAddon(line);
 
@@ -6662,8 +7063,9 @@ void BonkRun::SendOffer() const
     {
         // offer~level~cards~source~rerolls~banishes~skips, then for each card
         // opt~index~kind~rank~maxRank~name~icon~description~rarity~locked:
-        // kind w (spell), e (evolution) or p (passive); maxRank 0 for spells;
-        // rarity empty for new spells and passives.
+        // kind w (spell), e (evolution), p (passive) or c (Darkmoon Card:
+        // rank is the copies held once taken); maxRank 0 for spells and
+        // cards; rarity empty for new spells and passives.
         bonk->SendAddon("offer~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_offer.size()) + "~" +
             (m_offerSource == OFFER_CHEST ? "chest" : "level") + "~" + std::to_string(m_rerolls) + "~" + std::to_string(m_banishes) + "~" +
             std::to_string(m_skips));
@@ -6673,12 +7075,17 @@ void BonkRun::SendOffer() const
             std::string icon;
             std::string const name = DescribeOffer(offer, &icon);
             uint32 maxRank = 0;
-            if (!offer.isWeapon)
+            if (offer.isCard)
+            {
+                if (BonkCard const* card = sBonkMgr.GetCard(offer.id))
+                    maxRank = card->maxCopies;
+            }
+            else if (!offer.isWeapon)
                 if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
                     maxRank = passive->maxRank;
-            bool const ranked = offer.isWeapon && offer.step != BONK_STEP_NEW;
+            bool const ranked = (offer.isWeapon && offer.step != BONK_STEP_NEW) || offer.isCard;
 
-            bonk->SendAddon("opt~" + std::to_string(i + 1) + "~" + (offer.step == BONK_STEP_EVOLVE ? "e" : offer.isWeapon ? "w" : "p") + "~" +
+            bonk->SendAddon("opt~" + std::to_string(i + 1) + "~" + (offer.isCard ? "c" : offer.step == BONK_STEP_EVOLVE ? "e" : offer.isWeapon ? "w" : "p") + "~" +
                 std::to_string(offer.newLevel) + "~" + std::to_string(maxRank) + "~" + name + "~" + icon + "~" + DescribeStep(offer) + "~" +
                 (ranked ? std::to_string(offer.rarity) : "") + "~" + (offer.locked ? "1" : "0"));
         }
@@ -6696,7 +7103,9 @@ void BonkRun::SendOffer() const
         Offer const& offer = m_offer[i];
         std::string const name = DescribeOffer(offer, nullptr);
         std::string kind;
-        if (offer.isWeapon && offer.step == BONK_STEP_NEW)
+        if (offer.isCard)
+            kind = std::string(GetBonkRarityName(offer.rarity)) + " card";
+        else if (offer.isWeapon && offer.step == BONK_STEP_NEW)
             kind = "new";
         else if (offer.isWeapon)
             kind = std::string(GetBonkRarityName(offer.rarity)) + " rank " + std::to_string(offer.newLevel);
@@ -6729,6 +7138,11 @@ void BonkRun::Finish(bool wentHome)
     // Going home takes the shards still lying around; dying leaves them.
     if (wentHome)
         CollectAllShards();
+
+    // Run gear comes off: greens and blues pay, going home keeps the rest.
+    CloseGearOffer();
+    m_pendingGear.clear();
+    ResolveRunGear(wentHome);
 
     m_player->GetBonkPlayer()->RecordRun(m_stage, m_totalMs / IN_MILLISECONDS, m_kills, m_goldEarned);
     AwardMastery();
@@ -6823,7 +7237,10 @@ void BonkRun::SetPaused(bool paused)
 
     // The addon's countdowns ran on through the pause: set them right.
     if (!paused && m_player->IsInWorld())
+    {
         m_objectives.ResendTimed(m_player);
+        SendCardCooldowns();
+    }
 }
 
 void BonkRun::OnMobStuck(Creature* mob)
@@ -6842,6 +7259,9 @@ void BonkRun::CleanUp()
     SetPaused(false);
     m_player->SetTimeFrozen(false);
     m_player->GetBonkPlayer()->ClearSpellTweaks();
+    // A run torn down without finishing (a logout): its gear and Hearthstone
+    // still come off (nothing left to do after a finished run).
+    ResolveRunGear(false);
     DespawnMobs();
     DespawnObjects();
     m_objectives.Clear(m_player);
@@ -6886,6 +7306,10 @@ void BonkRun::Exit()
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->ResetCharacter();
+    // Alive again: the gear worn coming in goes back on (after a death the
+    // run couldn't do it).
+    RestoreBroughtGear();
+    m_broughtGear.clear();
     bonk->TeleportToCamp();
 }
 
@@ -6904,6 +7328,8 @@ void BonkRun::Abort()
     CleanUp();
     m_state = STATE_FINISHED;
     m_player->GetBonkPlayer()->ResetCharacter();
+    RestoreBroughtGear();
+    m_broughtGear.clear();
 }
 
 void BonkRun::Surrender()
