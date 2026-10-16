@@ -45,12 +45,16 @@ class BonkSpawnPoints
         void Release(float x, float y);
 
         std::vector<BonkSpot> const& GetSpots() const { return m_spots; }
+        // The spots found since the last call (the run learns starting spots
+        // from them, BonkRun::LearnStarts).
+        std::vector<BonkSpot> TakeFresh();
 
     private:
         bool TryCandidate(Player* hero, uint32 zoneId);
         bool IsClear(float x, float y) const;
 
         std::vector<BonkSpot> m_spots;
+        std::vector<BonkSpot> m_fresh;
         float m_startX = 0.0f, m_startY = 0.0f, m_startZ = 0.0f;
         uint32 m_timer = 0;
 };

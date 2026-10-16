@@ -8,10 +8,11 @@
  * the bags), Salvage turns it into Valor. Quality follows the difficulty,
  * the kind of enemy and the stage.
  *
- * Gear found in a run never outlives it. When the run ends, greens and
- * blues turn into gold; epics are kept only by going home through the
- * stage portal, as a permanent copy sent by mail (BonkGear::keepEntry);
- * dying loses them. The gear the hero wore coming in goes back on. A run
+ * Gear found in a run never outlives it. Going home (the stage portal or
+ * the Hearthstone), the finds put in the Extraction Vault (one; two with
+ * Pack Mule, Phase F8) come home as a permanent copy sent by mail
+ * (BonkGear::keepEntry) and the rest turn into gold; dying, greens and blues
+ * still turn into gold and the rest is lost. The gear the hero wore coming in goes back on. A run
  * torn down by a logout takes its gear off the same way, and login clears
  * any run copy a crash left behind (BonkPlayer::OnLogin).
  *
@@ -61,6 +62,10 @@ namespace
     uint32 const BONK_HEARTH_MIN_MS      = 5000;
     uint32 const BONK_HEARTH_SEND_MS     = 250;
     char const* const BONK_HEARTH_LABEL  = "Hearthstone";
+    // The Extraction Vault: usable from this far (a little past the core's
+    // reach for objects); in the Hearthstone's ring this far from its middle.
+    float const BONK_VAULT_REACH         = 8.0f;
+    float const BONK_VAULT_RING_OFFSET   = 2.5f;
 
     // While alive, gear goes on and off in combat too (a run hero always is;
     // BonkPlayer::IsEquippingGear).
@@ -106,7 +111,13 @@ namespace
     }
     float GetGoldShare(uint8 quality)
     {
-        return quality == ITEM_QUALITY_UNCOMMON ? 0.1f : 0.25f;
+        switch (quality)
+        {
+            case ITEM_QUALITY_UNCOMMON: return 0.1f;
+            case ITEM_QUALITY_RARE:     return 0.25f;
+            case ITEM_QUALITY_EPIC:     return 0.5f;
+            default:                    return 1.0f;
+        }
     }
 
     std::string GetQualityName(uint8 quality)
@@ -132,9 +143,9 @@ namespace
 uint8 BonkRun::RollGearQuality(BonkSpawnKind kind) const
 {
     GearOdds const* odds = BONK_GEAR_ODDS_EASY;
-    if (m_tier.key == "medium")
+    if (m_tier.key == "heroic")
         odds = BONK_GEAR_ODDS_MEDIUM;
-    else if (m_tier.key == "hard")
+    else if (m_tier.key == "mythic")
         odds = BONK_GEAR_ODDS_HARD;
     GearOdds const& row = odds[kind == BONK_SPAWN_BOSS ? 2 : kind == BONK_SPAWN_MINIBOSS ? 1 : 0];
 
@@ -143,8 +154,11 @@ uint8 BonkRun::RollGearQuality(BonkSpawnKind kind) const
     // Later stages: a chance at one quality better.
     if (quality < ITEM_QUALITY_EPIC && m_stage > 1 && roll_chance_f(BONK_GEAR_STAGE_UPGRADE * (m_stage - 1)))
         ++quality;
-    // Legendaries: bosses on Hard, from stage 2.
-    if (kind == BONK_SPAWN_BOSS && m_tier.key == "hard" && m_stage >= 2 && roll_chance_f(BONK_GEAR_LEGENDARY_CHANCE))
+    // A dungeon mode: a step better again.
+    if (IsDungeon() && quality < ITEM_QUALITY_EPIC)
+        ++quality;
+    // Legendaries: bosses on Mythic, from stage 2.
+    if (kind == BONK_SPAWN_BOSS && m_tier.key == "mythic" && m_stage >= 2 && roll_chance_f(BONK_GEAR_LEGENDARY_CHANCE))
         quality = ITEM_QUALITY_LEGENDARY;
     return quality;
 }
@@ -390,6 +404,8 @@ void BonkRun::RestoreBroughtGear()
 
 void BonkRun::ResolveRunGear(bool extract)
 {
+    // Going home: the finds in the vault come home, the rest sell. Dying:
+    // greens and blues still sell, the rest is lost.
     uint32 gold = 0;
     uint32 sold = 0;
     std::vector<uint32> kept;
@@ -398,20 +414,20 @@ void BonkRun::ResolveRunGear(bool extract)
         Item* item = m_player->GetItemByGuid(guid);
         if (!item)
             continue;
-        BonkGear const* gear = sBonkMgr.GetGear(item->GetEntry());
-        if (gear && gear->keepEntry)
+        if (BonkGear const* gear = sBonkMgr.GetGear(item->GetEntry()))
         {
-            if (extract)
+            if (extract && gear->keepEntry && IsInVault(guid))
                 kept.push_back(gear->keepEntry);
-        }
-        else if (gear)
-        {
-            gold += uint32(m_map.stageGold * GetGoldShare(gear->quality));
-            ++sold;
+            else if (extract || gear->quality <= ITEM_QUALITY_RARE)
+            {
+                gold += uint32(m_map.stageGold * GetGoldShare(gear->quality));
+                ++sold;
+            }
         }
         m_player->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
     }
     m_runGear.clear();
+    m_vault.clear();
     // A dead hero can't put anything on (the core refuses): BonkRun::Exit
     // does it once they are alive again at camp.
     if (m_player->IsAlive())
@@ -485,11 +501,16 @@ bool BonkRun::UseItem(Item* item)
     m_hearthZ = m_player->GetPositionZ();
     if (GameObject* ring = PlaceObject(BONK_GO_HEARTH_RING, m_hearthX, m_hearthY, m_hearthZ, BONK_LOOT_LIFETIME_SEC))
         m_hearthRing = ring->GetObjectGuid();
+    // The Extraction Vault inside it, in front of the hero (a stage portal's
+    // vault, if one is up, makes way).
+    float const facing = m_player->GetOrientation();
+    PlaceVault(m_hearthX + BONK_VAULT_RING_OFFSET * std::cos(facing), m_hearthY + BONK_VAULT_RING_OFFSET * std::sin(facing), m_hearthZ);
     m_hearthActive = true;
     m_hearthMs = 0;
     m_hearthSendMs = 0;
     m_hearthShown = false;
-    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " sec to go home with your loot!");
+    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " sec to go home" +
+        (IsVaultEmptyWithFinds() ? ". Put your best find in the Extraction Vault first!" : " with your loot!"));
     return true;
 }
 
@@ -546,4 +567,169 @@ void BonkRun::EndHearth()
         if (GameObject* ring = map->GetGameObject(m_hearthRing))
             ring->Delete();
     m_hearthRing.Clear();
+    // Its vault goes with it, unless the stage portal's is up.
+    if (m_state != STATE_PORTAL)
+        DespawnVault();
+}
+
+uint32 BonkRun::GetVaultSlots() const
+{
+    return 1 + uint32(GetUtility(BONK_UTILITY_PACK_MULE));
+}
+
+uint32 BonkRun::GetGearGold(uint8 quality) const
+{
+    return uint32(uint32(m_map.stageGold * GetGoldShare(quality)) * GetGoldMultiplier());
+}
+
+void BonkRun::PlaceVault(float x, float y, float baseZ)
+{
+    DespawnVault();
+    float z = m_player->GetMap()->GetHeight(x, y, baseZ + 5.0f, true, 10.0f);
+    if (z <= INVALID_HEIGHT || !m_player->IsWithinLOS(x, y, z + 1.0f))
+    {
+        x = m_player->GetPositionX();
+        y = m_player->GetPositionY();
+        z = m_player->GetPositionZ();
+    }
+    if (GameObject* vault = PlaceObject(BONK_GO_VAULT, x, y, z, BONK_LOOT_LIFETIME_SEC))
+        m_vaultGuid = vault->GetObjectGuid();
+}
+
+void BonkRun::DespawnVault()
+{
+    if (m_vaultGuid.IsEmpty())
+        return;
+    if (Map* map = m_player->FindMap())
+        if (GameObject* vault = map->GetGameObject(m_vaultGuid))
+            vault->Delete();
+    m_vaultGuid.Clear();
+    if (m_player->IsInWorld())
+        m_player->GetBonkPlayer()->SendAddon("vaultclose");
+}
+
+bool BonkRun::IsOwnVault(GameObject const* vault) const
+{
+    return (m_state == STATE_RUNNING || m_state == STATE_PORTAL) && vault->GetObjectGuid() == m_vaultGuid;
+}
+
+bool BonkRun::IsInVault(ObjectGuid const& guid) const
+{
+    return std::find(m_vault.begin(), m_vault.end(), guid) != m_vault.end();
+}
+
+ObjectGuid BonkRun::FindRunGear(uint32 guidLow) const
+{
+    for (ObjectGuid const& guid : m_runGear)
+        if (guid.GetCounter() == guidLow)
+            if (Item const* item = m_player->GetItemByGuid(guid))
+                if (BonkGear const* gear = sBonkMgr.GetGear(item->GetEntry()))
+                    if (gear->keepEntry)
+                        return guid;
+    return ObjectGuid();
+}
+
+std::vector<BonkRun::VaultFind> BonkRun::GetVaultFinds() const
+{
+    std::vector<VaultFind> finds;
+    for (ObjectGuid const& guid : m_runGear)
+    {
+        Item const* item = m_player->GetItemByGuid(guid);
+        BonkGear const* gear = item ? sBonkMgr.GetGear(item->GetEntry()) : nullptr;
+        if (!gear || !gear->keepEntry)
+            continue;
+        VaultFind find;
+        find.guid = guid;
+        find.entry = item->GetEntry();
+        find.quality = gear->quality;
+        find.worn = item->IsEquipped();
+        find.sellCopper = GetGearGold(gear->quality);
+        find.inVault = IsInVault(guid);
+        finds.push_back(find);
+    }
+    return finds;
+}
+
+bool BonkRun::IsVaultEmptyWithFinds() const
+{
+    return m_vault.empty() && !GetVaultFinds().empty();
+}
+
+bool BonkRun::CheckVaultReach(std::string& error) const
+{
+    GameObject const* vault = m_vaultGuid.IsEmpty() ? nullptr : m_player->GetMap()->GetGameObject(m_vaultGuid);
+    if (!vault || (m_state != STATE_RUNNING && m_state != STATE_PORTAL))
+    {
+        error = "There is no Extraction Vault here.";
+        return false;
+    }
+    if (!m_player->IsWithinDistInMap(vault, BONK_VAULT_REACH))
+    {
+        error = "Get closer to the Extraction Vault.";
+        return false;
+    }
+    return true;
+}
+
+void BonkRun::OpenVault()
+{
+    SendVault();
+}
+
+void BonkRun::SendVault() const
+{
+    // vaultclear, a vaultitem~guid~entry~quality~worn~sellCopper line a find,
+    // then vaultopen~slots~guids in the vault (comma list), after every
+    // change too. Without the addon the vault's gossip lists them.
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    if (!bonk->IsAddonReady())
+        return;
+    bonk->SendAddon("vaultclear");
+    std::string chosen;
+    for (VaultFind const& find : GetVaultFinds())
+    {
+        bonk->SendAddon("vaultitem~" + std::to_string(find.guid.GetCounter()) + "~" + std::to_string(find.entry) + "~" +
+            std::to_string(find.quality) + "~" + (find.worn ? "1" : "0") + "~" + std::to_string(find.sellCopper));
+        if (find.inVault)
+            chosen += (chosen.empty() ? "" : ",") + std::to_string(find.guid.GetCounter());
+    }
+    bonk->SendAddon("vaultopen~" + std::to_string(GetVaultSlots()) + "~" + chosen);
+}
+
+bool BonkRun::PutInVault(uint32 guidLow, std::string& error)
+{
+    if (!CheckVaultReach(error))
+        return false;
+    ObjectGuid const guid = FindRunGear(guidLow);
+    if (guid.IsEmpty())
+    {
+        error = "That isn't something you found in this run.";
+        return false;
+    }
+    if (!IsInVault(guid))
+    {
+        // Full: the find put in first makes way.
+        if (m_vault.size() >= GetVaultSlots())
+            m_vault.erase(m_vault.begin());
+        m_vault.push_back(guid);
+        if (Item const* item = m_player->GetItemByGuid(guid))
+            m_player->GetBonkPlayer()->Notify(std::string(item->GetProto()->Name1) + " goes home with you.");
+    }
+    SendVault();
+    return true;
+}
+
+bool BonkRun::TakeFromVault(uint32 guidLow, std::string& error)
+{
+    if (!CheckVaultReach(error))
+        return false;
+    auto itr = std::find_if(m_vault.begin(), m_vault.end(), [guidLow](ObjectGuid const& guid) { return guid.GetCounter() == guidLow; });
+    if (itr == m_vault.end())
+    {
+        error = "That isn't in the vault.";
+        return false;
+    }
+    m_vault.erase(itr);
+    SendVault();
+    return true;
 }

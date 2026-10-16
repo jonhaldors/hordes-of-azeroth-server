@@ -24,10 +24,13 @@ namespace
 {
     uint32 const BONK_TEXT_QUEST_BOARD = 900005;
 
-    // Unlock prices at the Spellbook, copper (Core loop v2 phase E).
-    uint32 const BONK_UNLOCK_SPELL_PRICE   = 5000;
-    uint32 const BONK_UNLOCK_PASSIVE_PRICE = 4000;
-    uint32 const BONK_UNLOCK_CARD_PRICE[MAX_BONK_RARITY] = { 2000, 3500, 6000, 10000, 10000 };     // common to legendary
+    // Unlock prices at the Spellbook, copper (Phase F): the first costs
+    // BONK_UNLOCK_BASE_PRICE, and each one paid for raises the next by
+    // (1 + 0.5 n + 0.05 n^2): 25s, 39s, 55s, then about 1.2g for the 5th,
+    // 2.4g for the 10th, 7.5g for the 20th, 14g for the 30th. Rarer cards
+    // cost more on top.
+    uint32 const BONK_UNLOCK_BASE_PRICE = 2500;
+    float const BONK_UNLOCK_CARD_RARITY[MAX_BONK_RARITY] = { 1.0f, 1.25f, 1.5f, 2.0f, 2.0f };     // common to legendary
 
     char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
 
@@ -167,13 +170,16 @@ void BonkQuests::OnLogin(Player* player)
     }
 
     std::set<uint64> owned;
-    result = CharacterDatabase.PQuery("SELECT `type`, `id` FROM `bonk_account_unlock` WHERE `account` = %u", account);
+    uint32 paid = 0;
+    result = CharacterDatabase.PQuery("SELECT `type`, `id`, `paid` FROM `bonk_account_unlock` WHERE `account` = %u", account);
     if (result)
     {
         do
         {
             Field* fields = result->Fetch();
             owned.insert(UnlockKey(BonkQuestReward(fields[0].GetUInt8()), fields[1].GetUInt32()));
+            if (fields[2].GetUInt8())
+                ++paid;
         } while (result->NextRow());
     }
 
@@ -181,6 +187,7 @@ void BonkQuests::OnLogin(Player* player)
         std::lock_guard<std::mutex> guard(m_lock);
         m_accounts[account] = std::move(loaded);
         m_owned[account] = std::move(owned);
+        m_paid[account] = paid;
     }
 
     // Stages reached and Mastery earned before there were quests count as well.
@@ -252,23 +259,32 @@ bool BonkQuests::IsOwned(uint32 account, BonkQuestReward type, uint32 id) const
     return itr != m_owned.end() && itr->second.count(UnlockKey(type, id)) != 0;
 }
 
-uint32 BonkQuests::GetUnlockPrice(BonkQuestReward type, uint32 id)
+uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 id) const
 {
-    // Core loop v2 phase E: a death at Wall 1 (about 40-50s) buys one
-    // unlock; a cleared stage (about 2g) three or four.
+    float scale = 1.0f;
     switch (type)
     {
         case BONK_REWARD_WEAPON:
-            return BONK_UNLOCK_SPELL_PRICE;
         case BONK_REWARD_PASSIVE:
-            return BONK_UNLOCK_PASSIVE_PRICE;
+            break;
         case BONK_REWARD_CARD:
             if (BonkCard const* card = sBonkMgr.GetCard(id))
-                return BONK_UNLOCK_CARD_PRICE[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)];
-            return 0;
+                scale = BONK_UNLOCK_CARD_RARITY[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)];
+            break;
         default:
             return 0;
     }
+
+    float paid = 0.0f;
+    {
+        std::lock_guard<std::mutex> guard(m_lock);
+        auto itr = m_paid.find(account);
+        if (itr != m_paid.end())
+            paid = float(itr->second);
+    }
+    float const copper = BONK_UNLOCK_BASE_PRICE * scale * (1.0f + 0.5f * paid + 0.05f * paid * paid);
+    // To the nearest silver.
+    return std::max(100u, uint32(copper / 100.0f + 0.5f) * 100);
 }
 
 void BonkQuests::Buy(uint32 account, BonkQuestReward type, uint32 id)
@@ -276,8 +292,9 @@ void BonkQuests::Buy(uint32 account, BonkQuestReward type, uint32 id)
     {
         std::lock_guard<std::mutex> guard(m_lock);
         m_owned[account].insert(UnlockKey(type, id));
+        ++m_paid[account];
     }
-    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_unlock` (`account`, `type`, `id`) VALUES (%u, %u, %u)", account, uint32(type), id);
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_unlock` (`account`, `type`, `id`, `paid`) VALUES (%u, %u, %u, 1)", account, uint32(type), id);
 }
 
 BonkQuest const* BonkQuests::GetUnlockingQuest(BonkQuestReward type, uint32 id) const

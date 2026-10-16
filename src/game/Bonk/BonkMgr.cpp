@@ -97,6 +97,24 @@ void BonkMgr::Load()
     LoadWaves();
     LoadScaling();
     LoadMaps();
+
+    // Starting spots runs learned on each map (Phase F4).
+    {
+        std::lock_guard<std::mutex> guard(m_mapStartLock);
+        m_mapStarts.clear();
+        if (std::unique_ptr<QueryResult> starts{ WorldDatabase.Query("SELECT `map`, `x`, `y`, `z` FROM `bonk_map_start`") })
+        {
+            do
+            {
+                Field* fields = starts->Fetch();
+                BonkMapStart start;
+                start.x = fields[1].GetFloat();
+                start.y = fields[2].GetFloat();
+                start.z = fields[3].GetFloat();
+                m_mapStarts[fields[0].GetUInt32()].push_back(start);
+            } while (starts->NextRow());
+        }
+    }
     LoadMapCreatures();
     LoadMapEvents();
     // Weapons name the keywords they apply and pay off.
@@ -119,7 +137,7 @@ void BonkMgr::Load()
     // Keywords first: families name the one their bites apply.
     LoadPetFamilies();
 
-    for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL, BONK_GO_SHARD })
+    for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL, BONK_GO_SHARD, BONK_GO_VAULT })
         if (!sObjectMgr.GetGameObjectTemplate(entry))
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Vanilla Bonk: gameobject template %u is missing; runs will lack chests or portals, and give shards without a drop.", entry);
 
@@ -140,7 +158,7 @@ void BonkMgr::LoadTiers()
         "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes`, "
-        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms` FROM `bonk_tier`"));
+        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -182,6 +200,8 @@ void BonkMgr::LoadTiers()
         tier.maxBruisers = fields[26].GetUInt32();
         tier.firstEliteSecond = fields[27].GetUInt32();
         tier.chargeIntervalMs = fields[28].GetUInt32();
+        tier.stages = fields[29].GetUInt32();
+        tier.endless = fields[30].GetUInt8() != 0;
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -253,11 +273,12 @@ void BonkMgr::LoadMaps()
             continue;
         }
 
+        // Tier 0: in no difficulty's pool, a dungeon mode only (Phase F3).
         auto tier = m_tiers.find(map.tierId);
-        if (tier == m_tiers.end())
-            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map`: map %u (%s) belongs to unknown tier %u; no run will use it.", map.id, map.name.c_str(), map.tierId);
-        else
+        if (tier != m_tiers.end())
             tier->second.mapIds.push_back(map.id);
+        else if (map.tierId)
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_map`: map %u (%s) belongs to unknown tier %u; no run will use it.", map.id, map.name.c_str(), map.tierId);
 
         m_arenaZonesByMap[map.mapId].insert(map.zoneId);
         m_maps[map.id] = std::move(map);
@@ -1264,7 +1285,7 @@ void BonkMgr::LoadItemStats()
     std::string columns;
     for (auto const& column : BONK_GEAR_COLUMNS)
         columns += ", `" + std::string(column.name) + "`";
-    result = std::unique_ptr<QueryResult>(WorldDatabase.Query(("SELECT `entry`, `set_id`" + columns + " FROM `bonk_item_stat` ORDER BY `entry`").c_str()));
+    result = std::unique_ptr<QueryResult>(WorldDatabase.Query(("SELECT `entry`, `set_id`, `unlock_tier`" + columns + " FROM `bonk_item_stat` ORDER BY `entry`").c_str()));
     if (result)
     {
         do
@@ -1279,8 +1300,9 @@ void BonkMgr::LoadItemStats()
 
             BonkItemStat stat;
             stat.setId = fields[1].GetUInt32();
+            stat.unlockTier = fields[2].GetUInt32();
             for (size_t i = 0; i < BONK_GEAR_COLUMN_COUNT; ++i)
-                stat.stats[BONK_GEAR_COLUMNS[i].effect] = fields[2 + i].GetFloat();
+                stat.stats[BONK_GEAR_COLUMNS[i].effect] = fields[3 + i].GetFloat();
             if (stat.setId)
             {
                 auto set = m_itemSets.find(stat.setId);
@@ -1392,6 +1414,46 @@ BonkTier const* BonkMgr::FindTier(std::string const& keyOrId) const
         if (itr.second.key == keyOrId || std::to_string(itr.first) == keyOrId)
             return &itr.second;
     return nullptr;
+}
+
+std::vector<BonkMapStart> BonkMgr::GetMapStarts(uint32 bonkMapId) const
+{
+    std::lock_guard<std::mutex> guard(m_mapStartLock);
+    auto itr = m_mapStarts.find(bonkMapId);
+    return itr != m_mapStarts.end() ? itr->second : std::vector<BonkMapStart>();
+}
+
+bool BonkMgr::AddMapStart(uint32 bonkMapId, BonkMapStart const& start, float spread, size_t max)
+{
+    {
+        std::lock_guard<std::mutex> guard(m_mapStartLock);
+        std::vector<BonkMapStart>& starts = m_mapStarts[bonkMapId];
+        if (starts.size() >= max)
+            return false;
+        for (BonkMapStart const& other : starts)
+            if ((other.x - start.x) * (other.x - start.x) + (other.y - start.y) * (other.y - start.y) < spread * spread)
+                return false;
+        starts.push_back(start);
+    }
+    WorldDatabase.PExecute("INSERT INTO `bonk_map_start` (`map`, `x`, `y`, `z`) VALUES (%u, %f, %f, %f)", bonkMapId, start.x, start.y, start.z);
+    return true;
+}
+
+BonkMap const* BonkMgr::FindDungeon(std::string const& key) const
+{
+    for (auto const& itr : m_maps)
+        if (itr.second.type == BONK_MAP_ENCLOSED && itr.second.key == key && !itr.second.creatures.empty())
+            return &itr.second;
+    return nullptr;
+}
+
+std::vector<BonkMap const*> BonkMgr::GetDungeons() const
+{
+    std::vector<BonkMap const*> dungeons;
+    for (auto const& itr : m_maps)
+        if (itr.second.type == BONK_MAP_ENCLOSED && !itr.second.creatures.empty())
+            dungeons.push_back(&itr.second);
+    return dungeons;
 }
 
 BonkMap const* BonkMgr::GetMap(uint32 id) const

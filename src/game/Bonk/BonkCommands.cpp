@@ -19,8 +19,11 @@
 
 bool ChatHandler::HandleBonkStartCommand(char* args)
 {
+    // .bonk start <difficulty> [dungeon]: a dungeon key (moltencore) for a
+    // dungeon mode.
     Player* player = m_session->GetPlayer();
     char* key = ExtractArg(&args);
+    char* dungeonKey = ExtractArg(&args);
 
     BonkTier const* tier = key ? sBonkMgr.FindTier(key) : nullptr;
     if (!tier)
@@ -31,8 +34,20 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
         return false;
     }
 
+    BonkMap const* dungeon = nullptr;
+    if (dungeonKey)
+    {
+        dungeon = sBonkMgr.FindDungeon(dungeonKey);
+        if (!dungeon)
+        {
+            SendSysMessage("No such dungeon.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+    }
+
     std::string error;
-    if (!player->GetBonkPlayer()->StartRun(*tier, error))
+    if (!player->GetBonkPlayer()->StartRun(*tier, error, dungeon))
     {
         SendSysMessage(error.c_str());
         SetSentErrorMessage(true);
@@ -212,6 +227,38 @@ bool ChatHandler::HandleBonkSkipCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkMenuCommand(char* args)
+{
+    // .bonk menu 1|0: the addon's pause menu opened or closed. Only a run
+    // cares; at camp it does nothing.
+    uint32 open = 0;
+    if (!ExtractUInt32(&args, open))
+        return false;
+    if (BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun())
+        run->SetMenuOpen(open != 0);
+    return true;
+}
+
+bool ChatHandler::HandleBonkVaultCommand(char* args)
+{
+    // .bonk vault put|take <item guid>: the Extraction Vault's window
+    // (Phase F8); the run answers with the vault again.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    char* action = ExtractLiteralArg(&args);
+    uint32 guidLow = 0;
+    if (!run || !action || (strcmp(action, "put") && strcmp(action, "take")) || !ExtractUInt32(&args, guidLow))
+    {
+        SendSysMessage(run ? "Use .bonk vault put|take <item>." : "You are not in a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    std::string error;
+    if (!(strcmp(action, "put") ? run->TakeFromVault(guidLow, error) : run->PutInVault(guidLow, error)))
+        m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
+    return true;
+}
+
 bool ChatHandler::HandleBonkUnlockCommand(char* args)
 {
     // .bonk unlock w|p|c <id>: buy a spell, passive or card whose quest is
@@ -342,6 +389,9 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     bonk->SetAddonReady();
     bonk->SendAddon("hello~1");
+    // A reload with the pause menu open never sent its close.
+    if (BonkRun* run = bonk->GetRun())
+        run->SetMenuOpen(false);
     bonk->SendTierList();
     bonk->SendGearInfo();
     BonkMobAI::SendAffixInfo(bonk);

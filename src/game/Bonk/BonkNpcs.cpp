@@ -18,6 +18,7 @@
 #include "BonkRun.h"
 #include "Creature.h"
 #include "GameObject.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
@@ -31,6 +32,8 @@ namespace
     uint32 const BONK_TEXT_TALENTS       = 900004;
     uint32 const BONK_TEXT_MASTERY       = 900008;
     uint32 const BONK_TEXT_MASTERY_SOON  = 900009;
+    uint32 const BONK_TEXT_VAULT_EMPTY   = 900010;
+    uint32 const BONK_TEXT_VAULT         = 900011;
 
     // Talent trainer without the addon: this action takes the points back.
     uint32 const MASTERY_ACTION_RESPEC = GOSSIP_ACTION_INFO_DEF - 1;
@@ -43,7 +46,14 @@ namespace
     {
         PORTAL_ACTION_NEXT = GOSSIP_ACTION_INFO_DEF + 1,
         PORTAL_ACTION_HOME = GOSSIP_ACTION_INFO_DEF + 2,
+        PORTAL_ACTION_HOME_SURE = GOSSIP_ACTION_INFO_DEF + 3,
+        PORTAL_ACTION_BACK = GOSSIP_ACTION_INFO_DEF + 4,
     };
+
+    // The vault without the addon: the sender says which way, the action is
+    // the item's guid.
+    uint32 const SENDER_VAULT_PUT  = GOSSIP_SENDER_MAIN + 1;
+    uint32 const SENDER_VAULT_TAKE = GOSSIP_SENDER_MAIN + 2;
 }
 
 bool GossipHello_npc_bonk_run_master(Player* player, Creature* creature)
@@ -277,7 +287,10 @@ bool GOHello_go_bonk_portal(Player* player, GameObject* go)
 
     if (BonkMap const* next = run->GetNextMap())
     {
-        std::string const text = "Stage " + std::to_string(run->GetStage() + 1) + ": " + next->name;
+        // Past an endless difficulty's last stage: Endless.
+        BonkTier const& tier = run->GetTier();
+        bool const endless = tier.stages && run->GetStage() + 1 > tier.stages;
+        std::string const text = std::string(endless ? "Endless - " : "") + "Stage " + std::to_string(run->GetStage() + 1) + ": " + next->name;
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, text.c_str(), GOSSIP_SENDER_MAIN, PORTAL_ACTION_NEXT);
     }
     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Return to camp (end the run)", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME);
@@ -287,17 +300,77 @@ bool GOHello_go_bonk_portal(Player* player, GameObject* go)
 
 bool GOGossipSelect_go_bonk_portal(Player* player, GameObject* go, uint32 /*sender*/, uint32 action)
 {
-    player->CLOSE_GOSSIP_MENU();
-
     BonkRun* run = player->GetBonkPlayer()->GetRun();
     if (!run || !run->IsOwnPortal(go))
+    {
+        player->CLOSE_GOSSIP_MENU();
         return true;
+    }
 
+    // Home with the Extraction Vault empty though a find could come: ask.
+    if (action == PORTAL_ACTION_HOME && run->IsVaultEmptyWithFinds())
+    {
+        player->PlayerTalkClass->ClearMenus();
+        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Go home anyway", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME_SURE);
+        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, PORTAL_ACTION_BACK);
+        player->SEND_GOSSIP_MENU(BONK_TEXT_VAULT_EMPTY, go->GetObjectGuid());
+        return true;
+    }
+    if (action == PORTAL_ACTION_BACK)
+    {
+        player->PlayerTalkClass->ClearMenus();
+        return GOHello_go_bonk_portal(player, go);
+    }
+
+    player->CLOSE_GOSSIP_MENU();
     if (action == PORTAL_ACTION_NEXT)
         run->EnterNextStage();
-    else if (action == PORTAL_ACTION_HOME)
+    else if (action == PORTAL_ACTION_HOME || action == PORTAL_ACTION_HOME_SURE)
         run->GoHome();
     return true;
+}
+
+bool GOHello_go_bonk_vault(Player* player, GameObject* go)
+{
+    BonkRun* run = player->GetBonkPlayer()->GetRun();
+    if (!run || !run->IsOwnVault(go))
+        return true;
+
+    if (player->GetBonkPlayer()->IsAddonReady())
+    {
+        run->OpenVault();
+        return true;
+    }
+
+    // Without the addon: the finds as gossip lines.
+    for (BonkRun::VaultFind const& find : run->GetVaultFinds())
+    {
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(find.entry);
+        if (!proto)
+            continue;
+        std::string const text = find.inVault ? std::string("In the vault: ") + proto->Name1 + " (take it out)" :
+            std::string("Put in the vault: ") + proto->Name1 + " (else sold for " + std::to_string(find.sellCopper / 100) + "s)";
+        player->ADD_GOSSIP_ITEM(find.inVault ? GOSSIP_ICON_INTERACT_1 : GOSSIP_ICON_VENDOR, text.c_str(),
+            find.inVault ? SENDER_VAULT_TAKE : SENDER_VAULT_PUT, find.guid.GetCounter());
+    }
+    player->SEND_GOSSIP_MENU(BONK_TEXT_VAULT, go->GetObjectGuid());
+    return true;
+}
+
+bool GOGossipSelect_go_bonk_vault(Player* player, GameObject* go, uint32 sender, uint32 action)
+{
+    BonkRun* run = player->GetBonkPlayer()->GetRun();
+    if (!run || !run->IsOwnVault(go))
+    {
+        player->CLOSE_GOSSIP_MENU();
+        return true;
+    }
+
+    std::string error;
+    if (!(sender == SENDER_VAULT_TAKE ? run->TakeFromVault(action, error) : run->PutInVault(action, error)))
+        player->GetBonkPlayer()->Notify(error);
+    player->PlayerTalkClass->ClearMenus();
+    return GOHello_go_bonk_vault(player, go);
 }
 
 void AddSC_bonk_npcs()
@@ -347,5 +420,11 @@ void AddSC_bonk_npcs()
     newscript->Name = "go_bonk_portal";
     newscript->pGOHello = &GOHello_go_bonk_portal;
     newscript->pGOGossipSelect = &GOGossipSelect_go_bonk_portal;
+    newscript->RegisterSelf();
+
+    newscript = new Script;
+    newscript->Name = "go_bonk_vault";
+    newscript->pGOHello = &GOHello_go_bonk_vault;
+    newscript->pGOGossipSelect = &GOGossipSelect_go_bonk_vault;
     newscript->RegisterSelf();
 }

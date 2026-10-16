@@ -148,8 +148,9 @@ class BonkQuests
         // Quests the account has finished.
         uint32 GetCompletedCount(uint32 account) const { return CountCompleted(account); }
         static bool IsBought(BonkQuestReward type) { return type == BONK_REWARD_WEAPON || type == BONK_REWARD_PASSIVE || type == BONK_REWARD_CARD; }
-        // Its price in copper (0 for something that is not for sale).
-        static uint32 GetUnlockPrice(BonkQuestReward type, uint32 id);
+        // Its price in copper for `account` (0 for something that is not for
+        // sale): each unlock paid for raises the next (Phase F).
+        uint32 GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 id) const;
         // Records the purchase (the caller took the gold).
         void Buy(uint32 account, BonkQuestReward type, uint32 id);
 
@@ -215,6 +216,7 @@ class BonkQuests
         mutable std::mutex m_lock;
         std::map<uint32, AccountProgress> m_accounts;
         std::map<uint32, std::set<uint64>> m_owned;     // bought unlocks by account (bonk_account_unlock)
+        std::map<uint32, uint32> m_paid;                // of them, those paid for with gold (not kept from before)
 };
 
 #define sBonkQuests MaNGOS::Singleton<BonkQuests>::Instance()

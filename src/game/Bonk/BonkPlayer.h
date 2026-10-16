@@ -26,6 +26,7 @@ class Player;
 enum BonkShop : uint8;
 enum BonkQuestReward : uint8;
 enum BonkUpgradeUtility : uint8;
+struct BonkMap;
 struct BonkMasteryBonuses;
 struct BonkRunBonuses;
 struct BonkTier;
@@ -45,7 +46,8 @@ class BonkPlayer
         // GM testing aid outside a run: a ground warning that fills and goes
         // just as an ability's does, with nothing after it.
         void PreviewTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);
-        bool StartRun(BonkTier const& tier, std::string& error);
+        // `dungeon`: a dungeon mode, open once the difficulty is cleared.
+        bool StartRun(BonkTier const& tier, std::string& error, BonkMap const* dungeon = nullptr);
         void StopRun();
 
         // Tier progress is shared by every character on the account.
@@ -54,6 +56,11 @@ class BonkPlayer
         static std::vector<BonkTier const*> GetTiersInOrder();
         uint32 GetBestStage(uint32 tierId) const;
         bool IsTierUnlocked(BonkTier const& tier) const;
+        // Its last stage's boss beaten at least once.
+        bool IsTierCleared(BonkTier const& tier) const;
+        // The gear vendor sells Heroic and Mythic gear once Normal and Heroic
+        // are cleared (Phase F6).
+        bool CanBuyGear(uint32 itemEntry) const;
         std::string GetUnlockHint(BonkTier const& tier) const;
         void RecordStage(uint32 tierId, uint32 stage);
 

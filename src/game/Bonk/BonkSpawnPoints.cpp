@@ -64,6 +64,7 @@ namespace
 void BonkSpawnPoints::Reset(float startX, float startY, float startZ)
 {
     m_spots.clear();
+    m_fresh.clear();
     m_startX = startX;
     m_startY = startY;
     m_startZ = startZ;
@@ -147,7 +148,15 @@ bool BonkSpawnPoints::TryCandidate(Player* hero, uint32 zoneId)
     spot.y = y;
     spot.z = z;
     m_spots.push_back(spot);
+    m_fresh.push_back(spot);
     return true;
+}
+
+std::vector<BonkSpot> BonkSpawnPoints::TakeFresh()
+{
+    std::vector<BonkSpot> fresh;
+    fresh.swap(m_fresh);
+    return fresh;
 }
 
 bool BonkSpawnPoints::IsClear(float x, float y) const

@@ -179,6 +179,21 @@ namespace
     size_t const BONK_MAX_SPELL_SLOTS     = 5;
     size_t const BONK_START_PASSIVE_SLOTS = 3;
     size_t const BONK_MAX_PASSIVE_SLOTS   = 6;
+    // Dungeon modes (Phase F3): on top of the difficulty.
+    float const BONK_DUNGEON_HEALTH = 1.3f;
+    float const BONK_DUNGEON_DAMAGE = 1.2f;
+    float const BONK_DUNGEON_GOLD   = 1.5f;
+
+    // The Extraction Vault stands this far to the side of the stage portal.
+    float const BONK_VAULT_SIDE     = 4.0f;
+
+    // Starting spots (Phase F4): a run starts at a learned one at random once
+    // a map has a few. Each has the arena all round it this far out and keeps
+    // this far from the others.
+    size_t const BONK_START_MIN_LEARNED = 4;
+    size_t const BONK_START_MAX_LEARNED = 15;
+    float const BONK_START_EDGE         = 60.0f;
+    float const BONK_START_SPREAD       = 80.0f;
     size_t const BONK_OFFER_SIZE   = 3;
     uint32 const BONK_RUN_XP_SEND_MS = 200;     // the XP bar's updates while orbs come in
     // Every choice has at least one spell rank of this rarity or better.
@@ -713,9 +728,10 @@ namespace
     }
 }
 
-BonkRun::BonkRun(Player* player, BonkTier const& tier) : m_player(player), m_tier(tier),
+BonkRun::BonkRun(Player* player, BonkTier const& tier, BonkMap const* dungeon) : m_player(player), m_tier(tier),
     m_bonuses(player->GetBonkPlayer()->GetRunBonuses()), m_mastery(player->GetBonkPlayer()->GetMasteryBonuses())
 {
+    m_dungeonId = dungeon ? dungeon->id : 0;
     // Mastery bonuses are by weapon; damage comes in by spell.
     for (auto const& itr : sBonkMgr.GetWeapons())
         m_spellRoots.emplace(itr.second.spellId, BonkMastery::GetRootWeapon(itr.first));
@@ -757,6 +773,11 @@ bool BonkRun::Begin(std::string& error)
 
 BonkMap const* BonkRun::ChooseNextMap()
 {
+    // A dungeon mode stays in its dungeon; each stage starts at another
+    // learned spot (TeleportToStage).
+    if (m_dungeonId)
+        return sBonkMgr.GetMap(m_dungeonId);
+
     // Each lap plays every map of the pool once in random order, and the
     // same map never comes twice in a row unless it is the only one.
     std::vector<BonkMap const*> pool;
@@ -786,9 +807,57 @@ BonkMap const* BonkRun::ChooseNextMap()
     return map;
 }
 
+void BonkRun::LearnStarts(std::vector<BonkSpot> const& spots)
+{
+    // A spawn point is level open ground with a path from the hero already
+    // (BonkSpawnPoints); a starting spot must also be well inside the arena,
+    // with the arena all round it, and outdoors on an open map (not inside or
+    // on top of a building).
+    if (spots.empty() || !m_player->IsInWorld())
+        return;
+    TerrainInfo const* terrain = m_player->GetMap()->GetTerrain();
+    for (BonkSpot const& spot : spots)
+    {
+        if (m_map.type == BONK_MAP_OPEN && !terrain->IsOutdoors(spot.x, spot.y, spot.z + 1.0f))
+            continue;
+        bool inside = true;
+        for (uint32 i = 0; i < 8 && inside; ++i)
+        {
+            float const angle = i * M_PI_F / 4.0f;
+            float const x = spot.x + BONK_START_EDGE * std::cos(angle);
+            float const y = spot.y + BONK_START_EDGE * std::sin(angle);
+            float const z = m_player->GetMap()->GetHeight(x, y, spot.z + 20.0f, true, 60.0f);
+            if (z <= INVALID_HEIGHT || (m_map.zoneId && terrain->GetZoneId(x, y, z) != m_map.zoneId) || terrain->IsInWater(x, y, z + 1.0f))
+                inside = false;
+        }
+        if (!inside)
+            continue;
+        BonkMapStart start;
+        start.x = spot.x;
+        start.y = spot.y;
+        start.z = spot.z;
+        sBonkMgr.AddMapStart(m_map.id, start, BONK_START_SPREAD, BONK_START_MAX_LEARNED);
+    }
+}
+
 bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
 {
-    if (!m_player->TeleportTo(map.mapId, map.x, map.y, map.z, map.o))
+    // A spot runs learned on the map, at random once there are a few, facing
+    // the map's own start (the middle of the arena); its own start until then.
+    float x = map.x, y = map.y, z = map.z, o = map.o;
+    std::vector<BonkMapStart> const starts = sBonkMgr.GetMapStarts(map.id);
+    if (starts.size() >= BONK_START_MIN_LEARNED)
+    {
+        BonkMapStart const& start = starts[urand(0, uint32(starts.size()) - 1)];
+        x = start.x;
+        y = start.y;
+        z = start.z + 0.5f;
+        o = std::atan2(map.y - y, map.x - x);
+        if (o < 0.0f)
+            o += 2.0f * M_PI_F;
+    }
+
+    if (!m_player->TeleportTo(map.mapId, x, y, z, o))
     {
         error = "Could not enter " + map.name + ".";
         return false;
@@ -878,6 +947,7 @@ void BonkRun::StartStage()
     m_state = STATE_RUNNING;
     m_elapsedMs = 0;
     m_nextEvent = 0;
+    m_menuOpen = false;
     m_miniEventActive = false;
     m_nextMiniEventMs = 0;
     m_lastMiniEvent = MAX_BONK_MINI_EVENT;
@@ -2300,14 +2370,14 @@ float BonkRun::GetStageHealthMultiplier() const
     // Stage 2 +25%, stage 3 +60%, and steeper after (bonk_tier growth and accel).
     float const stages = float(m_stage - 1);
     return m_tier.healthMultiplier * (1.0f + m_tier.stageHealthGrowth * stages + m_tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f)) *
-        (1.0f + m_bonuses.enemyHealth / 100.0f);
+        (1.0f + m_bonuses.enemyHealth / 100.0f) * (m_dungeonId ? BONK_DUNGEON_HEALTH : 1.0f);
 }
 
 float BonkRun::GetStageDamageMultiplier() const
 {
     float const stages = float(m_stage - 1);
     return m_tier.damageMultiplier * (1.0f + m_tier.stageDamageGrowth * stages + m_tier.stageDamageAccel * stages * std::max(0.0f, stages - 1.0f)) *
-        (1.0f + m_bonuses.enemyDamage / 100.0f);
+        (1.0f + m_bonuses.enemyDamage / 100.0f) * (m_dungeonId ? BONK_DUNGEON_DAMAGE : 1.0f);
 }
 
 void BonkRun::UpdateGear()
@@ -3050,6 +3120,7 @@ void BonkRun::DespawnObjects()
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
             portal->Delete();
     }
+    DespawnVault();
     m_chests.clear();
     m_powerups.clear();
     m_shardDrops.clear();
@@ -3061,6 +3132,7 @@ void BonkRun::DespawnObjects()
 void BonkRun::UpdateObjectives(uint32 diff)
 {
     m_spawnPoints.Update(m_player, m_map.zoneId, diff);
+    LearnStarts(m_spawnPoints.TakeFresh());
     for (BonkObjective const& gone : m_objectives.Update(m_player, diff))
         m_spawnPoints.Release(gone.x, gone.y);
 }
@@ -3142,7 +3214,17 @@ void BonkRun::OpenPortal(Creature* boss)
     CollectAllOrbs();
     CollectAllGear();
 
-    BonkMap const* next = ChooseNextMap();
+    // A cleared stage counts as reaching the next one: the best stage, the
+    // unlocks and quests ("Clear Normal") read it so.
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    bonk->RecordStage(m_tier.id, m_stage + 1);
+
+    // The difficulty's last stage wins the run: the portal leads home only,
+    // or, on an endless difficulty, home or on into Endless.
+    bool const last = m_tier.stages && m_stage >= m_tier.stages;
+    if (last)
+        m_victory = true;
+    BonkMap const* next = !last || m_tier.endless ? ChooseNextMap() : nullptr;
     m_nextMapId = next ? next->id : 0;
 
     // Just past where the boss died (its chest lands on the spot), or in
@@ -3160,7 +3242,22 @@ void BonkRun::OpenPortal(Creature* boss)
             m_player->GetPositionY() + BONK_PORTAL_DISTANCE * std::sin(angle), m_player->GetPositionZ());
     }
 
-    m_player->GetBonkPlayer()->Notify("Stage " + std::to_string(m_stage) + " cleared! Take the portal onward, or home.");
+    // The Extraction Vault a few steps to the side of it.
+    if (GameObject const* portal = m_player->GetMap()->GetGameObject(m_portalGuid))
+    {
+        float const side = m_player->GetAngle(portal) + M_PI_F / 2.0f;
+        PlaceVault(portal->GetPositionX() + BONK_VAULT_SIDE * std::cos(side), portal->GetPositionY() + BONK_VAULT_SIDE * std::sin(side),
+            portal->GetPositionZ());
+    }
+
+    if (!last)
+        bonk->Notify("Stage " + std::to_string(m_stage) + " cleared! Take the portal onward, or home.");
+    else if (!m_tier.endless)
+        bonk->Notify("Victory! " + m_tier.name + " cleared. Take the portal home with your loot.");
+    else if (m_stage == m_tier.stages)
+        bonk->Notify("Victory! " + m_tier.name + " cleared. Go home, or on into Endless.");
+    else
+        bonk->Notify("Endless stage " + std::to_string(m_stage) + " cleared! Go home, or deeper.");
     SendState();
 }
 
@@ -6187,11 +6284,17 @@ void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGui
     }
 }
 
-void BonkRun::GiveGold(uint32 copper)
+float BonkRun::GetGoldMultiplier() const
 {
     // The map type's reward adds to Greed and the gold talents.
     float const mapBonus = float(GetBonkMapRewardPercent(m_map.type)) - 100.0f;
-    copper = uint32(copper * (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus + mapBonus + GetGreedRewardPercent()) / 100.0f));
+    return (1.0f + (GetPassiveTotal(BONK_PASSIVE_GREED) + m_bonuses.goldBonus + mapBonus + GetGreedRewardPercent()) / 100.0f) *
+        (m_dungeonId ? BONK_DUNGEON_GOLD : 1.0f);
+}
+
+void BonkRun::GiveGold(uint32 copper)
+{
+    copper = uint32(copper * GetGoldMultiplier());
     if (!copper)
         return;
     m_player->ModifyMoney(int32(copper));
@@ -6241,11 +6344,13 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind)
 
     if (kind != BONK_SPAWN_BOSS)
     {
-        // Level 1 takes about 6 kills' worth, level 10 about 19, level 30
-        // about 49 (a swarmer is half a kill): aimed at level 8-10 by 2
-        // minutes, 20 by 5 and 35-40 by 10 (Core loop v2).
+        // Level 1 takes about 6 kills' worth, level 10 about 24, level 20
+        // 54, level 40 144 (a swarmer is half a kill): aimed at level 8-10 by
+        // 2 minutes, 20 by 5 and 35-40 by 10. The square term holds back a
+        // build that snowballs late (balance pass, 2026-10-16: level 57 at
+        // 10:00 on 4 + 1.5 x level).
         uint32 const level = m_player->GetLevel() + m_overcapLevel;
-        float const killsForLevel = 4.0f + 1.5f * level;
+        float const killsForLevel = 4.0f + 1.5f * level + 0.05f * level * level;
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
 
         // Normal enemies by archetype: swarmers give half, bruisers a green
@@ -7191,9 +7296,11 @@ void BonkRun::Finish(bool wentHome)
     uint32 const seconds = m_totalMs / IN_MILLISECONDS;
     if (bonk->IsAddonReady())
         bonk->SendAddon("end~" + std::string(wentHome ? "1" : "0") + "~" + std::to_string(seconds) + "~" + std::to_string(m_kills) + "~" +
-            std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_stage) + "~" + std::to_string(m_shardsEarned));
+            std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_stage) + "~" + std::to_string(m_shardsEarned) +
+            "~" + (m_victory ? "1" : "0"));
     else
-        ChatHandler(m_player).PSendSysMessage("%s Reached stage %u in %s, %u kills, level %u, earned %s and %s.", wentHome ? "Run complete!" : "Defeated.",
+        ChatHandler(m_player).PSendSysMessage("%s Reached stage %u in %s, %u kills, level %u, earned %s and %s.",
+            m_victory ? "Victory!" : wentHome ? "Run complete!" : "Defeated.",
             m_stage, FormatTime(seconds).c_str(), m_kills, m_player->GetLevel(), FormatGold(m_goldEarned).c_str(), FormatBonkShards(m_shardsEarned).c_str());
 
     // The results screen: what each weapon did.
@@ -7220,8 +7327,29 @@ void BonkRun::Finish(bool wentHome)
     sBonkQuests.SendLog(m_player, "");
 }
 
+void BonkRun::SetMenuOpen(bool open)
+{
+    if (m_menuOpen == open)
+        return;
+    m_menuOpen = open;
+    if (open)
+    {
+        if (m_state == STATE_RUNNING)
+            SetPaused(true);
+        return;
+    }
+    // Closed: on again, unless a choice is still up (a level-up, a chest, a
+    // Ley Line, the vendor or a loot sack), which keeps its own pause.
+    if (m_offer.empty() && m_leyOffer.empty() && !m_vendorOpen && !m_gearOfferEntry)
+        SetPaused(false);
+    UpdateOffers();
+}
+
 void BonkRun::SetPaused(bool paused)
 {
+    // The pause menu holds the run still whatever else lets go of it.
+    if (!paused && m_menuOpen)
+        return;
     if (m_paused == paused)
         return;
     m_paused = paused;

@@ -151,7 +151,7 @@ void BonkCodex::Send(Player* player, std::string const& npc)
         price = 0;
         if (sBonkQuests.IsForSale(account, type, id))
         {
-            price = BonkQuests::GetUnlockPrice(type, id);
+            price = sBonkQuests.GetUnlockPrice(account, type, id);
             return "2";
         }
         return sBonkQuests.IsLocked(account, type, id) ? "1" : "0";

@@ -811,7 +811,7 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
         return false;
     }
 
-    if (!Spend(BonkQuests::GetUnlockPrice(type, id), message))
+    if (!Spend(sBonkQuests.GetUnlockPrice(account, type, id), message))
         return false;
     sBonkQuests.Buy(account, type, id);
     message = name + " unlocked!";
@@ -1339,7 +1339,22 @@ void BonkPlayer::Update(uint32 diff)
     }
 }
 
-bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error)
+bool BonkPlayer::IsTierCleared(BonkTier const& tier) const
+{
+    // A cleared stage counts as reaching the next, so beyond the last stage.
+    return tier.stages && GetBestStage(tier.id) > tier.stages;
+}
+
+bool BonkPlayer::CanBuyGear(uint32 itemEntry) const
+{
+    BonkItemStat const* stat = sBonkMgr.GetItemStat(itemEntry);
+    if (!stat || !stat->unlockTier)
+        return true;
+    BonkTier const* tier = sBonkMgr.GetTier(stat->unlockTier);
+    return tier && IsTierCleared(*tier);
+}
+
+bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkMap const* dungeon)
 {
     if (m_run)
     {
@@ -1350,6 +1365,13 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error)
     if (!IsTierUnlocked(tier))
     {
         error = tier.name + " is locked. " + GetUnlockHint(tier) + ".";
+        return false;
+    }
+
+    // A difficulty's dungeons open once its own zones are cleared.
+    if (dungeon && !IsTierCleared(tier))
+    {
+        error = "Clear " + tier.name + " first to take on its dungeons.";
         return false;
     }
 
@@ -1365,7 +1387,7 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error)
         return false;
     }
 
-    m_run.reset(new BonkRun(m_player, tier));
+    m_run.reset(new BonkRun(m_player, tier, dungeon));
     if (!m_run->Begin(error))
     {
         m_run.reset();
@@ -1424,6 +1446,9 @@ std::string BonkPlayer::GetUnlockHint(BonkTier const& tier) const
     BonkTier const* required = sBonkMgr.GetTier(tier.unlockTierId);
     if (!required)
         return "";
+    // Clearing a difficulty counts as reaching the stage after its last.
+    if (required->stages && tier.unlockStage > required->stages)
+        return "Clear " + required->name;
     return "Reach stage " + std::to_string(tier.unlockStage) + " on " + required->name;
 }
 
@@ -1553,7 +1578,9 @@ void BonkPlayer::SendArena(std::string const& npc) const
             challenges + "~" + perkText);
     }
 
-    // tier~id~key~name~unlocked~hint~best~description~art~maps, maps as icon:name,...
+    // tier~id~key~name~unlocked~hint~best~description~art~maps~stages~endless~dungeons,
+    // maps as icon:name:type:reward,..., dungeons as key:icon:name:open,... (open
+    // once the difficulty is cleared).
     for (BonkTier const* tierPtr : GetTiersInOrder())
     {
         BonkTier const& tier = *tierPtr;
@@ -1566,8 +1593,13 @@ void BonkPlayer::SendArena(std::string const& npc) const
                 if (BonkMap const* map = sBonkMgr.GetMap(mapId))
                     maps += (maps.empty() ? "" : ",") + map->icon + ":" + map->name + ":" + std::to_string(uint32(map->type)) + ":" +
                         std::to_string(GetBonkMapRewardPercent(map->type));
+            std::string dungeons;
+            bool const cleared = IsTierCleared(tier);
+            for (BonkMap const* dungeon : sBonkMgr.GetDungeons())
+                dungeons += (dungeons.empty() ? "" : ",") + dungeon->key + ":" + dungeon->icon + ":" + dungeon->name + ":" + (cleared ? "1" : "0");
             SendAddon("tier~" + std::to_string(tier.id) + "~" + tier.key + "~" + tier.name + "~" + (unlocked ? "1" : "0") + "~" +
-                (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best) + "~" + tier.description + "~" + tier.art + "~" + maps);
+                (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best) + "~" + tier.description + "~" + tier.art + "~" + maps + "~" +
+                std::to_string(tier.stages) + "~" + (tier.endless ? "1" : "0") + "~" + dungeons);
         }
         else if (unlocked)
             ChatHandler(m_player).PSendSysMessage("  %s (best: stage %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());

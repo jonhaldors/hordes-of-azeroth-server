@@ -16,6 +16,7 @@
 #include "SharedDefines.h"
 
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -30,6 +31,7 @@ WorldLocation const BONK_CAMP_LOCATION(1, 16226.2f, 16257.0f, 13.2022f, 1.65007f
 uint32 const BONK_GO_CHEST      = 900001;   // costs Valor to open
 uint32 const BONK_GO_CHEST_FREE = 900002;   // dropped by elites and bosses
 uint32 const BONK_GO_PORTAL     = 900003;   // leads to the next stage
+uint32 const BONK_GO_VAULT      = 900041;   // the Extraction Vault: the find put in it comes home
 uint32 const BONK_GO_SHARD      = 900007;   // a dropped Talent Shard, taken by walking over it
 uint32 const BONK_GO_HEAL       = 900008;   // the Turkey Leg as a game object (unused since 2026-10-16: BONK_HEAL_PICKUP)
 
@@ -201,7 +203,7 @@ struct BonkMap
     std::string key;
     std::string name;
     std::string icon;               // Interface\Icons file name, for the arena window
-    uint32 tierId = 0;              // the tier whose pool it belongs to
+    uint32 tierId = 0;              // the tier whose pool it belongs to; 0: a dungeon mode only
     BonkMapType type = BONK_MAP_OPEN;
     uint32 mapId = 0;
     uint32 zoneId = 0;              // arena boundary; 0 = the whole map
@@ -223,6 +225,14 @@ struct BonkMap
 
     std::vector<BonkMapCreature> creatures;
     std::vector<BonkMapEvent> events;   // sorted by time
+};
+
+// A spot a run may start at on a map (bonk_map_start, Phase F4): learned
+// from the run's own spawn points, kept when it is well inside the arena,
+// outdoors on an open map, and apart from the others.
+struct BonkMapStart
+{
+    float x = 0.0f, y = 0.0f, z = 0.0f;
 };
 
 // Battleground-style buff lying in the arena; walking over it casts the spell.
@@ -274,6 +284,12 @@ struct BonkTier
     uint32 masteryXpMinute = 10;        // per minute survived
     uint32 masteryXpMiniboss = 15;      // per mini-boss killed
     uint32 masteryXpBoss = 40;          // per stage boss killed
+    // Stages a run of it has (Phase F: Normal 1, Heroic 2, Mythic 3); the
+    // last stage's boss wins the run. `endless`: past it the stages go on,
+    // each tougher, for as long as the hero lasts. 0 stages: endless from
+    // the start.
+    uint32 stages = 0;
+    bool endless = false;
 
     std::vector<uint32> mapIds;     // the pool, bonk_map ids
 };
@@ -735,6 +751,7 @@ enum BonkUpgradeUtility : uint8
     BONK_UTILITY_HEARTHSTONE   = 9,     // + chance to find a Hearthstone, % of the chance; each 20 also a second off its ring
     BONK_UTILITY_START_LEVEL   = 10,    // + level a run starts at
     BONK_UTILITY_START_CARD    = 11,    // a random card at the start of a run: 1 common, 2 uncommon
+    BONK_UTILITY_PACK_MULE     = 12,    // + Extraction Vault slots
     MAX_BONK_UPGRADE_UTILITY
 };
 uint8 const BONK_UPGRADE_UTILITY_BASE = 100;
@@ -818,6 +835,7 @@ struct BonkItemStat
 {
     float stats[MAX_BONK_PASSIVE_EFFECT] = {};
     uint32 setId = 0;               // bonk_item_set, 0 = none
+    uint32 unlockTier = 0;          // a difficulty (bonk_tier) to clear before the gear vendor sells it (Phase F6); 0 = always
 };
 
 struct BonkItemSetBonus
@@ -907,9 +925,18 @@ class BonkMgr
 
         BonkTier const* GetTier(uint32 id) const;
         BonkTier const* FindTier(std::string const& keyOrId) const;
+        // A dungeon mode's map by key (Phase F3: the enclosed maps, Molten
+        // Core and the like); nullptr for none.
+        BonkMap const* FindDungeon(std::string const& key) const;
+        std::vector<BonkMap const*> GetDungeons() const;
         std::map<uint32, BonkTier> const& GetTiers() const { return m_tiers; }
 
         BonkMap const* GetMap(uint32 id) const;
+        // A copy of a map's learned starting spots (maps update side by side).
+        std::vector<BonkMapStart> GetMapStarts(uint32 bonkMapId) const;
+        // Keeps a new starting spot, and saves it, when there are fewer than
+        // `max` and none within `spread` yards; true when kept.
+        bool AddMapStart(uint32 bonkMapId, BonkMapStart const& start, float spread, size_t max);
         std::map<uint32, BonkMap> const& GetMaps() const { return m_maps; }
 
         BonkWeapon const* GetWeapon(uint32 id) const;
@@ -1012,6 +1039,8 @@ class BonkMgr
         std::map<uint32, BonkGear> m_gear;
         std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;
+        mutable std::mutex m_mapStartLock;
+        std::map<uint32, std::vector<BonkMapStart>> m_mapStarts;    // bonk_map_start, by bonk_map id
         std::map<uint32, BonkTalent> m_talents;
         std::map<uint32, BonkItemStat> m_itemStats;
         std::map<uint32, BonkItemSet> m_itemSets;

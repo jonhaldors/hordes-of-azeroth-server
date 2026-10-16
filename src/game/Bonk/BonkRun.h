@@ -74,7 +74,10 @@ class Unit;
 class BonkRun
 {
     public:
-        BonkRun(Player* player, BonkTier const& tier);
+        // `dungeon`: a dungeon mode (Phase F3): every stage in that map,
+        // tougher and richer; nullptr for the difficulty's zones.
+        BonkRun(Player* player, BonkTier const& tier, BonkMap const* dungeon = nullptr);
+        bool IsDungeon() const { return m_dungeonId != 0; }
 
         bool Begin(std::string& error);
         void Update(uint32 diff);
@@ -102,6 +105,9 @@ class BonkRun
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool IsPaused() const { return m_paused; }
+        // The addon's pause menu (Escape) is open: the run stays paused until
+        // it closes and no choice is waiting (`.bonk menu 1|0`).
+        void SetMenuOpen(bool open);
         bool IsFinished() const { return m_state == STATE_FINISHED; }
         bool IsPortalOpen() const { return m_state == STATE_PORTAL; }
         BonkMap const& GetMap() const { return m_map; }
@@ -175,6 +181,27 @@ class BonkRun
         // The hero used `item` (WorldSession::HandleUseItemOpcode): true if
         // the run handled it (the Hearthstone opens its extraction ring).
         bool UseItem(Item* item);
+        // The Extraction Vault (Phase F8, BonkRunGear.cpp): beside the stage
+        // portal and in the Hearthstone's ring. The finds put in it come home
+        // with the hero (one; two with Pack Mule), the rest sell for gold.
+        struct VaultFind
+        {
+            ObjectGuid guid;
+            uint32 entry = 0;
+            uint8 quality = 0;
+            bool worn = false;
+            uint32 sellCopper = 0;      // what it sells for if left out
+            bool inVault = false;
+        };
+        bool IsOwnVault(GameObject const* vault) const;
+        // The hero used the vault: the addon's window (gossip without it).
+        void OpenVault();
+        bool PutInVault(uint32 guidLow, std::string& error);
+        bool TakeFromVault(uint32 guidLow, std::string& error);
+        std::vector<VaultFind> GetVaultFinds() const;
+        uint32 GetVaultSlots() const;
+        // Going home now would bring nothing home though a find could come.
+        bool IsVaultEmptyWithFinds() const;
 
         // Keywords (BonkKeywords.cpp). A hit or tick of one of the hero's
         // spells on an enemy (BonkOnDamage): the keyword the spell applies
@@ -339,6 +366,8 @@ class BonkRun
 
         BonkMap const* ChooseNextMap();
         bool TeleportToStage(BonkMap const& map, std::string& error);
+        // Keeps the spawn points just found that make good starting spots.
+        void LearnStarts(std::vector<BonkSpot> const& spots);
         void StartStage();
         void UpdateRunning(uint32 diff);
         void UpdateOffers();
@@ -653,6 +682,9 @@ class BonkRun
         bool m_runXpDirty = false;
         uint32 m_runXpSentAt = 0;           // WorldTimer ms
         void GiveGold(uint32 copper);
+        // What GiveGold multiplies by: Greed, the map type, the gold talents,
+        // a dungeon mode.
+        float GetGoldMultiplier() const;
 
         void DropOrb(Creature const* mob, uint32 experience, BonkOrb colour);
         // An orb of `colour` on the ground; false (experience given at once)
@@ -805,9 +837,20 @@ class BonkRun
         bool EquipRunGear(uint32 entry, std::string& error);
         void SnapshotBroughtGear();
         void RestoreBroughtGear();
-        // The run ends: run gear comes off; greens and blues pay gold, and
-        // with `extract` the extractable ones go home by mail.
+        // The run ends: run gear comes off. With `extract` (going home) the
+        // finds in the vault come home by mail and the rest sell for gold;
+        // without, only greens and blues sell.
         void ResolveRunGear(bool extract);
+        void PlaceVault(float x, float y, float baseZ);
+        void DespawnVault();
+        void SendVault() const;
+        bool CheckVaultReach(std::string& error) const;
+        ObjectGuid FindRunGear(uint32 guidLow) const;
+        bool IsInVault(ObjectGuid const& guid) const;
+        // What a find sells for at the run's end, Greed and the rest included.
+        uint32 GetGearGold(uint8 quality) const;
+        ObjectGuid m_vaultGuid;
+        std::vector<ObjectGuid> m_vault;                        // finds going home, first put in first
         std::vector<GearDrop> m_gearDrops;
         std::vector<uint32> m_pendingGear;                      // sacks picked up, waiting for their choice
         uint32 m_gearOfferEntry = 0;                            // the choice open now
@@ -842,6 +885,9 @@ class BonkRun
 
         // A choice is open: the player and every enemy stand still.
         void SetPaused(bool paused);
+        bool m_menuOpen = false;
+        bool m_victory = false;             // the difficulty's last stage boss is dead: the run is won
+        uint32 m_dungeonId = 0;             // a dungeon mode's bonk_map id, 0 for the difficulty's zones
 
         void Finish(bool wentHome);
         void Exit();

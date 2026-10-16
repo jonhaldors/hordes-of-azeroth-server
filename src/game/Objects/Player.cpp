@@ -18390,6 +18390,10 @@ bool Player::IsVendorItemVisible(Creature* vendor, VendorItem const* vendorItem,
         return false;
 #endif
 
+    // Vanilla Bonk: gear of a difficulty not yet cleared stays off the shelf.
+    if (m_bonkPlayer && !m_bonkPlayer->CanBuyGear(itemProto->ItemId))
+        return false;
+
     return !vendorItem->conditionId ||
         IsConditionSatisfied(vendorItem->conditionId, this, vendor->GetMap(), vendor, CONDITION_FROM_VENDOR);
 }
