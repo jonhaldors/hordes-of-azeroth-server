@@ -68,12 +68,11 @@ namespace
     uint32 const BONK_AREA_RETRY_MS     = 1500;     // one dropped by a pause comes back this soon
 
     // How far an area round the enemy reaches: the largest radius of its
-    // effects that hit enemies round a point, when one of them deals damage;
-    // 0 for none (a buff, a shout, a curse).
+    // effects that land on enemies round a point, damage or not (a fear, a
+    // slow and a curse are warned as a hit is); 0 for none (a buff on itself).
     float GetAreaReach(SpellEntry const* spellInfo)
     {
         float reach = 0.0f;
-        bool harms = false;
         for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
         {
             uint32 const a = spellInfo->EffectImplicitTargetA[i];
@@ -83,27 +82,8 @@ namespace
                  b != TARGET_ENUM_UNITS_ENEMY_AOE_AT_SRC_LOC && b != TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC))
                 continue;
             reach = std::max(reach, Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i])));
-            switch (spellInfo->Effect[i])
-            {
-                case SPELL_EFFECT_SCHOOL_DAMAGE:
-                case SPELL_EFFECT_HEALTH_LEECH:
-                case SPELL_EFFECT_WEAPON_DAMAGE:
-                case SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL:
-                case SPELL_EFFECT_WEAPON_PERCENT_DAMAGE:
-                case SPELL_EFFECT_NORMALIZED_WEAPON_DMG:
-                    harms = true;
-                    break;
-                case SPELL_EFFECT_APPLY_AURA:
-                case SPELL_EFFECT_PERSISTENT_AREA_AURA:
-                    if (spellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE ||
-                        spellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_LEECH)
-                        harms = true;
-                    break;
-                default:
-                    break;
-            }
         }
-        return harms ? reach : 0.0f;
+        return reach;
     }
 
     // The circle for a reach. The hero is hit while their edge is inside
@@ -808,7 +788,7 @@ void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
             continue;
 
         m_abilityTimers[i] = int32(ability.cooldownMs * frand(0.85f, 1.15f));
-        // A harmful area round it waits under a red circle first.
+        // An area round it waits under a red circle first.
         SpellEntry const* spellInfo = ability.target == BONK_ABILITY_SELF ? sSpellMgr.GetSpellEntry(ability.spellId) : nullptr;
         if (spellInfo && GetAreaReach(spellInfo) > 0.0f)
             StartArea(int32(i), owner);
@@ -914,7 +894,7 @@ void BonkMobAI::StartArea(int32 abilityIndex, Player* owner)
             reach = std::max(reach, GetAreaReach(spellInfo));
     }
 
-    // Nothing that can hurt the hero: no need to warn.
+    // Nothing that reaches the hero: no need to warn.
     BonkRun* run = owner->GetBonkPlayer()->GetRun();
     if (!run || reach <= 0.0f)
     {
