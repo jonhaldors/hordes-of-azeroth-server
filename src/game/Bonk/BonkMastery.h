@@ -17,7 +17,7 @@ enum BonkMasteryEffect : uint8
     BONK_MASTERY_SCHOOL_DAMAGE  = 2,
     BONK_MASTERY_SPELL_COOLDOWN = 3,
     BONK_MASTERY_SPELL_TARGETS  = 4,
-    BONK_MASTERY_START_SPELL    = 5,
+    BONK_MASTERY_STARTER_UNLOCK = 5,
     BONK_MASTERY_SHATTER        = 6,
     BONK_MASTERY_OPENER         = 7,
     BONK_MASTERY_EXECUTE        = 8,
@@ -66,7 +66,6 @@ struct BonkMasteryBonuses
     std::map<uint32, float> spellCooldown;
     std::map<uint32, uint32> spellTargets;
     std::vector<std::pair<uint32, float>> schoolDamage;
-    std::vector<uint32> startSpells;
     float shatter = 0.0f;
     std::vector<std::pair<uint32, float>> opener;
     std::vector<std::pair<uint32, float>> execute;
@@ -82,6 +81,8 @@ class BonkMastery
 
         std::vector<BonkMasteryTree const*> GetTrees(uint8 classId) const;
         BonkMasteryNode const* GetNode(uint32 id) const;
+        BonkMasteryTree const* GetTree(uint32 id) const;
+        BonkMasteryNode const* FindStarterUnlock(uint8 classId, uint32 weaponId) const;
         std::map<uint32, BonkMasteryNode> const& GetNodes() const { return m_nodes; }
         bool HasTrees(uint8 classId) const;
 

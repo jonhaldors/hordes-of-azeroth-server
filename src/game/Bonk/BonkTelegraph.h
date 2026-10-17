@@ -43,6 +43,7 @@ class BonkTelegraphs
         size_t Count() const { return m_telegraphs.size(); }
 
         ObjectGuid Borrow(Player* owner, float x, float y, float z, uint32 display);
+        ObjectGuid BorrowInvisible(Player* owner, float x, float y, float z);
         void Dress(Player* owner, ObjectGuid const& guid, uint32 display) { Wear(owner, guid, display); }
         void Release(Player* owner, ObjectGuid const& guid) { Undress(owner, guid); }
 

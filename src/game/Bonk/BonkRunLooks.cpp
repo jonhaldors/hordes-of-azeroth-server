@@ -40,9 +40,14 @@ void BonkRun::ShowHeroLook(BonkHeroLook look, bool shown)
         m_player->CastSpell(m_player, spellId, true);
 }
 
+uint32 BonkRun::GetRingSpell(BonkHeroRing ring, float reach) const
+{
+    return BONK_HERO_RING_FIRST_SPELLS[size_t(ring)] + GetBonkStandInSizeIndex(reach);
+}
+
 void BonkRun::ShowHeroRing(BonkHeroRing ring, float reach)
 {
-    uint32 const spellId = BONK_HERO_RING_FIRST_SPELLS[size_t(ring)] + GetBonkStandInSizeIndex(reach / std::max(0.1f, m_player->GetObjectScale()));
+    uint32 const spellId = GetRingSpell(ring, reach / std::max(0.1f, m_player->GetObjectScale()));
     if (!m_player->IsAlive() || !sSpellMgr.GetSpellEntry(spellId))
         return;
     if (spellId == m_heroRingSpells[size_t(ring)] && m_player->HasAura(spellId))

@@ -73,7 +73,7 @@ void BonkMastery::Load()
                 case BONK_MASTERY_SPELL_DAMAGE:
                 case BONK_MASTERY_SPELL_COOLDOWN:
                 case BONK_MASTERY_SPELL_TARGETS:
-                case BONK_MASTERY_START_SPELL:
+                case BONK_MASTERY_STARTER_UNLOCK:
                 case BONK_MASTERY_SPELL_SLOW:
                     targetOk = sBonkMgr.GetWeapon(node.target) != nullptr;
                     break;
@@ -144,6 +144,20 @@ BonkMasteryNode const* BonkMastery::GetNode(uint32 id) const
     return itr != m_nodes.end() ? &itr->second : nullptr;
 }
 
+BonkMasteryTree const* BonkMastery::GetTree(uint32 id) const
+{
+    auto itr = m_trees.find(id);
+    return itr != m_trees.end() ? &itr->second : nullptr;
+}
+
+BonkMasteryNode const* BonkMastery::FindStarterUnlock(uint8 classId, uint32 weaponId) const
+{
+    for (auto const& itr : m_nodes)
+        if (itr.second.classId == classId && itr.second.effect == BONK_MASTERY_STARTER_UNLOCK && itr.second.target == weaponId)
+            return &itr.second;
+    return nullptr;
+}
+
 uint32 BonkMastery::GetXpForLevel(uint32 level)
 {
     return BONK_MASTERY_XP_BASE + BONK_MASTERY_XP_STEP * (std::max(1u, level) - 1);
@@ -201,7 +215,6 @@ BonkMasteryBonuses BonkMastery::Evaluate(std::map<uint32, uint8> const& ranks) c
             case BONK_MASTERY_SCHOOL_DAMAGE:  bonuses.schoolDamage.emplace_back(node->target, value); break;
             case BONK_MASTERY_SPELL_COOLDOWN: bonuses.spellCooldown[node->target] += value; break;
             case BONK_MASTERY_SPELL_TARGETS:  bonuses.spellTargets[node->target] += uint32(value); break;
-            case BONK_MASTERY_START_SPELL:    bonuses.startSpells.push_back(node->target); break;
             case BONK_MASTERY_SHATTER:        bonuses.shatter += value; break;
             case BONK_MASTERY_OPENER:         bonuses.opener.emplace_back(node->target, value); break;
             case BONK_MASTERY_EXECUTE:        bonuses.execute.emplace_back(node->target, value); break;

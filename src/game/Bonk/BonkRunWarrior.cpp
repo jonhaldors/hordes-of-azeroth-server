@@ -44,7 +44,6 @@ namespace
     uint32 const BONK_BLOOD_POOL_STACKS       = 1;
     size_t const BONK_MAX_BLOOD_POOLS         = 12;
     size_t const BONK_MAX_NEW_BLOOD_POOLS     = 6;
-    uint32 const BONK_SPELL_BLOOD_POOL_LOOK   = 16141;
     uint32 const BONK_KIT_BLOOD_POOL          = 809;
 
     float const BONK_BLOODSPLATTER_RADIUS     = 4.0f;
@@ -61,8 +60,8 @@ namespace
     int32 const BONK_AFTERSHOCK_DELAY_MS      = 1500;
     float const BONK_AFTERSHOCK_SHARE         = 0.5f;
     uint32 const BONK_AFTERSHOCK_STACKS       = 2;
-    uint32 const BONK_KIT_AFTERSHOCK          = 6466;
-    uint32 const BONK_KIT_AFTERSHOCK_QUAKE    = 4811;
+    uint32 const BONK_KIT_AFTERSHOCK          = 7400;
+    uint32 const BONK_KIT_AFTERSHOCK_QUAKE    = 7401;
 
     float const BONK_BLOODBATH_HEALTH         = 50.0f;
     uint32 const BONK_KIT_BLOODBATH           = 902;
@@ -98,8 +97,8 @@ namespace
     int32 const BONK_MIN_SPIKED_SHIELD_PULSE_MS = 250;
     uint32 const BONK_KIT_SPIKED_SHIELD       = 895;
 
-    float const BONK_ROLLING_THUNDER_HITS     = 40.0f;
-    uint32 const BONK_MIN_ROLLING_THUNDER_HITS = 15;
+    float const BONK_ROLLING_THUNDER_HITS     = 20.0f;
+    uint32 const BONK_MIN_ROLLING_THUNDER_HITS = 10;
     uint32 const BONK_MAX_BANKED_CLAPS        = 2;
     int32 const BONK_ROLLING_THUNDER_GAP_MS   = 250;
 
@@ -581,7 +580,7 @@ BonkRun::KeywordCloudKind BonkRun::GetBloodPoolKind() const
     pool.pulseEveryMs = BONK_BLOOD_POOL_PULSE_MS;
     pool.stacks = BONK_BLOOD_POOL_STACKS;
     pool.maxAlive = BONK_MAX_BLOOD_POOLS;
-    pool.lookSpellId = BONK_SPELL_BLOOD_POOL_LOOK;
+    pool.bloodRing = true;
     pool.burstKit = BONK_KIT_BLOOD_POOL;
     return pool;
 }
@@ -594,7 +593,10 @@ void BonkRun::ApplyBloodlust()
     m_bloodlustCutMs = 0;
     for (OwnedWeapon& owned : m_weapons)
         if (owned.weapon.behavior == BONK_BEHAVIOR_BLOODLUST)
+        {
             owned.timer = std::max(std::min(owned.timer, BONK_BLOODLUST_FLOOR_MS), owned.timer - cut);
+            owned.pieResync = true;
+        }
 }
 
 void BonkRun::EruptAftershock(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)

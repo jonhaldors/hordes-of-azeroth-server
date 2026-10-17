@@ -111,6 +111,7 @@ void BonkPlayer::OnLogin()
 
     LoadPurchases();
     LoadMastery();
+    LoadStarter();
     sBonkQuests.OnLogin(m_player);
 
     ResetCharacter();
@@ -609,7 +610,7 @@ bool BonkPlayer::IsPlayableClass(uint8 classId)
 void BonkPlayer::WipeAccount(uint32 accountId)
 {
     for (char const* table : { "bonk_account", "bonk_account_mastery", "bonk_account_mastery_node", "bonk_account_quest",
-        "bonk_account_talent", "bonk_account_tier", "bonk_account_upgrade" })
+        "bonk_account_starter", "bonk_account_talent", "bonk_account_tier", "bonk_account_upgrade" })
         CharacterDatabase.PExecute("DELETE FROM `%s` WHERE `account` = %u", table, accountId);
 
     WriteHeroScreenFile("BONK_STATS = {\n\tgold = 0,\n\tlastHero = \"\",\n\theroes = {\n\t},\n};\n");
@@ -1599,6 +1600,8 @@ void BonkPlayer::SendArena(std::string const& npc) const
             ChatHandler(m_player).PSendSysMessage("  %s (locked: %s)", tier.name.c_str(), hint.c_str());
         }
     }
+    if (m_addonReady)
+        SendStarters();
     SendAddon("tierend");
 }
 

@@ -42,6 +42,26 @@ namespace
     }
 }
 
+bool ChatHandler::HandleBonkStarterCommand(char* args)
+{
+    Player* player = m_session->GetPlayer();
+    uint32 weaponId = 0;
+    if (!ExtractUInt32(&args, weaponId))
+    {
+        player->GetBonkPlayer()->SendStarters();
+        return true;
+    }
+
+    std::string error;
+    if (!player->GetBonkPlayer()->ChooseStarter(weaponId, error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
+}
+
 bool ChatHandler::HandleBonkStartCommand(char* args)
 {
     Player* player = m_session->GetPlayer();

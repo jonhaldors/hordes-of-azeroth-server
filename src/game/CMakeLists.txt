@@ -29,6 +29,7 @@ set (game_SRCS
     Bonk/BonkObjectives.cpp
     Bonk/BonkPlayer.cpp
     Bonk/BonkPlayerDash.cpp
+    Bonk/BonkPlayerStarter.cpp
     Bonk/BonkQuests.cpp
     Bonk/BonkRun.cpp
     Bonk/BonkRunCards.cpp
@@ -37,6 +38,7 @@ set (game_SRCS
     Bonk/BonkRunGlyphs.cpp
     Bonk/BonkRunHidden.cpp
     Bonk/BonkRunLooks.cpp
+    Bonk/BonkRunMage.cpp
     Bonk/BonkRunShrines.cpp
     Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp

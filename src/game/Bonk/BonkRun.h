@@ -125,7 +125,7 @@ class BonkRun
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
         static uint32 GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed);
         bool RollDodge(Unit const* victim) const;
-        float GetCritChance(SpellEntry const* spell = nullptr) const;
+        float GetCritChance(SpellEntry const* spell = nullptr, Unit const* victim = nullptr) const;
         float GetMobDamageMultiplier(Creature const* mob) const;
         void OnHeroDodge();
         void OnHeroStruck(Creature* attacker);
@@ -207,6 +207,11 @@ class BonkRun
 
         void SendFullState() const;
 
+        void OnDash();
+        bool IsBlinkDash() const;
+        uint32 GetBlinkCharges() const;
+        float GetBlinkRechargeRate() const;
+
         void MakeSandbox(bool godBefore) { m_sandbox = true; m_sandboxGodBefore = godBefore; }
         bool IsSandbox() const { return m_sandbox; }
         void ShowSandboxMenu(Creature* keeper, uint32 menu);
@@ -242,6 +247,9 @@ class BonkRun
             std::map<ObjectGuid, uint32> carriers;
             std::vector<ObjectGuid> pets;
             bool killed = false;
+            bool held = false;
+            bool pieResync = false;
+            mutable uint32 shownIntervalMs = 0;
         };
 
         struct Offer
@@ -707,6 +715,8 @@ class BonkRun
         void SendState() const;
         void SendLoadout() const;
         void SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const;
+        void NoteWeaponFired(OwnedWeapon& owned);
+        void SendCooldownPie(uint32 index, OwnedWeapon const& owned) const;
         void SendOffer() const;
 
         void Revive(bool soulstone = false, BonkGlyph const* glyph = nullptr);
@@ -967,6 +977,8 @@ class BonkRun
             bool aftershock = false;
             bool chainExecution = false;
             bool shieldThrow = false;
+            bool blinkLanding = false;
+            bool pyroblastSplash = false;
             uint32 kit = 0;
             uint32 hops = 0;
             float share = 1.0f;
@@ -1052,6 +1064,8 @@ class BonkRun
             int32 pulseMs = 0;
             int32 pulseEveryMs = 0;
             uint32 stacks = 0;
+            ObjectGuid look;
+            uint32 lookAura = 0;
         };
         struct KeywordCloudKind
         {
@@ -1060,12 +1074,16 @@ class BonkRun
             uint32 stacks = 0;
             size_t maxAlive = 0;
             uint32 lookSpellId = 0;
+            bool bloodRing = false;
             uint32 burstKit = 0;
         };
         std::vector<KeywordCloud> m_keywordClouds;
         std::vector<uint32> m_venomCloudTimes;
         KeywordCloudKind GetCloudKind(OwnedWeapon const& owned) const;
         void StartKeywordCloud(OwnedWeapon const& owned, float x, float y, float z);
+        void ShowBloodRingAt(KeywordCloud& cloud, float z);
+        void EndKeywordCloud(KeywordCloud const& cloud);
+        void ClearKeywordClouds();
         void UpdateKeywordClouds(uint32 diff);
         void PulseKeywordCloud(OwnedWeapon const& owned, KeywordCloud const& cloud);
 
@@ -1275,6 +1293,7 @@ class BonkRun
         void UpdateBloodAuraRing();
         void ShowHeroLook(BonkHeroLook look, bool shown);
         void ShowHeroRing(BonkHeroRing ring, float reach);
+        uint32 GetRingSpell(BonkHeroRing ring, float reach) const;
         void HideHeroRing(BonkHeroRing ring);
         void RemoveHeroRingAuras(BonkHeroRing ring);
         void RemoveHeroLooks();
@@ -1320,6 +1339,17 @@ class BonkRun
         void ShowStrikeImpact(SpellEntry const* spellInfo, Creature* target);
         void ShowAreaImpact(SpellEntry const* spellInfo, float radius);
         void ShowStrike(Unit* caster, SpellEntry const* spellInfo, Unit* target) const;
+        void ResolveMageCast(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        bool HurlPyroblasts(OwnedWeapon& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs);
+        void SplashPyroblast(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        void SortMostBurningFirst(std::vector<Creature*>& mobs) const;
+        void QueueMissiles(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float share);
+        void FireMissileVolley(OwnedWeapon& owned);
+        void LandBlink(OwnedWeapon& owned);
+        uint32 GetElementalFamily() const;
+        bool m_blinkDash = false;
+        std::vector<Creature*> PickGroupCenters(std::vector<Creature*> const& mobs, float radius, uint32 count) const;
+        bool IsFrostSpellOnFrozen(SpellEntry const* spell, Unit const* victim) const;
         struct Bladestorm
         {
             uint32 weaponId = 0;

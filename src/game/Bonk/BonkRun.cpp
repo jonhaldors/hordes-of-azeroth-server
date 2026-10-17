@@ -423,6 +423,8 @@ namespace
     float const BONK_MASTERY_EXECUTE_HEALTH = 30.0f;
     float const BONK_MASTERY_SIPHON_CAP     = 3.0f;
     int32 const BONK_CLEARCAST_DELAY_MS     = 300;
+    int32 const BONK_WEAPON_RETRY_MS        = 250;
+    float const BONK_PIE_DRIFT              = 0.05f;
 
     float GetKindHealth(BonkSpawnKind kind)
     {
@@ -690,6 +692,8 @@ namespace
             return "Can occur once every " + seconds + ".";
         if (weapon.behavior == BONK_BEHAVIOR_BLOOD_AURA)
             return "Pulses every " + seconds + ".";
+        if (weapon.behavior == BONK_BEHAVIOR_BLINK)
+            return "Each dash charge comes back after " + seconds + ".";
         return "Casts every " + seconds + ".";
     }
 
@@ -1027,9 +1031,11 @@ void BonkRun::StartStage()
     if (m_weapons.empty())
     {
         uint32 const classMask = m_player->GetClassMask();
-        for (auto const& itr : sBonkMgr.GetWeapons())
-            if (itr.second.starterClassMask & classMask)
-                AddWeapon(itr.second);
+        if (BonkWeapon const* starter = m_player->GetBonkPlayer()->GetStarterWeapon())
+        {
+            AddWeapon(*starter);
+            m_blinkDash = starter->HasFlag(BONK_WEAPON_FLAG_BLINK_DASH);
+        }
 
         if (m_weapons.empty())
             for (auto const& itr : sBonkMgr.GetWeapons())
@@ -1038,16 +1044,6 @@ void BonkRun::StartStage()
                     AddWeapon(itr.second);
                     break;
                 }
-
-        uint32 const account = m_player->GetSession()->GetAccountId();
-        for (uint32 weaponId : m_mastery.startSpells)
-        {
-            BonkWeapon const* weapon = sBonkMgr.GetWeapon(weaponId);
-            if (!weapon || m_weapons.size() >= GetSpellSlots() || sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, weaponId))
-                continue;
-            if (std::none_of(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned) { return owned.weapon.id == weaponId; }))
-                AddWeapon(*weapon);
-        }
 
         SnapshotBroughtGear();
 
@@ -2707,10 +2703,10 @@ bool BonkRun::RollDodge(Unit const* victim) const
     return chance > 0.0f && roll_chance_f(chance);
 }
 
-float BonkRun::GetCritChance(SpellEntry const* spell) const
+float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim) const
 {
     float const chance = BONK_BASE_CRIT + GetPassiveTotal(BONK_PASSIVE_CRIT);
-    if (IsReckless())
+    if (IsReckless() || IsFrostSpellOnFrozen(spell, victim))
         return std::max(100.0f, chance);
     if (spell)
         for (OwnedWeapon const& owned : m_weapons)
@@ -3554,8 +3550,10 @@ uint32 BonkRun::GetWeaponCooldown(OwnedWeapon const& owned) const
 
 void BonkRun::UpdateWeapons(uint32 diff)
 {
+    uint32 index = 0;
     for (auto& owned : m_weapons)
     {
+        ++index;
         owned.timer -= int32(diff);
         if (owned.timer <= 0)
         {
@@ -3566,6 +3564,12 @@ void BonkRun::UpdateWeapons(uint32 diff)
                 FireWeapon(owned);
                 owned.timer = timer;
             }
+            NoteWeaponFired(owned);
+        }
+        if (owned.pieResync)
+        {
+            owned.pieResync = false;
+            SendCooldownPie(index, owned);
         }
 
         if (m_state != STATE_RUNNING)
@@ -3723,6 +3727,9 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
             follow.share = damageShare;
             m_pendingCasts.push_back(follow);
         }
+
+    if (weapon.behavior == BONK_BEHAVIOR_ARCANE_MISSILES)
+        QueueMissiles(owned, spellInfo, target, damageShare);
 
     if (weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
         KnockBack(target);
@@ -4495,7 +4502,11 @@ void BonkRun::StartKeywordCloud(OwnedWeapon const& owned, float x, float y, floa
     KeywordCloudKind const kind = GetCloudKind(owned);
     auto const fromWeapon = [&owned](KeywordCloud const& cloud) { return cloud.weaponId == owned.weapon.id; };
     if (size_t(std::count_if(m_keywordClouds.begin(), m_keywordClouds.end(), fromWeapon)) >= kind.maxAlive)
-        m_keywordClouds.erase(std::find_if(m_keywordClouds.begin(), m_keywordClouds.end(), fromWeapon));
+    {
+        auto const oldest = std::find_if(m_keywordClouds.begin(), m_keywordClouds.end(), fromWeapon);
+        EndKeywordCloud(*oldest);
+        m_keywordClouds.erase(oldest);
+    }
 
     KeywordCloud cloud;
     cloud.weaponId = owned.weapon.id;
@@ -4505,10 +4516,40 @@ void BonkRun::StartKeywordCloud(OwnedWeapon const& owned, float x, float y, floa
     cloud.leftMs = int32(kind.lifeMs * GetWeaponDurationScale(owned));
     cloud.pulseEveryMs = kind.pulseEveryMs;
     cloud.stacks = kind.stacks;
+    if (kind.bloodRing)
+        ShowBloodRingAt(cloud, z);
+    else
+        PlaceAreaVisual(m_player, kind.lookSpellId, x, y, z, cloud.radius, uint32(cloud.leftMs));
     m_keywordClouds.push_back(cloud);
-
-    PlaceAreaVisual(m_player, kind.lookSpellId, x, y, z, cloud.radius, uint32(cloud.leftMs));
     PlayKitAt(ObjectGuid(), x, y, z, kind.burstKit, true);
+}
+
+void BonkRun::ShowBloodRingAt(KeywordCloud& cloud, float z)
+{
+    uint32 const ringSpell = GetRingSpell(BonkHeroRing::BloodAura, cloud.radius);
+    if (!sSpellMgr.GetSpellEntry(ringSpell))
+        return;
+    cloud.look = m_telegraphs.BorrowInvisible(m_player, cloud.x, cloud.y, z);
+    Creature* standIn = cloud.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(cloud.look);
+    if (standIn && standIn->AddAura(ringSpell, ADD_AURA_PERMANENT))
+        cloud.lookAura = ringSpell;
+}
+
+void BonkRun::EndKeywordCloud(KeywordCloud const& cloud)
+{
+    if (cloud.look.IsEmpty())
+        return;
+    if (Creature* standIn = m_player->GetMap()->GetCreature(cloud.look))
+        if (cloud.lookAura)
+            standIn->RemoveAurasDueToSpell(cloud.lookAura);
+    m_telegraphs.Release(m_player, cloud.look);
+}
+
+void BonkRun::ClearKeywordClouds()
+{
+    for (KeywordCloud const& cloud : m_keywordClouds)
+        EndKeywordCloud(cloud);
+    m_keywordClouds.clear();
 }
 
 void BonkRun::UpdateKeywordClouds(uint32 diff)
@@ -4521,6 +4562,7 @@ void BonkRun::UpdateKeywordClouds(uint32 diff)
         cloud.pulseMs -= int32(diff);
         if (!owned || cloud.leftMs <= 0)
         {
+            EndKeywordCloud(cloud);
             m_keywordClouds.erase(m_keywordClouds.begin() + i);
             continue;
         }
@@ -4821,7 +4863,7 @@ void BonkRun::ClearHunterEvolutions()
     m_steady = false;
     m_steadySinceMs = m_totalMs;
     m_venomBoltTimes.clear();
-    m_keywordClouds.clear();
+    ClearKeywordClouds();
     m_venomCloudTimes.clear();
     m_icePath = IcePath();
     HideHeroRing(BonkHeroRing::IcePath);
@@ -4911,7 +4953,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     }
 
-    if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS)
+    if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS || weapon.behavior == BONK_BEHAVIOR_BLINK)
     {
         owned.timer = BONK_PASSIVE_TRIGGER_IDLE_MS;
         return;
@@ -5028,6 +5070,8 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         SortStrongestFirst(mobs);
     else if (weapon.target == BONK_TARGET_FARTHEST)
         std::reverse(mobs.begin(), mobs.end());
+    else if (weapon.behavior == BONK_BEHAVIOR_FIRE_BLAST)
+        SortMostBurningFirst(mobs);
 
     if (weapon.killBelowPct > 0.0f)
         std::stable_partition(mobs.begin(), mobs.end(), [&](Creature* mob) { return CanKill(weapon, mob); });
@@ -5045,6 +5089,12 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     {
         LaunchOrb(owned);
         owned.timer = GetWeaponCooldown(owned);
+        return;
+    }
+
+    if (weapon.behavior == BONK_BEHAVIOR_PYROBLAST)
+    {
+        owned.timer = HurlPyroblasts(owned, spellInfo, std::move(mobs)) ? GetWeaponCooldown(owned) : 250;
         return;
     }
 
@@ -5593,6 +5643,12 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             continue;
         }
 
+        if (cast.blinkLanding || cast.pyroblastSplash)
+        {
+            ResolveMageCast(*owned, info, cast);
+            continue;
+        }
+
         if (cast.strike)
         {
             Creature* target = map->GetCreature(cast.target);
@@ -6061,7 +6117,7 @@ void BonkRun::HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, 
         return;
 
     SpellNonMeleeDamage hit(m_player, target, spellInfo->Id, SpellSchools(spellInfo->School));
-    bool const crit = spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo));
+    bool const crit = spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo, target));
     m_player->CalculateSpellDamage(&hit, damage, spellInfo, effectIndex, attackType, nullptr, crit);
     target->CalculateAbsorbResistBlock(m_player, &hit, spellInfo, BASE_ATTACK, nullptr);
     m_player->DealDamageMods(target, hit.damage, &hit.absorb);
@@ -6359,7 +6415,7 @@ void BonkRun::DealSpellHit(SpellEntry const* spellInfo, Unit* target, float dama
         return;
 
     SpellNonMeleeDamage hit(caster, target, spellInfo->Id, SpellSchools(spellInfo->School));
-    bool const crit = forceCrit || (spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo)));
+    bool const crit = forceCrit || (spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo, target)));
     caster->CalculateSpellDamage(&hit, damage, spellInfo, EFFECT_INDEX_0, BASE_ATTACK, nullptr, crit);
     target->CalculateAbsorbResistBlock(caster, &hit, spellInfo, BASE_ATTACK, nullptr);
     caster->DealDamageMods(target, hit.damage, &hit.absorb);
@@ -6629,7 +6685,7 @@ float BonkRun::GetSummonScale(OwnedWeapon const& owned, float base) const
 
 BonkPetFamily const* BonkRun::GetPetFamily() const
 {
-    return sBonkMgr.GetPetFamily(BONK_PET_FAMILY_CAT);
+    return sBonkMgr.GetPetFamily(m_player->GetClass() == CLASS_MAGE ? GetElementalFamily() : BONK_PET_FAMILY_CAT);
 }
 
 float BonkRun::GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& family) const
@@ -6658,7 +6714,8 @@ void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
         BonkPetAbility const& ability = family->abilities[i];
         if (int32(now - state.readyAtMs[i]) < 0)
             continue;
-        if (ability.kind == BONK_PET_ABILITY_STRIKE && inReach)
+        bool const strikeReach = ability.value > 0.0f ? pet->IsWithinDistInMap(prey, ability.value) && pet->IsWithinLOSInMap(prey) : inReach;
+        if (ability.kind == BONK_PET_ABILITY_STRIKE && strikeReach)
         {
             PetStrike(owned, pet, prey, ability);
             state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
@@ -6880,6 +6937,11 @@ void BonkRun::DespawnPets()
     DespawnBeasts();
     m_petStates.clear();
     m_petFrenzyUntil = 0;
+}
+
+std::vector<Creature*> BonkRun::PickGroupCenters(std::vector<Creature*> const& mobs, float radius, uint32 count) const
+{
+    return PickGroundSpots(mobs, radius, count);
 }
 
 bool BonkRun::FindLargestGroup(float range, float& x, float& y, float& z) const
@@ -7457,6 +7519,8 @@ void BonkRun::AddWeapon(BonkWeapon const& weapon)
     owned.timer = 500;
     m_weapons.push_back(owned);
     RebuildWeaponSpells();
+    if (weapon.behavior == BONK_BEHAVIOR_BLINK)
+        m_player->GetBonkPlayer()->SendDash();
 }
 
 void BonkRun::ApplyPassives()
@@ -9249,10 +9313,37 @@ void BonkRun::SendLoadout() const
     }
 }
 
+void BonkRun::NoteWeaponFired(OwnedWeapon& owned)
+{
+    if (owned.weapon.IsTrigger() || owned.weapon.behavior == BONK_BEHAVIOR_BLINK)
+        return;
+    bool const waiting = owned.timer <= BONK_WEAPON_RETRY_MS;
+    if (waiting && !owned.held)
+        owned.pieResync = true;
+    else if (!waiting)
+    {
+        float const interval = float(GetWeaponCooldown(owned));
+        bool const drifted = std::fabs(interval - float(owned.shownIntervalMs)) > interval * BONK_PIE_DRIFT;
+        bool const shortened = float(owned.timer) < interval * (1.0f - BONK_PIE_DRIFT);
+        if (owned.held || drifted || shortened)
+            owned.pieResync = true;
+    }
+    owned.held = waiting;
+}
+
+void BonkRun::SendCooldownPie(uint32 index, OwnedWeapon const& owned) const
+{
+    uint32 const interval = GetWeaponCooldown(owned);
+    owned.shownIntervalMs = interval;
+    m_player->GetBonkPlayer()->SendAddon("pcd~" + std::to_string(index) + "~" + std::to_string(interval) + "~" +
+        std::to_string(std::max<int32>(0, owned.timer)) + "~" + (owned.held ? "1" : "0"));
+}
+
 void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
 {
     BonkWeapon const& weapon = owned.weapon;
-    uint32 const interval = GetWeaponCooldown(owned);
+    uint32 const interval = weapon.behavior == BONK_BEHAVIOR_BLINK ? m_player->GetBonkPlayer()->GetDashCooldownMs() : GetWeaponCooldown(owned);
+    owned.shownIntervalMs = interval;
     std::string stats = weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER ? DescribeThunderCount(owned) : DescribeInterval(weapon, interval);
     uint32 const targets = GetWeaponTargets(owned);
     if (weapon.HasTargets() && targets > 1)

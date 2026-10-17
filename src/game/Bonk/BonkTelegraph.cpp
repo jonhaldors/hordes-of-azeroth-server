@@ -410,6 +410,11 @@ ObjectGuid BonkTelegraphs::Borrow(Player* owner, float x, float y, float z, uint
     return guid;
 }
 
+ObjectGuid BonkTelegraphs::BorrowInvisible(Player* owner, float x, float y, float z)
+{
+    return Borrow(owner, x, y, z, BONK_STANDIN_INVISIBLE);
+}
+
 void BonkTelegraphs::Wear(Player* owner, ObjectGuid const& guid, uint32 display)
 {
     if (!guid.IsEmpty())

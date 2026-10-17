@@ -1,6 +1,7 @@
 #include "BonkPlayer.h"
 #include "BonkRun.h"
 #include "Anticheat.h"
+#include "Map.h"
 #include "MoveSpline.h"
 #include "MovementPacketSender.h"
 #include "Player.h"
@@ -17,6 +18,8 @@ namespace
     uint32 const BONK_DASH_MIN_COOLDOWN_MS  = 3000;
     uint32 const BONK_DASH_CHARGES          = 1;
     uint32 const BONK_DASH_MAX_AGE_MS       = 1000;
+    uint32 const BONK_KIT_BLINK_LEAVE       = 267;
+    uint32 const BONK_KIT_BLINK_ARRIVE      = 3394;
 }
 
 float BonkPlayer::GetDashDistance() const
@@ -27,12 +30,14 @@ float BonkPlayer::GetDashDistance() const
 uint32 BonkPlayer::GetDashCooldownMs() const
 {
     int32 const cooldown = int32(BONK_DASH_COOLDOWN_MS) - int32(GetUpgradeUtility(BONK_UTILITY_DASH_COOLDOWN) * IN_MILLISECONDS);
-    return uint32(std::max(cooldown, int32(BONK_DASH_MIN_COOLDOWN_MS)));
+    float const blinkRate = m_run ? m_run->GetBlinkRechargeRate() : 1.0f;
+    return uint32(std::max(int32(cooldown / blinkRate), int32(BONK_DASH_MIN_COOLDOWN_MS)));
 }
 
 uint32 BonkPlayer::GetDashMaxCharges() const
 {
-    return BONK_DASH_CHARGES + uint32(GetUpgradeUtility(BONK_UTILITY_DASH_CHARGES));
+    uint32 const blinkCharges = m_run ? m_run->GetBlinkCharges() : 0;
+    return BONK_DASH_CHARGES + uint32(GetUpgradeUtility(BONK_UTILITY_DASH_CHARGES)) + blinkCharges;
 }
 
 float BonkPlayer::GetDashSpeed() const
@@ -61,7 +66,13 @@ bool BonkPlayer::Dash()
     if (mi.moveFlags & (MOVEFLAG_ROOT | MOVEFLAG_SWIMMING | MOVEFLAG_ONTRANSPORT))
         return false;
 
-    if (mi.moveFlags & (MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR))
+    bool const blink = m_run && m_run->IsBlinkDash();
+    if (m_run)
+        m_run->OnDash();
+
+    if (blink)
+        BlinkHero();
+    else if (mi.moveFlags & (MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR))
     {
         float facing = m_player->GetOrientation();
         uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(mi.stime), BONK_DASH_MAX_AGE_MS);
@@ -100,6 +111,48 @@ void BonkPlayer::ThrowHero(float angle, float speed)
     if (Player* mover = m_player->GetPlayerMovingMe())
         if (MovementAnticheat* cheatData = mover->GetCheatData())
             cheatData->OnKnockBack(m_player, speed, 0.0f, vcos, vsin);
+}
+
+float BonkPlayer::GetMoveAngle() const
+{
+    MovementInfo const& mi = m_player->m_movementInfo;
+    float facing = m_player->GetOrientation();
+    float x, y, z, o;
+    uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(mi.stime), BONK_DASH_MAX_AGE_MS);
+    if (m_player->ExtrapolateMovement(mi, age, x, y, z, o))
+        facing = o;
+
+    float forward = 0.0f, left = 0.0f;
+    if (mi.moveFlags & MOVEFLAG_FORWARD)
+        forward += 1.0f;
+    if (mi.moveFlags & MOVEFLAG_BACKWARD)
+        forward -= 1.0f;
+    if (mi.moveFlags & MOVEFLAG_STRAFE_LEFT)
+        left += 1.0f;
+    if (mi.moveFlags & MOVEFLAG_STRAFE_RIGHT)
+        left -= 1.0f;
+    if (forward == 0.0f && left == 0.0f)
+        return facing;
+    return facing + std::atan2(left, forward);
+}
+
+void BonkPlayer::BlinkHero()
+{
+    MovementInfo const& mi = m_player->m_movementInfo;
+    float x = m_player->GetPositionX(), y = m_player->GetPositionY(), z = m_player->GetPositionZ(), o;
+    uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(mi.stime), BONK_DASH_MAX_AGE_MS);
+    m_player->ExtrapolateMovement(mi, age, x, y, z, o);
+
+    float const angle = GetMoveAngle();
+    float destX = x + GetDashDistance() * std::cos(angle);
+    float destY = y + GetDashDistance() * std::sin(angle);
+    float destZ = z;
+    m_player->GetMap()->GetWalkHitPosition(nullptr, x, y, z, destX, destY, destZ);
+
+    m_player->SendPlaySpellVisualKit(BONK_KIT_BLINK_LEAVE);
+    m_player->NearTeleportTo(destX, destY, destZ, m_player->GetOrientation(),
+        TELE_TO_NOT_LEAVE_TRANSPORT | TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET | TELE_TO_SPELL);
+    m_player->SendPlaySpellVisualKit(BONK_KIT_BLINK_ARRIVE);
 }
 
 void BonkPlayer::UpdateDash(uint32 diff)

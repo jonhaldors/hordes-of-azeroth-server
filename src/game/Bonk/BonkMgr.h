@@ -289,6 +289,8 @@ enum BonkWeaponFlags : uint32
     BONK_WEAPON_FLAG_BLOODBATH        = 0x80000,
     BONK_WEAPON_FLAG_CHAIN_EXECUTION  = 0x100000,
     BONK_WEAPON_FLAG_SWEEP            = 0x200000,
+    BONK_WEAPON_FLAG_ON_BLINK         = 0x400000,
+    BONK_WEAPON_FLAG_BLINK_DASH       = 0x800000,
 };
 
 float const BONK_CLEAVE_RADIUS    = 6.0f;
@@ -413,6 +415,10 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_BERSERKER_RAGE = 51,
     BONK_BEHAVIOR_AVENGERS_SHIELD = 52,
     BONK_BEHAVIOR_BULWARK       = 53,
+    BONK_BEHAVIOR_BLINK         = 54,
+    BONK_BEHAVIOR_PYROBLAST     = 55,
+    BONK_BEHAVIOR_FIRE_BLAST    = 56,
+    BONK_BEHAVIOR_ARCANE_MISSILES = 57,
     MAX_BONK_BEHAVIOR
 };
 
@@ -464,6 +470,7 @@ struct BonkWeapon
     float damageFraction = 0.5f;
     uint32 classMask = 0;
     uint32 starterClassMask = 0;
+    uint32 starterOptionMask = 0;
     uint32 evolvesFrom = 0;
     float healPct = 0.0f;
     uint32 durationMs = 0;
@@ -569,6 +576,9 @@ uint32 const BONK_MAX_SUMMONS        = 8;
 float const BONK_SUMMON_POWER_SHARE  = 0.6f;
 
 uint32 const BONK_PET_FAMILY_CAT = 1;
+uint32 const BONK_PET_FAMILY_WATER_ELEMENTAL = 2;
+uint32 const BONK_PET_FAMILY_FIRE_ELEMENTAL = 3;
+uint32 const BONK_PET_FAMILY_ARCANE_ELEMENTAL = 4;
 
 enum BonkPetAbilityKind : uint8
 {

@@ -619,7 +619,7 @@ void BonkMgr::LoadWeapons()
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
         "`class_mask`, `starter_class_mask`, `evolves_from`, `heal_pct`, `duration_ms`, "
         "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage`, `base_jumps`, `kill_below_pct`, `flags`, "
-        "`applies`, `apply_stacks`, `uses`, `uses_pct` "
+        "`applies`, `apply_stacks`, `uses`, `uses_pct`, `starter_option_mask` "
         "FROM `bonk_weapon`"));
 
     if (!result)
@@ -662,6 +662,7 @@ void BonkMgr::LoadWeapons()
         weapon.applyStacks = fields[26].GetUInt8();
         weapon.uses = BonkKeyword(fields[27].GetUInt8());
         weapon.usesPct = fields[28].GetFloat();
+        weapon.starterOptionMask = fields[29].GetUInt32();
 
         if (weapon.applies != BONK_KEYWORD_NONE && !GetKeyword(weapon.applies))
         {

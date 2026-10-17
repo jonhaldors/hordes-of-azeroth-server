@@ -22,6 +22,7 @@ struct BonkMap;
 struct BonkMasteryBonuses;
 struct BonkRunBonuses;
 struct BonkTier;
+struct BonkWeapon;
 
 class BonkPlayer
 {
@@ -54,6 +55,17 @@ class BonkPlayer
         static void WipeAccount(uint32 accountId);
 
         void RecordRun(uint32 stage, uint32 seconds, uint32 kills, uint32 goldEarned);
+
+        struct StarterOption
+        {
+            BonkWeapon const* weapon = nullptr;
+            bool unlocked = false;
+            std::string hint;
+        };
+        std::vector<StarterOption> GetStarterOptions() const;
+        BonkWeapon const* GetStarterWeapon() const;
+        bool ChooseStarter(uint32 weaponId, std::string& error);
+        void SendStarters() const;
 
         uint32 GetShards() const { return m_shards; }
         void AddShards(uint32 count);
@@ -168,6 +180,7 @@ class BonkPlayer
         bool IsDashInvulnerable() const { return m_dashClockMs < m_dashInvulnerableUntilMs; }
         float GetDashBurstSpeed() const { return m_dashBursting ? GetDashSpeed() : 0.0f; }
         void SendDash() const;
+        uint32 GetDashCooldownMs() const;
         void SendTierList() const;
         void SendGearInfo() const;
         void SendStats() const;
@@ -197,6 +210,7 @@ class BonkPlayer
 
         void LoadPurchases();
         void LoadMastery();
+        void LoadStarter();
         void GiveStarterBags();
         void TeachWeaponSkills();
         std::string GetClassName() const;
@@ -236,18 +250,20 @@ class BonkPlayer
         uint32 m_shards = 0;
         uint32 m_masteryXp = 0;
         std::map<uint32, uint8> m_masteryRanks;
+        uint32 m_starterChoice = 0;
         BonkShop m_shop{};
         ObjectGuid m_shopNpc;
         std::string m_shopNpcName;
 
         float GetDashDistance() const;
-        uint32 GetDashCooldownMs() const;
         uint32 GetDashMaxCharges() const;
         float GetDashSpeed() const;
         bool IsDashPaused() const;
         void UpdateDash(uint32 diff);
         void SetDashBurst(bool on);
         void ThrowHero(float angle, float speed);
+        void BlinkHero();
+        float GetMoveAngle() const;
         uint32 m_dashClockMs = 0;
         uint32 m_dashSpent = 0;
         uint32 m_dashRechargeMs = 0;
