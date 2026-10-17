@@ -670,6 +670,10 @@ void PathInfo::createFilter()
             includeFlags |= (NAV_WATER | NAV_MAGMA | NAV_SLIME);
     }
 
+    if (Creature const* creature = m_sourceUnit->ToCreature())
+        if (creature->IsBonkEnemy())
+            includeFlags |= (NAV_GROUND | NAV_WATER | NAV_MAGMA | NAV_SLIME);
+
     m_filter.setIncludeFlags(includeFlags);
     m_filter.setExcludeFlags(excludeFlags);
 

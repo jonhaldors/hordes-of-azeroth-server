@@ -1,26 +1,3 @@
-/*
- * Vanilla Bonk: Glyphs (feature plan, Phase 3: the run-defining picks).
- *
- * Two a run: 1 of 4 at its start, and 1 of 4 after its first mini-boss.
- * Each of the four rolls a rarity (the Glyph Attunement rank 0 odds, Luck
- * tipping them), then a Glyph of it, or of the nearest rarity, that the
- * account owns (the starter set, or bought at the Spellbook once its quest
- * is done) and the run has not taken; every offer holds at least two
- * without a drawback while there are. The run pauses while it is up.
- *
- * A Glyph may give a hidden Darkmoon Card (bonk_glyph.card_id) for its stats
- * or a card's effect (Windfury's echo, Hunter's Mark's big game, Scholar's
- * experience); the card row leaves those out. Its own effect is read where
- * it applies (BonkRun: experience, chests, power-ups, Ley Lines, kills,
- * hits, deaths) or here, the strikes on a timer.
- *
- * Addon: "glyphinfo~id~name~icon~rarity~description~drawback" for every
- * Glyph at hello (BonkPlayer::SendGlyphInfo); an offer is
- * "glyphoffer~pick~count", "glyphopt~index~id" for each, "glyphofferend";
- * "glyphclose" once chosen; "glyphs~id,id" the run's. `.bonk glyph <n>`
- * answers it.
- */
-
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -32,31 +9,41 @@
 #include "Utilities/Random.h"
 
 #include <algorithm>
+#include <cstdio>
 
 namespace
 {
-    uint32 const BONK_GLYPH_PICKS      = 2;     // a run's
+    uint32 const BONK_GLYPH_PICKS      = 2;
     uint32 const BONK_GLYPH_CHOICES    = 4;
-    uint32 const BONK_GLYPH_MIN_CLEAN  = 2;     // without a drawback, in every offer
-    // Glyph Attunement rank 0 (feature plan), common to legendary; Luck adds
-    // this share of itself (per 100 Luck) to each, the rarest the most.
+    uint32 const BONK_GLYPH_MIN_CLEAN  = 2;
     float const BONK_GLYPH_ODDS[MAX_BONK_RARITY] = { 55.0f, 30.0f, 11.0f, 3.5f, 0.5f };
     float const BONK_GLYPH_LUCK[MAX_BONK_RARITY] = { 0.0f, 0.5f, 1.0f, 1.5f, 2.0f };
 
-    // The strikes on a timer.
-    float const BONK_GLYPH_STRIKE_RANGE  = 35.0f;   // about the screen
-    uint32 const BONK_SPELL_GLYPH_STORM  = 403;     // Lightning Bolt: the combat log's name and school
-    uint32 const BONK_SPELL_GLYPH_METEOR = 20476;   // Explosion
-    uint32 const BONK_KIT_LIGHTNING      = 283;     // Lightning Bolt's impact
-    uint32 const BONK_KIT_EXPLOSION      = 286;     // Explosion's impact, at the meteor's middle
-    uint32 const BONK_KIT_FIRE_HIT       = 728;     // Fire Blast's impact, on the rest
+    float const BONK_GLYPH_STRIKE_RANGE  = 35.0f;
+    uint32 const BONK_SPELL_GLYPH_STORM  = 403;
+    uint32 const BONK_SPELL_GLYPH_METEOR = 20476;
+    uint32 const BONK_KIT_LIGHTNING      = 283;
+    uint32 const BONK_KIT_EXPLOSION      = 286;
+    uint32 const BONK_KIT_FIRE_HIT       = 728;
+    uint32 const BONK_KIT_SOUL_HARVEST   = 219;
 
     char const* const RARITY_NAMES[MAX_BONK_RARITY] = { "Common", "Uncommon", "Rare", "Epic", "Legendary" };
+
+    std::string FormatTimes(float times)
+    {
+        uint32 const whole = uint32(times + 0.5f);
+        if (whole == 2)
+            return "double";
+        if (whole == 3)
+            return "triple";
+        return std::to_string(whole) + " times your normal";
+    }
 }
 
 void BonkRun::QueueGlyphPick()
 {
-    if (m_glyphPicksGiven + m_pendingGlyphPicks >= BONK_GLYPH_PICKS || sBonkMgr.GetGlyphs().empty())
+    uint32 const picks = BONK_GLYPH_PICKS + (GetUtility(BONK_UTILITY_START_GLYPH) > 0.0f ? 1 : 0);
+    if (m_glyphPicksGiven + m_pendingGlyphPicks >= picks || sBonkMgr.GetGlyphs().empty())
         return;
     ++m_pendingGlyphPicks;
     UpdateOffers();
@@ -86,7 +73,6 @@ void BonkRun::OfferGlyphs()
 {
     --m_pendingGlyphPicks;
 
-    // What the account owns and the run has not taken.
     uint32 const account = m_player->GetSession()->GetAccountId();
     std::vector<BonkGlyph const*> pool;
     for (auto const& itr : sBonkMgr.GetGlyphs())
@@ -102,8 +88,6 @@ void BonkRun::OfferGlyphs()
     uint32 clean = 0;
     while (m_glyphOffer.size() < BONK_GLYPH_CHOICES && !pool.empty())
     {
-        // The last slots go to Glyphs without a drawback until there are
-        // enough of them, while any are left.
         uint32 const slotsLeft = BONK_GLYPH_CHOICES - uint32(m_glyphOffer.size());
         bool const needClean = clean < BONK_GLYPH_MIN_CLEAN && slotsLeft <= BONK_GLYPH_MIN_CLEAN - clean &&
             std::any_of(pool.begin(), pool.end(), [](BonkGlyph const* glyph) { return glyph->drawback.empty(); });
@@ -141,7 +125,6 @@ void BonkRun::SendGlyphOffer() const
         return;
     }
 
-    // Without the addon: in chat, with the command that answers it.
     ChatHandler handler(m_player);
     handler.SendSysMessage(m_glyphPicksGiven > 1 ? "Choose your second Glyph (.bonk glyph <number>):" : "Choose a Glyph (.bonk glyph <number>):");
     for (size_t i = 0; i < m_glyphOffer.size(); ++i)
@@ -170,7 +153,6 @@ bool BonkRun::ChooseGlyph(uint32 choice, std::string& error)
     if (glyph)
     {
         m_glyphs.push_back(glyph);
-        // Its card, out of sight of the card row.
         if (BonkCard const* card = glyph->cardId ? sBonkMgr.GetCard(glyph->cardId) : nullptr)
         {
             m_glyphCardIds.insert(card->id);
@@ -191,7 +173,7 @@ bool BonkRun::ChooseGlyph(uint32 choice, std::string& error)
                 break;
         }
         ApplyPassives();
-        bonk->Notify(glyph->name + "!");
+        bonk->Notify("You chose " + glyph->name + ".");
         SendGlyphs();
         SendState();
     }
@@ -225,7 +207,6 @@ float BonkRun::GetGlyphValue(BonkGlyphEffect effect, uint8 index) const
 
 float BonkRun::GetGlyphPower() const
 {
-    // Vengeance: Power for health missing.
     BonkGlyph const* vengeance = GetGlyph(BONK_GLYPH_VENGEANCE);
     if (!vengeance || vengeance->values[0] <= 0.0f || !m_player->GetMaxHealth())
         return 0.0f;
@@ -239,40 +220,38 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
         return;
     BonkPlayer* bonk = m_player->GetBonkPlayer();
 
-    // Second Wind: an elite or better falling close by heals.
     if (BonkGlyph const* wind = GetGlyph(BONK_GLYPH_SECOND_WIND))
         if (kind != BONK_SPAWN_NORMAL && m_player->IsWithinDistInMap(mob, wind->values[1]))
             HealHero(ReduceHealing(uint32(std::max(1.0f, m_player->GetMaxHealth() * wind->values[0] / 100.0f))));
 
     ++m_glyphKills;
 
-    // Bloodlust: every so many kills, a burst of Haste.
     if (BonkGlyph const* lust = GetGlyph(BONK_GLYPH_KILL_HASTE))
         if (lust->values[0] >= 1.0f && m_glyphKills % uint32(lust->values[0]) == 0)
         {
             m_glyphHasteUntilMs = m_totalMs + uint32(lust->values[2]);
-            bonk->Notify("Bloodlust!");
+            char text[96];
+            snprintf(text, sizeof(text), "Bloodlust! You attack and dots tick %g%% more often for %g seconds.", lust->values[1],
+                lust->values[2] / 1000.0f);
+            bonk->Notify(text);
         }
 
-    // Soul Harvest: every so many kills, the next hit is a big one.
     if (BonkGlyph const* harvest = GetGlyph(BONK_GLYPH_SOUL_HARVEST))
-        if (!m_soulHarvestReady && harvest->values[0] >= 1.0f && m_glyphKills % uint32(harvest->values[0]) == 0)
+        if (harvest->values[0] >= 1.0f && m_glyphKills % uint32(harvest->values[0]) == 0)
         {
-            m_soulHarvestReady = true;
-            bonk->Notify("Soul Harvest: your next hit is empowered!");
+            m_soulHarvestUntilMs = m_totalMs + uint32(harvest->values[2]);
+            m_player->SendPlaySpellVisualKit(BONK_KIT_SOUL_HARVEST);
+            bonk->Notify("Soul Harvest! You deal " + FormatTimes(harvest->values[1]) + " damage for " +
+                std::to_string(uint32(harvest->values[2] / IN_MILLISECONDS + 0.5f)) + " seconds.");
         }
 }
 
-void BonkRun::ModifyGlyphHit(Unit* victim, uint32& damage)
+void BonkRun::ModifyGlyphHit(Unit* , uint32& damage)
 {
-    if (!m_soulHarvestReady || !damage)
+    if (m_totalMs >= m_soulHarvestUntilMs || !damage)
         return;
     if (BonkGlyph const* harvest = GetGlyph(BONK_GLYPH_SOUL_HARVEST))
-    {
-        m_soulHarvestReady = false;
         damage = uint32(damage * harvest->values[1]);
-        victim->SendPlaySpellVisualKit(BONK_KIT_EXPLOSION);
-    }
 }
 
 void BonkRun::UpdateGlyphs(uint32 diff)
@@ -299,7 +278,6 @@ void BonkRun::UpdateGlyphs(uint32 diff)
 
 void BonkRun::StrikeStorm(BonkGlyph const& glyph)
 {
-    // Lightning on a few enemies about, every one a crit.
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_GLYPH_STORM);
     std::vector<Creature*> mobs = GetMobsInRange(BONK_GLYPH_STRIKE_RANGE);
     if (!spellInfo || mobs.empty())
@@ -316,7 +294,6 @@ void BonkRun::StrikeStorm(BonkGlyph const& glyph)
 
 void BonkRun::DropMeteor(BonkGlyph const& glyph)
 {
-    // On the thickest crowd about: the enemy with the most others close by.
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_GLYPH_METEOR);
     std::vector<Creature*> const mobs = GetMobsInRange(BONK_GLYPH_STRIKE_RANGE);
     if (!spellInfo || mobs.empty())

@@ -136,8 +136,6 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
         if (((Creature*)target)->IsInEvadeMode())
             return;
 
-        // Vanilla Bonk: a run weapon's area that holds normal enemies only
-        // (Frost Trap's slow) passes elites, mini-bosses and bosses by.
         if (i_dynobject.IsBonkNormalOnly() && ((Creature*)target)->IsBonkEnemy() && !((Creature*)target)->IsBonkNormal())
             return;
     }
@@ -204,7 +202,6 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
     SpellAuraHolder* holder = target->GetSpellAuraHolder(spellInfo->Id, i_dynobject.GetCasterGuid());
     bool existing = false;
 
-    // The cast's own base points, which may be custom (Vanilla Bonk's weapons).
     int32 basePoints = 0;
     int32* currentBasePoints = i_dynobject.GetBasePoints(basePoints) ? &basePoints : nullptr;
 

@@ -289,9 +289,11 @@ void WorldSession::HandleLogoutRequestOpcode(NullClientPacket const& /*packet*/)
 
     uint8 reason = 0;
 
-    if (GetPlayer()->IsInCombat())
+    bool const inBonkRun = GetPlayer()->GetBonkPlayer() && GetPlayer()->GetBonkPlayer()->GetRun();
+
+    if (GetPlayer()->IsInCombat() && !inBonkRun)
         reason = 1;
-    else if (GetPlayer()->m_movementInfo.HasMovementFlag(MovementFlags(MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR)))
+    else if (!inBonkRun && GetPlayer()->m_movementInfo.HasMovementFlag(MovementFlags(MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR)))
         reason = 3;                      // is jumping or falling
     else if (GetPlayer()->HasAura(9454)) // frozen by GM via freeze command
         reason = 2;                      // FIXME - Need the correct value
@@ -307,7 +309,7 @@ void WorldSession::HandleLogoutRequestOpcode(NullClientPacket const& /*packet*/)
     }
 
     // instant logout in taverns/cities or on taxi or for admins, gm's, mod's if its enabled in mangosd.conf
-    if (GetPlayer()->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) ||
+    if (inBonkRun || GetPlayer()->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) ||
         GetPlayer()->IsTaxiFlying() ||
         GetSecurity() >= (AccountTypes)sWorld.getConfig(CONFIG_UINT32_INSTANT_LOGOUT))
     {
@@ -640,7 +642,6 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPackets::Misc::AreaTrigger const
         return;
     }
 
-    // Arena exits and scripted triggers are off during a run.
     if (pPlayer->GetBonkPlayer()->GetRun())
         return;
 

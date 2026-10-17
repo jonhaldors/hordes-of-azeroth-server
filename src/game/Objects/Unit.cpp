@@ -216,7 +216,6 @@ void Unit::SetTimeFrozen(bool frozen)
     m_timeFrozen = frozen;
     m_spellUpdateTimeBuffer = 0;
 
-    // The client counted the hero's own aura timers down all along.
     if (!frozen && IsPlayer())
         for (auto const& itr : m_spellAuraHolders)
             itr.second->UpdateAuraDuration();
@@ -230,7 +229,6 @@ void Unit::Update(uint32 update_diff, uint32 p_time)
     // Buffer spell system update time to save on performance when players are updated twice per
     // world update. We do not need to update spells when the interval is only a few ms (~10ms)
     UpdateCooldowns(GetMap()->GetCurrentClockTime());
-    // Frozen time is not made up afterwards: auras and casts just stand still.
     m_spellUpdateTimeBuffer = m_timeFrozen ? 0 : m_spellUpdateTimeBuffer + update_diff;
     if (m_spellUpdateTimeBuffer >= UNIT_SPELL_UPDATE_TIME_BUFFER)
     {
@@ -796,7 +794,6 @@ uint32 Unit::DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDa
         duel_hasEnded = true;
     }
 
-    // Vanilla Bonk: weapon damage, killing blows and damage taken in runs.
     BonkOnDamage(this, pVictim, damage, spellProto);
 
     // Enter combat or extend leash timer.
@@ -1105,8 +1102,6 @@ void Unit::Kill(Unit* pVictim, SpellEntry const* spellProto, bool durabilityLoss
         if (pCreatureVictim)
         {
             // in this case loot is generated on spawn, when there is no player, so we need to fill in remaining conditional loot
-            // Vanilla Bonk: bodies carry nothing, not even coins; every kill
-            // pays out directly instead (BonkRun::OnMobKilled).
             pCreatureVictim->loot.clear();
         }
 
@@ -1231,7 +1226,6 @@ void Unit::Kill(Unit* pVictim, SpellEntry const* spellProto, bool durabilityLoss
             pCreatureVictim->UpdateCombatWithZoneState(false);
 
             pCreatureVictim->DeleteThreatList();
-            // Vanilla Bonk: bodies are never lootable (see GenerateLootForBody below).
 
             if (pPlayerTap && (pCreatureVictim->IsGuard() || pCreatureVictim->HasStaticFlag(CREATURE_STATIC_FLAG_PVP_ENABLING)))
                 pCreatureVictim->SendZoneUnderAttackMessage(pPlayerTap);
@@ -1447,7 +1441,6 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
             uint32 creatureTypeMask = damageInfo->target->GetCreatureTypeMask();
             int32 mod = GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_CRIT_PERCENT_VERSUS, creatureTypeMask);
             float multiplier = (200.0f + mod) / 100.0f;
-            // Vanilla Bonk: Crit Damage, and a second crit past 100% crit chance.
             if (BonkRun const* run = BonkRun::FromAttack(this, damageInfo->target))
                 multiplier = run->RollCritMultiplier(true, damageInfo->target);
             damageInfo->totalDamage = uint32((damageInfo->totalDamage) * multiplier);
@@ -1479,7 +1472,6 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
             for (uint8 i = 0; i < m_weaponDamageCount[damageInfo->attackType]; i++)
                 damageInfo->subDamage[i].damage = 0;
 
-            // Vanilla Bonk: a hero's dodge sets off Revenge.
             if (Player* hero = damageInfo->target->ToPlayer())
                 if (BonkRun* run = hero->GetBonkPlayer()->GetRun())
                     run->OnHeroDodge();
@@ -1684,8 +1676,8 @@ void Unit::RollDazeOutcome(CalcDamageInfo* damageInfo)
     // If this is a creature and it attacks from behind it has a probability to daze it's victim
     if (damageInfo->totalDamage && !IsPlayer() &&
         !GetCharmerOrOwnerGuid() && !pVictim->HasInArc(this) &&
-        !(pVictim->IsPlayer() && pVictim->GetInvincibilityHpThreshold()) && // dont daze player in god mode
-        !(pVictim->IsPlayer() && static_cast<Player*>(pVictim)->GetBonkPlayer()->GetRun())) // Vanilla Bonk: nor in a run
+        !(pVictim->IsPlayer() && pVictim->GetInvincibilityHpThreshold()) &&
+        !(pVictim->IsPlayer() && static_cast<Player*>(pVictim)->GetBonkPlayer()->GetRun()))
     {
         // -probability is between 0% and 40%
         // 20% base chance
@@ -1969,7 +1961,6 @@ void Unit::CalculateDamageAbsorbAndResist(SpellCaster* pCaster, SpellSchoolMask 
     else if (spellProto && spellProto->AttributesEx4 & SPELL_ATTR_EX4_IGNORE_RESISTANCES)
         canResist = false;
 
-    // Vanilla Bonk: a hero's damage on run enemies is never partly resisted.
     bool const bonkAttack = BonkRun::FromAttack(pCaster, this) != nullptr;
     if (bonkAttack)
         canResist = false;
@@ -4564,7 +4555,6 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
 
     if (Creature* pCreature = ToCreature()) // && !((Creature*)this)->GetLinkGroup())
     {
-        // Vanilla Bonk: run enemies yell once each, a few at a time.
         if (!pCreature->IsBonkEnemy() || BonkMobAI::MayCry(pCreature))
             pCreature->SendAIReaction(AI_REACTION_HOSTILE);
         pCreature->CallAssistance();
@@ -5350,7 +5340,6 @@ float Unit::GetSpellCritChance(Unit const* pVictim, SpellEntry const* spellProto
 
 bool Unit::IsSpellCrit(Unit const* pVictim, SpellEntry const* spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType, Spell* spell) const
 {
-    // Vanilla Bonk: a hero's spells crit run enemies by the hero's Crit.
     if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
         return spellProto->CanCrit() && roll_chance_f(run->GetCritChance(spellProto));
 
@@ -6243,7 +6232,6 @@ int32 Unit::ModifyHealth(int32 dVal)
         gain = maxHealth - curHealth;
     }
 
-    // Vanilla Bonk: quests count the healing a hero takes in a run.
     if (gain > 0 && IsPlayer())
         if (BonkPlayer* bonk = static_cast<Player*>(this)->GetBonkPlayer())
             if (BonkRun* run = bonk->GetRun())
@@ -7086,7 +7074,6 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced, float ratio)
     {
         if (GetDeathState() == CORPSE)
             speed *= sWorld.getConfig(((Player*)this)->InBattleGround() ? CONFIG_FLOAT_GHOST_RUN_SPEED_BG : CONFIG_FLOAT_GHOST_RUN_SPEED_WORLD);
-        // Vanilla Bonk: a paused run holds the hero still by speed (BonkRun::SetPaused).
         if (IsTimeFrozen())
             speed = 0.0f;
     }
@@ -7105,9 +7092,6 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced, float ratio)
         }
     }
 
-    // Vanilla Bonk: the Shift dash's burst on the ground goes at its own
-    // speed whatever slows the hero; a paused run still holds them still
-    // (BonkPlayerDash.cpp).
     if (IsPlayer() && !IsTimeFrozen() && (mtype == MOVE_WALK || mtype == MOVE_RUN || mtype == MOVE_RUN_BACK))
         if (BonkPlayer const* bonk = static_cast<Player*>(this)->GetBonkPlayer())
             if (float const dashSpeed = bonk->GetDashBurstSpeed())
@@ -7135,8 +7119,6 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced, float ratio)
         else
             speed *= DEFAULT_NPC_RUN_SPEED_RATE;  // normalized player pet runspeed
 
-        // Speed reduction at low health percentages (Vanilla Bonk: not for run
-        // enemies, whose speed is part of the game's balance)
         if (mtype == MOVE_RUN && !pCreature->IsPet() && !pCreature->IsWorldBoss() && !pCreature->IsBonkEnemy() &&
             !pCreature->HasStaticFlag(CREATURE_STATIC_FLAG_2_NO_WOUNDED_SLOWDOWN))
         {
@@ -10402,7 +10384,7 @@ bool Unit::GetRandomAttackPoint(Unit const* attacker, float &x, float &y, float 
         uint32 nav = 0;
         if (attacker->CanWalk())
             nav |= NAV_GROUND;
-        if (attacker->CanSwim())
+        if (attacker->CanSwim() || (attacker->IsCreature() && static_cast<Creature const*>(attacker)->IsBonkEnemy()))
             nav |= NAV_WATER;
         if (!attacker->IsPlayer())
             nav |= NAV_MAGMA | NAV_SLIME;

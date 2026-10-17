@@ -14,6 +14,7 @@ void AddSC_ubrs_trash();
 void AddSC_bonk_npcs();
 void AddSC_bonk_quests();
 void AddSC_bonk_codex();
+void AddSC_bonk_sandbox();
 //void AddSC_gmisland();
 //void AddSC_boss_arena_hardog(); // EVENT de TORKIN
 
@@ -261,6 +262,7 @@ void AddScripts()
     AddSC_bonk_npcs();
     AddSC_bonk_quests();
     AddSC_bonk_codex();
+    AddSC_bonk_sandbox();
     //AddSC_gmisland();
 
     // Event

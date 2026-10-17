@@ -12,19 +12,12 @@
 
 namespace
 {
-    // gameobject_template: the pillar for each kind, BONK_GO_OBJECTIVE + kind.
     uint32 const BONK_GO_OBJECTIVE = 900020;
-    // A pillar outlives any stage; it is taken away with its objective.
     uint32 const BONK_OBJECTIVE_PILLAR_SEC = 3600;
-    // Seen from this far, well past the map's usual sight (100 yards on
-    // continents), the way large objects are.
     float const BONK_OBJECTIVE_SIGHT = VISIBILITY_DISTANCE_GIGANTIC;
-    // The hero this close takes the pillar down, this far puts it back up.
     float const BONK_PILLAR_LOWER = 25.0f;
     float const BONK_PILLAR_RAISE = 40.0f;
     uint32 const BONK_PILLAR_CHECK_MS = 500;
-    // A pin on a creature moves once it is this far from where it showed,
-    // and the minimap is pinged on it this often (a ping shows 5 s).
     float const BONK_FOLLOW_MOVE = 2.0f;
     uint32 const BONK_FOLLOW_PING_MS = 6000;
 
@@ -123,7 +116,6 @@ void BonkObjectives::Clear(Player* hero)
 
 std::vector<BonkObjective> BonkObjectives::Update(Player* hero, uint32 diff)
 {
-    // Pins on creatures go where they went, and ping now and then.
     for (BonkObjective& objective : m_objectives)
     {
         if (objective.follows.IsEmpty())
@@ -206,7 +198,6 @@ BonkObjective const* BonkObjectives::Get(uint32 id) const
 
 void BonkObjectives::Send(Player* hero, BonkObjective const& objective) const
 {
-    // Seconds rounded up, so a countdown never shows 0 while it stands.
     uint32 const seconds = (objective.leftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS;
     hero->GetBonkPlayer()->SendAddon("objective~" + std::to_string(objective.id) + "~" + GetBonkObjectiveKindName(objective.kind) + "~" +
         FormatCoordinate(objective.x) + "~" + FormatCoordinate(objective.y) + "~" + std::to_string(hero->GetMapId()) + "~" +
@@ -215,9 +206,6 @@ void BonkObjectives::Send(Player* hero, BonkObjective const& objective) const
 
 void BonkObjectives::Ping(Player* hero, BonkObjective const& objective) const
 {
-    // The addon's rings swell from the pin, on the rim too, and follow it
-    // (the stock MSG_MINIMAP_PING sits on one spot inside the disc, and a
-    // solo client may not show one from a non-party guid).
     hero->GetBonkPlayer()->SendAddon("objectiveping~" + std::to_string(objective.id));
 }
 
@@ -227,7 +215,6 @@ void BonkObjectives::RaisePillar(Player* hero, BonkObjective& objective) const
         0.0f, 0.0f, 0.0f, 0.0f, BONK_OBJECTIVE_PILLAR_SEC, false);
     if (!pillar)
         return;
-    // Only active objects are seen past the usual distance.
     pillar->SetVisibilityModifier(BONK_OBJECTIVE_SIGHT);
     pillar->SetActiveObjectState(true);
     objective.pillar = pillar->GetObjectGuid();

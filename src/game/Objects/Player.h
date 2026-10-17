@@ -1969,7 +1969,6 @@ class Player final: public Unit
 
         void SetDeathState(DeathState s) override;                   // overwrite Unit::SetDeathState
 
-        // Vanilla Bonk game-mode state
         BonkPlayer* GetBonkPlayer() const { return m_bonkPlayer.get(); }
     private:
         std::unique_ptr<BonkPlayer> m_bonkPlayer;

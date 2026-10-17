@@ -1310,7 +1310,6 @@ void Player::Update(uint32 update_diff, uint32 p_time)
     if (m_currentCinematicEntry)
         UpdateCinematic(p_time);
 
-    // Teleports requested by the game mode run below with the other delayed ones.
     SetCanDelayTeleport(true);
     m_bonkPlayer->Update(update_diff);
     SetCanDelayTeleport(false);
@@ -2187,8 +2186,6 @@ void Player::ProcessDelayedOperations()
 
     if (m_delayedOperations & DELAYED_SPELL_CAST_DESERTER)
         CastSpell(this, 26013, true);               // Deserter
-
-    // Vanilla Bonk: no world PvP, so no Honorless Target after a teleport.
 
     //we have executed ALL delayed ops, so clear the flag
     m_delayedOperations = 0;
@@ -3127,8 +3124,7 @@ void Player::GiveLevel(uint32 level)
     // If we have instance members, and the number of players in the instance is not
     // equal to the number of group members, then the player is likely mob tagging
     // and dropping group. Or they are soloing a dungeon, which is questionable.
-    // Alert GMs
-    if (!!numInstanceMembers && numInstanceMembers > numGroupMembers)
+    if (!!numInstanceMembers && numInstanceMembers > numGroupMembers && !(GetBonkPlayer() && GetBonkPlayer()->GetRun()))
     {
         std::stringstream message;
         message << GetGuidStr() << " levelup in dungeon with "
@@ -4484,7 +4480,6 @@ void Player::DeleteFromDB(ObjectGuid playerGuid, uint32 accountId, bool updateRe
             CharacterDatabase.PExecute("DELETE FROM `mail_items` WHERE `receiver_guid` = '%u'", lowGuid);
             CharacterDatabase.PExecute("DELETE FROM `character_pet` WHERE `owner_guid` = '%u'", lowGuid);
             CharacterDatabase.PExecute("DELETE FROM `guild_eventlog` WHERE `player_guid1` = '%u' OR `player_guid2` = '%u'", lowGuid, lowGuid);
-            // Vanilla Bonk: the hero's own records.
             CharacterDatabase.PExecute("DELETE FROM `bonk_character_shards` WHERE `guid` = '%u'", lowGuid);
             CharacterDatabase.PExecute("DELETE FROM `bonk_character_stats` WHERE `guid` = '%u'", lowGuid);
             CharacterDatabase.PExecute("DELETE FROM `bonk_character_talent` WHERE `guid` = '%u'", lowGuid);
@@ -9698,8 +9693,6 @@ InventoryResult Player::CanEquipItem(uint8 slot, uint16& dest, ItemPrototype con
             // - It will no longer be possible to swap any equipment while stunned.
             // May be here should be more stronger checks; STUNNED checked
             // ROOT, CONFUSED, DISTRACTED, FLEEING this needs to be checked.
-            // Vanilla Bonk: gear a run puts on or back goes on whatever the
-            // hero is doing (they are always in combat in a run).
             bool const runGear = m_bonkPlayer && m_bonkPlayer->IsEquippingGear();
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
             if (!runGear && HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_PENDING_STUNNED))
@@ -9832,7 +9825,6 @@ InventoryResult Player::CanUnequipItem(uint16 pos, bool swap) const
 #endif
 
     // do not allow unequipping gear except weapons, offhands, projectiles, relics in combat
-    // (Vanilla Bonk: unless a run is swapping gear, BonkPlayer::IsEquippingGear)
     if (!pProto->CanChangeEquipStateInCombat() && !(m_bonkPlayer && m_bonkPlayer->IsEquippingGear()))
     {
         if (IsInCombat())
@@ -14802,8 +14794,6 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
         _SaveBGData();
     }
 
-    // Vanilla Bonk: heroes enter the world at camp. Game masters (worked out
-    // as the GM state below does) stay where they logged out.
     {
         uint32 const gmLoginState = sWorld.getConfig(CONFIG_UINT32_GM_LOGIN_STATE);
         bool const gameMaster = GetSession()->GetSecurity() > SEC_MODERATOR &&
@@ -15022,8 +15012,6 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     {
         AddStartingItems();
 
-        // Vanilla Bonk: characters start with empty bags (no food, no
-        // hearthstone), only what they wear.
         for (int i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
             if (GetItemByPos(INVENTORY_SLOT_BAG_0, i))
                 DestroyItem(INVENTORY_SLOT_BAG_0, i, false);
@@ -18390,7 +18378,6 @@ bool Player::IsVendorItemVisible(Creature* vendor, VendorItem const* vendorItem,
         return false;
 #endif
 
-    // Vanilla Bonk: gear of a difficulty not yet cleared stays off the shelf.
     if (m_bonkPlayer && !m_bonkPlayer->CanBuyGear(itemProto->ItemId))
         return false;
 
@@ -22222,7 +22209,8 @@ void Player::AddCooldown(SpellEntry const* spellEntry, ItemPrototype const* item
         auto& cdData = cdDataItr->second;
         if (!cdData->IsPermanent() && (!cdData->IsSpellCDExpired(sWorld.GetCurrentClockTime()) || !cdData->IsCatCDExpired(sWorld.GetCurrentClockTime())))
         {
-            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Player::AddCooldown> Spell(%u) try to add and already existing cooldown?", spellEntry->Id);
+            if (!GetBonkPlayer() || !GetBonkPlayer()->GetRun())
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Player::AddCooldown> Spell(%u) try to add and already existing cooldown?", spellEntry->Id);
             return;
         }
         wasPermanent = cdData->IsPermanent();

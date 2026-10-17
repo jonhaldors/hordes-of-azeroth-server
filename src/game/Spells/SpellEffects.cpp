@@ -2007,9 +2007,7 @@ void Spell::EffectPersistentAA(SpellEffectIndex effIdx)
         if (Player* modOwner = pUnit->GetSpellModOwner())
         {
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RADIUS, radius);
-            // Vanilla Bonk: area weapons (Consecration) grow with their level.
             radius *= modOwner->GetBonkPlayer()->GetAreaScale(m_spellInfo->Id);
-            // Vanilla Bonk: some weapons' areas hold normal enemies only.
             bonkNormalOnly = modOwner->GetBonkPlayer()->HoldsNormalEnemiesOnly(m_spellInfo->Id);
         }
     }
@@ -2021,7 +2019,6 @@ void Spell::EffectPersistentAA(SpellEffectIndex effIdx)
         delete dynObj;
         return;
     }
-    // Custom base points carry over to the aura it applies.
     dynObj->SetBasePoints(m_currentBasePoints[effIdx]);
     dynObj->SetBonkNormalOnly(bonkNormalOnly);
 
@@ -3500,8 +3497,6 @@ void Spell::EffectWeaponDmg(SpellEffectIndex effIdx)
         bonus += m_casterUnit->CalculateDamage(m_attackType, normalized, i) * weaponDamagePercentMod;
     }
 
-    // Vanilla Bonk: a run weapon's damage replaces the weapon swing, also
-    // when the hero's projectile casts it for the hero.
     Player* pPlayer = m_casterUnit->ToPlayer();
     if (!pPlayer && m_casterUnit->GetEntry() == BONK_PROJECTILE)
         if (Unit* hero = GetAffectiveCaster())

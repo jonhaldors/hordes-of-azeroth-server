@@ -86,8 +86,6 @@ void WorldSession::HandleUseItemOpcode(WorldPackets::Spell::UseItem const& packe
         return;
     }
 
-    // Vanilla Bonk: a run's own items (the Hearthstone's extraction ring)
-    // work without casting their spell.
     if (BonkRun* run = pUser->GetBonkPlayer()->GetRun())
         if (run->UseItem(pItem))
             return;
@@ -274,8 +272,6 @@ void WorldSession::HandleCastSpellOpcode(WorldPackets::Spell::CastSpell const& p
     if (!spellInfo)
         return;
 
-    // Vanilla Bonk: characters fight only with the weapons a run gives them,
-    // which the server casts. GMs keep their spells.
     if (!_player->IsGameMaster())
     {
         auto castPacket = std::make_unique<WorldPackets::Spell::CastResult>();

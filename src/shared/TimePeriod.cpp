@@ -25,12 +25,6 @@
 ScopedTimerPeriod set_time_period(const std::chrono::milliseconds ms)
 {
 #ifdef _WIN32
-    // Vanilla Bonk: Windows 11 may ignore a process's timer resolution
-    // request while its window is minimized or hidden (mangosd starts
-    // minimized), so sleeps rounded up to the 15.6 ms system tick and a
-    // 50 ms world tick took 62.5. Ask Windows to always honor the request
-    // (SetProcessInformation, PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
-    // off); a Windows without that setting refuses the call, harmlessly.
     PROCESS_POWER_THROTTLING_STATE throttling = {};
     throttling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
     throttling.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;

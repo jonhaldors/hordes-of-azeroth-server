@@ -1,42 +1,3 @@
-/*
- * Vanilla Bonk: the mini-event scheduler, BonkRun's share of the in-run
- * events (feature plan, Mini-events).
- *
- * The stage timeline's blocks have mini-event slots (bonk_wave): a block
- * with one starts one of its allowed events as soon as it can, picked at
- * random but never the same twice running (while there is another), at
- * most one under way and none once the boss is up.
- *
- * They happen to the hero wherever they are, unmarked:
- * - Encircling horde: a ring of enemies closes in, growing through the
- *   stage and with the difficulty's crowd; denser on harder difficulties,
- *   with elites mixed in.
- * - Treasure goblin: a goblin appears close by and runs from the hero for
- *   BONK_GOBLIN_SECONDS; caught, it pays a chest's price in Valor and drops
- *   a free chest. Faster and blinking away when hit on harder difficulties,
- *   with two elites at its side on the hardest.
- * - Bounty: a tougher elite with a skull on its nameplate comes for the hero;
- *   killed within BONK_BOUNTY_SECONDS, it drops a free chest with a choice
- *   more for each affix. It rolls affixes on harder difficulties.
- * - Kobold thieves (Phase 3): kobolds turn up by the orbs lying about, take
- *   them and run; each killed drops what it took and a bonus.
- * - Scourge Invasion: Necrotic Shards a walk away, each pinned, raise undead
- *   round them until destroyed; Valor and experience a shard. One more
- *   shard on harder difficulties, an elite guarding each on the hardest.
- * - Demon portal: a portal a walk away sends demons until destroyed; a
- *   chest. More health and felguard elites on harder difficulties.
- * - Kodo caravan: a caravan kodo walks about 120 yards past the hero while
- *   raiders come up round it every few seconds and go for it; every raider
- *   at its side lands a blow a second. It arrives (a chest with more
- *   choices) or falls; less to fall on harder difficulties, more raiders.
- * - Stampede: a wall of beasts (the map's chargers, or kodos) charges across
- *   where the hero stands after a red warning; a second wall crosses it on
- *   the hardest. A hazard, no reward.
- * A goblin, a bounty, kobolds, shards or a portal are under way until they
- * die or the time is up (m_miniEventActive); the addon shows the time left
- * ("eventtimer~label~seconds~total", 0 seconds hides it).
- */
-
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -52,104 +13,98 @@
 
 namespace
 {
-    uint32 const BONK_MINI_EVENT_RETRY_MS    = 10 * IN_MILLISECONDS;   // it could not start yet
+    uint32 const BONK_MINI_EVENT_RETRY_MS    = 10 * IN_MILLISECONDS;
 
-    float const BONK_HORDE_BASE              = 8.0f;    // enemies in the ring at 0:00...
-    float const BONK_HORDE_PER_MINUTE        = 2.2f;    // ...and more each minute, times the tier's crowd
-    float const BONK_HORDE_DENSER            = 0.25f;   // more again for each step of difficulty
-    float const BONK_HORDE_ELITE_DISTANCE    = 22.0f;   // elites in the ring: one a step of difficulty
+    float const BONK_HORDE_BASE              = 8.0f;
+    float const BONK_HORDE_PER_MINUTE        = 2.2f;
+    float const BONK_HORDE_DENSER            = 0.25f;
+    float const BONK_HORDE_ELITE_DISTANCE    = 22.0f;
 
     uint32 const BONK_GOBLIN_ENTRY           = 900011;
     uint32 const BONK_GOBLIN_SECONDS         = 20;
-    float const BONK_GOBLIN_MIN_DISTANCE     = 18.0f;   // close by, in sight
+    float const BONK_GOBLIN_MIN_DISTANCE     = 18.0f;
     float const BONK_GOBLIN_MAX_DISTANCE     = 28.0f;
-    float const BONK_GOBLIN_HEALTH           = 0.5f;    // of an elite's
-    float const BONK_GOBLIN_SPEED[3]         = { 0.85f, 0.95f, 1.05f };     // by difficulty; the hero runs at 1
+    float const BONK_GOBLIN_HEALTH           = 0.5f;
+    float const BONK_GOBLIN_SPEED[3]         = { 0.85f, 0.95f, 1.05f };
     float const BONK_GOBLIN_SCALE            = 1.2f;
-    uint32 const BONK_GOBLIN_GUARDS          = 2;       // on the hardest difficulty
+    uint32 const BONK_GOBLIN_GUARDS          = 2;
     float const BONK_GOBLIN_GUARD_SPREAD     = 4.0f;
-    uint32 const BONK_GOBLIN_HEAD_START_MS   = 2000;    // it stands this long before it runs
-    float const BONK_EVENT_HEAD_START_SHARE  = 0.2f;    // of Bounty Hunter's extra seconds, more head start
-    // A skull on its nameplate and its minimap pin (user, 2026-10-16: hard to find).
+    uint32 const BONK_GOBLIN_HEAD_START_MS   = 2000;
+    float const BONK_EVENT_HEAD_START_SHARE  = 0.2f;
     char const* const BONK_GOBLIN_ICON       = "INV_Misc_Bone_HumanSkull_01";
 
     uint32 const BONK_BOUNTY_SECONDS         = 60;
     float const BONK_BOUNTY_MIN_DISTANCE     = 35.0f;
     float const BONK_BOUNTY_MAX_DISTANCE     = 50.0f;
-    float const BONK_BOUNTY_HEALTH           = 2.0f;    // times its elite's
+    float const BONK_BOUNTY_HEALTH           = 2.0f;
     float const BONK_BOUNTY_SCALE            = 1.25f;
     char const* const BONK_BOUNTY_ICON       = "INV_Misc_Bone_HumanSkull_01";
 
-    uint32 const BONK_SPELL_SPAWN_SMOKE      = 10389;   // a goblin or bounty getting away
+    uint32 const BONK_SPELL_SPAWN_SMOKE      = 10389;
 
-    // Kobold thieves: one more a step of difficulty, a little faster too.
-    uint32 const BONK_KOBOLD_ENTRY           = 475;     // Kobold Tunneler, candle and all
+    uint32 const BONK_KOBOLD_ENTRY           = 475;
     uint32 const BONK_KOBOLD_COUNT           = 3;
     uint32 const BONK_KOBOLD_SECONDS         = 20;
     float const BONK_KOBOLD_MIN_DISTANCE     = 12.0f;
     float const BONK_KOBOLD_MAX_DISTANCE     = 35.0f;
-    float const BONK_KOBOLD_GRAB_RANGE       = 12.0f;   // the orbs round where one turns up
-    float const BONK_KOBOLD_HEALTH           = 0.3f;    // of an elite's
+    float const BONK_KOBOLD_GRAB_RANGE       = 12.0f;
+    float const BONK_KOBOLD_HEALTH           = 0.3f;
     float const BONK_KOBOLD_SPEED[3]         = { 0.8f, 0.9f, 1.0f };
     uint32 const BONK_KOBOLD_HEAD_START_MS   = 1000;
-    float const BONK_KOBOLD_BONUS            = 0.1f;    // of a level's experience each, on top of what it took
+    float const BONK_KOBOLD_BONUS            = 0.1f;
     char const* const BONK_KOBOLD_SHOUT      = "You no take candle!";
 
-    // Scourge Invasion.
-    uint32 const BONK_SHARD_ENTRY            = 16136;   // Necrotic Shard (the 1.11 invasion)
-    uint32 const BONK_SHARD_COUNT            = 3;       // one more from the second step
+    uint32 const BONK_SHARD_ENTRY            = 16136;
+    uint32 const BONK_SHARD_COUNT            = 3;
     uint32 const BONK_SHARD_SECONDS          = 90;
     float const BONK_SHARD_MIN_DISTANCE      = 45.0f;
     float const BONK_SHARD_MAX_DISTANCE      = 90.0f;
-    float const BONK_SHARD_SPREAD            = 35.0f;   // apart from one another
-    float const BONK_SHARD_HEALTH            = 1.5f;    // of an elite's
-    int32 const BONK_SHARD_SPAWN_MS          = 5000;    // each raises undead this often
-    uint32 const BONK_SHARD_ADDS             = 2;       // and one more a step
-    float const BONK_SHARD_VALOR             = 0.5f;    // of a chest's price, a shard
-    float const BONK_SHARD_EXPERIENCE        = 0.25f;   // of a level's, a shard
+    float const BONK_SHARD_SPREAD            = 35.0f;
+    float const BONK_SHARD_HEALTH            = 1.5f;
+    int32 const BONK_SHARD_SPAWN_MS          = 5000;
+    uint32 const BONK_SHARD_ADDS             = 2;
+    float const BONK_SHARD_VALOR             = 0.5f;
+    float const BONK_SHARD_EXPERIENCE        = 0.25f;
     char const* const BONK_SHARD_ICON        = "Spell_Shadow_AnimateDead";
-    uint32 const BONK_SCOURGE_ADDS[3]        = { 16299, 16141, 16298 };    // Skeletal Shocktrooper, Ghoul Berserker, Spectral Soldier
+    uint32 const BONK_SCOURGE_ADDS[3]        = { 16299, 16141, 16298 };
 
-    // Demon portal.
-    uint32 const BONK_PORTAL_ENTRY           = 9707;    // Scarshield Portal
-    uint32 const BONK_PORTAL_SECONDS         = 75;      // then it closes on its own, the chest with it
+    uint32 const BONK_PORTAL_ENTRY           = 9707;
+    uint32 const BONK_PORTAL_SECONDS         = 75;
     float const BONK_PORTAL_MIN_DISTANCE     = 40.0f;
     float const BONK_PORTAL_MAX_DISTANCE     = 70.0f;
-    float const BONK_PORTAL_HEALTH[3]        = { 3.0f, 4.0f, 5.0f };   // of an elite's
+    float const BONK_PORTAL_HEALTH[3]        = { 3.0f, 4.0f, 5.0f };
     int32 const BONK_PORTAL_SPAWN_MS         = 6000;
-    uint32 const BONK_PORTAL_ADDS            = 3;       // and one more a step
-    uint32 const BONK_PORTAL_ELITE_WAVE      = 3;       // from the second step, every third wave a felguard elite
+    uint32 const BONK_PORTAL_ADDS            = 3;
+    uint32 const BONK_PORTAL_ELITE_WAVE      = 3;
     uint32 const BONK_PORTAL_CHEST_CHOICES   = 4;
     char const* const BONK_PORTAL_ICON       = "Spell_Shadow_SummonInfernal";
-    uint32 const BONK_DEMON_ADDS[3]          = { 12922, 6010, 6011 };      // Imp Minion, Felhound, Felguard Sentry
+    uint32 const BONK_DEMON_ADDS[3]          = { 12922, 6010, 6011 };
 
-    // Adds come up this far round their shard or portal.
     float const BONK_EVENT_ADD_MIN           = 3.0f;
     float const BONK_EVENT_ADD_MAX           = 7.0f;
 
-    // Stampede.
-    uint32 const BONK_STAMPEDE_BEAST         = 3236;    // Barrens Kodo, where the map has no chargers of its own
-    uint32 const BONK_STAMPEDE_BEASTS        = 7;       // two more a step
-    float const BONK_STAMPEDE_SPACING        = 3.5f;    // between the lanes
-    float const BONK_STAMPEDE_BEHIND         = 35.0f;   // they start this far off to one side of the hero
+    uint32 const BONK_STAMPEDE_BEAST         = 3236;
+    uint32 const BONK_STAMPEDE_BEASTS        = 7;
+    float const BONK_STAMPEDE_SPACING        = 3.5f;
+    float const BONK_STAMPEDE_BEHIND         = 35.0f;
     float const BONK_STAMPEDE_LENGTH         = 70.0f;
     uint32 const BONK_STAMPEDE_WARN_MS       = 2000;
-    uint32 const BONK_STAMPEDE_SECOND_MS     = 1200;    // the crossing wall on the hardest, this much later
-    float const BONK_STAMPEDE_DAMAGE         = 2.0f;    // in melee hits, as a charger's
+    uint32 const BONK_STAMPEDE_SECOND_MS     = 1200;
+    float const BONK_STAMPEDE_DAMAGE         = 2.0f;
 
-    // Kodo caravan.
-    uint32 const BONK_CARAVAN_ENTRY          = 11564;   // Gizelton Caravan Kodo
-    float const BONK_CARAVAN_START           = 25.0f;   // it turns up this far from the hero...
-    float const BONK_CARAVAN_LENGTH          = 120.0f;  // ...and walks this far past them
-    float const BONK_CARAVAN_LEG             = 20.0f;   // in legs this long
-    float const BONK_CARAVAN_SPEED           = 3.5f;    // yards a second, a kodo's amble
-    uint32 const BONK_CARAVAN_SPARE_SECONDS  = 20;      // on top of the walk, then it is lost
-    uint32 const BONK_CARAVAN_BLOWS[3]       = { 70, 55, 45 };     // it falls at this many
-    float const BONK_CARAVAN_REACH           = 5.0f;    // a raider this close lands a blow a second
+    uint32 const BONK_CARAVAN_ENTRY          = 11564;
+    float const BONK_CARAVAN_START           = 25.0f;
+    float const BONK_CARAVAN_LENGTH          = 120.0f;
+    float const BONK_CARAVAN_LEG             = 8.0f;
+    float const BONK_CARAVAN_HALF_WIDTH      = 2.5f;
+    float const BONK_CARAVAN_SPEED           = 3.5f;
+    uint32 const BONK_CARAVAN_SPARE_SECONDS  = 20;
+    uint32 const BONK_CARAVAN_BLOWS[3]       = { 70, 55, 45 };
+    float const BONK_CARAVAN_REACH           = 5.0f;
     int32 const BONK_CARAVAN_WAVE_MS         = 7000;
-    uint32 const BONK_CARAVAN_RAIDERS        = 2;       // a wave, one more a step of difficulty
+    uint32 const BONK_CARAVAN_RAIDERS        = 2;
     float const BONK_CARAVAN_RAID_DISTANCE   = 22.0f;
-    uint32 const BONK_CARAVAN_CHEST_CHOICES  = 4;       // and one more a step
+    uint32 const BONK_CARAVAN_CHEST_CHOICES  = 4;
     char const* const BONK_CARAVAN_ICON      = "Ability_Mount_Kodo_01";
 
     char const* const MINI_EVENT_NAMES[MAX_BONK_MINI_EVENT] = { "horde", "goblin", "bounty", "kobolds", "scourge", "portal", "stampede", "caravan" };
@@ -174,8 +129,6 @@ bool ParseBonkMiniEvent(char const* name, BonkMiniEventType& type)
 
 void BonkRun::UpdateMiniEvents(uint32 diff)
 {
-    // A goblin or a bounty runs until it dies or gets away; kobolds, shards
-    // and a portal until they are all dead or the time is up.
     if (m_miniEventActive)
     {
         if (m_miniEvent.targets.empty())
@@ -185,7 +138,6 @@ void BonkRun::UpdateMiniEvents(uint32 diff)
         return;
     }
 
-    // This block's slot, while it lasts.
     if (!m_miniEventSlots || m_elapsedMs < m_nextMiniEventMs || m_bossSpawned)
         return;
 
@@ -225,7 +177,6 @@ bool BonkRun::StartMiniEvent(BonkMiniEventType type)
         case BONK_MINI_EVENT_CARAVAN:  started = SpawnCaravan(); break;
         default:                     break;
     }
-    // Whatever was set up for a mob that never came is not left for the next.
     BonkMobAI::SetNextAffixCount(-1);
     BonkMobAI::SetNextPlateIcon(nullptr);
     if (started)
@@ -244,7 +195,6 @@ bool BonkRun::SpawnHorde()
     if (!SpawnFormation(ring))
         return false;
 
-    // Elites in the ring on harder difficulties.
     for (uint32 i = 0; i < step; ++i)
         if (BonkMapCreature const* elite = PickCreature(BONK_SPAWN_ELITE))
         {
@@ -266,7 +216,7 @@ bool BonkRun::SpawnTreasureGoblin()
     uint32 const step = GetDifficultyStep();
     BonkMapCreature goblin;
     goblin.entry = BONK_GOBLIN_ENTRY;
-    goblin.kind = BONK_SPAWN_ELITE;         // a named nameplate, an elite's rewards
+    goblin.kind = BONK_SPAWN_ELITE;
     goblin.healthMultiplier = BONK_GOBLIN_HEALTH;
     goblin.speed = BONK_GOBLIN_SPEED[step];
     goblin.scale = BONK_GOBLIN_SCALE;
@@ -275,13 +225,11 @@ bool BonkRun::SpawnTreasureGoblin()
     Creature* mob = SpawnMobAt(goblin, x, y, z);
     if (!mob)
         return false;
-    // Bounty Hunter: more time to catch it, a fifth of it as head start.
     float const extra = GetUtility(BONK_UTILITY_EVENT_TIME);
     uint32 const seconds = BONK_GOBLIN_SECONDS + uint32(extra);
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
         ai->SetFleeing(step >= 1, BONK_GOBLIN_HEAD_START_MS + uint32(extra * BONK_EVENT_HEAD_START_SHARE * IN_MILLISECONDS));
 
-    // The hardest difficulty: elites at its side.
     if (step >= 2)
         for (uint32 i = 0; i < BONK_GOBLIN_GUARDS; ++i)
             if (BonkMapCreature const* guard = PickCreature(BONK_SPAWN_ELITE))
@@ -294,10 +242,9 @@ bool BonkRun::SpawnTreasureGoblin()
             }
 
     StartMiniEventTarget(mob, "Treasure Goblin", seconds);
-    // Pinned on the minimap wherever it runs, and the minimap pinged on it.
     m_miniEvent.objectiveId = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Treasure Goblin", seconds,
-        BONK_GOBLIN_ICON, "Catch it before it gets away: Valor and a chest.");
-    m_player->GetBonkPlayer()->Notify("A treasure goblin! Catch it before it gets away!");
+        BONK_GOBLIN_ICON, "Catch it before it gets away to get Valor and a chest.");
+    m_player->GetBonkPlayer()->Notify("A treasure goblin appeared! Catch it before it gets away!");
     return true;
 }
 
@@ -318,10 +265,9 @@ bool BonkRun::SpawnBounty()
         return false;
 
     std::string const name = mob->GetName();
-    // Bounty Hunter: more time.
     uint32 const seconds = BONK_BOUNTY_SECONDS + uint32(GetUtility(BONK_UTILITY_EVENT_TIME));
     StartMiniEventTarget(mob, "Bounty: " + name, seconds);
-    m_player->GetBonkPlayer()->Notify("Bounty: " + name + "! Kill it within " + std::to_string(seconds) + " seconds for a chest.");
+    m_player->GetBonkPlayer()->Notify("A bounty is out on " + name + "! Kill it within " + std::to_string(seconds) + " seconds to earn a chest.");
     return true;
 }
 
@@ -340,7 +286,6 @@ void BonkRun::UpdateMiniEventTarget(uint32 diff)
     Creature* target = m_player->GetMap()->GetCreature(m_miniEvent.target);
     if (!target || !target->IsAlive())
     {
-        // Killed (OnMiniEventTargetKilled paid for it), or gone some other way.
         EndMiniEvent();
         return;
     }
@@ -352,7 +297,6 @@ void BonkRun::UpdateMiniEventTarget(uint32 diff)
         return;
     }
 
-    // Time's up: it gets away.
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->Notify(m_miniEvent.type == BONK_MINI_EVENT_GOBLIN ? std::string("The treasure goblin got away!") :
         std::string(target->GetName()) + " slipped away.");
@@ -378,17 +322,16 @@ void BonkRun::OnMiniEventTargetKilled(Creature* mob)
     float const x = mob->GetPositionX(), y = mob->GetPositionY(), z = mob->GetPositionZ();
     if (m_miniEvent.type == BONK_MINI_EVENT_GOBLIN)
     {
-        // A chest's worth of Valor, and the chest.
         uint32 const valor = GetChestCost();
         m_coins += valor;
         SpawnChest(true, x, y, z);
-        bonk->Notify("Treasure goblin caught: +" + std::to_string(valor) + " Valor and a chest!");
+        bonk->Notify("You caught the treasure goblin! It drops " + std::to_string(valor) + " Valor and a chest.");
     }
     else
     {
         BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
         SpawnChest(true, x, y, z, 3 + (ai ? ai->GetAffixCount() : 0));
-        bonk->Notify("Bounty claimed: a chest!");
+        bonk->Notify("You claimed the bounty on " + std::string(mob->GetName()) + " and earned a chest!");
     }
     EndMiniEvent();
     SendState();
@@ -447,7 +390,6 @@ bool BonkRun::IsMiniEventTarget(ObjectGuid const& guid) const
 {
     if (!m_miniEventActive)
         return false;
-    // A caravan's raiders too: they stay with the caravan.
     return guid == m_miniEvent.target || std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), guid) != m_miniEvent.targets.end() ||
         std::find(m_miniEvent.raiders.begin(), m_miniEvent.raiders.end(), guid) != m_miniEvent.raiders.end();
 }
@@ -457,7 +399,6 @@ bool BonkRun::SpawnKoboldThieves()
     uint32 const step = GetDifficultyStep();
     uint32 const count = BONK_KOBOLD_COUNT + step;
     uint32 const bonus = uint32(GetNextLevelXp() * BONK_KOBOLD_BONUS);
-    // Bounty Hunter: more time to catch them, and a longer head start.
     float const extra = GetUtility(BONK_UTILITY_EVENT_TIME);
     uint32 const seconds = BONK_KOBOLD_SECONDS + uint32(extra);
     uint32 const headStart = BONK_KOBOLD_HEAD_START_MS + uint32(extra * BONK_EVENT_HEAD_START_SHARE * IN_MILLISECONDS);
@@ -466,7 +407,6 @@ bool BonkRun::SpawnKoboldThieves()
     m_miniEvent.stolen.clear();
     for (uint32 i = 0; i < count; ++i)
     {
-        // By an orb lying about if there is one, close by anyway.
         float x, y, z;
         bool byOrb = FindLyingOrb(BONK_KOBOLD_MIN_DISTANCE, BONK_KOBOLD_MAX_DISTANCE, x, y, z);
         if (byOrb)
@@ -486,7 +426,7 @@ bool BonkRun::SpawnKoboldThieves()
 
         BonkMapCreature kobold;
         kobold.entry = BONK_KOBOLD_ENTRY;
-        kobold.kind = BONK_SPAWN_ELITE;         // a named nameplate; it pays through the event
+        kobold.kind = BONK_SPAWN_ELITE;
         kobold.healthMultiplier = BONK_KOBOLD_HEALTH;
         kobold.speed = BONK_KOBOLD_SPEED[step];
         BonkMobAI::SetNextAffixCount(0);
@@ -501,13 +441,13 @@ bool BonkRun::SpawnKoboldThieves()
         m_miniEvent.stolen[mob->GetObjectGuid()] = StealOrbs(x, y, BONK_KOBOLD_GRAB_RANGE) + bonus;
         m_miniEvent.targets.push_back(mob->GetObjectGuid());
         m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Kobold Thief", seconds,
-            BONK_GOBLIN_ICON, "It took your experience: kill it to get it back, and more.");
+            BONK_GOBLIN_ICON, "It stole your experience. Kill it to get it back, plus a bonus.");
     }
     if (m_miniEvent.targets.empty())
         return false;
 
     StartMiniEventGroup("Kobold Thieves", seconds);
-    m_player->GetBonkPlayer()->Notify("Kobold thieves! Kill them to get your experience back.");
+    m_player->GetBonkPlayer()->Notify("Kobold thieves stole your experience! Kill them to get it back.");
     return true;
 }
 
@@ -521,7 +461,6 @@ bool BonkRun::SpawnScourgeInvasion()
     std::vector<std::pair<float, float>> placed;
     for (uint32 i = 0; i < count; ++i)
     {
-        // A walk away, and apart from the others.
         float x = 0.0f, y = 0.0f, z = 0.0f;
         bool found = false;
         for (uint32 attempt = 0; attempt < 8 && !found; ++attempt)
@@ -548,8 +487,7 @@ bool BonkRun::SpawnScourgeInvasion()
         placed.emplace_back(x, y);
         m_miniEvent.targets.push_back(mob->GetObjectGuid());
         m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Necrotic Shard", seconds,
-            BONK_SHARD_ICON, "It raises undead until destroyed: Valor and experience.");
-        // The hardest: an elite stands guard.
+            BONK_SHARD_ICON, "It raises undead until you destroy it. Each shard you destroy gives Valor and experience.");
         if (step >= 2)
             SpawnEventAdds(mob, 0, 1);
     }
@@ -584,7 +522,7 @@ bool BonkRun::SpawnDemonPortal()
     uint32 const seconds = BONK_PORTAL_SECONDS + uint32(GetUtility(BONK_UTILITY_EVENT_TIME));
     m_miniEvent.targets.assign(1, mob->GetObjectGuid());
     m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Demon Portal", seconds,
-        BONK_PORTAL_ICON, "Demons pour out until it is destroyed: a chest.");
+        BONK_PORTAL_ICON, "Demons pour out of it until you destroy it. Destroy it for a chest.");
     m_miniEvent.spawnMs = 0;
     StartMiniEventGroup("Demon Portal", seconds);
     m_player->GetBonkPlayer()->Notify("A demon portal opens! Destroy it before it closes.");
@@ -593,7 +531,6 @@ bool BonkRun::SpawnDemonPortal()
 
 bool BonkRun::SpawnStampede()
 {
-    // The map's own chargers if it has any, kodos otherwise.
     BonkMapCreature beast;
     beast.entry = BONK_STAMPEDE_BEAST;
     for (BonkMapCreature const& creature : m_map.creatures)
@@ -603,17 +540,14 @@ bool BonkRun::SpawnStampede()
             break;
         }
     beast.kind = BONK_SPAWN_NORMAL;
-    beast.archetype = BONK_ARCHETYPE_GRUNT;     // never a charger's own timer
+    beast.archetype = BONK_ARCHETYPE_GRUNT;
 
     uint32 const step = GetDifficultyStep();
     uint32 const count = BONK_STAMPEDE_BEASTS + 2 * step;
-    // A wall wide enough that a few yards of the server trailing the hero
-    // makes no odds.
     float heroX, heroY, heroZ;
     m_player->GetPosition(heroX, heroY, heroZ);
     float const first = frand(0.0f, 2.0f * M_PI_F);
     uint32 spawned = 0;
-    // A wall across where the hero stands; on the hardest a second crosses it.
     for (uint32 wall = 0; wall < (step >= 2 ? 2u : 1u); ++wall)
     {
         float const angle = first + wall * M_PI_F / 2.0f;
@@ -637,7 +571,7 @@ bool BonkRun::SpawnStampede()
     }
     if (!spawned)
         return false;
-    m_player->GetBonkPlayer()->Notify("Stampede! Get out of the way!");
+    m_player->GetBonkPlayer()->Notify("A stampede is coming! Get out of the way!");
     return true;
 }
 
@@ -661,7 +595,6 @@ void BonkRun::SpawnEventAdds(Creature const* source, uint32 count, uint32 eliteC
         bool const elite = i >= count;
         if (elite)
         {
-            // A shard's guard is one of the map's elites; a portal's a felguard.
             BonkMapCreature const* pick = scourge ? PickCreature(BONK_SPAWN_ELITE) : nullptr;
             if (pick)
                 add = *pick;
@@ -673,7 +606,6 @@ void BonkRun::SpawnEventAdds(Creature const* source, uint32 count, uint32 eliteC
         }
         else
         {
-            // Swarmers mostly, a grunt now and then, a bruiser seldom.
             uint32 const roll = urand(0, 9);
             uint32 const which = roll < 6 ? 0 : roll < 9 ? 1 : 2;
             add.entry = entries[which];
@@ -698,7 +630,6 @@ void BonkRun::StartMiniEventGroup(std::string const& label, uint32 seconds)
 
 void BonkRun::UpdateMiniEventGroup(uint32 diff)
 {
-    // A caravan runs its own course.
     if (m_miniEvent.type == BONK_MINI_EVENT_CARAVAN)
     {
         if (UpdateCaravan(diff))
@@ -713,7 +644,6 @@ void BonkRun::UpdateMiniEventGroup(uint32 diff)
         return;
     }
 
-    // Gone some other way (a despawn): no longer waited for.
     Map* map = m_player->GetMap();
     for (auto itr = m_miniEvent.targets.begin(); itr != m_miniEvent.targets.end();)
     {
@@ -737,7 +667,6 @@ void BonkRun::UpdateMiniEventGroup(uint32 diff)
         return;
     }
 
-    // Shards and a portal send out more.
     if (m_miniEvent.type == BONK_MINI_EVENT_SCOURGE || m_miniEvent.type == BONK_MINI_EVENT_PORTAL)
     {
         m_miniEvent.spawnMs -= int32(diff);
@@ -762,13 +691,12 @@ void BonkRun::UpdateMiniEventGroup(uint32 diff)
         return;
     }
 
-    // Time's up: what is left goes.
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     switch (m_miniEvent.type)
     {
         case BONK_MINI_EVENT_KOBOLDS: bonk->Notify("The kobolds got away with your experience!"); break;
-        case BONK_MINI_EVENT_SCOURGE: bonk->Notify("The invasion moves on."); break;
-        case BONK_MINI_EVENT_PORTAL:  bonk->Notify("The portal closes."); break;
+        case BONK_MINI_EVENT_SCOURGE: bonk->Notify("The Scourge invasion moves on."); break;
+        case BONK_MINI_EVENT_PORTAL:  bonk->Notify("The demon portal closes."); break;
         default: break;
     }
     for (ObjectGuid const& guid : m_miniEvent.targets)
@@ -802,11 +730,10 @@ void BonkRun::OnMiniEventGroupKilled(Creature* mob)
     {
         case BONK_MINI_EVENT_KOBOLDS:
         {
-            // What it took, and a bonus.
             auto const loot = m_miniEvent.stolen.find(mob->GetObjectGuid());
             if (loot != m_miniEvent.stolen.end() && loot->second)
                 SpawnOrb(x, y, z, loot->second, BONK_ORB_RED);
-            bonk->Notify("Kobold thief caught (" + std::to_string(done) + "/" + std::to_string(m_miniEvent.total) + ")!");
+            bonk->Notify("You caught a kobold thief (" + std::to_string(done) + "/" + std::to_string(m_miniEvent.total) + ")!");
             break;
         }
         case BONK_MINI_EVENT_SCOURGE:
@@ -814,14 +741,14 @@ void BonkRun::OnMiniEventGroupKilled(Creature* mob)
             uint32 const valor = std::max(1u, uint32(GetChestCost() * BONK_SHARD_VALOR + 0.5f));
             m_coins += valor;
             SpawnOrb(x, y, z, uint32(GetNextLevelXp() * BONK_SHARD_EXPERIENCE), BONK_ORB_RED);
-            bonk->Notify("Necrotic Shard destroyed (" + std::to_string(done) + "/" + std::to_string(m_miniEvent.total) + "): +" +
-                std::to_string(valor) + " Valor.");
+            bonk->Notify("You destroyed a Necrotic Shard (" + std::to_string(done) + "/" + std::to_string(m_miniEvent.total) + ") and earned " +
+                std::to_string(valor) + " Valor!");
             SendState();
             break;
         }
         case BONK_MINI_EVENT_PORTAL:
             SpawnChest(true, x, y, z, BONK_PORTAL_CHEST_CHOICES);
-            bonk->Notify("The demon portal is destroyed: a chest!");
+            bonk->Notify("The demon portal is destroyed, leaving a chest behind!");
             break;
         default:
             break;
@@ -831,30 +758,50 @@ void BonkRun::OnMiniEventGroupKilled(Creature* mob)
         return;
     sBonkQuests.OnProgress(m_player, BONK_QUEST_MINI_EVENTS, m_miniEvent.type, 1);
     if (m_miniEvent.type == BONK_MINI_EVENT_SCOURGE)
-        bonk->Notify("The invasion is turned back!");
+        bonk->Notify("You turned back the Scourge invasion!");
     else if (m_miniEvent.type == BONK_MINI_EVENT_KOBOLDS)
-        bonk->Notify("Every kobold thief caught!");
+        bonk->Notify("You caught every kobold thief!");
     EndMiniEvent();
 }
 
 bool BonkRun::SpawnCaravan()
 {
-    // It turns up to one side of the hero and walks past them, as far as
-    // the ground lets it.
     uint32 const step = GetDifficultyStep();
     float const angle = frand(0.0f, 2.0f * M_PI_F);
     float x, y, z;
     if (!FindSpawnPositionAt(angle, BONK_CARAVAN_START, x, y, z))
         return false;
     float const heading = angle + M_PI_F + frand(-0.4f, 0.4f);
+    Map* map = m_player->GetMap();
+
+    auto legReach = [map, heading](float fromX, float fromY, float fromZ)
+    {
+        float reach = BONK_CARAVAN_LEG;
+        for (float side : { 0.0f, -BONK_CARAVAN_HALF_WIDTH, BONK_CARAVAN_HALF_WIDTH })
+        {
+            float const sx = fromX + side * std::cos(heading + M_PI_F / 2.0f);
+            float const sy = fromY + side * std::sin(heading + M_PI_F / 2.0f);
+            float sz = map->GetHeight(sx, sy, fromZ + 5.0f, true, 15.0f);
+            if (sz <= INVALID_HEIGHT)
+                return 0.0f;
+            float nx = sx + BONK_CARAVAN_LEG * std::cos(heading), ny = sy + BONK_CARAVAN_LEG * std::sin(heading), nz = sz;
+            if (!map->GetWalkHitPosition(nullptr, sx, sy, sz, nx, ny, nz))
+                return 0.0f;
+            reach = std::min(reach, std::hypot(nx - sx, ny - sy));
+        }
+        return reach;
+    };
+
     std::vector<BonkSpot> path;
     float px = x, py = y, pz = z;
     for (float walked = BONK_CARAVAN_LEG; walked <= BONK_CARAVAN_LENGTH; walked += BONK_CARAVAN_LEG)
     {
-        float nx = x + walked * std::cos(heading), ny = y + walked * std::sin(heading), nz = pz;
-        m_player->GetMap()->GetWalkHitPosition(nullptr, px, py, pz, nx, ny, nz);
-        if (std::hypot(nx - px, ny - py) < BONK_CARAVAN_LEG / 2.0f)
-            break;      // a wall or a cliff: it stops there
+        if (legReach(px, py, pz) < BONK_CARAVAN_LEG - 0.5f)
+            break;
+        float const nx = px + BONK_CARAVAN_LEG * std::cos(heading), ny = py + BONK_CARAVAN_LEG * std::sin(heading);
+        float const nz = map->GetHeight(nx, ny, pz + 5.0f, true, 15.0f);
+        if (nz <= INVALID_HEIGHT)
+            break;
         BonkSpot spot;
         spot.x = nx;
         spot.y = ny;
@@ -864,7 +811,7 @@ bool BonkRun::SpawnCaravan()
         py = ny;
         pz = nz;
     }
-    if (path.size() < 3)
+    if (path.size() * BONK_CARAVAN_LEG < BONK_CARAVAN_LENGTH / 2.0f)
         return false;
 
     Creature* caravan = SummonCaravan(BONK_CARAVAN_ENTRY, x, y, z, heading);
@@ -881,13 +828,13 @@ bool BonkRun::SpawnCaravan()
     m_miniEvent.warned = 0;
     m_miniEvent.spawnMs = BONK_CARAVAN_WAVE_MS / 2;
     m_miniEvent.waves = 0;
-    caravan->GetMotionMaster()->MovePoint(1, path[0].x, path[0].y, path[0].z, MOVE_PATHFINDING | MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
+    caravan->GetMotionMaster()->MovePoint(1, path[0].x, path[0].y, path[0].z, MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
 
     uint32 const seconds = uint32(BONK_CARAVAN_LEG * path.size() / BONK_CARAVAN_SPEED) + BONK_CARAVAN_SPARE_SECONDS;
     m_miniEvent.objectives[caravan->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, caravan, "Kodo Caravan", seconds,
-        BONK_CARAVAN_ICON, "Keep the raiders off it until it gets through: a chest with more choices.");
+        BONK_CARAVAN_ICON, "Keep the raiders off it until it gets across, and it will leave you a chest with extra choices.");
     StartMiniEventGroup("Kodo Caravan", seconds);
-    m_player->GetBonkPlayer()->Notify("A caravan! Keep the raiders off it until it gets through.");
+    m_player->GetBonkPlayer()->Notify("A kodo caravan is passing through! Keep the raiders off it until it gets across.");
     return true;
 }
 
@@ -901,7 +848,6 @@ bool BonkRun::UpdateCaravan(uint32 diff)
         return true;
     }
 
-    // On to the next leg once it gets to this one; through, it arrives.
     BonkSpot const& leg = m_miniEvent.path[m_miniEvent.pathIndex];
     if (caravan->GetDistance2d(leg.x, leg.y) < 2.0f)
     {
@@ -911,12 +857,11 @@ bool BonkRun::UpdateCaravan(uint32 diff)
             return true;
         }
         BonkSpot const& next = m_miniEvent.path[m_miniEvent.pathIndex];
-        caravan->GetMotionMaster()->MovePoint(1, next.x, next.y, next.z, MOVE_PATHFINDING | MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
+        caravan->GetMotionMaster()->MovePoint(1, next.x, next.y, next.z, MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
     }
     else if (!caravan->IsMoving())
         caravan->GetMotionMaster()->MovePoint(1, leg.x, leg.y, leg.z, MOVE_PATHFINDING | MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
 
-    // Raiders come up round it.
     uint32 const step = GetDifficultyStep();
     m_miniEvent.spawnMs -= int32(diff);
     if (m_miniEvent.spawnMs <= 0)
@@ -947,7 +892,6 @@ bool BonkRun::UpdateCaravan(uint32 diff)
         }
     }
 
-    // Every raider at its side lands a blow a second.
     m_miniEvent.tickMs += diff;
     if (m_miniEvent.tickMs < IN_MILLISECONDS)
         return false;
@@ -979,7 +923,6 @@ bool BonkRun::UpdateCaravan(uint32 diff)
         EndCaravan(false);
         return true;
     }
-    // Warnings at half and a quarter.
     uint8 const mark = left * 4 <= m_miniEvent.maxBlows ? 2 : left * 2 <= m_miniEvent.maxBlows ? 1 : 0;
     if (mark > m_miniEvent.warned)
     {
@@ -1000,7 +943,6 @@ void BonkRun::PauseCaravan(bool paused)
         caravan->GetMotionMaster()->Clear(false);
         caravan->GetMotionMaster()->MoveIdle();
     }
-    // Going on: UpdateCaravan sends it to its leg again.
 }
 
 void BonkRun::EndCaravan(bool arrived)
@@ -1008,7 +950,6 @@ void BonkRun::EndCaravan(bool arrived)
     Map* map = m_player->GetMap();
     Creature* caravan = m_miniEvent.targets.empty() ? nullptr : map->GetCreature(m_miniEvent.targets.front());
     BonkPlayer* bonk = m_player->GetBonkPlayer();
-    // Its raiders turn on the hero.
     for (ObjectGuid const& guid : m_miniEvent.raiders)
         if (Creature* raider = map->GetCreature(guid))
             if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(raider->AI()))
@@ -1017,9 +958,13 @@ void BonkRun::EndCaravan(bool arrived)
     {
         if (arrived)
         {
-            SpawnChest(true, caravan->GetPositionX(), caravan->GetPositionY(), caravan->GetPositionZ(), BONK_CARAVAN_CHEST_CHOICES + GetDifficultyStep());
+            float const x = caravan->GetPositionX(), y = caravan->GetPositionY();
+            float z = map->GetHeight(x, y, caravan->GetPositionZ() + 10.0f, true, 40.0f);
+            if (z <= INVALID_HEIGHT)
+                z = m_miniEvent.path.empty() ? caravan->GetPositionZ() : m_miniEvent.path.back().z;
+            SpawnChest(true, x, y, z, BONK_CARAVAN_CHEST_CHOICES + GetDifficultyStep());
             sBonkQuests.OnProgress(m_player, BONK_QUEST_MINI_EVENTS, BONK_MINI_EVENT_CARAVAN, 1);
-            bonk->Notify("The caravan got through: a chest!");
+            bonk->Notify("The caravan made it across and left you a chest!");
         }
         else
         {

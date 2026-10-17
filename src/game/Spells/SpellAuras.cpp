@@ -293,8 +293,6 @@ Aura::Aura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 *currentBas
 
     SetModifier(AuraType(spellproto->EffectApplyAuraName[eff]), damage, spellproto->EffectAmplitude[eff], spellproto->EffectMiscValue[eff]);
 
-    // Vanilla Bonk: a run weapon can tick its damage over time faster, and
-    // Haste speeds every tick up.
     if (caster && caster->IsPlayer() && m_modifier.periodictime)
         if (uint32 tick = static_cast<Player*>(caster)->GetBonkPlayer()->GetTickInterval(spellproto->Id, m_modifier.periodictime))
             m_modifier.periodictime = tick;
@@ -471,7 +469,6 @@ AreaAura::~AreaAura()
 {
 }
 
-// Vanilla Bonk: a ground effect from a hero's run weapon.
 static bool IsBonkRunEffect(Unit const* caster)
 {
     return caster && caster->IsPlayer() && static_cast<Player const*>(caster)->GetBonkPlayer()->GetRun();
@@ -482,8 +479,6 @@ PersistentAreaAura::PersistentAreaAura(ObjectGuid dynObjectGuid, SpellEntry cons
 {
     m_isPersistent = true;
 
-    // Vanilla Bonk: a run's ground effects hit as soon as an enemy steps in;
-    // enemies chasing the hero cross them faster than one tick.
     if (IsBonkRunEffect(caster))
         m_periodicTimer = 0;
 }
@@ -925,8 +920,6 @@ void PersistentAreaAura::Update(uint32 diff)
         {
             if (pTarget->IsWithinDistInMap(pDynObject, pDynObject->GetRadius()))
                 remove = false;
-            // Vanilla Bonk: those hit on entry, so stepping out and back in
-            // waits out the refresh time instead of hitting again at once.
             else if (!IsBonkRunEffect(GetCaster()))
                 pDynObject->RemoveAffected(pTarget);           // let later reapply if target return to range
         }
@@ -5902,6 +5895,10 @@ void Aura::PeriodicTick(SpellEntry const* sProto, AuraType auraType, uint32 data
             else if (spellProto->IsFitToFamily<SPELLFAMILY_PRIEST, CF_PRIEST_STARSHARDS>())
                 fdamage += (-1 + ((int)GetAuraTicks() - 1) / 2) * (spellProto->CalculateSimpleValue(EFFECT_INDEX_0) / 3.0);
 
+            if (Player* hero = pCaster->ToPlayer())
+                if (BonkRun const* run = hero->GetBonkPlayer()->GetRun())
+                    fdamage *= run->GetDotGrowth(target, spellProto->Id);
+
             // SpellDamageBonus for magic spells
             if (spellProto->DmgClass == SPELL_DAMAGE_CLASS_NONE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_MAGIC)
                 fdamage = target->SpellDamageBonusTaken(pCaster, spellProto, GetEffIndex(), fdamage, DOT, GetStackAmount());
@@ -5920,7 +5917,9 @@ void Aura::PeriodicTick(SpellEntry const* sProto, AuraType auraType, uint32 data
             DETAIL_FILTER_LOG(LOG_FILTER_PERIODIC_AFFECTS, "PeriodicTick: %s attacked %s for %u dmg inflicted by %u",
                               GetCasterGuid().GetString().c_str(), target->GetGuidStr().c_str(), pdamage, GetId());
 
+            BonkRun::SetPeriodicHit(true);
             pCaster->DealDamageMods(target, pdamage, &absorb);
+            BonkRun::SetPeriodicHit(false);
 
             // Set trigger flag
             uint32 procAttacker = PROC_FLAG_DEAL_HARMFUL_PERIODIC;
@@ -5941,7 +5940,6 @@ void Aura::PeriodicTick(SpellEntry const* sProto, AuraType auraType, uint32 data
 
             cleanDamage.absorb = absorb;
             cleanDamage.resist = resist;
-            // Vanilla Bonk: a hero's bleed can heal them (Bloodthirst).
             if (pdamage && pCaster->IsPlayer())
                 if (BonkRun* run = static_cast<Player*>(pCaster)->GetBonkPlayer()->GetRun())
                     run->OnPeriodicDamage(spellProto->Id, std::min(pdamage, target->GetHealth()));
@@ -5999,7 +5997,9 @@ void Aura::PeriodicTick(SpellEntry const* sProto, AuraType auraType, uint32 data
             DETAIL_FILTER_LOG(LOG_FILTER_PERIODIC_AFFECTS, "PeriodicTick: %s health leech of %s for %u dmg inflicted by %u abs is %u",
                               GetCasterGuid().GetString().c_str(), target->GetGuidStr().c_str(), pdamage, GetId(), absorb);
 
+            BonkRun::SetPeriodicHit(true);
             pCaster->DealDamageMods(target, pdamage, &absorb);
+            BonkRun::SetPeriodicHit(false);
 
             pCaster->SendSpellNonMeleeDamageLog(target, GetId(), pdamage, spellProto->GetSpellSchoolMask(), absorb, resist, true, 0);
 
@@ -6702,7 +6702,6 @@ SpellAuraHolder::SpellAuraHolder(SpellEntry const* spellproto, Unit* target, Uni
 
     m_duration = m_maxDuration = spellproto->CalculateDuration(unitCaster, target, m_auraScript);
 
-    // Vanilla Bonk: a run weapon can change how long its spell lasts.
     if (Player* pPlayerCaster = unitCaster ? unitCaster->ToPlayer() : nullptr)
         m_duration = m_maxDuration = pPlayerCaster->GetBonkPlayer()->AdjustDuration(GetId(), m_maxDuration);
 

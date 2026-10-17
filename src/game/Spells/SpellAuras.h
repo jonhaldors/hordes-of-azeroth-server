@@ -467,8 +467,6 @@ class Aura
 
         SpellEffectIndex GetEffIndex() const{ return m_effIndex; }
         int32 GetBasePoints() const { return m_currentBasePoints; }
-        // Vanilla Bonk: a damage over time keyword's stacks deal their own
-        // damage each; its per-stack base becomes their average (BonkRun).
         void SetBasePoints(int32 points) { m_currentBasePoints = points; }
 
         int32 GetAuraMaxDuration() const { return GetHolder()->GetAuraMaxDuration(); }

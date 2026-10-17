@@ -157,8 +157,6 @@ enum AttackPowerModIndex
 
 uint32 CreateProcExtendMask(SpellNonMeleeDamage* damageInfo, SpellMissInfo missCondition);
 
-// Vanilla Bonk: 25 (stock 60), one world tick: at 60 spell events would
-// advance only every third 25 ms tick.
 #define UNIT_SPELL_UPDATE_TIME_BUFFER 25
 
 // According to data from sniffs, combat is checked every 3 batches of 400 ms.
@@ -634,8 +632,6 @@ class Unit : public SpellCaster
         void _UpdateAutoRepeatSpell();
 
     public:
-        // Vanilla Bonk: while a run waits on a level-up choice, the hero's
-        // and the enemies' auras, casts and ground spells stand still.
         void SetTimeFrozen(bool frozen);
         bool IsTimeFrozen() const { return m_timeFrozen; }
 

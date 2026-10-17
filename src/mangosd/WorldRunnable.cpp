@@ -36,8 +36,6 @@
 #include "Database/DatabaseEnv.h"
 
 // Target server framerate is 1000/WORLD_SLEEP_CONST
-// Vanilla Bonk: 25 (stock 50), so a run's hits, pickups and movement wait
-// at most 25 ms for the next update.
 #define WORLD_SLEEP_CONST 25
 
 #ifdef WIN32

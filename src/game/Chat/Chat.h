@@ -201,7 +201,6 @@ class ChatHandler
         bool HandleViewLogCommand(char*);
         bool HandleSniffCommand(char*);
 
-        // Vanilla Bonk
         bool HandleBonkStartCommand(char* args);
         bool HandleBonkStopCommand(char* args);
         bool HandleBonkPickCommand(char* args);
@@ -217,10 +216,12 @@ class ChatHandler
         bool HandleBonkSkipCommand(char* args);
         bool HandleBonkGodCommand(char* args);
         bool HandleBonkCardCommand(char* args);
+        bool HandleBonkEvolveCommand(char* args);
+        bool HandleBonkPassiveCommand(char* args);
+        bool HandleBonkMasteryCommand(char* args);
         bool HandleBonkGearCommand(char* args);
         bool HandleBonkGlyphCommand(char* args);
         bool HandleBonkPoolCommand(char* args);
-        bool HandleBonkBakeCommand(char* args);
         bool HandleBonkUnlockCommand(char* args);
         bool HandleBonkMenuCommand(char* args);
         bool HandleBonkVaultCommand(char* args);
@@ -241,6 +242,8 @@ class ChatHandler
         bool HandleBonkScalingCommand(char* args);
         bool HandleBonkStressCommand(char* args);
         bool HandleBonkDashCommand(char* args);
+        bool HandleBonkSandboxCommand(char* args);
+        bool HandleBonkMobInfoCommand(char* args);
 
         //Cheats
         bool HandleCheatStatusCommand(char *);

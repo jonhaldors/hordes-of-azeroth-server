@@ -690,7 +690,6 @@ void WorldSession::LogoutPlayer(bool Save)
         if (ObjectGuid lootGuid = GetPlayer()->GetLootGuid())
             DoLootRelease(lootGuid);
 
-        // Ends any run in progress; also brings a dead run character back to life.
         if (inWorld)
             _player->GetBonkPlayer()->OnLogout();
 

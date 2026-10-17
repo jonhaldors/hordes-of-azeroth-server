@@ -1,18 +1,3 @@
-/*
- * Vanilla Bonk: `.bonk stress`, the GM stress test (docs/Spells.md, Testing).
- *
- * On, for the rest of the run: the upgrades tree at its max ranks, Haste and
- * Area as from their passives at max rank, Count at its cap, and every spell
- * held brought to rank 16 by Epic ranks (evolving where it can). The crowd is
- * kept at the tier's cap, refilled quickly; kills give experience as usual,
- * so level-ups keep coming. Every 10 seconds of running time the player is
- * told, and Perf.log gets, how long server ticks took, how much of them the
- * run's own update took, and what is on the ground. An enemy held (stunned,
- * rooted, feared or confused) for BONK_STRESS_HOLD_MS straight is reported:
- * holds should never be permanent. Off: a summary, and the stat boosts go
- * (spell ranks stay).
- */
-
 #include "BonkRun.h"
 #include "BonkPlayer.h"
 #include "Chat.h"
@@ -29,11 +14,11 @@
 
 namespace
 {
-    uint32 const BONK_STRESS_RANK            = 16;      // spells held are brought to this rank
-    uint32 const BONK_STRESS_REPORT_MS       = 10000;   // running time between reports
+    uint32 const BONK_STRESS_RANK            = 16;
+    uint32 const BONK_STRESS_REPORT_MS       = 10000;
     uint32 const BONK_STRESS_HOLD_CHECK_MS   = 1000;
-    uint32 const BONK_STRESS_HOLD_MS         = 10000;   // held this long straight: reported (holds last at most 2 sec)
-    uint32 const BONK_STRESS_SLOW_TICK_MS    = 50;      // twice the 25 ms tick
+    uint32 const BONK_STRESS_HOLD_MS         = 10000;
+    uint32 const BONK_STRESS_SLOW_TICK_MS    = 50;
 
     uint64 NowUs()
     {
@@ -62,14 +47,12 @@ BonkRun::StressTick::~StressTick()
     if (!m_run.m_stress.on)
         return;
 
-    // The run is over: the summary, once.
     if (m_run.m_state == STATE_ENDING || m_run.m_state == STATE_FINISHED)
     {
         m_run.StopStress();
         return;
     }
 
-    // Only fighting counts: not a level-up's pause, a portal or a stage change.
     if (m_run.m_state != STATE_RUNNING || m_run.m_paused)
         return;
 
@@ -92,7 +75,6 @@ void BonkRun::StartStress()
     m_stress = Stress();
     m_stress.on = true;
 
-    // The upgrades tree at its max ranks, on top of what is bought.
     BonkPlayer const* bonk = m_player->GetBonkPlayer();
     for (auto const& itr : sBonkMgr.GetUpgrades())
     {
@@ -102,7 +84,6 @@ void BonkRun::StartStress()
             m_stress.bonuses[upgrade.effect] += upgrade.valuePerRank * (upgrade.maxRank - owned);
     }
 
-    // Haste and Area as from their passives at max rank, Count at its cap.
     for (BonkPassiveEffect effect : { BONK_PASSIVE_HASTE, BONK_PASSIVE_AREA })
     {
         float best = 0.0f;
@@ -113,22 +94,17 @@ void BonkRun::StartStress()
     }
     m_stress.bonuses[BONK_PASSIVE_AMOUNT] += BONK_MAX_COUNT;
 
-    // Spells held to rank 16 by Epic ranks; a spell that can evolve does at
-    // its first chance.
     for (OwnedWeapon& owned : m_weapons)
     {
         while (owned.rank < BONK_STRESS_RANK)
         {
             Offer offer;
-            offer.id = owned.weapon.id;
-            offer.newLevel = owned.rank + 1;
             if (GetLegendaryChance(owned) > 0.0f)
-            {
-                offer.rarity = BONK_RARITY_LEGENDARY;
-                offer.step = BONK_STEP_EVOLVE;
-            }
+                offer = MakeEvolveOffer(owned, PickEvolution(owned));
             else
             {
+                offer.id = owned.weapon.id;
+                offer.newLevel = owned.rank + 1;
                 offer.rarity = BONK_RARITY_EPIC;
                 offer.step = BONK_STEP_RANK;
                 RollUpgrades(owned, offer);
@@ -178,8 +154,6 @@ void BonkRun::UpdateStress()
 
 void BonkRun::CheckStressHolds()
 {
-    // In running time, so a level-up's pause (which freezes auras too)
-    // doesn't count.
     std::map<ObjectGuid, uint32> stillHeld;
     m_stress.alive = 0;
     m_stress.held = 0;

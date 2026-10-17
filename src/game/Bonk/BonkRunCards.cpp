@@ -1,20 +1,3 @@
-/*
- * Vanilla Bonk: Darkmoon Cards (Core loop v2, phase C).
- *
- * Run-only items that stack, Megabonk's items in WoW dress: chests offer
- * them (a choice of three, more from an elite with affixes, rarity rolled
- * with Luck), level-ups never do. A card adds up to two stats, which count
- * like a passive's ranks (GetPassiveTotal), and may carry one effect
- * (BonkCardEffect): heals, a moment's immunity, cheating death, procs on the
- * hero's hits, more Valor. Copies add up; chances stack with diminishing
- * returns, cooldowns shorten. Cards last the run and are never extracted.
- *
- * Addon: the chest choice is the level-up's offer with kind c (BonkRun's
- * SendOffer); "cards~id:copies:rarity:icon,..." lists the cards held, and a
- * "cardtip~id~name~description" line each follows. `.bonk card <id>` gives
- * one for testing.
- */
-
 #include "BonkRun.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
@@ -35,25 +18,21 @@
 
 namespace
 {
-    // At least one card of a chest's choice is this good, when one is left.
     BonkRarity const BONK_CARD_CHEST_MIN_RARITY = BONK_RARITY_UNCOMMON;
 
-    // A card's hits name a spell of their own, so the results screen shows
-    // them as their own rows, and they never set off cards again.
-    uint32 const BONK_SPELL_CARD_FIRE      = 13342;     // Fire Blast: Hand of Ragnaros
-    uint32 const BONK_SPELL_CARD_CHAIN_THREE = 22355;   // Chain Lightning, 3 targets: Darkmoon Card: Maelstrom
-    uint32 const BONK_SPELL_CARD_CHAIN_FIVE  = 25021;   // Chain Lightning, 5 targets: Thunderfury
-    uint32 const BONK_SPELL_CARD_THORNS    = 467;       // Thorns: Barbed Choker
-    uint32 const BONK_SPELL_CARD_NOVA      = 11307;     // Fire Nova: Force Reactive Disk
-    uint32 const BONK_SPELL_CARD_SHADOW    = 16583;     // Shadow Shock: Corrupted Ashbringer
-    uint32 const BONK_SPELL_HEALTHSTONE    = 11732;     // Major Healthstone: names the heal in combat text
-    float const BONK_SHADOW_BURST_HEAL     = 0.1f;      // share of a shadow burst's damage that heals the hero
+    uint32 const BONK_SPELL_CARD_FIRE      = 13342;
+    uint32 const BONK_SPELL_CARD_CHAIN_THREE = 22355;
+    uint32 const BONK_SPELL_CARD_CHAIN_FIVE  = 25021;
+    uint32 const BONK_SPELL_CARD_THORNS    = 467;
+    uint32 const BONK_SPELL_CARD_NOVA      = 11307;
+    uint32 const BONK_SPELL_CARD_SHADOW    = 16583;
+    uint32 const BONK_SPELL_HEALTHSTONE    = 11732;
+    float const BONK_SHADOW_BURST_HEAL     = 0.1f;
 
-    // Spell visual kits played where a card strikes (SpellVisual.dbc).
-    uint32 const BONK_KIT_FIRE_IMPACT      = 728;       // Fire Blast's impact
-    uint32 const BONK_KIT_NOVA             = 984;       // Fire Nova's cast, on the hero
-    uint32 const BONK_KIT_DEATH_RAY        = 419;       // an arcane burst on the target
-    uint32 const BONK_KIT_SHADOW_IMPACT    = 2350;      // Shadow Shock's impact
+    uint32 const BONK_KIT_FIRE_IMPACT      = 728;
+    uint32 const BONK_KIT_NOVA             = 984;
+    uint32 const BONK_KIT_DEATH_RAY        = 419;
+    uint32 const BONK_KIT_SHADOW_IMPACT    = 2350;
 
     bool IsCardSpell(SpellEntry const* spell)
     {
@@ -73,7 +52,6 @@ namespace
         }
     }
 
-    // Diminishing returns: each copy rolls on its own; any of them is enough.
     float StackChance(float percent, uint32 copies)
     {
         if (!copies || percent <= 0.0f)
@@ -84,9 +62,13 @@ namespace
 
 std::pair<bool, uint32> BonkRun::GetBanishKey(Offer const& offer)
 {
-    // Card ids live apart from passive ids.
     uint32 const BONK_CARD_BANISH_OFFSET = 1000000;
-    return { offer.isWeapon, offer.isCard ? BONK_CARD_BANISH_OFFSET + offer.id : offer.id };
+    uint32 const BONK_EVOLUTION_BANISH_OFFSET = 2000000;
+    if (offer.isCard)
+        return { false, BONK_CARD_BANISH_OFFSET + offer.id };
+    if (offer.isWeapon && offer.step == BONK_STEP_EVOLVE)
+        return { true, BONK_EVOLUTION_BANISH_OFFSET + offer.evolveTo };
+    return { offer.isWeapon, offer.id };
 }
 
 uint32 BonkRun::GetCardCopies(uint32 cardId) const
@@ -99,8 +81,6 @@ uint32 BonkRun::GetCardCopies(uint32 cardId) const
 
 float BonkRun::GetCardTotal(BonkCardEffect effect, uint8 index) const
 {
-    // Every card with the effect adds its own amount (a chest card and a
-    // worn legendary can share one).
     float total = 0.0f;
     if (index < 3 && m_cardCopies[effect])
         for (OwnedCard const& owned : m_cards)
@@ -111,7 +91,6 @@ float BonkRun::GetCardTotal(BonkCardEffect effect, uint8 index) const
 
 float BonkRun::GetCardChance(BonkCardEffect effect) const
 {
-    // Each copy of each card rolls on its own; any of them is enough.
     if (!m_cardCopies[effect])
         return 0.0f;
     float miss = 1.0f;
@@ -126,7 +105,6 @@ uint32 BonkRun::GetCardCooldown(BonkCardEffect effect) const
     BonkCard const* card = m_cardByEffect[effect];
     if (!card)
         return 0;
-    // Each copy past the first takes value3 % off what is left.
     float const step = std::max(0.0f, std::min(card->values[2], 90.0f)) / 100.0f;
     return uint32(card->cooldownMs * std::pow(1.0f - step, float(m_cardCopies[effect] - 1)));
 }
@@ -135,15 +113,12 @@ float BonkRun::GetCardPower(Unit const* victim) const
 {
     float power = 0.0f;
 
-    // Bloodlust Brooch: kills since it was taken, up to its cap a copy.
     if (BonkCard const* brooch = m_cardByEffect[BONK_CARD_KILL_POWER])
         power += std::min(brooch->values[1], brooch->values[0] * m_cardKills) * m_cardCopies[BONK_CARD_KILL_POWER];
 
-    // Zandalarian Hero Charm: a surge now and then.
     if (m_cardSurgeUntilMs > m_totalMs)
         power += GetCardTotal(BONK_CARD_POWER_SURGE, 0);
 
-    // Mark of the Champion: elites, mini-bosses and bosses.
     if (HasCard(BONK_CARD_BIG_GAME) && victim && victim->IsCreature())
         if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(static_cast<Creature const*>(victim)->AI()))
             if (ai->GetKind() != BONK_SPAWN_NORMAL)
@@ -154,14 +129,11 @@ float BonkRun::GetCardPower(Unit const* victim) const
 
 bool BonkRun::IsCardInPool(BonkCard const& card) const
 {
-    // A legendary's own card never comes from chests; the rest once the
-    // account has it (the starter set, or bought after its quest).
     return card.inChests && sBonkQuests.IsInPool(m_player->GetSession()->GetAccountId(), BONK_REWARD_CARD, card.id);
 }
 
 void BonkRun::GiveStartCard()
 {
-    // Lucky Draw: a common card, an uncommon one from its second rank.
     float const draw = GetUtility(BONK_UTILITY_START_CARD);
     if (draw < 1.0f)
         return;
@@ -174,13 +146,11 @@ void BonkRun::GiveStartCard()
         return;
     BonkCard const& card = *pool[urand(0, uint32(pool.size()) - 1)];
     AddCard(card);
-    m_player->GetBonkPlayer()->Notify("Lucky Draw: " + card.name + "!");
+    m_player->GetBonkPlayer()->Notify("Lucky Draw gave you " + card.name + "!");
 }
 
 bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std::vector<Offer> const* kept, std::vector<Offer>* drawn)
 {
-    // Locked cards stay: from this choice on a reroll or banish, or from the
-    // last chest.
     std::vector<Offer> cards;
     std::vector<Offer> carried;
     if (kept)
@@ -212,7 +182,6 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
         return std::any_of(cards.begin(), cards.end(), [id](Offer const& card) { return card.isCard && card.id == id; });
     };
 
-    // Fresh cards first; ones just shown (a reroll) only when those run out.
     std::vector<BonkCard const*> fresh;
     std::vector<BonkCard const*> repeats;
     for (auto const& itr : sBonkMgr.GetCards())
@@ -228,8 +197,6 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
         (avoided ? repeats : fresh).push_back(&card);
     }
 
-    // Each slot rolls a rarity with Luck, then a card of it, or the nearest
-    // rarity that has one left.
     for (std::vector<BonkCard const*>* pool : { &fresh, &repeats })
         while (cards.size() < offerSize && !pool->empty())
         {
@@ -244,7 +211,6 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
             pool->erase(pool->begin() + chosen);
         }
 
-    // Never only Commons, when something better is left.
     if (std::none_of(cards.begin(), cards.end(), [](Offer const& card) { return card.rarity >= BONK_CARD_CHEST_MIN_RARITY; }))
     {
         std::vector<BonkCard const*> better;
@@ -266,11 +232,12 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
     m_offer = cards;
     if (m_offer.empty())
     {
-        // Every card banished: a bag of gold instead.
         if (!m_pendingChestChoices.empty())
             m_pendingChestChoices.erase(m_pendingChestChoices.begin());
-        GiveGold(m_map.goldPerKill * 25);
-        m_player->GetBonkPlayer()->Notify("No cards left in the deck - have some gold!");
+        uint32 const gold = m_map.goldPerKill * 25;
+        uint32 const paid = uint32(gold * GetGoldMultiplier());
+        GiveGold(gold);
+        m_player->GetBonkPlayer()->Notify(paid ? "The deck is empty, so you get " + FormatBonkMoney(paid) + " instead." : std::string("The deck is empty."));
         return false;
     }
 
@@ -295,7 +262,6 @@ void BonkRun::AddCard(BonkCard const& card)
     if (card.effect != BONK_CARD_NONE)
     {
         ++m_cardCopies[card.effect];
-        // The rarest card with the effect sets its size and reach.
         if (!m_cardByEffect[card.effect] || card.rarity >= m_cardByEffect[card.effect]->rarity)
             m_cardByEffect[card.effect] = &card;
     }
@@ -305,7 +271,6 @@ void BonkRun::AddCard(BonkCard const& card)
             ++m_soulstones;
             break;
         case BONK_CARD_CRIT_HEAL:
-            // Only crits from now on.
             if (m_cardCopies[card.effect] == 1)
                 m_cardCritsSeen = m_crits;
             break;
@@ -313,7 +278,6 @@ void BonkRun::AddCard(BonkCard const& card)
             break;
     }
 
-    // New stats show at once (health, speed, dodge and the rest).
     ApplyPassives();
     SendCards();
 }
@@ -333,7 +297,6 @@ void BonkRun::RemoveCard(BonkCard const& card)
     if (card.effect != BONK_CARD_NONE && m_cardCopies[card.effect])
     {
         --m_cardCopies[card.effect];
-        // The rarest card left with the effect, if any.
         m_cardByEffect[card.effect] = nullptr;
         for (OwnedCard const& held : m_cards)
             if (held.card->effect == card.effect && (!m_cardByEffect[card.effect] || held.card->rarity >= m_cardByEffect[card.effect]->rarity))
@@ -372,7 +335,7 @@ bool BonkRun::GiveCard(uint32 cardId, std::string& error)
     BonkCard const* card = sBonkMgr.GetCard(cardId);
     if (!card)
     {
-        error = "No card " + std::to_string(cardId) + ".";
+        error = "There is no card " + std::to_string(cardId) + ".";
         return false;
     }
     AddCard(*card);
@@ -392,7 +355,6 @@ void BonkRun::UpdateCards(uint32 diff)
     float const health = m_player->GetHealthPercent();
     uint32 const maxHealth = m_player->GetMaxHealth();
 
-    // Major Healthstone: a big heal when health runs low, on a cooldown.
     if (BonkCard const* stone = m_cardByEffect[BONK_CARD_HEALTHSTONE])
         if (m_cardCooldowns[BONK_CARD_HEALTHSTONE] <= 0 && health < stone->values[0])
         {
@@ -400,8 +362,6 @@ void BonkRun::UpdateCards(uint32 diff)
             StartCardCooldown(BONK_CARD_HEALTHSTONE, GetCardCooldown(BONK_CARD_HEALTHSTONE));
         }
 
-    // Swiftness Potion: running speed when health runs low; the speed rides
-    // on the card stats until it wears off.
     if (BonkCard const* potion = m_cardByEffect[BONK_CARD_SWIFTNESS])
     {
         if (!m_cardSwiftUntilMs && m_cardCooldowns[BONK_CARD_SWIFTNESS] <= 0 && health < potion->values[0])
@@ -419,43 +379,38 @@ void BonkRun::UpdateCards(uint32 diff)
         }
     }
 
-    // Zandalarian Hero Charm: a surge of Power every so often.
     if (BonkCard const* charm = m_cardByEffect[BONK_CARD_POWER_SURGE])
         if (m_cardCooldowns[BONK_CARD_POWER_SURGE] <= 0)
         {
             m_cardSurgeUntilMs = m_totalMs + uint32(charm->values[1]);
             StartCardCooldown(BONK_CARD_POWER_SURGE, charm->cooldownMs);
-            m_player->GetBonkPlayer()->Notify(charm->name + "!");
+            char surge[64];
+            snprintf(surge, sizeof(surge), " gives you %g%% more Power for %g seconds!", GetCardTotal(BONK_CARD_POWER_SURGE, 0),
+                charm->values[1] / 1000.0f);
+            m_player->GetBonkPlayer()->Notify(charm->name + surge);
         }
 
-    // Gnomish Magnet: every XP orb flies in.
     if (HasCard(BONK_CARD_MAGNET) && m_cardCooldowns[BONK_CARD_MAGNET] <= 0)
     {
         PullAllOrbs();
         StartCardCooldown(BONK_CARD_MAGNET, GetCardCooldown(BONK_CARD_MAGNET));
     }
 
-    // Basic Campfire watches for the hero standing still.
     if (m_player->IsMoving())
         m_stillSinceMs = m_totalMs;
 
-    // Once a second: the heals that tick.
     m_cardTickMs += diff;
     if (m_cardTickMs < IN_MILLISECONDS)
         return;
     m_cardTickMs -= IN_MILLISECONDS;
 
     float percent = 0.0f;
-    // Heavy Runecloth Bandage: unhit for a while.
     if (BonkCard const* bandage = m_cardByEffect[BONK_CARD_BANDAGE])
         if (!m_hurt || m_totalMs - m_lastHurtMs >= uint32(bandage->values[1] * IN_MILLISECONDS))
             percent += GetCardTotal(BONK_CARD_BANDAGE, 0);
-    // Basic Campfire: standing still for a moment.
     if (BonkCard const* campfire = m_cardByEffect[BONK_CARD_CAMPFIRE])
         if (m_totalMs - m_stillSinceMs >= uint32(campfire->values[1] * IN_MILLISECONDS))
             percent += GetCardTotal(BONK_CARD_CAMPFIRE, 0);
-    // Darkmoon Card: Heroism: last second's crits, each with its chance to
-    // heal, together up to the cap.
     if (BonkCard const* heroism = m_cardByEffect[BONK_CARD_CRIT_HEAL])
     {
         uint32 const crits = m_crits - m_cardCritsSeen;
@@ -491,11 +446,18 @@ std::string BonkRun::DescribeCardNow(BonkCard const& card) const
         }
         case BONK_CARD_POWER_SURGE:
             if (m_cardSurgeUntilMs > m_totalMs)
-                return "Active: +" + percent(GetCardTotal(BONK_CARD_POWER_SURGE, 0)) + "% Power, " +
-                    std::to_string((m_cardSurgeUntilMs - m_totalMs + 999) / IN_MILLISECONDS) + " sec left";
+            {
+                uint32 const left = (m_cardSurgeUntilMs - m_totalMs + 999) / IN_MILLISECONDS;
+                return "Active: +" + percent(GetCardTotal(BONK_CARD_POWER_SURGE, 0)) + "% Power for " + std::to_string(left) +
+                    (left == 1 ? " more second" : " more seconds");
+            }
             return "";
         case BONK_CARD_SOULSTONE:
             return std::to_string(m_soulstones) + (m_soulstones == 1 ? " charge left" : " charges left");
+        case BONK_CARD_ASCENSION:
+            if (OwnedWeapon const* owned = FindAscensionWeapon())
+                return "Ready: your next level-up offers the evolution of " + owned->weapon.name;
+            return "";
         default:
             return "";
     }
@@ -530,7 +492,6 @@ void BonkRun::HealHero(uint32 amount, uint32 textSpellId)
             m_player->ModifyHealth(int32(healed));
     }
 
-    // Lifegiving Gem: what overflows tops up a Shield, to its cap.
     if (amount > healed && HasCard(BONK_CARD_OVERHEAL))
     {
         uint32 const cap = uint32(maxHealth * GetCardTotal(BONK_CARD_OVERHEAL, 0) / 100.0f);
@@ -541,7 +502,6 @@ void BonkRun::HealHero(uint32 amount, uint32 textSpellId)
 
 void BonkRun::OnCardHitTaken()
 {
-    // Insignia of the Alliance: a moment immune after a hit, on a cooldown.
     if (BonkCard const* insignia = m_cardByEffect[BONK_CARD_HIT_IMMUNE])
         if (m_cardCooldowns[BONK_CARD_HIT_IMMUNE] <= 0)
         {
@@ -552,7 +512,6 @@ void BonkRun::OnCardHitTaken()
 
 void BonkRun::OnShieldBroken()
 {
-    // Force Reactive Disk: the Shield breaking scorches everything close.
     BonkCard const* disk = m_cardByEffect[BONK_CARD_SHIELD_NOVA];
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_NOVA);
     if (!disk || !spellInfo || m_cardProc)
@@ -573,7 +532,6 @@ bool BonkRun::RollFreeChest() const
 
 void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
 {
-    // Barbed Choker: a share of the hit goes back.
     if (!damage || !attacker || !attacker->IsAlive() || !HasCard(BONK_CARD_THORNS) || m_cardProc)
         return;
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_THORNS);
@@ -586,10 +544,8 @@ void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
 
 void BonkRun::ModifyHeroHit(Unit* victim, uint32& damage)
 {
-    // The Glyph of Soul Harvest: an empowered hit.
     if (!m_cardProc)
         ModifyGlyphHit(victim, damage);
-    // Gnomish Death Ray: now and then a hit lands many times over.
     if (!damage || m_cardProc || !HasCard(BONK_CARD_DEATH_RAY) || !roll_chance_f(GetCardChance(BONK_CARD_DEATH_RAY)))
         return;
     damage = uint32(damage * m_cardByEffect[BONK_CARD_DEATH_RAY]->values[1]);
@@ -601,11 +557,8 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
     if (!damage || m_cardProc || IsCardSpell(spell) || m_cards.empty())
         return;
 
-    // A card's damage is worked out from the hit with the hero's Power taken
-    // back out: DealSpellHit puts it in again.
     float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim));
 
-    // A burst strikes its target too (GetMobsInRange leaves the centre out).
     auto burstTargets = [this, victim](float radius)
     {
         std::vector<Creature*> mobs = GetMobsInRange(radius, victim);
@@ -614,7 +567,6 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
         return mobs;
     };
 
-    // Hand of Ragnaros: the hit erupts around its target.
     if (BonkCard const* hand = m_cardByEffect[BONK_CARD_FIRE_BURST])
         if (roll_chance_f(GetCardChance(BONK_CARD_FIRE_BURST)))
             if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_FIRE))
@@ -629,7 +581,6 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
                 m_cardProc = false;
             }
 
-    // Corrupted Ashbringer: shadow round the target, a tenth of it back as health.
     if (BonkCard const* blade = m_cardByEffect[BONK_CARD_SHADOW_BURST])
         if (roll_chance_f(GetCardChance(BONK_CARD_SHADOW_BURST)))
             if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_SHADOW))
@@ -648,10 +599,6 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
                     HealHero(ReduceHealing(uint32(burst * multiplier * struck * BONK_SHADOW_BURST_HEAL)));
             }
 
-    // Darkmoon Card: Maelstrom, Thunderfury: a real Chain Lightning from the
-    // hero, so its bolt and jumps show; three targets, or five for a card
-    // with more than three (Thunderfury). On the target, or the enemy
-    // nearest it if the hit killed it.
     if (BonkCard const* maelstrom = m_cardByEffect[BONK_CARD_CHAIN])
         if (roll_chance_f(GetCardChance(BONK_CARD_CHAIN)))
         {
@@ -675,7 +622,6 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
 void BonkRun::SendCards() const
 {
     BonkPlayer* bonk = m_player->GetBonkPlayer();
-    // A Glyph's card is the Glyph's: the sockets show it, not the row.
     std::string line = "cards~";
     for (OwnedCard const& owned : m_cards)
         if (!m_glyphCardIds.count(owned.card->id))

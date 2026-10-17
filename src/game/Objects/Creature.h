@@ -320,29 +320,14 @@ class Creature : public Unit
         float GetFleeingSpeed() const;
         float GetBaseWalkSpeedRate() const;
         float GetBaseRunSpeedRate() const;
-        // Vanilla Bonk: replaces the walk or run base rate above (0 = back to
-        // the template's). Auras still modify it, and UpdateSpeed keeps it,
-        // where SetSpeedRate is lost on the next speed aura or follow.
         void SetBaseSpeedRate(UnitMoveType mtype, float rate);
-        // Vanilla Bonk: a run enemy's number for its nameplate, 0 = none. Its
-        // health is sent out of BONK_PLATE_HEALTH_BASE + this (see
-        // Object::BuildValuesUpdate), so the addon knows which enemy a
-        // nameplate shows.
         static constexpr uint32 BONK_PLATE_HEALTH_BASE = 100000;
         void SetPlateId(uint32 id) { m_plateId = id; }
         uint32 GetPlateId() const { return m_plateId; }
-        // Vanilla Bonk: a run enemy. It gets no melee leeway for its own reach
-        // (WorldObject::GetLeewayBonusRange), and chases a running player
-        // where they are now (ChaseMovementGenerator).
         void SetBonkEnemy(bool enabled) { m_bonkEnemy = enabled; }
         bool IsBonkEnemy() const { return m_bonkEnemy; }
-        // Vanilla Bonk: a run enemy that is no elite, mini-boss or boss.
-        // Some weapons' areas hold only these (DynamicObjectUpdater).
         void SetBonkNormal(bool normal) { m_bonkNormal = normal; }
         bool IsBonkNormal() const { return m_bonkNormal; }
-        // Vanilla Bonk: sent to clients as not selectable (no nameplate, no
-        // click), while the server still lets spells target it. Set before
-        // it enters the world.
         void SetClientUnselectable(bool enabled) { m_clientUnselectable = enabled; }
         bool IsClientUnselectable() const { return m_clientUnselectable; }
         void MoveAwayFromTarget(Unit const* pTarget, float distance);
@@ -705,12 +690,12 @@ class Creature : public Unit
         float m_callForHelpDist;
         float m_leashDistance;
         float m_detectionDistance;
-        float m_baseWalkSpeedRate;  // SetBaseSpeedRate, 0 = none
+        float m_baseWalkSpeedRate;
         float m_baseRunSpeedRate;
-        uint32 m_plateId = 0;       // SetPlateId
-        bool m_bonkEnemy = false;      // SetBonkEnemy
-        bool m_bonkNormal = false;     // SetBonkNormal
-        bool m_clientUnselectable = false;     // SetClientUnselectable
+        uint32 m_plateId = 0;
+        bool m_bonkEnemy = false;
+        bool m_bonkNormal = false;
+        bool m_clientUnselectable = false;
 
     private:
         GridReference<Creature> m_gridRef;

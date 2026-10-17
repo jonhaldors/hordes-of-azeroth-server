@@ -1,21 +1,3 @@
-/*
- * Vanilla Bonk: objective markers, the places in a stage worth walking to
- * (shrines, the wandering vendor, mini-events, extraction points).
- *
- * Each stands as a tall pillar of light in its kind's colour, as big as
- * Arathi Basin's banner auras and seen from far off (gameobject templates
- * BONK_GO_OBJECTIVE + kind, so their looks are world data). The pillar only
- * guides: it goes once the hero is close (the hero would stand inside it)
- * and comes back if they walk away. The addon pins each objective on the
- * minimap and the world map ("objectiveping~id" rings one, for a creature
- * on the move):
- * "objective~id~kind~x~y~mapId~label~seconds~icon~description" when one
- * appears (seconds: how long until it leaves, 0 = it stays; icon: its own
- * pin, empty for the kind's; description: what it does, for the pin's
- * tooltip), "objectiveclear~id" when it goes and "objectiveclear" when the
- * stage ends.
- */
-
 #ifndef BONK_OBJECTIVES_H
 #define BONK_OBJECTIVES_H
 
@@ -37,7 +19,6 @@ enum BonkObjectiveKind : uint8
     MAX_BONK_OBJECTIVE_KIND
 };
 
-// The addon's name for a kind ("shrine"), and back.
 char const* GetBonkObjectiveKindName(BonkObjectiveKind kind);
 bool ParseBonkObjectiveKind(char const* name, BonkObjectiveKind& kind);
 
@@ -47,38 +28,25 @@ struct BonkObjective
     BonkObjectiveKind kind = BONK_OBJECTIVE_SHRINE;
     float x = 0.0f, y = 0.0f, z = 0.0f;
     std::string label;
-    std::string icon;           // Interface\Icons file for its pin; empty: the kind's
-    std::string description;    // what it does, one line
-    uint32 leftMs = 0;          // until it leaves; 0 = it stays
-    ObjectGuid pillar;          // empty while the hero is close
-    // A creature it marks (a treasure goblin): no pillar, and the pin moves
-    // with it; the minimap is pinged where it is now and then.
+    std::string icon;
+    std::string description;
+    uint32 leftMs = 0;
+    ObjectGuid pillar;
     ObjectGuid follows;
-    uint32 pingMs = 0;          // to the next ping
+    uint32 pingMs = 0;
 };
 
 class BonkObjectives
 {
     public:
-        // Marks a spot; returns the objective's id.
         uint32 Add(Player* hero, BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds,
             std::string const& icon = "", std::string const& description = "");
-        // Marks a creature on the move; returns the objective's id. The
-        // minimap is pinged on it at once.
         uint32 Follow(Player* hero, BonkObjectiveKind kind, Creature const* target, std::string const& label, uint32 seconds,
             std::string const& icon = "", std::string const& description = "");
-        // Takes one away (gone from the world, the map and the minimap).
         void Remove(Player* hero, uint32 id);
-        // Takes them all away, at the end of a stage.
         void Clear(Player* hero);
-        // Counts down the ones that leave, and takes them away when they do;
-        // puts pillars up and down as the hero comes and goes; returns those
-        // that left.
         std::vector<BonkObjective> Update(Player* hero, uint32 diff);
-        // Tells the addon about every one again (after a reload).
         void Resend(Player* hero) const;
-        // Those that leave on their own again, after a pause: the addon
-        // counts down on its own clock, which ran on meanwhile.
         void ResendTimed(Player* hero) const;
 
         BonkObjective const* Get(uint32 id) const;
@@ -88,7 +56,6 @@ class BonkObjectives
         void Send(Player* hero, BonkObjective const& objective) const;
         void Despawn(Player* hero, BonkObjective const& objective) const;
         void RaisePillar(Player* hero, BonkObjective& objective) const;
-        // Rings swell from its pin on the minimap: "objectiveping~id".
         void Ping(Player* hero, BonkObjective const& objective) const;
 
         std::vector<BonkObjective> m_objectives;

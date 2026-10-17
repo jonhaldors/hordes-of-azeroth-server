@@ -11,30 +11,23 @@
 
 namespace
 {
-    uint32 const BONK_SPOT_TRY_MS        = 150;     // one candidate this often
+    uint32 const BONK_SPOT_TRY_MS        = 150;
     uint32 const BONK_SPOT_MAX           = 40;
-    // WoW zones are big: objectives sit a good walk away (BonkRun takes them
-    // 120-250 yards off), so spots gather well beyond that.
-    float const BONK_SPOT_MIN_DISTANCE   = 80.0f;   // candidates this far from the hero...
-    float const BONK_SPOT_MAX_DISTANCE   = 320.0f;  // ...to this far
-    float const BONK_SPOT_SPREAD         = 70.0f;   // apart from each other
-    float const BONK_SPOT_START_CLEAR    = 60.0f;   // from where the stage started
-    float const BONK_SPOT_FORGET         = 450.0f;  // a full list drops free spots this far behind
-    float const BONK_SPOT_GROUND_ABOVE   = 40.0f;   // ground searched from this far above the hero...
-    float const BONK_SPOT_GROUND_DEPTH   = 120.0f;  // ...down this far
-    float const BONK_SPOT_WATER_DEPTH    = 1.0f;    // deeper water than this is no spot
-    float const BONK_SPOT_MAX_DETOUR     = 1.6f;    // the path may be this much longer than the straight line
-    float const BONK_SPOT_SNAP           = 3.0f;    // the path must end this close to the spot
-    // Open, level ground: within BONK_SPOT_FLAT_RADIUS the ground stays
-    // within BONK_SPOT_FLAT_RISE of the spot (no ledge on a slope), and it
-    // is no hilltop, standing BONK_SPOT_HILL_RISE over most of the ground
-    // BONK_SPOT_HILL_RADIUS round (user, 2026-10-16: the vendor stood on top
-    // of a Barrens hill; the navmesh lets heroes walk up those).
+    float const BONK_SPOT_MIN_DISTANCE   = 80.0f;
+    float const BONK_SPOT_MAX_DISTANCE   = 320.0f;
+    float const BONK_SPOT_SPREAD         = 70.0f;
+    float const BONK_SPOT_START_CLEAR    = 60.0f;
+    float const BONK_SPOT_FORGET         = 450.0f;
+    float const BONK_SPOT_GROUND_ABOVE   = 40.0f;
+    float const BONK_SPOT_GROUND_DEPTH   = 120.0f;
+    float const BONK_SPOT_WATER_DEPTH    = 1.0f;
+    float const BONK_SPOT_MAX_DETOUR     = 1.6f;
+    float const BONK_SPOT_SNAP           = 3.0f;
     float const BONK_SPOT_FLAT_RADIUS    = 6.0f;
     float const BONK_SPOT_FLAT_RISE      = 2.5f;
     float const BONK_SPOT_HILL_RADIUS    = 30.0f;
     float const BONK_SPOT_HILL_RISE      = 8.0f;
-    uint32 const BONK_SPOT_HILL_SIDES    = 5;       // of 8 directions lower by that much: a hilltop
+    uint32 const BONK_SPOT_HILL_SIDES    = 5;
 
     float DistanceSq(float x1, float y1, float x2, float y2)
     {
@@ -83,7 +76,6 @@ void BonkSpawnPoints::Update(Player* hero, uint32 zoneId, uint32 diff)
 
     if (m_spots.size() >= BONK_SPOT_MAX)
     {
-        // Full: make room only by forgetting a free spot far behind.
         auto farthest = m_spots.end();
         float farthestSq = BONK_SPOT_FORGET * BONK_SPOT_FORGET;
         for (auto itr = m_spots.begin(); itr != m_spots.end(); ++itr)
@@ -121,8 +113,6 @@ bool BonkSpawnPoints::TryCandidate(Player* hero, uint32 zoneId)
     if (map->GetTerrain()->IsInWater(x, y, z + BONK_SPOT_WATER_DEPTH))
         return false;
 
-    // Ground behind a wall, up a cliff or inside rock has a height too; only
-    // spots with a path from the hero will do.
     PathFinder path(hero);
     path.ExcludeSteepSlopes();
     path.calculate(x, y, z);

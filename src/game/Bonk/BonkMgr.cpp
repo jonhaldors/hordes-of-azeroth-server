@@ -1,7 +1,3 @@
-/*
- * Vanilla Bonk: static game-mode data.
- */
-
 #include "BonkMgr.h"
 #include "BonkMastery.h"
 #include "BonkQuests.h"
@@ -22,7 +18,6 @@ INSTANTIATE_SINGLETON_1(BonkMgr);
 
 namespace
 {
-    // bonk_item_stat: the column for each stat camp gear can carry.
     struct GearColumn
     {
         char const* name;
@@ -45,8 +40,6 @@ namespace
     };
     size_t const BONK_GEAR_COLUMN_COUNT = sizeof(BONK_GEAR_COLUMNS) / sizeof(BONK_GEAR_COLUMNS[0]);
 
-    // The effect whose base points carry a spell's damage: direct damage
-    // first, damage over time otherwise, -1 for none.
     int32 FindDamageEffect(SpellEntry const* spellInfo)
     {
         for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
@@ -61,7 +54,6 @@ namespace
         return -1;
     }
 
-    // Whether the spell's damage comes from the weapon swing.
     bool HasWeaponDamage(SpellEntry const* spellInfo)
     {
         for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
@@ -78,8 +70,6 @@ namespace
         return false;
     }
 
-    // Damage over time, on the target or on the ground, other than effect
-    // `except`: the effect index, -1 for none.
     int32 FindTickEffect(SpellEntry const* spellInfo, int32 except)
     {
         for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
@@ -98,7 +88,6 @@ void BonkMgr::Load()
     LoadScaling();
     LoadMaps();
 
-    // Starting spots runs learned on each map (Phase F4).
     {
         std::lock_guard<std::mutex> guard(m_mapStartLock);
         m_mapStarts.clear();
@@ -117,7 +106,6 @@ void BonkMgr::Load()
     }
     LoadMapCreatures();
     LoadMapEvents();
-    // Weapons name the keywords they apply and pay off.
     LoadKeywords();
     LoadProjectiles();
     LoadWeapons();
@@ -133,10 +121,8 @@ void BonkMgr::Load()
     LoadTalents();
     LoadItemStats();
     LoadMobs();
-    // Quests check the weapons, passives, talents and upgrades they unlock.
     sBonkQuests.Load();
     sBonkMastery.Load();
-    // Keywords first: families name the one their bites apply.
     LoadPetFamilies();
 
     for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL, BONK_GO_SHARD, BONK_GO_VAULT })
@@ -275,7 +261,6 @@ void BonkMgr::LoadMaps()
             continue;
         }
 
-        // Tier 0: in no difficulty's pool, a dungeon mode only (Phase F3).
         auto tier = m_tiers.find(map.tierId);
         if (tier != m_tiers.end())
             tier->second.mapIds.push_back(map.id);
@@ -500,7 +485,6 @@ void BonkMgr::LoadMapEvents()
             continue;
         }
         event.type = BonkEventType(type);
-        // Sorted by second: the first mini-boss event is when it arrives.
         if (event.type == BONK_EVENT_MINIBOSS && !map->second.minibossSecond)
             map->second.minibossSecond = event.second;
 
@@ -583,8 +567,6 @@ void BonkMgr::LoadProjectiles()
         projectile.radius = std::max(0.1f, fields[3].GetFloat());
         projectile.scale = fields[4].GetFloat() > 0.0f ? fields[4].GetFloat() : 1.0f;
 
-        // Without the client patch's display (and the server's copy of
-        // its tables) the spell still lands on its target.
         if (!sSpellMgr.GetSpellEntry(projectile.spellId) || projectile.speed <= 0.0f)
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_projectile`: spell %u is missing or has no speed; skipped.", projectile.spellId);
@@ -691,6 +673,16 @@ void BonkMgr::LoadWeapons()
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u pays off unknown keyword %u; it pays off none.", weapon.id, uint32(weapon.uses));
             weapon.uses = BONK_KEYWORD_NONE;
         }
+        if (weapon.HasFlag(BONK_WEAPON_FLAG_CONSUME))
+        {
+            BonkKeywordInfo const* consumed = GetKeyword(weapon.uses);
+            if (!consumed || !consumed->IsDamageOverTime())
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u consumes keyword %u, which deals no damage over time; it consumes nothing.",
+                    weapon.id, uint32(weapon.uses));
+                weapon.flags &= ~uint32(BONK_WEAPON_FLAG_CONSUME);
+            }
+        }
 
         if (weapon.altSpellId && !sSpellMgr.GetSpellEntry(weapon.altSpellId))
         {
@@ -707,43 +699,43 @@ void BonkMgr::LoadWeapons()
 
         weapon.damageEffectIndex = FindDamageEffect(spellInfo);
         weapon.weaponDamage = weapon.damageEffectIndex < 0 && HasWeaponDamage(spellInfo);
-        // Shields, marks, shouts, buffs and beasts deal no damage of their
-        // own (their ranks make them stronger); the rest need a damage effect.
         bool damageless = false;
         switch (weapon.behavior)
         {
             case BONK_BEHAVIOR_SHIELD:
+            case BONK_BEHAVIOR_AEGIS:
+            case BONK_BEHAVIOR_SPIKED_SHIELD:
             case BONK_BEHAVIOR_WARD:
             case BONK_BEHAVIOR_MARK:
             case BONK_BEHAVIOR_DEMORALIZE:
             case BONK_BEHAVIOR_BUFF:
             case BONK_BEHAVIOR_PET:
-            case BONK_BEHAVIOR_WRATH:   // Pack Leader: its wolf's bites deal the damage
+            case BONK_BEHAVIOR_WRATH:
                 damageless = true;
                 break;
             default:
                 break;
         }
-        // A spell that only puts its keyword on enemies (Serpent Sting's
-        // Poison, a flare's Mark): its own spell is just its look.
         if (weapon.applies != BONK_KEYWORD_NONE && weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
             damageless = true;
-        // A ground area that only holds normal enemies and deals no damage
-        // (Frost Trap's slow): its ranks grow the damage they take
-        // (BonkRun::GetSlowedBonus).
-        if (weapon.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY) && weapon.damageFraction <= 0.0f && weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
+        if (weapon.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY) && weapon.damageEffectIndex < 0 && !weapon.weaponDamage)
             damageless = true;
         if (weapon.damageEffectIndex < 0 && !weapon.weaponDamage && !damageless)
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: spell %u of weapon %u has no damage effect; it will use its own values.", weapon.spellId, weapon.id);
 
         weapon.tickEffectIndex = FindTickEffect(spellInfo, weapon.damageEffectIndex);
+        if (weapon.HasFlag(BONK_WEAPON_FLAG_LOOK_ONLY))
+        {
+            weapon.damageEffectIndex = -1;
+            weapon.tickEffectIndex = -1;
+            weapon.weaponDamage = false;
+        }
         for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
             if (spellInfo->Effect[i] == SPELL_EFFECT_PERSISTENT_AREA_AURA && spellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE)
             {
                 weapon.groundRadius = Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i]));
                 break;
             }
-        // A trap's radius is its range, whatever its spell's own.
         if (weapon.behavior == BONK_BEHAVIOR_TRAP)
         {
             weapon.groundRadius = weapon.range;
@@ -753,7 +745,6 @@ void BonkMgr::LoadWeapons()
                 continue;
             }
         }
-        // A ground spell that only marks or applies a keyword: its own area.
         if (weapon.target == BONK_TARGET_GROUND && weapon.groundRadius <= 0.0f && damageless)
             for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
                 if (spellInfo->EffectRadiusIndex[i])
@@ -777,7 +768,6 @@ void BonkMgr::LoadWeapons()
         if (itr.second.evolvesFrom && !m_weapons.count(itr.second.evolvesFrom))
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: weapon %u evolves from unknown weapon %u.", itr.first, itr.second.evolvesFrom);
 
-    // What each spell's Rare and Epic ranks can add.
     uint32 upgrades = 0;
     std::unique_ptr<QueryResult> rows(WorldDatabase.Query("SELECT `weapon_id`, `upgrade`, `step` FROM `bonk_weapon_upgrade`"));
     if (rows)
@@ -800,9 +790,23 @@ void BonkMgr::LoadWeapons()
                 continue;
             }
             if ((upgrade == BONK_SPELL_UPGRADE_SLOWED && !weapon->second.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY)) ||
-                (upgrade == BONK_SPELL_UPGRADE_FRENZY && weapon->second.behavior != BONK_BEHAVIOR_WRATH))
+                (upgrade == BONK_SPELL_UPGRADE_FRENZY && weapon->second.behavior != BONK_BEHAVIOR_WRATH) ||
+                (upgrade == BONK_SPELL_UPGRADE_DEPLOY && (weapon->second.behavior != BONK_BEHAVIOR_TRAP || weapon->second.target != BONK_TARGET_SELF)) ||
+                (upgrade == BONK_SPELL_UPGRADE_TRAP_AREA && (weapon->second.behavior != BONK_BEHAVIOR_TRAP || weapon->second.HasFlag(BONK_WEAPON_FLAG_SNAKES))))
             {
-                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u neither slows nor howls, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u neither slows, howls nor places traps, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
+                continue;
+            }
+            if (upgrade == BONK_SPELL_UPGRADE_CLEAVE && weapon->second.target == BONK_TARGET_CONE)
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u fires a cone, which has no cleave splash, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
+                continue;
+            }
+            if ((upgrade == BONK_SPELL_UPGRADE_SHIELD_SIZE && !weapon->second.IsShieldBlock() && weapon->second.behavior != BONK_BEHAVIOR_WARD &&
+                    weapon->second.behavior != BONK_BEHAVIOR_BULWARK) ||
+                (upgrade == BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN && !weapon->second.IsTrigger()))
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u neither shields you nor triggers, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
                 continue;
             }
             BonkWeaponUpgrade entry;
@@ -827,12 +831,28 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
     switch (upgrade)
     {
         case BONK_SPELL_UPGRADE_CLEAVE:
-            return percent + " of its damage to up to " + std::to_string(BONK_SPELL_CLEAVE_TARGETS) + " nearby enemies";
+            return percent + " splash damage to up to " + std::to_string(BONK_SPELL_CLEAVE_TARGETS) + " nearby enemies";
         case BONK_SPELL_UPGRADE_HIT_TWICE:  return percent + " chance to hit twice";
         case BONK_SPELL_UPGRADE_HASTE:      return percent + " Haste for this spell";
-        case BONK_SPELL_UPGRADE_DURATION:   return percent + " duration";
+        case BONK_SPELL_UPGRADE_DURATION:
+        {
+            if (weapon.behavior == BONK_BEHAVIOR_ICE_PATH)
+                return percent + " ice duration";
+            if (weapon.behavior == BONK_BEHAVIOR_TRAP && weapon.HasFlag(BONK_WEAPON_FLAG_SNAKES))
+                return percent + " snake duration";
+            if (weapon.behavior == BONK_BEHAVIOR_TRAP)
+            {
+                SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(weapon.spellId);
+                return percent + (spellInfo && spellInfo->School == SPELL_SCHOOL_FROST ? " ice duration" : " burn duration");
+            }
+            return percent + " duration";
+        }
+        case BONK_SPELL_UPGRADE_DEPLOY:     return std::string("+") + number + " yd deploy range";
+        case BONK_SPELL_UPGRADE_TRAP_AREA:  return percent + " trap radius";
+        case BONK_SPELL_UPGRADE_SHIELD_SIZE: return percent + " Shield size";
+        case BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN: return std::string("-") + number + "% internal cooldown";
         case BONK_SPELL_UPGRADE_MARK:       return percent + " damage taken by marked enemies";
-        case BONK_SPELL_UPGRADE_PET_DAMAGE:     // Pack Leader has one wolf
+        case BONK_SPELL_UPGRADE_PET_DAMAGE:
             return percent + " damage dealt by its " + weapon.GetTargetNoun() + (weapon.behavior == BONK_BEHAVIOR_WRATH ? "" : "s");
         case BONK_SPELL_UPGRADE_PET_SIZE:   return percent + " " + weapon.GetTargetNoun() + " size";
         case BONK_SPELL_UPGRADE_SLOWED:     return percent + " damage taken by enemies it slows";
@@ -840,8 +860,8 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         case BONK_SPELL_UPGRADE_STACKS:
         {
             BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(weapon.applies);
-            std::string const stacks = std::string("+") + number + (amount == 1.0f ? " stack" : " stacks");
-            return stacks + " of " + (keyword ? keyword->name : std::string("its effect")) + " applied";
+            std::string const stacks = std::string("applies ") + number + (amount == 1.0f ? " more stack" : " more stacks");
+            return stacks + " of " + (keyword ? keyword->name : std::string("its effect"));
         }
         default:                      return "";
     }
@@ -894,7 +914,6 @@ void BonkMgr::LoadMobs()
             }
             ability.damageEffectIndex = FindDamageEffect(spellInfo);
 
-            // An ability without a bonk_mob row belongs to a plain melee enemy.
             m_mobs[entry].abilities.push_back(ability);
             ++abilities;
         } while (result->NextRow());
@@ -1080,7 +1099,6 @@ char const* GetBonkRarityName(BonkRarity rarity)
 
 uint32 BonkUpgrade::GetCost(uint8 ownedRanks) const
 {
-    // Each rank costs costGrowth times the one before, to the nearest silver.
     uint32 const copper = uint32(cost * std::pow(costGrowth, float(ownedRanks)) + 0.5f);
     return copper >= 100 ? (copper + 50) / 100 * 100 : copper;
 }
@@ -1252,7 +1270,6 @@ void BonkMgr::LoadTalents()
         talent.layout.column = fields[12].GetUInt8();
         talent.layout.requiredId = fields[13].GetUInt32();
         talent.layout.requiredRank = fields[14].GetUInt8();
-        // "15,35,55": quests done to learn each rank.
         std::string const gates = fields[15].GetCppString();
         for (size_t start = 0; start < gates.size();)
         {
@@ -1268,7 +1285,6 @@ void BonkMgr::LoadTalents()
         }
         talent.effect = BonkTalentEffect(effect);
 
-        // A toggle is either owned or not.
         if (talent.IsToggle())
             talent.maxRank = 1;
 
@@ -1483,12 +1499,37 @@ BonkWeapon const* BonkMgr::GetWeapon(uint32 id) const
     return itr != m_weapons.end() ? &itr->second : nullptr;
 }
 
-BonkWeapon const* BonkMgr::GetEvolution(uint32 weaponId) const
+std::vector<BonkWeapon const*> BonkMgr::GetEvolutions(uint32 weaponId) const
 {
+    std::vector<BonkWeapon const*> evolutions;
+    if (!weaponId)
+        return evolutions;
     for (auto const& itr : m_weapons)
         if (itr.second.evolvesFrom == weaponId)
-            return &itr.second;
-    return nullptr;
+            evolutions.push_back(&itr.second);
+    return evolutions;
+}
+
+bool BonkMgr::HasStarterSpell(uint32 classMask) const
+{
+    return std::any_of(m_weapons.begin(), m_weapons.end(), [classMask](std::pair<uint32 const, BonkWeapon> const& itr)
+    {
+        BonkWeapon const& weapon = itr.second;
+        return (weapon.starterClassMask & classMask) || (!weapon.evolvesFrom && (!weapon.classMask || (weapon.classMask & classMask)));
+    });
+}
+
+std::string BonkMgr::DescribeEvolutionNames(uint32 weaponId) const
+{
+    std::vector<BonkWeapon const*> const evolutions = GetEvolutions(weaponId);
+    std::string text;
+    for (size_t i = 0; i < evolutions.size(); ++i)
+    {
+        if (i)
+            text += i + 1 == evolutions.size() ? " or " : ", ";
+        text += evolutions[i]->name;
+    }
+    return text;
 }
 
 BonkMob const* BonkMgr::GetMob(uint32 entry) const
@@ -1684,7 +1725,7 @@ std::string BonkMgr::DescribePassive(BonkPassive const& passive) const
 {
     for (auto const& itr : m_passives)
         if (itr.first != passive.id && (itr.first == passive.excludes || itr.second.excludes == passive.id))
-            return passive.description + " Can't be taken with " + itr.second.name + ".";
+            return passive.description + " You can't have this and " + itr.second.name + " at the same time.";
     return passive.description;
 }
 

@@ -1,7 +1,3 @@
-/*
- * Vanilla Bonk: the spellbook and its NPC.
- */
-
 #include "BonkCodex.h"
 #include "BonkMgr.h"
 #include "BonkPlayer.h"
@@ -25,7 +21,6 @@ namespace
         return std::to_string(uint32(value * 100.0f + 0.5f)) + "%";
     }
 
-    // 15 -> "15%": step sizes are already percentages.
     std::string Points(float percent)
     {
         char buffer[16];
@@ -33,7 +28,6 @@ namespace
         return buffer;
     }
 
-    // "a", "a or b", "a, b or c"; "and" in place of "or" for JoinAnd.
     std::string Join(std::vector<std::string> const& parts, char const* last)
     {
         std::string text;
@@ -49,58 +43,80 @@ namespace
     std::string JoinOr(std::vector<std::string> const& parts) { return Join(parts, " or "); }
     std::string JoinAnd(std::vector<std::string> const& parts) { return Join(parts, " and "); }
 
-    // How a spell grows rank by rank (each card's rarity decides what it
-    // adds, see BonkRun::RollUpgrades), and what it does besides its hit.
+    std::string DescribeLegendary(BonkWeapon const& weapon)
+    {
+        std::vector<BonkWeapon const*> const evolutions = sBonkMgr.GetEvolutions(weapon.id);
+        if (evolutions.empty())
+            return "";
+        std::string const rank = std::to_string(BONK_EVOLVE_RANK);
+        return " Legendary: from rank " + rank + ", each card of this spell has a " + Points(BONK_LEGENDARY_BASE_CHANCE) +
+            " chance to be its evolution, +" + Points(BONK_LEGENDARY_CHANCE_PER_RANK) + " for each rank above " + rank + ", at most " +
+            Points(BONK_LEGENDARY_MAX_RANK_CHANCE) + ", plus " + Points(BONK_LEGENDARY_CHANCE_PER_LUCK) + " per point of Luck. It evolves the spell into " +
+            sBonkMgr.DescribeEvolutionNames(weapon.id) + (evolutions.size() > 1 ? ", picked at random." : ".");
+    }
+
     std::string DescribeGrowth(BonkWeapon const& weapon)
     {
         bool const cleave = weapon.behavior == BONK_BEHAVIOR_CLEAVE;
         bool const damageless = weapon.damageEffectIndex < 0 && !weapon.weaponDamage;
 
-        std::string text = "Ranks have no cap; each card's rarity decides what it adds. Common: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_COMMON]) +
+        std::string text = "Ranks have no limit. Each card's rarity decides what it adds. Common: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_COMMON]) +
             " damage. Uncommon: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_UNCOMMON]) + " damage.";
 
-        // Rare and Epic: damage and steps from the spell's own list.
         std::vector<std::string> upgrades;
+        std::string hitTwice;
         std::vector<std::string> caps;
         for (BonkWeaponUpgrade const& upgrade : weapon.upgrades)
         {
-            upgrades.push_back(DescribeBonkSpellUpgrade(weapon, upgrade.upgrade, upgrade.step));
+            std::string const described = DescribeBonkSpellUpgrade(weapon, upgrade.upgrade, upgrade.step);
+            if (upgrade.upgrade == BONK_SPELL_UPGRADE_HIT_TWICE)
+                hitTwice = described;
+            else
+                upgrades.push_back(described);
             float const cap = BONK_SPELL_UPGRADE_CAP[upgrade.upgrade];
             if (cap > 0.0f)
                 caps.push_back(DescribeBonkSpellUpgrade(weapon, upgrade.upgrade, cap));
         }
-        if (upgrades.empty())
+        if (upgrades.empty() && hitTwice.empty())
             text += " Rare: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_RARE] + BONK_RANK_SPARE_DAMAGE) + " damage. Epic: +" +
                 Points(BONK_RANK_DAMAGE[BONK_RARITY_EPIC] + 2 * BONK_RANK_SPARE_DAMAGE) + " damage.";
         else
         {
-            text += " Rare: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_RARE]) + " damage and " + JoinOr(upgrades) + ". Epic: +" +
-                Points(BONK_RANK_DAMAGE[BONK_RARITY_EPIC]) + " damage and two of these, maybe the same one twice.";
+            if (upgrades.empty())
+                text += " Rare: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_RARE] + BONK_RANK_SPARE_DAMAGE) + " damage.";
+            else
+                text += " Rare: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_RARE]) + " damage, plus " +
+                    (upgrades.size() == 1 ? upgrades[0] : "one of these: " + JoinOr(upgrades)) + ".";
+            text += " Epic: +" + Points(BONK_RANK_DAMAGE[BONK_RARITY_EPIC]) + " damage, plus ";
+            if (upgrades.size() >= 2)
+                text += "2 of these" + (hitTwice.empty() ? std::string() : " or " + hitTwice) + " (the same one can come up twice).";
+            else if (hitTwice.empty())
+                text += "that bonus twice.";
+            else if (upgrades.empty())
+                text += "2 bonuses of " + hitTwice + ".";
+            else
+                text += "2 bonuses, each " + upgrades[0] + " or " + hitTwice + ".";
             if (!caps.empty())
-                text += " At most " + JoinAnd(caps) + ".";
+                text += " These bonuses top out at " + JoinAnd(caps) + ".";
         }
 
-        // Legendary ranks are evolutions only.
-        BonkWeapon const* evolved = weapon.evolvesFrom ? nullptr : sBonkMgr.GetEvolution(weapon.id);
-        if (evolved)
-            text += " Legendary, from rank " + std::to_string(BONK_EVOLVE_RANK) + " and sure by rank " + std::to_string(BONK_EVOLVE_PITY_RANK) +
-                ": evolves into " + evolved->name + ".";
+        if (!weapon.evolvesFrom)
+            text += DescribeLegendary(weapon);
 
         if (cleave)
-            text += " Cleaves hit enemies within " + std::to_string(uint32(BONK_CLEAVE_RADIUS)) + " yards of the target for " +
-                Percent(weapon.behaviorValue) + " damage.";
+            text += " Its cleave hits enemies within " + std::to_string(uint32(BONK_CLEAVE_RADIUS)) + " yards of the target for " +
+                Percent(weapon.behaviorValue) + " of its damage.";
         if (weapon.behavior == BONK_BEHAVIOR_SPREAD)
-            text += (weapon.evolvesFrom ? std::string(" Spreads") : " From rank " + std::to_string(BONK_EVOLVE_RANK) + " it spreads") + " to " +
-                std::to_string(uint32(weapon.behaviorValue)) + " enemies within " + std::to_string(uint32(BONK_SPREAD_RADIUS)) +
-                " yards when one carrying it dies.";
-        // What "damage" means for a spell that deals none of its own.
+            text += (weapon.evolvesFrom ? std::string(" When") : " From rank " + std::to_string(BONK_SPREAD_RANK) + ", when") +
+                " an affected enemy dies, it spreads to " + std::to_string(uint32(weapon.behaviorValue)) + " enemies within " +
+                std::to_string(uint32(BONK_SPREAD_RADIUS)) + " yards.";
         switch (weapon.behavior)
         {
             case BONK_BEHAVIOR_BUFF:
                 text += " Damage ranks raise the Power it gives.";
                 break;
             case BONK_BEHAVIOR_DEMORALIZE:
-                text += " Damage ranks make enemies weaker still.";
+                text += " Damage ranks weaken enemies further.";
                 break;
             case BONK_BEHAVIOR_MARK:
                 if (damageless)
@@ -109,26 +125,36 @@ namespace
             case BONK_BEHAVIOR_PET:
                 text += " Beasts bite for the spell's damage; Haste makes them bite more often.";
                 break;
-            case BONK_BEHAVIOR_REVENGE:
-                text += " Gives " + Points(weapon.behaviorValue) + " Dodge while you have it.";
+            case BONK_BEHAVIOR_SHIELD:
+            case BONK_BEHAVIOR_AEGIS:
+            case BONK_BEHAVIOR_SPIKED_SHIELD:
+                text += " Damage ranks make the Shield bigger.";
+                break;
+            case BONK_BEHAVIOR_DEEP_WOUNDS:
+                text += " Count applies its Bleed again on each critical strike.";
                 break;
             default:
                 break;
         }
+        if (damageless)
+            if (BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(weapon.applies))
+                if (keyword->IsDamageOverTime())
+                    text += " Damage ranks make its " + keyword->name + " deal more damage.";
         if (weapon.target == BONK_TARGET_GROUND)
-            text += " Lands on the biggest pack of enemies.";
+            text += " Lands on the largest group of enemies.";
         if (weapon.durationMs)
             text += " Lasts " + std::to_string(weapon.durationMs / IN_MILLISECONDS) + " seconds.";
         if (weapon.healPct > 0.0f)
         {
             char heal[16];
             snprintf(heal, sizeof(heal), "%g", weapon.healPct);
-            text += std::string(" Heals you ") + heal + "% of your health each time.";
+            text += std::string(" Heals you for ") + heal + "% of your maximum health " +
+                (weapon.behavior == BONK_BEHAVIOR_BLOODTHIRST || weapon.behavior == BONK_BEHAVIOR_DEMORALIZING_SHOUT ? "for each enemy it hits." :
+                "each time it is cast.");
         }
         return text;
     }
 
-    // "cdxq~kind~id~quest name~quest description" for something still locked.
     void SendLock(BonkPlayer* bonk, char const* kind, uint32 id, BonkQuestReward type)
     {
         if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(type, id))
@@ -145,8 +171,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
     uint32 const account = player->GetSession()->GetAccountId();
     bonk->SendAddon("cdx~" + npc + "~" + std::to_string(player->GetClassMask()));
 
-    // `locked`: 0 owned (or never locked), 1 waiting on its quest, 2 for
-    // sale at `price` copper (its quest done, Core loop v2 phase E).
     auto lockState = [account](BonkQuestReward type, uint32 id, uint32& price)
     {
         price = 0;
@@ -158,9 +182,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
         return sBonkQuests.IsLocked(account, type, id) ? "1" : "0";
     };
 
-    // cdxw~id~name~icon~classMask~starterMask~evolvesFrom~locked~price,
-    // then cdxwd~id~description and cdxwg~id~growth. Long text has lines of
-    // its own to keep each message short.
     for (auto const& itr : sBonkMgr.GetWeapons())
     {
         BonkWeapon const& weapon = itr.second;
@@ -175,7 +196,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
             SendLock(bonk, "w", weapon.id, BONK_REWARD_WEAPON);
     }
 
-    // cdxp~id~name~icon~maxRank~locked~description~price
     for (auto const& itr : sBonkMgr.GetPassives())
     {
         BonkPassive const& passive = itr.second;
@@ -187,8 +207,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
             SendLock(bonk, "p", passive.id, BONK_REWARD_PASSIVE);
     }
 
-    // cdxc~id~name~icon~rarity~maxCopies~locked~price, then
-    // cdxcd~id~description: the Darkmoon Cards chests can offer.
     for (auto const& itr : sBonkMgr.GetCards())
     {
         BonkCard const& card = itr.second;
@@ -204,8 +222,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
             SendLock(bonk, "c", card.id, BONK_REWARD_CARD);
     }
 
-    // The pool toggle: cdxpool~open~used~slots (Stacked Deck's ranks; cards
-    // and Glyphs only), then cdxoff~kind~id for each switched off (c or g).
     bonk->TrimPoolToggles();
     uint32 const slots = bonk->GetPoolToggleSlots();
     bonk->SendAddon("cdxpool~" + std::string(slots ? "1" : "0") + "~" + std::to_string(sBonkQuests.GetDisabled(account).size()) + "~" +
@@ -216,33 +232,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
         bonk->SendAddon("cdxoff~" + std::string(kind) + "~" + std::to_string(off.second));
     }
 
-    // The bestiary: cdxb~entry~kills~kind~map~name for every enemy a run can
-    // meet (name empty until one is killed; kind its highest: 0 normal, 1
-    // elite, 2 boss, 3 mini-boss; map where it is first met).
-    std::map<uint32, BonkQuests::BestiaryEntry> const bestiary = sBonkQuests.GetBestiary(account);
-    std::map<uint32, std::pair<uint32, std::string>> enemies;    // entry -> kind, map
-    for (auto const& map : sBonkMgr.GetMaps())
-        for (BonkMapCreature const& creature : map.second.creatures)
-        {
-            auto itr = enemies.find(creature.entry);
-            if (itr == enemies.end())
-                enemies[creature.entry] = { uint32(creature.kind), map.second.name };
-            else if (uint32(creature.kind) > itr->second.first)
-                itr->second.first = uint32(creature.kind);
-        }
-    for (BonkHidden const& hidden : sBonkMgr.GetHiddenEncounters())
-        if (BonkMap const* map = sBonkMgr.GetMap(hidden.mapId))
-            enemies.emplace(hidden.bossEntry, std::make_pair(uint32(BONK_SPAWN_MINIBOSS), map->name));
-    for (auto const& enemy : enemies)
-    {
-        auto const seen = bestiary.find(enemy.first);
-        uint32 const kills = seen != bestiary.end() ? seen->second.kills : 0;
-        CreatureInfo const* info = kills ? sObjectMgr.GetCreatureTemplate(enemy.first) : nullptr;
-        bonk->SendAddon("cdxb~" + std::to_string(enemy.first) + "~" + std::to_string(kills) + "~" + std::to_string(enemy.second.first) + "~" +
-            enemy.second.second + "~" + (info ? info->name : ""));
-    }
-
-    // cdxg~id~locked~price: the Glyphs (their text came with glyphinfo).
     for (auto const& itr : sBonkMgr.GetGlyphs())
     {
         uint32 price;
@@ -255,8 +244,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
     bonk->SendAddon("cdxend");
 }
 
-// The spellbook at camp. With the addon the book opens as a window in place
-// of this gossip; without it there is only the greeting.
 bool GossipHello_npc_bonk_codex(Player* player, Creature* creature)
 {
     BonkCodex::Send(player, player->GetBonkPlayer()->IsAddonReady() ? creature->GetName() : "");

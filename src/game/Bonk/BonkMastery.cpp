@@ -1,7 +1,3 @@
-/*
- * Vanilla Bonk: Class Mastery.
- */
-
 #include "BonkMastery.h"
 #include "Database/DatabaseEnv.h"
 #include "Log.h"
@@ -78,6 +74,7 @@ void BonkMastery::Load()
                 case BONK_MASTERY_SPELL_COOLDOWN:
                 case BONK_MASTERY_SPELL_TARGETS:
                 case BONK_MASTERY_START_SPELL:
+                case BONK_MASTERY_SPELL_SLOW:
                     targetOk = sBonkMgr.GetWeapon(node.target) != nullptr;
                     break;
                 default:
@@ -100,7 +97,6 @@ void BonkMastery::Load()
         } while (result->NextRow());
     }
 
-    // Requirements must be another node of the same class.
     for (auto& itr : m_nodes)
     {
         BonkMasteryNode& node = itr.second;
@@ -211,6 +207,7 @@ BonkMasteryBonuses BonkMastery::Evaluate(std::map<uint32, uint8> const& ranks) c
             case BONK_MASTERY_EXECUTE:        bonuses.execute.emplace_back(node->target, value); break;
             case BONK_MASTERY_CLEARCASTING:   bonuses.clearcasting += value; break;
             case BONK_MASTERY_SOUL_SIPHON:    bonuses.soulSiphon.emplace_back(node->target, value); break;
+            case BONK_MASTERY_SPELL_SLOW:     bonuses.spellSlow[node->target] += value; break;
             default: break;
         }
     }

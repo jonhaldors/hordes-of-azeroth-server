@@ -1,17 +1,4 @@
-/*
- * Vanilla Bonk: gossip and use scripts for camp NPCs and arena objects.
- *
- * At camp, the run master lists the tiers in `bonk_tier` and starts a run
- * on the one the player picks, the quartermaster sells permanent upgrades
- * (`bonk_upgrade`), Sayge sells fortunes for Darkmoon Tickets: run unlocks
- * and switchable Dark Fortunes (`bonk_talent`), and the talent trainer spends
- * a class's talent points, earned with Mastery levels (`bonk_mastery`); the
- * gear vendor is a plain vendor.
- * In the arena, chests open an upgrade choice and the portal that appears
- * after a stage boss leads on or home. The NPCs and objects themselves are
- * world database rows.
- */
-
+#include "BonkCodex.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkPlayer.h"
@@ -23,9 +10,10 @@
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
 
+#include <cctype>
+
 namespace
 {
-    // npc_text greetings.
     uint32 const BONK_TEXT_RUN_MASTER    = 900001;
     uint32 const BONK_TEXT_PORTAL        = 900002;
     uint32 const BONK_TEXT_QUARTERMASTER = 900003;
@@ -35,10 +23,8 @@ namespace
     uint32 const BONK_TEXT_VAULT_EMPTY   = 900010;
     uint32 const BONK_TEXT_VAULT         = 900011;
 
-    // Talent trainer without the addon: this action takes the points back.
     uint32 const MASTERY_ACTION_RESPEC = GOSSIP_ACTION_INFO_DEF - 1;
 
-    // Sayge's options: what a click does.
     uint32 const SENDER_BUY    = GOSSIP_SENDER_MAIN;
     uint32 const SENDER_TOGGLE = GOSSIP_SENDER_MAIN + 1;
 
@@ -50,8 +36,6 @@ namespace
         PORTAL_ACTION_BACK = GOSSIP_ACTION_INFO_DEF + 4,
     };
 
-    // The vault without the addon: the sender says which way, the action is
-    // the item's guid.
     uint32 const SENDER_VAULT_PUT  = GOSSIP_SENDER_MAIN + 1;
     uint32 const SENDER_VAULT_TAKE = GOSSIP_SENDER_MAIN + 2;
 }
@@ -60,7 +44,6 @@ bool GossipHello_npc_bonk_run_master(Player* player, Creature* creature)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
 
-    // The addon hides this menu and shows the arena window instead.
     if (bonk->IsAddonReady())
     {
         bonk->OpenArena(creature);
@@ -76,7 +59,12 @@ bool GossipHello_npc_bonk_run_master(Player* player, Creature* creature)
         BonkTier const& tier = *tierPtr;
         std::string text = tier.name;
         if (!bonk->IsTierUnlocked(tier))
-            text += " (locked: " + bonk->GetUnlockHint(tier) + ")";
+        {
+            std::string hint = bonk->GetUnlockHint(tier);
+            if (!hint.empty())
+                hint[0] = char(tolower(hint[0]));
+            text += " (locked: " + hint + ")";
+        }
         else if (uint32 const best = bonk->GetBestStage(tier.id))
             text += " (best: stage " + std::to_string(best) + ")";
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, text.c_str(), GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + tier.id);
@@ -86,11 +74,10 @@ bool GossipHello_npc_bonk_run_master(Player* player, Creature* creature)
     return true;
 }
 
-bool GossipSelect_npc_bonk_run_master(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action)
+bool GossipSelect_npc_bonk_run_master(Player* player, Creature* , uint32 , uint32 action)
 {
     player->CLOSE_GOSSIP_MENU();
 
-    // The tables may have been reloaded while the menu was open.
     BonkTier const* tier = action >= GOSSIP_ACTION_INFO_DEF ? sBonkMgr.GetTier(action - GOSSIP_ACTION_INFO_DEF) : nullptr;
     if (!tier)
         return true;
@@ -105,7 +92,6 @@ bool GossipHello_npc_bonk_quartermaster(Player* player, Creature* creature)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
 
-    // The addon hides this menu and shows the upgrades as talent trees.
     if (bonk->IsAddonReady())
     {
         bonk->OpenShop(BONK_SHOP_UPGRADES, creature);
@@ -121,7 +107,7 @@ bool GossipHello_npc_bonk_quartermaster(Player* player, Creature* creature)
         BonkUpgrade const& upgrade = itr.second;
         uint8 const rank = bonk->GetUpgradeRank(upgrade.id);
         std::string text = upgrade.name + " " + std::to_string(rank) + "/" + std::to_string(upgrade.maxRank) + ": " + upgrade.description;
-        text += rank < upgrade.maxRank ? " - " + FormatBonkMoney(upgrade.GetCost(rank)) : " (max)";
+        text += rank < upgrade.maxRank ? " (" + FormatBonkMoney(upgrade.GetCost(rank)) + ")" : " (max)";
         player->ADD_GOSSIP_ITEM(rank < upgrade.maxRank ? GOSSIP_ICON_TRAINER : GOSSIP_ICON_CHAT, text.c_str(), SENDER_BUY,
             GOSSIP_ACTION_INFO_DEF + upgrade.id);
     }
@@ -130,7 +116,7 @@ bool GossipHello_npc_bonk_quartermaster(Player* player, Creature* creature)
     return true;
 }
 
-bool GossipSelect_npc_bonk_quartermaster(Player* player, Creature* creature, uint32 /*sender*/, uint32 action)
+bool GossipSelect_npc_bonk_quartermaster(Player* player, Creature* creature, uint32 , uint32 action)
 {
     if (action >= GOSSIP_ACTION_INFO_DEF)
     {
@@ -140,7 +126,6 @@ bool GossipSelect_npc_bonk_quartermaster(Player* player, Creature* creature, uin
             player->GetBonkPlayer()->Notify(message);
     }
 
-    // Show the new ranks and prices.
     return GossipHello_npc_bonk_quartermaster(player, creature);
 }
 
@@ -148,9 +133,9 @@ bool GossipHello_npc_bonk_talents(Player* player, Creature* creature)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
 
-    // The addon hides this menu and shows the fortunes as talent trees.
     if (bonk->IsAddonReady())
     {
+        BonkCodex::Send(player, "");
         bonk->OpenShop(BONK_SHOP_TALENTS, creature);
         player->SEND_GOSSIP_MENU(BONK_TEXT_TALENTS, creature->GetObjectGuid());
         return true;
@@ -176,7 +161,7 @@ bool GossipHello_npc_bonk_talents(Player* player, Creature* creature)
         if (!talent.IsToggle())
             text += " " + std::to_string(rank) + "/" + std::to_string(talent.maxRank);
         text += ": " + talent.description;
-        text += rank < talent.maxRank ? " - " + FormatBonkShards(talent.GetCost(rank)) : " (max)";
+        text += rank < talent.maxRank ? " (" + FormatBonkShards(talent.GetCost(rank)) + ")" : " (max)";
         player->ADD_GOSSIP_ITEM(rank < talent.maxRank ? GOSSIP_ICON_TRAINER : GOSSIP_ICON_CHAT, text.c_str(), SENDER_BUY, action);
     }
 
@@ -205,14 +190,12 @@ bool GossipHello_npc_bonk_mastery(Player* player, Creature* creature)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
 
-    // Classes whose trees are not out yet still bank their experience.
     if (!sBonkMastery.HasTrees(player->GetClass()))
     {
         player->SEND_GOSSIP_MENU(BONK_TEXT_MASTERY_SOON, creature->GetObjectGuid());
         return true;
     }
 
-    // The addon hides this menu and shows the class's trees.
     if (bonk->IsAddonReady())
     {
         bonk->OpenShop(BONK_SHOP_MASTERY, creature);
@@ -237,13 +220,13 @@ bool GossipHello_npc_bonk_mastery(Player* player, Creature* creature)
         player->ADD_GOSSIP_ITEM(rank < node.maxRank ? GOSSIP_ICON_TRAINER : GOSSIP_ICON_CHAT, text.c_str(), SENDER_BUY,
             GOSSIP_ACTION_INFO_DEF + node.id);
     }
-    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_INTERACT_1, "Take my points back (free)", SENDER_BUY, MASTERY_ACTION_RESPEC);
+    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_INTERACT_1, "Reset my talents (free)", SENDER_BUY, MASTERY_ACTION_RESPEC);
 
     player->SEND_GOSSIP_MENU(BONK_TEXT_MASTERY, creature->GetObjectGuid());
     return true;
 }
 
-bool GossipSelect_npc_bonk_mastery(Player* player, Creature* creature, uint32 /*sender*/, uint32 action)
+bool GossipSelect_npc_bonk_mastery(Player* player, Creature* creature, uint32 , uint32 action)
 {
     std::string message;
     if (action == MASTERY_ACTION_RESPEC)
@@ -263,7 +246,6 @@ bool GOHello_go_bonk_chest(Player* player, GameObject* go)
     return true;
 }
 
-// The wandering vendor in a run: his shelf, no gossip menu.
 bool GossipHello_npc_bonk_vendor(Player* player, Creature* creature)
 {
     if (BonkRun* run = player->GetBonkPlayer()->GetRun())
@@ -271,7 +253,6 @@ bool GossipHello_npc_bonk_vendor(Player* player, Creature* creature)
     return true;
 }
 
-// A shrine's model at a run's spot: Greed Totem, Challenge Altar.
 bool GOHello_go_bonk_shrine(Player* player, GameObject* go)
 {
     if (BonkRun* run = player->GetBonkPlayer()->GetRun())
@@ -287,18 +268,17 @@ bool GOHello_go_bonk_portal(Player* player, GameObject* go)
 
     if (BonkMap const* next = run->GetNextMap())
     {
-        // Past an endless difficulty's last stage: Endless.
         BonkTier const& tier = run->GetTier();
         bool const endless = tier.stages && run->GetStage() + 1 > tier.stages;
-        std::string const text = std::string(endless ? "Endless - " : "") + "Stage " + std::to_string(run->GetStage() + 1) + ": " + next->name;
+        std::string const text = std::string(endless ? "Go on to Endless stage " : "Go on to stage ") + std::to_string(run->GetStage() + 1) + ": " + next->name;
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, text.c_str(), GOSSIP_SENDER_MAIN, PORTAL_ACTION_NEXT);
     }
-    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Return to camp (end the run)", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME);
+    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Return to camp (ends the run)", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME);
     player->SEND_GOSSIP_MENU(BONK_TEXT_PORTAL, go->GetObjectGuid());
     return true;
 }
 
-bool GOGossipSelect_go_bonk_portal(Player* player, GameObject* go, uint32 /*sender*/, uint32 action)
+bool GOGossipSelect_go_bonk_portal(Player* player, GameObject* go, uint32 , uint32 action)
 {
     BonkRun* run = player->GetBonkPlayer()->GetRun();
     if (!run || !run->IsOwnPortal(go))
@@ -307,7 +287,6 @@ bool GOGossipSelect_go_bonk_portal(Player* player, GameObject* go, uint32 /*send
         return true;
     }
 
-    // Home with the Extraction Vault empty though a find could come: ask.
     if (action == PORTAL_ACTION_HOME && run->IsVaultEmptyWithFinds())
     {
         player->PlayerTalkClass->ClearMenus();
@@ -330,7 +309,6 @@ bool GOGossipSelect_go_bonk_portal(Player* player, GameObject* go, uint32 /*send
     return true;
 }
 
-// A hidden encounter's object (a suspicious bush): poked, it springs.
 bool GOHello_go_bonk_hidden(Player* player, GameObject* go)
 {
     if (BonkRun* run = player->GetBonkPlayer()->GetRun())
@@ -350,14 +328,13 @@ bool GOHello_go_bonk_vault(Player* player, GameObject* go)
         return true;
     }
 
-    // Without the addon: the finds as gossip lines.
     for (BonkRun::VaultFind const& find : run->GetVaultFinds())
     {
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(find.entry);
         if (!proto)
             continue;
         std::string const text = find.inVault ? std::string("In the vault: ") + proto->Name1 + " (take it out)" :
-            std::string("Put in the vault: ") + proto->Name1 + " (else sold for " + std::to_string(find.sellCopper / 100) + "s)";
+            std::string("Put in the vault: ") + proto->Name1 + " (otherwise it sells for " + std::to_string(find.sellCopper / 100) + "s)";
         player->ADD_GOSSIP_ITEM(find.inVault ? GOSSIP_ICON_INTERACT_1 : GOSSIP_ICON_VENDOR, text.c_str(),
             find.inVault ? SENDER_VAULT_TAKE : SENDER_VAULT_PUT, find.guid.GetCounter());
     }

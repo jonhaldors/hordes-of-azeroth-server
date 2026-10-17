@@ -1,16 +1,3 @@
-/*
- * Vanilla Bonk: spawn points, the spots a stage's objectives (shrines, the
- * wandering vendor, mini-events) appear at.
- *
- * The stage gathers them a candidate at a time while it runs, around wherever
- * the hero is, so there is always a spot some way off worth walking to. A
- * spot is on the ground inside the arena, out of water, with a path from the
- * hero no longer than a detour (so not up a cliff or behind a wall), at least
- * BONK_SPOT_SPREAD from every other spot and clear of where the stage
- * started. Spots left far behind make room for new ones. An objective takes a
- * spot for as long as it stands, and gives it back after.
- */
-
 #ifndef BONK_SPAWN_POINTS_H
 #define BONK_SPAWN_POINTS_H
 
@@ -30,23 +17,14 @@ struct BonkSpot
 class BonkSpawnPoints
 {
     public:
-        // A new stage, starting at this spot.
         void Reset(float startX, float startY, float startZ);
-        // Tries a candidate now and then; `zoneId` bounds the arena (0: the
-        // whole map).
         void Update(Player* hero, uint32 zoneId, uint32 diff);
 
-        // A free spot `minDistance` to `maxDistance` yards from the hero, now
-        // taken; false if there is none yet.
         bool Take(Player const* hero, float minDistance, float maxDistance, BonkSpot& spot);
-        // The same, among the spots `fits` accepts.
         bool Take(Player const* hero, float minDistance, float maxDistance, BonkSpot& spot, std::function<bool(BonkSpot const&)> const& fits);
-        // Gives back the spot taken at x, y.
         void Release(float x, float y);
 
         std::vector<BonkSpot> const& GetSpots() const { return m_spots; }
-        // The spots found since the last call (the run learns starting spots
-        // from them, BonkRun::LearnStarts).
         std::vector<BonkSpot> TakeFresh();
 
     private:

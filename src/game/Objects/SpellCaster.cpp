@@ -32,13 +32,8 @@
 
 namespace
 {
-    // Vanilla Bonk: Might and gear Power raise all damage a hero (or their
-    // pet) deals to run enemies, like a damage done aura for every school;
-    // Class Mastery adds to the hero's own spells (`spell`, null for a swing).
-    // A summon counts only its share of Power (BonkRun::GetPowerShare).
     float GetBonkDamageMultiplier(Unit const* attacker, Unit const* victim, SpellEntry const* spell)
     {
-        // Run enemies are summoned, not owned, so this skips only players and their pets.
         if (!attacker || victim->GetCharmerOrOwnerPlayerOrPlayerItself())
             return 1.0f;
 
@@ -47,12 +42,8 @@ namespace
         return run ? run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetPowerShare(attacker)) : 1.0f;
     }
 
-    // Vanilla Bonk: a hero's spells in a run deal a share of the enemies'
-    // health, which already grows with level. Scaling that damage by the
-    // caster's level again (spells made for creatures) would count it twice.
     bool HasBonkRunDamage(SpellCaster const* caster, SpellEntry const* spell, SpellEffectIndex index)
     {
-        // A hero's projectile casts on the hero's behalf (BonkRun projectiles).
         Player const* player = caster->ToPlayer();
         if (!player && caster->IsCreature() && caster->GetEntry() == BONK_PROJECTILE)
             player = caster->ToUnit()->GetCharmerOrOwnerPlayerOrPlayerItself();
@@ -487,8 +478,6 @@ void SpellCaster::RollMeleeOutcomeAgainst(MeleeHitOutcome& outHitOutcome, uint32
         return;
     }
 
-    // Vanilla Bonk: a hero's attacks on run enemies always land, except
-    // that elites and bosses dodge, and crit by the hero's Crit.
     if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
     {
         if (run->RollDodge(pVictim))
@@ -838,7 +827,6 @@ SpellMissInfo SpellCaster::MagicSpellHitResult(Unit const* pVictim, SpellEntry c
     if (!pVictim->IsAlive())
         return SPELL_MISS_NONE;
 
-    // Vanilla Bonk: a hero's spells never miss run enemies; elites and bosses dodge.
     if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
         return run->RollDodge(pVictim) ? SPELL_MISS_DODGE : SPELL_MISS_NONE;
 
@@ -1024,10 +1012,10 @@ void SpellCaster::SendSpellOrDamageImmune(Unit const* target, uint32 spellId) co
 
 uint32 SpellCaster::SpellCriticalDamageBonus(SpellEntry const* spellProto, uint32 damage, Unit const* pVictim, Spell* spell)
 {
-    // Vanilla Bonk: Crit Damage, and a second crit past 100% crit chance.
-    if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
+    if (BonkRun* run = BonkRun::FromAttack(this, pVictim))
     {
         bool const weaponAttack = spellProto->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_RANGED;
+        run->OnCriticalStrike(this, spellProto, pVictim);
         return uint32(damage * run->RollCritMultiplier(weaponAttack, pVictim));
     }
 
@@ -2142,7 +2130,6 @@ void SpellCaster::InterruptSpellsWithChannelFlags(uint32 flags, uint32 except)
     if (Spell* spell = m_currentSpells[CURRENT_CHANNELED_SPELL])
         if (spell->getState() == SPELL_STATE_CASTING)
         {
-            // Vanilla Bonk: a run weapon keeps channeling while the hero moves.
             uint32 const checked = spell->IsBonkWeapon() ? flags & ~uint32(AURA_INTERRUPT_MOVING_CANCELS | AURA_INTERRUPT_TURNING_CANCELS) : flags;
             if ((spell->m_spellInfo->ChannelInterruptFlags & checked) && spell->m_spellInfo->Id != except)
                 InterruptSpell(CURRENT_CHANNELED_SPELL);

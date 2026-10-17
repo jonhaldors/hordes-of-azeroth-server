@@ -1,29 +1,3 @@
-/*
- * Vanilla Bonk: the wandering vendor (feature plan, Phase 3).
- *
- * Zixil, a goblin merchant, stops by once or twice a stage (never in an
- * arena) at a random time between 2:00 and 8:00, never while a boss or
- * mini-boss is up. He stands at a spawn point some way off, under a vendor
- * objective whose pin counts down the minute he stays. Clicked, he pauses
- * the run like a level-up and shows his shelf: three cards from the
- * level-up pool (spell ranks roll their rarity with Luck), a Darkmoon Card
- * drawn as a chest's, and a special slot, a Reroll, Banish or Skip charge. Everything costs Valor, about 1.5x
- * the current chest price; rarer spell ranks cost more. Any number may be
- * bought while the Valor lasts.
- *
- * Rerolling the shelf costs Valor too, 50% more each time, back to the start
- * at the next visit. Locking a slot is free; locked slots not bought come
- * back at the next visit, even a later stage's, at the same price.
- *
- * Addon: "vendor~valor~rerollCost~secondsLeft~name", then for each slot
- * "vslot~index~kind~rank~maxRank~name~icon~description~rarity~locked~price~state"
- * (kind, rank, maxRank and rarity as the level-up's opt, kind c for a
- * charge, d for a Darkmoon Card with its copy and max copies; state 0 for sale, 1 bought, 2 no longer fits the build), then
- * "vendorend"; "vendorclose" when it closes. `.bonk vendor buy <slot>`,
- * `.bonk vendor lock <slot>`, `.bonk vendor reroll` and `.bonk vendor close`
- * answer it.
- */
-
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -37,30 +11,28 @@
 
 namespace
 {
-    uint32 const BONK_VENDOR_ENTRY         = 900010;    // Zixil
-    size_t const BONK_VENDOR_DARKMOON_SLOTS = 1;        // Darkmoon Cards on his shelf
-    uint32 const BONK_VENDOR_SECONDS       = 60;        // he stays this long
-    uint32 const BONK_VENDOR_EARLIEST      = 120;       // stage seconds: he comes from 2:00...
-    uint32 const BONK_VENDOR_LATEST        = 480;       // ...to 8:00...
-    uint32 const BONK_VENDOR_BOSS_MARGIN   = 60;        // ...and gone before the boss
-    uint32 const BONK_VENDOR_GAP           = 60;        // two visits a stage at least this far apart
-    uint32 const BONK_VENDOR_CHECK_MS      = 1000;      // a due visit looks for its chance this often
-    float const BONK_VENDOR_MIN_DISTANCE   = 100.0f;    // from the hero...
-    float const BONK_VENDOR_MAX_DISTANCE   = 250.0f;    // ...to this far: a walk, not a trek
+    uint32 const BONK_VENDOR_ENTRY         = 900010;
+    size_t const BONK_VENDOR_DARKMOON_SLOTS = 1;
+    uint32 const BONK_VENDOR_SECONDS       = 60;
+    uint32 const BONK_VENDOR_EARLIEST      = 120;
+    uint32 const BONK_VENDOR_LATEST        = 480;
+    uint32 const BONK_VENDOR_BOSS_MARGIN   = 60;
+    uint32 const BONK_VENDOR_GAP           = 60;
+    uint32 const BONK_VENDOR_CHECK_MS      = 1000;
+    float const BONK_VENDOR_MIN_DISTANCE   = 100.0f;
+    float const BONK_VENDOR_MAX_DISTANCE   = 250.0f;
 
-    // Prices, times the current chest price.
     float const BONK_VENDOR_CARD_PRICE     = 1.5f;
-    float const BONK_VENDOR_RARITY_PRICE[MAX_BONK_RARITY] = { 0.8f, 1.0f, 1.25f, 1.6f, 2.0f };    // spell ranks
+    float const BONK_VENDOR_RARITY_PRICE[MAX_BONK_RARITY] = { 0.8f, 1.0f, 1.25f, 1.6f, 2.0f };
     float const BONK_VENDOR_CHARGE_PRICE   = 1.0f;
-    float const BONK_VENDOR_REROLL_PRICE   = 0.5f;      // the first reroll of a visit...
-    float const BONK_VENDOR_REROLL_GROWTH  = 0.5f;      // ...and 50% of that more for each one since
+    float const BONK_VENDOR_REROLL_PRICE   = 0.5f;
+    float const BONK_VENDOR_REROLL_GROWTH  = 0.5f;
 
     char const* const BONK_VENDOR_NAME        = "Zixil";
     char const* const BONK_VENDOR_LABEL       = "Wandering Merchant";
     char const* const BONK_VENDOR_ICON        = "INV_Misc_Bag_10";
     char const* const BONK_VENDOR_DESCRIPTION = "Zixil sells spells and upgrades for Valor. Click him before he moves on.";
 
-    // The special slot.
     enum BonkVendorCharge : uint8
     {
         BONK_VENDOR_CHARGE_REROLL = 0,
@@ -71,9 +43,9 @@ namespace
     char const* const CHARGE_NAMES[MAX_BONK_VENDOR_CHARGE] = { "Reroll", "Banish", "Skip" };
     char const* const CHARGE_ICONS[MAX_BONK_VENDOR_CHARGE] = { "Spell_Nature_Reincarnation", "Spell_Shadow_Cripple", "Ability_Rogue_Sprint" };
     char const* const CHARGE_DESCRIPTIONS[MAX_BONK_VENDOR_CHARGE] = {
-        "One more Reroll for your level-ups and chests: new cards to choose from.",
-        "One more Banish: take a card out of this run for good.",
-        "One more Skip: pass on a choice for a little Valor.",
+        "Gives you 1 more Reroll, to draw new choices on a level-up or chest.",
+        "Gives you 1 more Banish, to remove a choice from this run for good.",
+        "Gives you 1 more Skip, to pass on a choice for a little Valor.",
     };
 }
 
@@ -90,7 +62,6 @@ void BonkRun::ResetVendor()
     if (latest < BONK_VENDOR_EARLIEST)
         return;
 
-    // Once or twice; twice splits the window, so the two never come together.
     if (urand(0, 1) && latest >= BONK_VENDOR_EARLIEST + 2 * BONK_VENDOR_GAP)
     {
         uint32 const middle = (BONK_VENDOR_EARLIEST + latest) / 2;
@@ -124,7 +95,6 @@ void BonkRun::UpdateVendor(uint32 diff)
         return;
     m_vendorCheckMs = 0;
 
-    // A visit held back by a boss until too close to the stage's own lapses.
     if (m_elapsedMs / IN_MILLISECONDS + BONK_VENDOR_BOSS_MARGIN + BONK_VENDOR_SECONDS >= m_map.durationSeconds)
     {
         m_vendorVisits.clear();
@@ -167,13 +137,12 @@ bool BonkRun::SpawnVendor()
     m_vendorObjective = m_objectives.Add(m_player, BONK_OBJECTIVE_VENDOR, spot.x, spot.y, spot.z, BONK_VENDOR_LABEL, BONK_VENDOR_SECONDS,
         BONK_VENDOR_ICON, BONK_VENDOR_DESCRIPTION);
     StockVendor(false);
-    m_player->GetBonkPlayer()->Notify("A goblin merchant has set up shop nearby - for one minute!");
+    m_player->GetBonkPlayer()->Notify(std::string(BONK_VENDOR_NAME) + " the goblin merchant has set up shop nearby for 1 minute!");
     return true;
 }
 
 void BonkRun::StockVendor(bool reroll)
 {
-    // Locked slots stay: through a reroll, or from the last visit.
     std::vector<VendorSlot> locked;
     if (reroll)
     {
@@ -187,7 +156,6 @@ void BonkRun::StockVendor(bool reroll)
         m_vendorKept.clear();
     }
 
-    // Spell and passive cards apart from Darkmoon Cards: each has its draw.
     std::vector<Offer> kept, shown, keptDarkmoon, shownDarkmoon;
     for (VendorSlot const& slot : locked)
         if (!slot.isCharge)
@@ -197,12 +165,9 @@ void BonkRun::StockVendor(bool reroll)
             if (!slot.isCharge)
                 (slot.card.isCard ? shownDarkmoon : shown).push_back(slot.card);
 
-    // The level-up's draw: locked cards first, as they are now, then new
-    // ones, a reroll's last ones only once fresh ones run out.
     std::vector<Offer> cards;
     OfferUpgrades(OFFER_LEVEL, reroll ? &shown : nullptr, &kept, &cards);
 
-    // And a Darkmoon Card, drawn as a chest's (Core loop v2 phase E).
     if (!sBonkMgr.GetCards().empty())
     {
         std::vector<Offer> darkmoon;
@@ -217,7 +182,8 @@ void BonkRun::StockVendor(bool reroll)
         slot.card = card;
         slot.price = GetVendorPrice(&card);
         for (VendorSlot const& old : locked)
-            if (!old.isCharge && old.card.isWeapon == card.isWeapon && old.card.isCard == card.isCard && old.card.id == card.id)
+            if (!old.isCharge && old.card.isWeapon == card.isWeapon && old.card.isCard == card.isCard && old.card.id == card.id &&
+                old.card.evolveTo == card.evolveTo)
             {
                 slot.price = old.price;
                 slot.locked = true;
@@ -237,8 +203,6 @@ void BonkRun::StockVendor(bool reroll)
 
 void BonkRun::CheckVendorStock()
 {
-    // What the build took since (a level-up, another card) may leave a card
-    // no longer fitting, or its spell a rank further on: shown as it is now.
     for (VendorSlot& slot : m_vendorStock)
     {
         if (slot.isCharge || slot.state != VENDOR_FOR_SALE)
@@ -263,7 +227,6 @@ uint32 BonkRun::GetVendorPrice(Offer const* card) const
         if ((card->isCard || (card->isWeapon && card->step != BONK_STEP_NEW)) && card->rarity < MAX_BONK_RARITY)
             scale *= BONK_VENDOR_RARITY_PRICE[card->rarity];
     }
-    // Haggle works here as at a chest.
     return std::max(1u, uint32(GetChestPrice() * scale + 0.5f));
 }
 
@@ -297,7 +260,6 @@ void BonkRun::CloseVendor()
         return;
     m_vendorOpen = false;
     m_player->GetBonkPlayer()->SendAddon("vendorclose");
-    // A level-up that came meanwhile pauses again right away.
     SetPaused(false);
     UpdateOffers();
 }
@@ -306,7 +268,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = "The merchant isn't showing his wares.";
+        error = std::string(BONK_VENDOR_NAME) + "'s shop isn't open.";
         return false;
     }
     if (index < 1 || index > m_vendorStock.size())
@@ -342,7 +304,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
             case BONK_VENDOR_CHARGE_BANISH: ++m_banishes; break;
             default:                        ++m_skips; break;
         }
-        name = std::string(CHARGE_NAMES[slot.charge < MAX_BONK_VENDOR_CHARGE ? slot.charge : BONK_VENDOR_CHARGE_SKIP]) + " charge";
+        name = std::string("1 more ") + CHARGE_NAMES[slot.charge < MAX_BONK_VENDOR_CHARGE ? slot.charge : BONK_VENDOR_CHARGE_SKIP];
     }
     else
     {
@@ -355,7 +317,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
         CheckVendorStock();
     }
 
-    m_player->GetBonkPlayer()->Notify("Bought " + name + ".");
+    m_player->GetBonkPlayer()->Notify("You bought " + name + ".");
     SendState();
     SendVendor();
     return true;
@@ -387,7 +349,7 @@ bool BonkRun::LockVendorSlot(uint32 index, std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = "The merchant isn't showing his wares.";
+        error = std::string(BONK_VENDOR_NAME) + "'s shop isn't open.";
         return false;
     }
     if (index < 1 || index > m_vendorStock.size() || m_vendorStock[index - 1].state != VENDOR_FOR_SALE)
@@ -405,7 +367,7 @@ bool BonkRun::RerollVendor(std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = "The merchant isn't showing his wares.";
+        error = std::string(BONK_VENDOR_NAME) + "'s shop isn't open.";
         return false;
     }
     uint32 const cost = GetVendorRerollCost();
@@ -452,7 +414,6 @@ void BonkRun::DespawnVendor()
         m_player->GetBonkPlayer()->SendAddon("vendorclose");
     }
 
-    // Locked slots not bought wait for the next visit.
     for (VendorSlot const& slot : m_vendorStock)
         if (slot.locked && slot.state == VENDOR_FOR_SALE)
             m_vendorKept.push_back(slot);
@@ -493,7 +454,6 @@ void BonkRun::SendVendor() const
             {
                 Offer const& card = slot.card;
                 name = DescribeOffer(card, &icon);
-                // d: a Darkmoon Card (c is a charge here); its rank is the copy.
                 kind = card.isCard ? "d" : card.step == BONK_STEP_EVOLVE ? "e" : card.isWeapon ? "w" : "p";
                 rank = card.newLevel;
                 if (card.isCard)
@@ -532,7 +492,7 @@ void BonkRun::SendVendor() const
                 name += std::string(" (") + GetBonkRarityName(slot.card.rarity) + ")";
             name += ": " + DescribeStep(slot.card);
         }
-        char const* state = slot.state == VENDOR_SOLD ? " - bought" : slot.state == VENDOR_GONE ? " - no longer fits" : slot.locked ? " - locked" : "";
-        handler.PSendSysMessage("  %u) %s - %u Valor%s", uint32(i + 1), name.c_str(), slot.price, state);
+        char const* state = slot.state == VENDOR_SOLD ? ", bought" : slot.state == VENDOR_GONE ? ", no longer fits" : slot.locked ? ", locked" : "";
+        handler.PSendSysMessage("  %u) %s (%u Valor%s)", uint32(i + 1), name.c_str(), slot.price, state);
     }
 }

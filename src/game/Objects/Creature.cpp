@@ -55,6 +55,7 @@
 #include "GuardMgr.h"
 #include "Utilities/Random.h"
 #include "Bonk/BonkMobAI.h"
+#include "Bonk/BonkSandbox.h"
 
 namespace
 {
@@ -1029,7 +1030,7 @@ void Creature::Update(uint32 update_diff, uint32 diff)
                 }
             }
 
-            if (unreachableTarget)
+            if (unreachableTarget && !IsBonkEnemy())
             {
                 m_targetNotReachableTimer += update_diff;
                 if (GetMapId() == MAP_ALTERAC_VALLEY && CanHaveThreatList() && m_targetNotReachableTimer > 1000) // Alterac Valley exploit fix
@@ -2473,14 +2474,9 @@ bool Creature::IsImmuneToSpell(SpellEntry const* spellInfo, bool castOnSelf) con
 
     if (!castOnSelf)
     {
-        // Vanilla Bonk: on run enemies the spell's mechanic only blocks its
-        // auras (see IsImmuneToSpellEffect), so a stun-immune boss still
-        // takes the damage of a spell that also stuns.
         if (spellInfo->Mechanic && GetCreatureInfo()->mechanic_immune_mask & (1 << (spellInfo->Mechanic - 1)) && !IsBonkRunEnemy(this))
             return true;
 
-        // Vanilla Bonk: run enemies take only their looks from the template,
-        // so a fire elemental is not immune to fire.
         if ((GetCreatureInfo()->school_immune_mask & (1 << spellInfo->School)) && !spellInfo->IsPositiveSpell() && !IsBonkRunEnemy(this))
             return true;
     }
@@ -2508,8 +2504,6 @@ bool Creature::IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectInd
     if (!mechanic && spellInfo->EffectApplyAuraName[index] && IsBonkRunEnemy(this))
         mechanic = spellInfo->Mechanic;
 
-    // Vanilla Bonk: elementals, undead and machines bleed in a run like
-    // everything else.
     if (mechanic == MECHANIC_BLEED && IsBonkRunEnemy(this))
         mechanic = 0;
 
@@ -2526,6 +2520,9 @@ bool Creature::IsVisibleInGridForPlayer(Player const* pl) const
         return true;
 
     if (HasExtraFlag(CREATURE_FLAG_EXTRA_INVISIBLE))
+        return false;
+
+    if (BonkSandbox::IsHiddenFrom(this, pl))
         return false;
 
     // Live player (or with not release body see live creatures or death creatures with corpse disappearing time > 0

@@ -1,7 +1,3 @@
-/*
- * Vanilla Bonk: run statistics and the boss bar.
- */
-
 #include "BonkRunStats.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -30,7 +26,6 @@ namespace
         std::string lastLine;
     };
 
-    // Map threads update players on different maps at once.
     std::mutex s_lock;
     std::map<ObjectGuid, BonkRunStats> s_stats;
     std::map<ObjectGuid, BossBar> s_bossBars;
@@ -39,6 +34,45 @@ namespace
     {
         return player->GetBonkPlayer()->GetRun() != nullptr;
     }
+
+    char const* const BONK_SCHOOL_TYPES[MAX_SPELL_SCHOOL] = { "phys", "holy", "fire", "nature", "frost", "shadow", "arcane" };
+
+    std::string SchoolType(uint32 spellId)
+    {
+        SpellEntry const* spellInfo = spellId ? sSpellMgr.GetSpellEntry(spellId) : nullptr;
+        return BONK_SCHOOL_TYPES[spellInfo && spellInfo->School < MAX_SPELL_SCHOOL ? spellInfo->School : SPELL_SCHOOL_NORMAL];
+    }
+
+    std::string DamageType(uint32 spellId)
+    {
+        if (BonkKeywordInfo const* keyword = spellId ? sBonkMgr.GetKeywordBySpell(spellId) : nullptr)
+        {
+            switch (keyword->id)
+            {
+                case BONK_KEYWORD_BLEED:   return "bleed";
+                case BONK_KEYWORD_POISON:  return "poison";
+                case BONK_KEYWORD_BURNING: return "burn";
+                default:                   break;
+            }
+        }
+        return SchoolType(spellId);
+    }
+}
+
+std::string BonkStats::DescribeDamageTypes(ObjectGuid player, uint32 spellId)
+{
+    std::string text = SchoolType(spellId);
+    std::lock_guard<std::mutex> guard(s_lock);
+    auto stats = s_stats.find(player);
+    if (stats == s_stats.end())
+        return text;
+    auto dots = stats->second.dotBySpell.find(spellId);
+    if (dots == stats->second.dotBySpell.end())
+        return text;
+    for (auto const& dot : dots->second)
+        if (dot.second.damage)
+            text += "/" + DamageType(dot.first) + ":" + std::to_string(dot.second.damage);
+    return text;
 }
 
 void BonkStats::Reset(ObjectGuid player)
@@ -110,8 +144,6 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
     bonk->SendAddon("sum~" + std::to_string(stats.damageTaken) + "~" + std::to_string(stats.kindKills[BONK_SPAWN_ELITE]) + "~" +
         std::to_string(stats.kindKills[BONK_SPAWN_MINIBOSS]) + "~" + std::to_string(stats.kindKills[BONK_SPAWN_BOSS]));
 
-    // Each weapon's row holds every spell it deals damage with; weapons
-    // sharing a spell (an evolution and its base) share one row.
     std::set<uint32> sent;
     for (BonkSummaryWeapon const& weapon : weapons)
     {
@@ -131,9 +163,8 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
             kills += itr->second.kills;
         }
         bonk->SendAddon("sumw~" + weapon.icon + "~" + weapon.name + "~" + std::to_string(weapon.level) + "~" + std::to_string(weapon.maxLevel) + "~" +
-            (weapon.evolved ? "1" : "0") + "~" + std::to_string(damage) + "~" + std::to_string(kills));
+            (weapon.evolved ? "1" : "0") + "~" + std::to_string(damage) + "~" + std::to_string(kills) + "~" + SchoolType(weapon.spellId));
 
-        // The damage over time it put on, part of the row above.
         std::map<uint32, BonkRunStats::Spell> dots;
         for (uint32 spellId : spellIds)
         {
@@ -156,8 +187,6 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
         }
     }
 
-    // The hero's own weapon swings, keywords (Burning, Bleed, Poison) by
-    // their names, then any other spell by its name.
     for (auto const& itr : stats.bySpell)
     {
         if (sent.count(itr.first) || (!itr.second.damage && !itr.second.kills))
@@ -176,7 +205,8 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
         }
         else if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(itr.first))
             name = spellInfo->SpellName[0];
-        bonk->SendAddon("sumw~" + icon + "~" + name + "~0~0~0~" + std::to_string(itr.second.damage) + "~" + std::to_string(itr.second.kills));
+        bonk->SendAddon("sumw~" + icon + "~" + name + "~0~0~0~" + std::to_string(itr.second.damage) + "~" + std::to_string(itr.second.kills) + "~" +
+            DamageType(itr.first));
     }
 
     bonk->SendAddon("sumend");
@@ -194,7 +224,6 @@ void BonkStats::UpdateBossBar(Player* player, uint32 diff)
         return;
     bar->timer = 0;
 
-    // The stage boss first, else the nearest mini-boss.
     Creature* shown = nullptr;
     if (player->IsInWorld() && !player->IsBeingTeleported())
     {
@@ -246,7 +275,6 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
     uint32 const health = victim->GetHealth();
     uint32 const dealt = std::min(damage, health);
 
-    // A hero's beast counts for the spell that called it.
     bool const swing = !spellProto;
     Player* owner = nullptr;
     if (attacker->IsCreature() && !victim->IsPlayer())
@@ -262,31 +290,24 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (!victim->IsCreature() || !InRun(player))
             return;
 
-        // Damage over time counts for the spells that put its stacks on
-        // (Serpent Sting's Poison, the cat's Bleed), shared by their damage;
-        // a kill for the largest share.
         BonkRun* run = player->GetBonkPlayer()->GetRun();
         std::vector<std::pair<uint32, uint32>> credits;
         if (spellProto)
             run->CreditDamageOverTime(victim, spellProto->Id, dealt, credits);
-        // The keyword's spell, when this was damage over time a spell put on.
         uint32 const dotSpellId = !credits.empty() ? spellProto->Id : 0;
         if (credits.empty())
             credits.emplace_back(spellProto ? spellProto->Id : 0, dealt);
 
-        // Keywords: the spell's goes on the enemy; a killing blow notes its
-        // damage over time stacks, to spread when it dies.
         if (damage >= health)
             run->OnKillingBlow(victim);
         else
             run->OnWeaponHit(victim, spellProto);
-        // A frenzied pet's bite (a swing, never its own cleave) strikes on.
         if (owner && swing)
             run->OnPetBite(attacker->ToCreature(), victim);
-        // The hero's own hits and spells (their projectiles too) set off
-        // Darkmoon Cards; summons' bites and abilities never do.
         if (!owner || attacker->GetEntry() == BONK_PROJECTILE)
             run->OnHeroHit(victim, dealt, spellProto);
+        if (!owner)
+            run->CountThunderHit(spellProto);
 
         std::lock_guard<std::mutex> guard(s_lock);
         BonkRunStats& stats = s_stats[player->GetObjectGuid()];

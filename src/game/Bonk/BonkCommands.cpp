@@ -1,26 +1,49 @@
-/*
- * Vanilla Bonk: `.bonk` chat commands. The VanillaBonk addon sends these
- * too, so they are all available to players.
- */
-
 #include "BonkCodex.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
 #include "BonkRun.h"
+#include "CellImpl.h"
 #include "Chat.h"
+#include "Creature.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Player.h"
+#include "TemporarySummon.h"
 #include "WorldSession.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <list>
+
+namespace
+{
+    float const BONK_MOBINFO_SEARCH_RANGE = 50.0f;
+
+    Creature* FindNearestEnemy(Player* player)
+    {
+        std::list<Creature*> creatures;
+        MaNGOS::AnyUnitInObjectRangeCheck check(player, BONK_MOBINFO_SEARCH_RANGE);
+        MaNGOS::CreatureListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(creatures, check);
+        Cell::VisitGridObjects(player, searcher, BONK_MOBINFO_SEARCH_RANGE);
+
+        Creature* nearest = nullptr;
+        for (Creature* creature : creatures)
+            if (!creature->IsFriendlyTo(player) && (!nearest || player->GetDistance(creature) < player->GetDistance(nearest)))
+                nearest = creature;
+        return nearest;
+    }
+
+    char const* YesNo(bool value)
+    {
+        return value ? "yes" : "no";
+    }
+}
 
 bool ChatHandler::HandleBonkStartCommand(char* args)
 {
-    // .bonk start <difficulty> [dungeon]: a dungeon key (moltencore) for a
-    // dungeon mode.
     Player* player = m_session->GetPlayer();
     char* key = ExtractArg(&args);
     char* dungeonKey = ExtractArg(&args);
@@ -56,7 +79,7 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkStopCommand(char* /*args*/)
+bool ChatHandler::HandleBonkStopCommand(char*)
 {
     BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     if (!bonk->GetRun())
@@ -87,7 +110,7 @@ bool ChatHandler::HandleBonkPickCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkRerollCommand(char* /*args*/)
+bool ChatHandler::HandleBonkRerollCommand(char*)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error = "You are not in a run.";
@@ -117,7 +140,7 @@ bool ChatHandler::HandleBonkBanishCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkPassCommand(char* /*args*/)
+bool ChatHandler::HandleBonkPassCommand(char*)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error = "You are not in a run.";
@@ -167,7 +190,7 @@ bool ChatHandler::HandleBonkUnlearnCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkRespecCommand(char* /*args*/)
+bool ChatHandler::HandleBonkRespecCommand(char*)
 {
     m_session->GetPlayer()->GetBonkPlayer()->ShopRespec();
     return true;
@@ -185,7 +208,6 @@ bool ChatHandler::HandleBonkToggleCommand(char* args)
 
 bool ChatHandler::HandleBonkShardsCommand(char* args)
 {
-    // GM testing aid: give the selected character (or yourself) Talent Shards.
     uint32 count;
     if (!ExtractUInt32(&args, count) || !count)
         return false;
@@ -201,12 +223,10 @@ bool ChatHandler::HandleBonkShardsCommand(char* args)
 
 bool ChatHandler::HandleBonkSkipCommand(char* args)
 {
-    // GM testing aid: jump the stage clock forward, by default straight to
-    // the stage boss.
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
-    if (!run)
+    if (!run || run->IsSandbox())
     {
-        SendSysMessage("You are not in a run.");
+        SendSysMessage(run ? "The sandbox has no stage clock." : "You are not in a run.");
         SetSentErrorMessage(true);
         return false;
     }
@@ -229,8 +249,6 @@ bool ChatHandler::HandleBonkSkipCommand(char* args)
 
 bool ChatHandler::HandleBonkMenuCommand(char* args)
 {
-    // .bonk menu 1|0: the addon's pause menu opened or closed. Only a run
-    // cares; at camp it does nothing.
     uint32 open = 0;
     if (!ExtractUInt32(&args, open))
         return false;
@@ -241,8 +259,6 @@ bool ChatHandler::HandleBonkMenuCommand(char* args)
 
 bool ChatHandler::HandleBonkVaultCommand(char* args)
 {
-    // .bonk vault put|take <item guid>: the Extraction Vault's window
-    // (Phase F8); the run answers with the vault again.
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     char* action = ExtractLiteralArg(&args);
     uint32 guidLow = 0;
@@ -261,8 +277,6 @@ bool ChatHandler::HandleBonkVaultCommand(char* args)
 
 bool ChatHandler::HandleBonkUnlockCommand(char* args)
 {
-    // .bonk unlock w|p|c <id>: buy a spell, passive or card whose quest is
-    // done (the codex's Buy button), then the codex again.
     char* kind = ExtractLiteralArg(&args);
     uint32 id = 0;
     BonkQuestReward type = MAX_BONK_REWARD;
@@ -290,36 +304,8 @@ bool ChatHandler::HandleBonkUnlockCommand(char* args)
     return bought;
 }
 
-bool ChatHandler::HandleBonkBakeCommand(char* args)
-{
-    // .bonk bake <map key|hidden|all> | next | stop: the Bestiary's portrait
-    // bake (a GM's dev tool; the addon's bake mode answers `next`).
-    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
-    std::string const what = args && *args ? args : "";
-    if (what == "next")
-    {
-        bonk->BakeNext();
-        return true;
-    }
-    if (what == "stop")
-    {
-        bonk->StopBake();
-        return true;
-    }
-    std::string error;
-    if (what.empty() || !bonk->StartBake(what, error))
-    {
-        SendSysMessage(what.empty() ? "Use .bonk bake <map key|hidden|all>, next or stop." : error.c_str());
-        SetSentErrorMessage(true);
-        return false;
-    }
-    return true;
-}
-
 bool ChatHandler::HandleBonkPoolCommand(char* args)
 {
-    // .bonk pool c|g <id> on|off: the codex's pool toggle (cards and Glyphs,
-    // as many as Stacked Deck allows), then the codex again.
     char* kind = ExtractLiteralArg(&args);
     uint32 id = 0;
     BonkQuestReward type = MAX_BONK_REWARD;
@@ -353,7 +339,6 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
 
 bool ChatHandler::HandleBonkGlyphCommand(char* args)
 {
-    // .bonk glyph <n>: the Glyph choice that is up.
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     uint32 choice = 0;
     if (!run || !ExtractUInt32(&args, choice))
@@ -374,7 +359,6 @@ bool ChatHandler::HandleBonkGlyphCommand(char* args)
 
 bool ChatHandler::HandleBonkGearCommand(char* args)
 {
-    // The gear a run just dropped: wear it for the run, or salvage it.
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
     {
@@ -403,7 +387,6 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
 
 bool ChatHandler::HandleBonkCardCommand(char* args)
 {
-    // GM testing aid: take a Darkmoon Card as if a chest gave it.
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
     {
@@ -426,10 +409,68 @@ bool ChatHandler::HandleBonkCardCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkGodCommand(char* /*args*/)
+bool ChatHandler::HandleBonkEvolveCommand(char* args)
 {
-    // GM testing aid: toggle god mode (damage stops at 1 health). It stays on
-    // through run starts until toggled off or the character logs out.
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+    {
+        SendSysMessage("You are not in a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 weaponId = 0;
+    if (!ExtractUInt32(&args, weaponId))
+        return false;
+
+    std::string error;
+    if (!run->ForceEvolve(weaponId, error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
+}
+
+bool ChatHandler::HandleBonkPassiveCommand(char* args)
+{
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+    {
+        SendSysMessage("You are not in a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 passiveId = 0;
+    if (!ExtractUInt32(&args, passiveId))
+        return false;
+
+    std::string error;
+    if (!run->GivePassive(passiveId, error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
+}
+
+bool ChatHandler::HandleBonkMasteryCommand(char* args)
+{
+    uint32 xp = 0;
+    if (!ExtractUInt32(&args, xp) || !xp)
+        return false;
+
+    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
+    bonk->AddMasteryXp(xp);
+    PSendSysMessage("Mastery level %u, %u talent points earned.", bonk->GetMasteryLevel(), bonk->GetMasteryPoints());
+    return true;
+}
+
+bool ChatHandler::HandleBonkGodCommand(char*)
+{
     Player* player = m_session->GetPlayer();
     BonkPlayer* bonk = player->GetBonkPlayer();
     bool const on = !bonk->IsTestGod();
@@ -439,7 +480,7 @@ bool ChatHandler::HandleBonkGodCommand(char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleBonkQuestsCommand(char* /*args*/)
+bool ChatHandler::HandleBonkQuestsCommand(char*)
 {
     Player* player = m_session->GetPlayer();
     if (player->GetBonkPlayer()->IsAddonReady())
@@ -454,9 +495,8 @@ bool ChatHandler::HandleBonkQuestsCommand(char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleBonkCodexCommand(char* /*args*/)
+bool ChatHandler::HandleBonkCodexCommand(char*)
 {
-    // The spellbook is an addon window only.
     Player* player = m_session->GetPlayer();
     if (!player->GetBonkPlayer()->IsAddonReady())
     {
@@ -467,13 +507,11 @@ bool ChatHandler::HandleBonkCodexCommand(char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
+bool ChatHandler::HandleBonkHelloCommand(char*)
 {
-    // The addon announces itself; from now on it gets protocol lines.
     BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     bonk->SetAddonReady();
     bonk->SendAddon("hello~1");
-    // A reload with the pause menu open never sent its close.
     if (BonkRun* run = bonk->GetRun())
         run->SetMenuOpen(false);
     bonk->SendTierList();
@@ -489,14 +527,14 @@ bool ChatHandler::HandleBonkHelloCommand(char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleBonkMapsCommand(char* /*args*/)
+bool ChatHandler::HandleBonkMapsCommand(char*)
 {
     SendSysMessage("Difficulties:");
     m_session->GetPlayer()->GetBonkPlayer()->SendTierList();
     return true;
 }
 
-bool ChatHandler::HandleBonkCampCommand(char* /*args*/)
+bool ChatHandler::HandleBonkCampCommand(char*)
 {
     BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     if (bonk->GetRun())
@@ -510,9 +548,8 @@ bool ChatHandler::HandleBonkCampCommand(char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleBonkReloadCommand(char* /*args*/)
+bool ChatHandler::HandleBonkReloadCommand(char*)
 {
-    // Map threads read these tables without locking, so only reload between runs.
     if (m_session && m_session->GetPlayer()->GetBonkPlayer()->GetRun())
     {
         SendSysMessage("Leave the run first with .bonk stop.");
@@ -527,9 +564,6 @@ bool ChatHandler::HandleBonkReloadCommand(char* /*args*/)
 
 bool ChatHandler::HandleBonkTelegraphCommand(char* args)
 {
-    // GM testing aid: a ground warning in front of you. In a run it fires
-    // (a burst of fire, no damage); anywhere else it just fills and goes.
-    // .bonk telegraph circle|cone|line|ring [size in yards] [seconds]
     char* shapeArg = ExtractArg(&args);
     BonkTelegraphShape shape = BONK_TELEGRAPH_CIRCLE;
     if (!shapeArg || !ParseBonkTelegraphShape(shapeArg, shape))
@@ -546,7 +580,6 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
     size = std::max(0.5f, std::min(size, 60.0f));
     uint32 const durationMs = uint32(std::max(0.2f, std::min(seconds, 30.0f)) * IN_MILLISECONDS);
 
-    // Circles and rings a little ahead; cones and lines from your feet, the way you face.
     Player* player = m_session->GetPlayer();
     float const o = player->GetOrientation();
     float x = player->GetPositionX(), y = player->GetPositionY();
@@ -565,7 +598,7 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
             SetSentErrorMessage(true);
             return false;
         }
-        run->AddTelegraph(shape, x, y, z, o, size, durationMs, [run, x, y, z]() { run->Erupt(ObjectGuid(), x, y, z, 0.0f, 0); });
+        run->AddTelegraph(shape, x, y, z, o, size, durationMs, [run, x, y, z]() { run->Erupt(BonkEnemyHit(), x, y, z, 0.0f); });
     }
     else
         player->GetBonkPlayer()->PreviewTelegraph(shape, x, y, z, o, size, durationMs);
@@ -576,10 +609,6 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
 
 bool ChatHandler::HandleBonkObjectiveCommand(char* args)
 {
-    // GM testing aid: an objective marker at one of the stage's spawn points
-    // 120-250 yards away (or 30 yards ahead if none is free yet), or all of
-    // them taken away.
-    // .bonk objective shrine|vendor|event|extract [seconds] | clear
     Player* player = m_session->GetPlayer();
     BonkRun* run = player->GetBonkPlayer()->GetRun();
     if (!run || !run->IsActive())
@@ -629,10 +658,8 @@ bool ChatHandler::HandleBonkObjectiveCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkSpotsCommand(char* /*args*/)
+bool ChatHandler::HandleBonkSpotsCommand(char*)
 {
-    // GM testing aid: an event pillar on every spawn point the stage has
-    // gathered so far, for 20 seconds (seen only within the usual 100 yards).
     Player* player = m_session->GetPlayer();
     BonkRun* run = player->GetBonkPlayer()->GetRun();
     if (!run || !run->IsActive())
@@ -654,21 +681,19 @@ bool ChatHandler::HandleBonkSpotsCommand(char* /*args*/)
 
 bool ChatHandler::HandleBonkEventCommand(char* args)
 {
-    // GM testing aid: a mini-event right now, whatever the scheduler says.
-    // .bonk event horde|goblin|bounty
     char* nameArg = ExtractArg(&args);
     BonkMiniEventType type = BONK_MINI_EVENT_HORDE;
     if (!nameArg || !ParseBonkMiniEvent(nameArg, type))
     {
-        SendSysMessage("Usage: .bonk event horde|goblin|bounty");
+        SendSysMessage("Usage: .bonk event horde|goblin|bounty|kobolds|scourge|portal|stampede|caravan");
         SetSentErrorMessage(true);
         return false;
     }
 
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error;
-    if (!run)
-        error = "Mini-events need a run.";
+    if (!run || run->IsSandbox())
+        error = run ? "The sandbox has no mini-events." : "Mini-events need a run.";
     else if (run->StartMiniEventNow(type, error))
     {
         PSendSysMessage("Mini-event %s started.", GetBonkMiniEventName(type));
@@ -681,8 +706,6 @@ bool ChatHandler::HandleBonkEventCommand(char* args)
 
 bool ChatHandler::HandleBonkShrineCommand(char* args)
 {
-    // GM testing aid: a shrine at one of the stage's spawn points now.
-    // .bonk shrine leyline|greed|altar|moonwell|stone
     char* nameArg = ExtractArg(&args);
     BonkShrineType type = BONK_SHRINE_LEY_LINE;
     if (!nameArg || !ParseBonkShrine(nameArg, type))
@@ -694,8 +717,8 @@ bool ChatHandler::HandleBonkShrineCommand(char* args)
 
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error;
-    if (!run)
-        error = "Shrines need a run.";
+    if (!run || run->IsSandbox())
+        error = run ? "The sandbox has no shrines." : "Shrines need a run.";
     else if (run->PlaceShrineNow(type, error))
     {
         PSendSysMessage("Shrine %s placed.", GetBonkShrineName(type));
@@ -708,12 +731,11 @@ bool ChatHandler::HandleBonkShrineCommand(char* args)
 
 bool ChatHandler::HandleBonkLeyPickCommand(char* args)
 {
-    // A Ley Line blessing: .bonk leypick <number> (the addon's cards send it).
     uint32 index = 0;
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error;
     if (!run)
-        error = "No run.";
+        error = "You are not in a run.";
     else if (!ExtractUInt32(&args, index))
         error = "Usage: .bonk leypick <number>";
     else if (run->PickLeyBuff(index, error))
@@ -725,9 +747,6 @@ bool ChatHandler::HandleBonkLeyPickCommand(char* args)
 
 bool ChatHandler::HandleBonkVendorCommand(char* args)
 {
-    // The wandering vendor's shelf (the addon's buttons send these):
-    // .bonk vendor buy|lock <number>, .bonk vendor reroll|close, and for GMs
-    // .bonk vendor spawn.
     char* action = ExtractArg(&args);
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error;
@@ -755,7 +774,9 @@ bool ChatHandler::HandleBonkVendorCommand(char* args)
     }
     else if (!strcmp(action, "spawn") && GetAccessLevel() >= SEC_GAMEMASTER)
     {
-        if (run->SpawnVendorNow(error))
+        if (run->IsSandbox())
+            error = "The sandbox has no merchant.";
+        else if (run->SpawnVendorNow(error))
         {
             SendSysMessage("The merchant is on his way.");
             return true;
@@ -771,8 +792,6 @@ bool ChatHandler::HandleBonkVendorCommand(char* args)
 
 bool ChatHandler::HandleBonkKeywordCommand(char* args)
 {
-    // GM testing aid: stacks of a keyword on the selected enemy of your run.
-    // .bonk keyword <name, or its start> [stacks]
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run || !run->IsActive())
     {
@@ -817,9 +836,8 @@ bool ChatHandler::HandleBonkKeywordCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkScalingCommand(char* /*args*/)
+bool ChatHandler::HandleBonkScalingCommand(char*)
 {
-    // GM tuning aid: enemy health right now against each spell's hit.
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run || !run->IsActive())
     {
@@ -833,10 +851,8 @@ bool ChatHandler::HandleBonkScalingCommand(char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleBonkStressCommand(char* /*args*/)
+bool ChatHandler::HandleBonkStressCommand(char*)
 {
-    // GM testing aid: a maxed hero against a full screen, with the server
-    // tick reported every 10 seconds (BonkRunStress.cpp). Again to stop.
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run || !run->IsActive())
     {
@@ -849,11 +865,46 @@ bool ChatHandler::HandleBonkStressCommand(char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleBonkDashCommand(char* /*args*/)
+bool ChatHandler::HandleBonkDashCommand(char*)
 {
-    // The Shift dash (VanillaBonkDash.lua), at camp and in runs. One the
-    // hero can't make now (a paused run, stunned, no charge) is dropped
-    // quietly.
     m_session->GetPlayer()->GetBonkPlayer()->Dash();
+    return true;
+}
+
+bool ChatHandler::HandleBonkMobInfoCommand(char*)
+{
+    Player* player = m_session->GetPlayer();
+    Creature* mob = GetSelectedCreature();
+    if (!mob)
+        mob = FindNearestEnemy(player);
+    if (!mob)
+    {
+        PSendSysMessage("Select a creature, or stand within %.0f yards of an enemy.", BONK_MOBINFO_SEARCH_RANGE);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    PSendSysMessage("%s, entry %u, %s", mob->GetName(), mob->GetEntry(), mob->GetGuidStr().c_str());
+    PSendSysMessage("Alive: %s (death state %u), health %u of %u, despawning: %s, time frozen: %s, evading: %s", YesNo(mob->IsAlive()),
+        uint32(mob->GetDeathState()), mob->GetHealth(), mob->GetMaxHealth(), YesNo(mob->HasCreatureState(CSTATE_DESPAWNING)),
+        YesNo(mob->IsTimeFrozen()), YesNo(mob->IsInEvadeMode()));
+
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+    PSendSysMessage("Bonk AI: %s", ai ? ai->Describe().c_str() : "no");
+
+    uint32 const flags = mob->GetUInt32Value(UNIT_FIELD_FLAGS);
+    PSendSysMessage("Faction %u, unit flags 0x%08X (selectable: %s, immune to players: %s, immune to NPCs: %s), Bonk enemy: %s",
+        mob->GetFactionTemplateId(), flags, YesNo((flags & UNIT_FLAG_NOT_SELECTABLE) == 0), YesNo((flags & UNIT_FLAG_IMMUNE_TO_PLAYER) != 0),
+        YesNo((flags & UNIT_FLAG_IMMUNE_TO_NPC) != 0), YesNo(mob->IsBonkEnemy()));
+
+    ObjectGuid const summoner = mob->IsTemporarySummon() ? static_cast<TemporarySummon*>(mob)->GetSummonerGuid() : ObjectGuid();
+    PSendSysMessage("Summoned by %s, owner %s", summoner.GetString().c_str(), mob->GetCharmerOrOwnerGuid().GetString().c_str());
+    PSendSysMessage("Distance %.1f yards, line of sight: %s", player->GetDistance(mob), YesNo(player->IsWithinLOSInMap(mob)));
+
+    if (BonkRun const* run = player->GetBonkPlayer()->GetRun())
+        for (std::string const& line : run->DescribeMob(mob))
+            SendSysMessage(line.c_str());
+    else
+        SendSysMessage("You are not in a run.");
     return true;
 }

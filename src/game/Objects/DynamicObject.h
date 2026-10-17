@@ -60,12 +60,8 @@ class DynamicObject : public WorldObject
         bool IsChanneled() const { return m_channeled; }
         void AddAffected(Unit* unit);
         void RemoveAffected(Unit* unit);
-        // Base points of the cast that placed it, which may be custom; the
-        // persistent aura it applies uses them instead of the spell's own.
         void SetBasePoints(int32 basePoints) { m_basePoints = basePoints; m_hasBasePoints = true; }
         bool GetBasePoints(int32& basePoints) const { basePoints = m_basePoints; return m_hasBasePoints; }
-        // Vanilla Bonk: a run weapon's area that holds normal enemies only,
-        // passing elites, mini-bosses and bosses by (Frost Trap's slow).
         void SetBonkNormalOnly(bool normalOnly) { m_bonkNormalOnly = normalOnly; }
         bool IsBonkNormalOnly() const { return m_bonkNormalOnly; }
         void Delay(int32 delaytime);

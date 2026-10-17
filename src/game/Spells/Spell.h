@@ -336,7 +336,6 @@ class Spell
         bool m_isClientStarted = false;
         void SetClientStarted(bool isClientStarted);
         bool IsTriggered() const       { return m_IsTriggeredSpell; }
-        // Vanilla Bonk: cast by a run weapon, which channels on the move.
         bool IsBonkWeapon() const      { return m_bonkWeapon; }
         bool IsTriggeredByAura() const { return m_triggeredByAuraSpell; }
         bool IsTriggeredByProc() const;
@@ -472,7 +471,7 @@ class Spell
             uint32 hitTypeFlags; // enum SpellHitType
             uint32 meleeHitInfo; // enum HitInfo
             uint32 damage;
-            float bonkBaseDamage;   // Vanilla Bonk: before bonuses and crit, for BonkRun::HitAgain
+            float bonkBaseDamage;
             SpellMissInfo missCondition:8;
             SpellMissInfo reflectResult:8;
             uint8  effectMask:8;

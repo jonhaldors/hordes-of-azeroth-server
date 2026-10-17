@@ -36,10 +36,14 @@ set (game_SRCS
     Bonk/BonkRunGear.cpp
     Bonk/BonkRunGlyphs.cpp
     Bonk/BonkRunHidden.cpp
+    Bonk/BonkRunLooks.cpp
     Bonk/BonkRunShrines.cpp
     Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp
     Bonk/BonkRunStress.cpp
+    Bonk/BonkRunWarrior.cpp
+    Bonk/BonkSandbox.cpp
+    Bonk/BonkVersion.cpp
     Bonk/BonkSpawnPoints.cpp
     Bonk/BonkTelegraph.cpp
     Camera.cpp
@@ -284,6 +288,7 @@ set (game_SRCS
     Bonk/BonkQuests.h
     Bonk/BonkRun.h
     Bonk/BonkRunStats.h
+    Bonk/BonkSandbox.h
     Bonk/BonkSpawnPoints.h
     Bonk/BonkTelegraph.h
     Camera.h

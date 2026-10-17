@@ -761,8 +761,6 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                          (index >= PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE  && index <= (PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE + 6)) ||
                          (index >= PLAYER_FIELD_POSSTAT0    && index <= PLAYER_FIELD_POSSTAT4))
                     *data << uint32(m_floatValues[index]);
-                // Vanilla Bonk: a unit spells may target but players should
-                // not see as one (Creature::SetClientUnselectable).
                 else if (index == UNIT_FIELD_FLAGS && GetTypeId() == TYPEID_UNIT &&
                     static_cast<Creature const*>(this)->IsClientUnselectable())
                     *data << uint32(m_uint32Values[index] | UNIT_FLAG_NOT_SELECTABLE);
@@ -838,10 +836,6 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                     else
                         *data << uint32(m_uint32Values[index]);
                 }
-                // Vanilla Bonk: a run enemy's health is sent out of a number
-                // that names it (Creature::SetPlateId). Its share is unchanged,
-                // and the addon reads which enemy a nameplate shows off the
-                // bar's maximum.
                 else if ((index == UNIT_FIELD_HEALTH || index == UNIT_FIELD_MAXHEALTH) && GetTypeId() == TYPEID_UNIT &&
                     static_cast<Creature const*>(this)->GetPlateId())
                 {
@@ -1923,8 +1917,6 @@ float WorldObject::GetLeewayBonusRangeForTargets(Player const* player, Unit cons
 
 float WorldObject::GetLeewayBonusRange(Unit const* target, bool ability) const
 {
-    // Vanilla Bonk: run enemies only reach what they touch, both to swing and
-    // to decide they are close enough to stop chasing.
     if (Creature const* creature = ToCreature())
         if (creature->IsBonkEnemy())
             return 0.0f;

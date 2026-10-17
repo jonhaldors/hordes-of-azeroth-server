@@ -276,10 +276,12 @@ ChatCommand * ChatHandler::getCommandTable()
         { "skip",           SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSkipCommand,            "", nullptr },
         { "god",            SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkGodCommand,             "", nullptr },
         { "card",           SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkCardCommand,            "", nullptr },
+        { "evolve",         SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkEvolveCommand,          "", nullptr },
+        { "passive",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkPassiveCommand,         "", nullptr },
+        { "mastery",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkMasteryCommand,         "", nullptr },
         { "gear",           SEC_PLAYER,         false, &ChatHandler::HandleBonkGearCommand,            "", nullptr },
         { "glyph",          SEC_PLAYER,         false, &ChatHandler::HandleBonkGlyphCommand,           "", nullptr },
         { "pool",           SEC_PLAYER,         false, &ChatHandler::HandleBonkPoolCommand,            "", nullptr },
-        { "bake",           SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkBakeCommand,            "", nullptr },
         { "unlock",         SEC_PLAYER,         false, &ChatHandler::HandleBonkUnlockCommand,          "", nullptr },
         { "menu",           SEC_PLAYER,         false, &ChatHandler::HandleBonkMenuCommand,            "", nullptr },
         { "vault",          SEC_PLAYER,         false, &ChatHandler::HandleBonkVaultCommand,           "", nullptr },
@@ -294,6 +296,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "scaling",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkScalingCommand,         "", nullptr },
         { "stress",         SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkStressCommand,          "", nullptr },
         { "dash",           SEC_PLAYER,         false, &ChatHandler::HandleBonkDashCommand,            "", nullptr },
+        { "sandbox",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSandboxCommand,         "", nullptr },
+        { "mobinfo",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkMobInfoCommand,         "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 

@@ -43,7 +43,7 @@ class Camera;
 #define CENTER_GRID_OFFSET      (SIZE_OF_GRIDS/2)
 
 #define MIN_GRID_DELAY          (MINUTE*IN_MILLISECONDS)
-#define MIN_MAP_UPDATE_DELAY    25                          // Vanilla Bonk: stock 50; matches the world tick
+#define MIN_MAP_UPDATE_DELAY    25
 
 #define MAX_NUMBER_OF_CELLS     16
 #define SIZE_OF_GRID_CELL       (SIZE_OF_GRIDS/MAX_NUMBER_OF_CELLS)

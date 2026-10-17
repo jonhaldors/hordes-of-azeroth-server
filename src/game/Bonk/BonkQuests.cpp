@@ -1,7 +1,3 @@
-/*
- * Vanilla Bonk: quests and the quest board NPC.
- */
-
 #include "BonkQuests.h"
 #include "BonkMastery.h"
 #include "BonkPlayer.h"
@@ -25,18 +21,12 @@ namespace
 {
     uint32 const BONK_TEXT_QUEST_BOARD = 900005;
 
-    // Unlock prices at the Spellbook, copper (Phase F): the first costs
-    // BONK_UNLOCK_BASE_PRICE, and each one paid for raises the next by
-    // (1 + 0.5 n + 0.05 n^2): 25s, 39s, 55s, then about 1.2g for the 5th,
-    // 2.4g for the 10th, 7.5g for the 20th, 14g for the 30th. Rarer cards
-    // cost more on top.
     uint32 const BONK_UNLOCK_BASE_PRICE = 2500;
-    float const BONK_UNLOCK_CARD_RARITY[MAX_BONK_RARITY] = { 1.0f, 1.25f, 1.5f, 2.0f, 2.0f };     // common to legendary
-    float const BONK_UNLOCK_GLYPH_RARITY[MAX_BONK_RARITY] = { 1.5f, 2.0f, 3.0f, 4.0f, 6.0f };    // a run's big picks cost more
+    float const BONK_UNLOCK_CARD_RARITY[MAX_BONK_RARITY] = { 1.0f, 1.25f, 1.5f, 2.0f, 2.0f };
+    float const BONK_UNLOCK_GLYPH_RARITY[MAX_BONK_RARITY] = { 1.5f, 2.0f, 3.0f, 4.0f, 6.0f };
 
     char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
 
-    // A class unlock's name and icon, by class id.
     struct ClassLook
     {
         char const* name;
@@ -135,7 +125,7 @@ void BonkQuests::Load()
             case BONK_REWARD_PASSIVE:   rewardExists = sBonkMgr.GetPassive(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_TALENT:    rewardExists = sBonkMgr.GetTalent(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_UPGRADE:   rewardExists = sBonkMgr.GetUpgrade(quest.rewardValue) != nullptr; break;
-            case BONK_REWARD_MASTERY:   rewardExists = quest.classId != 0; break;     // points for a class
+            case BONK_REWARD_MASTERY:   rewardExists = quest.classId != 0; break;
             case BONK_REWARD_CLASS:     rewardExists = GetClassLook(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_CAPSTONE:  rewardExists = sBonkMastery.GetNode(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_TITLE:     rewardExists = m_titles.count(quest.rewardValue) != 0; break;
@@ -197,29 +187,14 @@ void BonkQuests::OnLogin(Player* player)
         } while (result->NextRow());
     }
 
-    std::map<uint32, BestiaryEntry> bestiary;
-    result = CharacterDatabase.PQuery("SELECT `entry`, `kills`, `first_kill` FROM `bonk_account_bestiary` WHERE `account` = %u", account);
-    if (result)
-    {
-        do
-        {
-            Field* fields = result->Fetch();
-            BestiaryEntry& seen = bestiary[fields[0].GetUInt32()];
-            seen.kills = fields[1].GetUInt32();
-            seen.firstKill = fields[2].GetUInt64();
-        } while (result->NextRow());
-    }
-
     {
         std::lock_guard<std::mutex> guard(m_lock);
         m_accounts[account] = std::move(loaded);
         m_owned[account] = std::move(owned);
         m_paid[account] = paid;
         m_disabled[account] = std::move(disabled);
-        m_bestiary[account] = std::move(bestiary);
     }
 
-    // Stages reached and Mastery earned before there were quests count as well.
     for (auto const& itr : sBonkMgr.GetTiers())
         OnStage(player, itr.first, player->GetBonkPlayer()->GetBestStage(itr.first), true);
     OnProgress(player, BONK_QUEST_MASTERY_LEVEL, player->GetClass(), player->GetBonkPlayer()->GetMasteryLevel(), true);
@@ -246,23 +221,6 @@ void BonkQuests::Save(uint32 account)
     for (auto const& row : rows)
         CharacterDatabase.PExecute("REPLACE INTO `bonk_account_quest` (`account`, `quest`, `progress`, `completed`) VALUES (%u, %u, %u, 0)",
             account, row.first, row.second);
-
-    // The bestiary's new kills.
-    std::vector<std::pair<uint32, BestiaryEntry>> seen;
-    {
-        std::lock_guard<std::mutex> guard(m_lock);
-        auto itr = m_bestiary.find(account);
-        if (itr != m_bestiary.end())
-            for (auto& entry : itr->second)
-                if (entry.second.dirty)
-                {
-                    entry.second.dirty = false;
-                    seen.emplace_back(entry.first, entry.second);
-                }
-    }
-    for (auto const& entry : seen)
-        CharacterDatabase.PExecute("REPLACE INTO `bonk_account_bestiary` (`account`, `entry`, `kills`, `first_kill`) VALUES (%u, %u, %u, " UI64FMTD ")",
-            account, entry.first, entry.second.kills, entry.second.firstKill);
 }
 
 bool BonkQuests::IsDisabled(uint32 account, BonkQuestReward type, uint32 id) const
@@ -281,13 +239,14 @@ bool BonkQuests::SetDisabled(uint32 account, BonkQuestReward type, uint32 id, bo
     }
     if (disabled && IsLocked(account, type, id))
     {
-        error = "Only what you have unlocked can be switched off.";
+        error = "You can only switch off Darkmoon Cards and Glyphs you have unlocked.";
         return false;
     }
     if (disabled && GetDisabled(account).size() >= slots)
     {
-        error = slots ? "You can switch off " + std::to_string(slots) + (slots == 1 ? " thing" : " things") +
-            ". Stacked Deck at the Upgrades vendor allows more." : "Buy Stacked Deck at the Upgrades vendor to switch cards and Glyphs off.";
+        error = slots ? "You can only switch off " + std::to_string(slots) + (slots == 1 ? " Darkmoon Card or Glyph" : " Darkmoon Cards or Glyphs") +
+            ". More ranks of Stacked Deck at the Upgrades vendor let you switch off more." :
+            "Buy Stacked Deck at the Upgrades vendor to switch Darkmoon Cards and Glyphs off.";
         return false;
     }
     {
@@ -323,16 +282,8 @@ std::vector<std::pair<BonkQuestReward, uint32>> BonkQuests::GetDisabled(uint32 a
     return list;
 }
 
-std::map<uint32, BonkQuests::BestiaryEntry> BonkQuests::GetBestiary(uint32 account) const
-{
-    std::lock_guard<std::mutex> guard(m_lock);
-    auto itr = m_bestiary.find(account);
-    return itr != m_bestiary.end() ? itr->second : std::map<uint32, BestiaryEntry>();
-}
-
 bool BonkQuests::IsLocked(uint32 account, BonkQuestReward type, uint32 id) const
 {
-    // The starter Glyphs come with every account.
     if (type == BONK_REWARD_GLYPH)
         if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
             if (glyph->starter)
@@ -350,7 +301,6 @@ bool BonkQuests::IsLocked(uint32 account, BonkQuestReward type, uint32 id) const
         if (progress == itr->second.end() || !progress->second.completed)
             return true;
     }
-    // Done: a spell, passive or card waits to be bought.
     return IsBought(type) && !IsOwned(account, type, id);
 }
 
@@ -358,7 +308,6 @@ bool BonkQuests::IsForSale(uint32 account, BonkQuestReward type, uint32 id) cons
 {
     if (!IsBought(type) || !GetUnlockingQuest(type, id) || !IsLocked(account, type, id))
         return false;
-    // Locked only for want of buying: the quest is done.
     BonkQuest const* quest = GetUnlockingQuest(type, id);
     std::lock_guard<std::mutex> guard(m_lock);
     auto itr = m_accounts.find(account);
@@ -403,7 +352,6 @@ uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 i
             paid = float(itr->second);
     }
     float const copper = BONK_UNLOCK_BASE_PRICE * scale * (1.0f + 0.5f * paid + 0.05f * paid * paid);
-    // To the nearest silver.
     return std::max(100u, uint32(copper / 100.0f + 0.5f) * 100);
 }
 
@@ -460,7 +408,6 @@ uint32 BonkQuests::GetRootWeapon(uint32 spellId) const
         if (itr.second.spellId != spellId)
             continue;
 
-        // An evolution counts for the weapon it grew from.
         BonkWeapon const* weapon = &itr.second;
         for (uint32 steps = 0; weapon->evolvesFrom && steps < 8; ++steps)
             if (BonkWeapon const* from = sBonkMgr.GetWeapon(weapon->evolvesFrom))
@@ -474,6 +421,8 @@ uint32 BonkQuests::GetRootWeapon(uint32 spellId) const
 
 void BonkQuests::Track(Player* player, std::function<void(BonkQuest const&, AccountProgress&)> const& step)
 {
+    if (player->GetBonkPlayer()->IsInSandbox())
+        return;
     uint32 const account = player->GetSession()->GetAccountId();
     std::vector<BonkQuest const*> done;
     {
@@ -502,7 +451,7 @@ void BonkQuests::Track(Player* player, std::function<void(BonkQuest const&, Acco
         Complete(player, *quest);
 }
 
-void BonkQuests::Advance(Player* /*player*/, AccountProgress& progress, BonkQuest const& quest, uint32 value, bool absolute)
+void BonkQuests::Advance(Player* , AccountProgress& progress, BonkQuest const& quest, uint32 value, bool absolute)
 {
     Progress& entry = progress[quest.id];
     if (entry.completed)
@@ -542,15 +491,8 @@ uint32 BonkQuests::GetShownProgress(BonkQuest const& quest, Progress const& entr
 
 void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType, uint32 entry, bool standing)
 {
-    // The bestiary counts it.
-    {
-        std::lock_guard<std::mutex> guard(m_lock);
-        BestiaryEntry& seen = m_bestiary[player->GetSession()->GetAccountId()][entry];
-        if (!seen.kills)
-            seen.firstKill = uint64(time(nullptr));
-        ++seen.kills;
-        seen.dirty = true;
-    }
+    if (player->GetBonkPlayer()->IsInSandbox())
+        return;
 
     uint32 const weapon = GetRootWeapon(killingSpell);
     uint32 const level = player->GetLevel();
@@ -588,7 +530,6 @@ void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell,
                 if (q.target == entry)
                     Advance(player, progress, q, 1, false);
                 break;
-            // Levels only rise during a run, and kills are what raise them.
             case BONK_QUEST_REACH_LEVEL:
                 Advance(player, progress, q, level, true);
                 break;
@@ -694,10 +635,10 @@ void BonkQuests::Complete(Player* player, BonkQuest const& quest)
             bonk->AddShards(quest.rewardValue);
             break;
         case BONK_REWARD_MASTERY:
-            bonk->SendMasteryState();       // the points count from now on
+            bonk->SendMasteryState();
             break;
         default:
-            break;      // an unlock: being done is all it takes
+            break;
     }
 
     std::string icon;
@@ -707,7 +648,6 @@ void BonkQuests::Complete(Player* player, BonkQuest const& quest)
     else
         bonk->Notify("Quest complete: " + quest.name + "! " + reward);
 
-    // One more quest done counts toward the milestones.
     OnProgress(player, BONK_QUEST_QUESTS_DONE, 0, CountCompleted(account), true);
 }
 
@@ -738,28 +678,28 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
             {
                 *icon = weapon->icon;
-                return "Unlocks the spell " + weapon->name + ", to buy at the Spellbook";
+                return "Unlocks " + weapon->name + " for purchase at the Spellbook";
             }
             break;
         case BONK_REWARD_PASSIVE:
             if (BonkPassive const* passive = sBonkMgr.GetPassive(quest.rewardValue))
             {
                 *icon = passive->icon;
-                return "Unlocks the passive " + passive->name + ", to buy at the Spellbook";
+                return "Unlocks " + passive->name + " for purchase at the Spellbook";
             }
             break;
         case BONK_REWARD_TALENT:
             if (BonkTalent const* talent = sBonkMgr.GetTalent(quest.rewardValue))
             {
                 *icon = talent->layout.icon;
-                return "Unlocks the fortune " + talent->name;
+                return "Unlocks the fortune " + talent->name + " at Sayge";
             }
             break;
         case BONK_REWARD_UPGRADE:
             if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(quest.rewardValue))
             {
                 *icon = upgrade->layout.icon;
-                return "Unlocks the upgrade " + upgrade->name;
+                return "Unlocks " + upgrade->name + " at the Upgrades vendor";
             }
             break;
         case BONK_REWARD_MASTERY:
@@ -783,21 +723,21 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkMasteryNode const* node = sBonkMastery.GetNode(quest.rewardValue))
             {
                 *icon = node->icon;
-                return "Unlocks the capstone " + node->name;
+                return "Unlocks " + node->name + ", the final talent in its tree";
             }
             break;
         case BONK_REWARD_CARD:
             if (BonkCard const* card = sBonkMgr.GetCard(quest.rewardValue))
             {
                 *icon = card->icon;
-                return "Unlocks the card " + card->name + ", to buy at the Spellbook";
+                return "Unlocks the Darkmoon Card " + card->name + " for purchase at the Spellbook";
             }
             break;
         case BONK_REWARD_GLYPH:
             if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(quest.rewardValue))
             {
                 *icon = glyph->icon;
-                return "Unlocks the " + glyph->name + ", to buy at the Spellbook";
+                return "Unlocks " + glyph->name + " for purchase at the Spellbook";
             }
             break;
         case BONK_REWARD_TITLE:
@@ -868,13 +808,11 @@ std::vector<std::string> BonkQuests::DescribeAll(Player* player) const
         std::string icon;
         std::string const reward = DescribeReward(quest, &icon);
         lines.push_back(quest.name + (entry.completed ? " (done): " : " " + std::to_string(GetShownProgress(quest, entry)) + "/" +
-            std::to_string(quest.amount) + ": ") + quest.description + (reward.empty() ? "" : " - " + reward));
+            std::to_string(quest.amount) + ": ") + quest.description + (reward.empty() ? "" : " Reward: " + reward + "."));
     }
     return lines;
 }
 
-// The quest board at camp. With the addon the board opens as a window in
-// place of this gossip; without it the gossip lists the quests.
 bool GossipHello_npc_bonk_quests(Player* player, Creature* creature)
 {
     if (player->GetBonkPlayer()->IsAddonReady())
@@ -894,14 +832,12 @@ bool GossipHello_npc_bonk_quests(Player* player, Creature* creature)
     return true;
 }
 
-bool GossipSelect_npc_bonk_quests(Player* player, Creature* creature, uint32 /*sender*/, uint32 /*action*/)
+bool GossipSelect_npc_bonk_quests(Player* player, Creature* creature, uint32 , uint32 )
 {
     return GossipHello_npc_bonk_quests(player, creature);
 }
 
-// The board has no real quests to accept, but it always shows the yellow "!"
-// so players find it at camp.
-uint32 DialogStatus_npc_bonk_quests(Player* /*player*/, Creature* /*creature*/)
+uint32 DialogStatus_npc_bonk_quests(Player* , Creature*)
 {
     return DIALOG_STATUS_AVAILABLE;
 }

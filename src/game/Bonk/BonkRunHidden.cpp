@@ -1,14 +1,3 @@
-/*
- * Vanilla Bonk: hidden encounters (feature plan, Phase 4).
- *
- * Now and then a stage hides something (bonk_hidden, by map and chance, at
- * most one a stage): an object at a spot a walk away, with no pin on the
- * map. Hogger waits in a suspicious bush until someone pokes it; a murloc
- * camp's campfire springs its ambush on whoever comes near. The find is a
- * mini-boss with its band; beaten, a chest, and its Discovery quest moves
- * on (BONK_QUEST_DISCOVER, target the encounter's id).
- */
-
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -23,10 +12,10 @@ namespace
 {
     float const BONK_HIDDEN_MIN_DISTANCE  = 80.0f;
     float const BONK_HIDDEN_MAX_DISTANCE  = 180.0f;
-    uint32 const BONK_HIDDEN_PLACE_MS     = 5000;       // a try to place it, as spawn points gather
+    uint32 const BONK_HIDDEN_PLACE_MS     = 5000;
     uint32 const BONK_HIDDEN_LIFETIME_SEC = 3600;
-    float const BONK_HIDDEN_NEAR          = 25.0f;      // a camp springs on a hero this close
-    float const BONK_HIDDEN_BAND_MIN      = 4.0f;       // its band stands round it
+    float const BONK_HIDDEN_NEAR          = 25.0f;
+    float const BONK_HIDDEN_BAND_MIN      = 4.0f;
     float const BONK_HIDDEN_BAND_MAX      = 9.0f;
 }
 
@@ -47,7 +36,6 @@ void BonkRun::UpdateHidden(uint32 diff)
     if (!hidden || m_hidden.triggered)
         return;
 
-    // Placed at a spawn point a walk away once one turns up; no pin.
     if (!m_hidden.placed)
     {
         m_hidden.placeTimer += diff;
@@ -62,7 +50,6 @@ void BonkRun::UpdateHidden(uint32 diff)
         return;
     }
 
-    // A camp springs on a hero who comes near.
     if (hidden->trigger == BONK_HIDDEN_NEAR_TRIGGER && m_player->GetDistance2d(m_hidden.spot.x, m_hidden.spot.y) <= BONK_HIDDEN_NEAR)
         TriggerHidden();
 }
@@ -81,7 +68,6 @@ void BonkRun::TriggerHidden()
     m_hidden.triggered = true;
     BonkSpot const& spot = m_hidden.spot;
 
-    // A bush is gone once poked; a camp's fire stays.
     if (hidden->trigger == BONK_HIDDEN_USE_TRIGGER)
         if (GameObject* go = m_player->GetMap()->GetGameObject(m_hidden.object))
             go->Delete();
@@ -99,7 +85,6 @@ void BonkRun::TriggerHidden()
             mob->MonsterYell(hidden->yell.c_str());
     }
 
-    // Its band round it.
     BonkMapCreature add;
     add.entry = hidden->addEntry;
     add.kind = BONK_SPAWN_NORMAL;
@@ -126,7 +111,7 @@ void BonkRun::OnHiddenKilled(Creature const* mob)
     m_hidden.boss.Clear();
     sBonkQuests.OnProgress(m_player, BONK_QUEST_DISCOVER, hidden->id, 1);
     SpawnChest(true, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), hidden->chestChoices);
-    m_player->GetBonkPlayer()->Notify(hidden->name + " is defeated: a chest!");
+    m_player->GetBonkPlayer()->Notify("You defeated " + hidden->name + ", and a chest appears!");
 }
 
 void BonkRun::ClearHidden()

@@ -34,16 +34,10 @@
 
 namespace
 {
-    // Vanilla Bonk: run enemies (Creature::IsBonkEnemy) chasing a running
-    // player. A player sends a movement packet only every half second while
-    // running straight, and the server keeps the position of the last one, so
-    // a chaser aiming there runs after a ghost of the player. It aims at where
-    // the player is now (the last packet carried forward by its age) and a
-    // little ahead, and re-aims more often while close.
     uint32 const BONK_CHASE_LEAD_MS    = 200;
     uint32 const BONK_CHASE_MAX_AGE_MS = 1000;
-    uint32 const BONK_CHASE_RECHECK_MS = 200;      // after a new path; 500 otherwise
-    float const BONK_CHASE_NEAR        = 40.0f;    // re-aims that often only this close
+    uint32 const BONK_CHASE_RECHECK_MS = 200;
+    float const BONK_CHASE_NEAR        = 40.0f;
 
     bool IsBonkChase(Unit const& owner, Unit const* target)
     {
@@ -51,7 +45,6 @@ namespace
         return creature && creature->IsBonkEnemy() && target && target->IsPlayer() && target->IsMoving();
     }
 
-    // Where the running player will be `leadMs` from now.
     bool PredictBonkTarget(Unit const* target, uint32 leadMs, float& x, float& y, float& z)
     {
         uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(target->m_movementInfo.stime), BONK_CHASE_MAX_AGE_MS);
@@ -59,15 +52,8 @@ namespace
         return target->ExtrapolateMovement(target->m_movementInfo, age + leadMs, x, y, z, o);
     }
 
-    // Vanilla Bonk: a hero's summon (a creature the hero owns) on a run enemy
-    // that is moving. Run enemies never stop walking at the hero, and the
-    // usual chase stands still once in reach, so a pet stopped at every bite
-    // and ran after its prey again. It aims at where the prey will be (along
-    // the prey's own path) and paces itself to get there when the prey does:
-    // alongside it, biting on the move (BonkPetAI). It catches up at its own
-    // run speed, and always a little faster than the prey.
     uint32 const BONK_PREY_LEAD_MS  = 500;
-    float const BONK_PREY_CATCH_UP  = 1.1f;     // times the prey's speed, at least
+    float const BONK_PREY_CATCH_UP  = 1.1f;
 
     bool IsBonkPrey(Unit const& owner, Unit const* target)
     {
@@ -76,25 +62,13 @@ namespace
         return creature && !creature->IsBonkEnemy() && creature->GetOwnerGuid().IsPlayer() && prey && prey->IsBonkEnemy() && prey->IsMoving();
     }
 
-    // A pack chasing a running player spreads out instead of queueing in its
-    // wake. Each chaser behind the player has its own place round them: a
-    // fixed angle off straight behind (its guid spreads chasers evenly over
-    // up to BONK_CHASE_FAN_ANGLE each way, from right behind to right beside
-    // them), measured from the way the player runs, not from where the chaser
-    // is, so it never circles. Far off it also aims out to that side, more
-    // the further it is, so a pack fans out on the way in and comes up the
-    // player's sides.
-    float const BONK_CHASE_FAN_ANGLE = M_PI_F / 2.0f;     // each way off straight behind
-    float const BONK_CHASE_FAN_WIDTH = 6.0f;              // yards out to the side, at most
-    float const BONK_CHASE_FAN_RATE  = 0.3f;              // of those yards per yard away beyond:
-    float const BONK_CHASE_FAN_START = 3.0f;              // closer than this, none: it ends at arm's length to swing
+    float const BONK_CHASE_FAN_ANGLE = M_PI_F / 2.0f;
+    float const BONK_CHASE_FAN_WIDTH = 6.0f;
+    float const BONK_CHASE_FAN_RATE  = 0.3f;
+    float const BONK_CHASE_FAN_START = 3.0f;
 
-    // (x, y, z): where the running player will be (PredictBonkTarget); the
-    // chaser's place `reach` from there. False for a chaser not behind them:
-    // it comes at them from its own side, as before.
     bool GetBonkChaseSlot(Unit const& owner, Unit const* target, float reach, float& x, float& y, float& z)
     {
-        // The way the player runs: from where they are now to (x, y).
         float nowX, nowY, nowZ;
         if (!PredictBonkTarget(target, 0, nowX, nowY, nowZ))
             return false;
@@ -111,14 +85,12 @@ namespace
         if (toX * runX + toY * runY >= 0.0f)
             return false;
 
-        // Its angle off straight behind, the same every time.
         uint32 const hash = owner.GetObjectGuid().GetCounter() * 2654435761u;
         float const share = float(hash >> 8) / float(1u << 24);
         float const angle = std::atan2(-runY, -runX) + (share * 2.0f - 1.0f) * BONK_CHASE_FAN_ANGLE;
         float const slotX = std::cos(angle);
         float const slotY = std::sin(angle);
 
-        // Out to its side of the player's track, more the further it is.
         float const across = slotX * -runY + slotY * runX;
         float const away = std::max(0.0f, std::sqrt(toX * toX + toY * toY) - BONK_CHASE_FAN_START);
         float const fan = across * std::min(BONK_CHASE_FAN_WIDTH, away * BONK_CHASE_FAN_RATE);
@@ -128,12 +100,8 @@ namespace
         return true;
     }
 
-    // A chaser faces the way its path's current segment runs, so every new
-    // path would snap it round. Its path instead starts the way it already
-    // faces and curves round to the target in short steps: it turns at this
-    // rate, a few degrees a step. Only on a straight path (open ground).
-    float const BONK_TURN_RATE       = 270.0f * M_PI_F / 180.0f;     // radians a second
-    float const BONK_TURN_STEP       = 6.0f * M_PI_F / 180.0f;       // radians a step
+    float const BONK_TURN_RATE       = 270.0f * M_PI_F / 180.0f;
+    float const BONK_TURN_STEP       = 6.0f * M_PI_F / 180.0f;
     uint32 const BONK_TURN_MAX_STEPS = 40;
 
     bool BuildBonkTurnPath(Unit& owner, Movement::PointsArray const& path, Movement::PointsArray& out)
@@ -141,7 +109,6 @@ namespace
         if (path.size() != 2)
             return false;
 
-        // Where the client shows it now, and the way it faces.
         G3D::Vector3 pos(owner.GetPositionX(), owner.GetPositionY(), owner.GetPositionZ());
         float heading = owner.GetOrientation();
         if (!owner.movespline->Finalized())
@@ -169,7 +136,7 @@ namespace
             out.push_back(pos);
         }
         if (out.size() == 1)
-            return false;   // already facing it: the plain path
+            return false;
         out.push_back(target);
         return true;
     }
@@ -257,7 +224,6 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
 
     if (!m_fOffset)
     {
-        // A summon keeps up with its moving prey instead of standing in reach.
         if (!bonkPrey && owner.CanReachWithMeleeAutoAttack(i_target.getTarget()))
         {
             bool futureOkay = true;
@@ -281,10 +247,6 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
             }
         }
 
-        // Vanilla Bonk: a chaser behind the running player goes for its own
-        // place round them (GetBonkChaseSlot); ahead of them, or with that
-        // place through a wall, arm's length this side of where they are now;
-        // with that through a wall too, the usual point instead.
         if (bonkChase && PredictBonkTarget(i_target.getTarget(), BONK_CHASE_LEAD_MS, x, y, z) && i_target->IsWithinLOS(x, y, z))
         {
             float slotX = x, slotY = y, slotZ = z;
@@ -307,8 +269,6 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
                 }
             }
         }
-        // Vanilla Bonk: a summon goes for half its reach this side of where
-        // its prey will be: well in reach, clear of its body.
         else if (bonkPrey && i_target->ExtrapolateMovement(i_target->m_movementInfo, BONK_PREY_LEAD_MS, x, y, z, preyO) && i_target->IsWithinLOS(x, y, z))
         {
             float const reach = owner.GetCombatReachToTarget(i_target.getTarget(), false, 0.0f, true) / 2.0f;
@@ -427,9 +387,6 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
         init.Move(&path);
     init.SetWalk(EnableWalking());
 
-    // Vanilla Bonk: a summon gets there when its prey does, never slower
-    // than the prey, at most its own run speed or a little faster than the
-    // prey.
     if (bonkPrey)
     {
         float const preySpeed = i_target->GetSpeed(i_target->IsWalking() ? MOVE_WALK : MOVE_RUN);
@@ -528,8 +485,6 @@ bool ChaseMovementGenerator<T>::Update(T &owner, uint32 const&  time_diff)
                 if (!targetMoved)
                     targetMoved = (dest.x != i_target->GetPositionX() || dest.y != i_target->GetPositionY() || dest.z != i_target->GetPositionZ());
 
-                // Vanilla Bonk: a running player has always moved since, whatever
-                // their last packet says.
                 if (!targetMoved && IsBonkChase(owner, i_target.getTarget()) && owner.IsWithinDist(i_target.getTarget(), BONK_CHASE_NEAR))
                     targetMoved = true;
 

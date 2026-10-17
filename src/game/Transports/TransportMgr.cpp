@@ -420,9 +420,6 @@ void TransportMgr::SpawnTransportsOnMap(Map* map)
         if (itr.second.spawned && !itr.second.inInstance)
             continue;
 
-        // Vanilla Bonk: no boats or zeppelins. Runs teleport the hero
-        // everywhere, and the first ship to cross over would load the other
-        // continent on the world thread mid-run: a stall of seconds.
         if (!itr.second.inInstance)
             continue;
 

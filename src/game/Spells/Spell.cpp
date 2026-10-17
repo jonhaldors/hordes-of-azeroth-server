@@ -55,14 +55,11 @@ using namespace Spells;
 
 namespace
 {
-    // Vanilla Bonk: a hero's bolt in flight (BonkRun projectiles). It casts
-    // the bolt's spell on the hero's behalf on each enemy it touches.
     bool IsBonkProjectile(SpellCaster const* caster)
     {
         return caster && caster->IsCreature() && caster->GetEntry() == BONK_PROJECTILE;
     }
 
-    // Vanilla Bonk: a spell with a travel time a hero casts in a run.
     bool IsBonkRunBolt(SpellCaster const* caster, SpellEntry const* spellInfo)
     {
         Player const* player = caster ? caster->ToPlayer() : nullptr;
@@ -99,7 +96,6 @@ Spell::Spell(Unit* caster, SpellEntry const* info, bool triggered, ObjectGuid or
     m_autoRepeat = m_spellInfo->IsAutoRepeatRangedSpell();
     m_channeled = info->IsChanneledSpell();
 
-    // Vanilla Bonk: no weapon spell holds the hero in place.
     if (Player const* player = caster->ToPlayer())
         m_bonkWeapon = player->GetBonkPlayer()->IsFiringWeapon();
 
@@ -310,7 +306,6 @@ void Spell::FillTargetMap()
                     case TARGET_ENUM_UNITS_FRIEND_AOE_AT_DEST_LOC:
                     {
                         // triggered spells get dest point from default target set, ignore it
-                        // Vanilla Bonk: unless a run weapon aimed it (a thrown cloud).
                         Player const* bonkCaster = m_caster->ToPlayer();
                         bool const aimed = bonkCaster && bonkCaster->GetBonkPlayer()->IsFiringWeapon() &&
                             (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION);
@@ -953,7 +948,6 @@ void Spell::AddUnitTarget(Unit* pTarget, SpellEffectIndex effIndex)
         targetInfo.isCrit = affectiveObject->IsSpellCrit(pTarget, m_spellInfo, m_spellSchoolMask, m_attackType, this);
 
     // Spell have speed - need calculate incoming time
-    // Vanilla Bonk: a projectile's hit flies from the projectile, not the hero.
     if (IsBonkProjectile(m_caster))
         affectiveObject = m_caster;
     if (m_spellInfo->speed > 0.0f && affectiveObject && pTarget != affectiveObject)
@@ -963,7 +957,6 @@ void Spell::AddUnitTarget(Unit* pTarget, SpellEffectIndex effIndex)
         if (dist < 5.0f)
             dist = 5.0f;
         targetInfo.timeDelay = (uint64) floor(dist / m_spellInfo->speed * 1000.0f);
-        // Vanilla Bonk: a run spell lands when the client's missile does.
         if (uint32 const meet = BonkRun::GetMissileDelay(affectiveObject, pTarget, m_spellInfo->speed))
             targetInfo.timeDelay = meet;
 
@@ -1094,7 +1087,6 @@ void Spell::AddGOTarget(GameObject* pTarget, SpellEffectIndex effIndex)
 
     // spell fly from visual cast object
     SpellCaster* affectiveObject = GetAffectiveCasterObject();
-    // Vanilla Bonk: a projectile's hit flies from the projectile, not the hero.
     if (IsBonkProjectile(m_caster))
         affectiveObject = m_caster;
 
@@ -1411,7 +1403,6 @@ void Spell::DoAllEffectOnTarget(TargetInfo *target)
         SpellNonMeleeDamage damageInfo(pCaster, unitTarget, m_spellInfo->Id, GetFirstSchoolInMask(m_spellSchoolMask));
         damageInfo.spell = this;
         damageInfo.reflected = isReflected;
-        // Vanilla Bonk: the damage before bonuses and crit, for a second hit.
         float const bonkBaseDamage = m_delayed ? target->bonkBaseDamage : m_damage;
 
         if (m_delayed)
@@ -1496,7 +1487,6 @@ void Spell::DoAllEffectOnTarget(TargetInfo *target)
         // Damage is done after procs so it can trigger auras on the victim that affect the caster in case of killing blow.
         pCaster->DealSpellDamage(&damageInfo, true);
 
-        // Vanilla Bonk: a hero's spell can hit twice (BonkRun::HitAgain).
         if (bonkBaseDamage > 0.0f && !isReflected)
             if (BonkRun* run = BonkRun::FromAttack(pCaster, unitTarget))
             {
@@ -1695,7 +1685,8 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
                 // dead creatures don't see alive players, but spells should still hit
                 !(unit->IsPlayer() && unit->IsAlive() && m_caster->IsCreature() && m_casterUnit->IsDead()))
             {
-                pRealCaster->SendSpellMiss(unit, m_spellInfo->Id, SPELL_MISS_EVADE);
+                if (unit->IsAlive())
+                    pRealCaster->SendSpellMiss(unit, m_spellInfo->Id, SPELL_MISS_EVADE);
                 ResetEffectDamageAndHeal();
                 return;
             }
@@ -1854,11 +1845,6 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
                 }
             }
 
-            // Vanilla Bonk: a hero's stun on a run enemy holds it for a
-            // moment, and then that enemy can't be stunned for a while, so
-            // no spell keeps trash stunned (BonkRun::LimitStun); a root the
-            // same, by Frozen's rule (BonkRun::LimitRoot). The spell's
-            // damage still lands.
             bool const bonkStun = m_spellInfo->HasAura(SPELL_AURA_MOD_STUN);
             if (duration != 0 && (bonkStun || m_spellInfo->HasAura(SPELL_AURA_MOD_ROOT)) && unit->IsCreature())
                 if (Player* hero = pRealUnitCaster ? pRealUnitCaster->ToPlayer() : nullptr)
@@ -1995,7 +1981,6 @@ void Spell::HandleDelayedSpellLaunch(TargetInfo *target)
             }
         }
 
-        // Vanilla Bonk: kept for a second hit when it lands (BonkRun::HitAgain).
         target->bonkBaseDamage = m_damage;
         if (m_damage > 0)
             pCaster->CalculateSpellDamage(&damageInfo, m_damage, m_spellInfo, damageEffectIndex, m_attackType, this, target->isCrit);
@@ -2134,16 +2119,13 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RADIUS, radius, this);
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_JUMP_TARGETS, EffectChainTarget, this);
 
-            // Vanilla Bonk: area weapons grow with their level, and spells
-            // that jump reach more enemies.
             if (m_spellInfo->EffectRadiusIndex[effIndex])
                 radius *= modOwner->GetBonkPlayer()->GetAreaScale(m_spellInfo->Id);
             if (EffectChainTarget > 1)
-                EffectChainTarget += modOwner->GetBonkPlayer()->GetChainBonus(m_spellInfo->Id);
+                EffectChainTarget = modOwner->GetBonkPlayer()->StrikesOneTargetPerCast(m_spellInfo->Id) ? 1 :
+                    EffectChainTarget + modOwner->GetBonkPlayer()->GetChainBonus(m_spellInfo->Id);
         }
 
-        // A projectile hits only the enemy it touched (a spell that hits
-        // several flies as several projectiles).
         if (IsBonkProjectile(m_caster) && EffectChainTarget > 1)
             EffectChainTarget = 1;
     }
@@ -2160,7 +2142,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             break;
     }
 
-    uint32 unMaxTargets = m_spellInfo->MaxAffectedTargets;
+    uint32 unMaxTargets = m_bonkWeapon ? 0 : m_spellInfo->MaxAffectedTargets;
     bool selectClosestTargets = false;
 
     if (m_spellScript)
@@ -2634,8 +2616,6 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             break;
         case TARGET_LOCATION_CASTER_SRC:
         {
-            // Vanilla Bonk: a run weapon aimed at a spot goes off there (a
-            // trap, an explosion where an enemy died).
             if (Player const* bonkCaster = m_caster->ToPlayer())
                 if (bonkCaster->GetBonkPlayer()->IsFiringWeapon() && (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION))
                 {
@@ -3530,7 +3510,6 @@ SpellCastResult Spell::prepare(Aura* triggeredByAura, uint32 chance)
 
         m_duration = m_spellInfo->CalculateDuration(m_caster);
 
-        // Vanilla Bonk: a weapon can set how long its spell lasts.
         if (Player* pPlayerCaster = m_caster->ToPlayer())
             m_duration = pPlayerCaster->GetBonkPlayer()->AdjustDuration(m_spellInfo->Id, m_duration);
 
@@ -3861,10 +3840,6 @@ void Spell::cast(bool skipCheck)
         m_immediateHandled = false;
         m_spellState = SPELL_STATE_DELAYED;
         SetDelayStart(0);
-        // Vanilla Bonk: a run bolt's travel starts at the cast, as the client's
-        // missile does, not at the hero's next update (SpellEvent::Execute),
-        // a player update later. Runs cast from the hero's
-        // update after their spell events, so the event clock reads now.
         if (IsBonkRunBolt(m_caster, m_spellInfo))
             SetDelayStart(m_caster->m_Events.CalculateTime(0));
 
@@ -4685,8 +4660,6 @@ void Spell::WriteAmmoToPacket(uint32& ammoDisplayId, uint32& ammoInventoryType)
                         ammoInventoryType = pProto->InventoryType;
                     }
                 }
-                // Vanilla Bonk: no ammo, so arrows or bullets as a
-                // creature's (below), and shots still show their missile.
                 else if (pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_GUN)
                 {
                     ammoDisplayId = 5998;
@@ -5172,7 +5145,6 @@ void Spell::TakePower()
     {
         if (pPlayer->HasCheatOption(PLAYER_CHEAT_NO_POWER))
             return;
-        // Vanilla Bonk: run weapons cost nothing (players cast nothing else).
         if (pPlayer->GetBonkPlayer()->GetRun())
             return;
     }
@@ -5252,7 +5224,6 @@ void Spell::TakeAmmo()
     if (!pCaster)
         return;
 
-    // Vanilla Bonk's auto-firing weapons never use up ammo or thrown weapons.
     if (pCaster->GetBonkPlayer()->IsFiringWeapon())
         return;
 
@@ -7526,8 +7497,6 @@ SpellCastResult Spell::CheckItems()
                 if (!pItem)
                     return SPELL_FAILED_EQUIPPED_ITEM;
 
-                // Vanilla Bonk: bows, guns and crossbows fire without ammo
-                // (user, 2026-10-16).
                 if (pItem->GetProto()->SubClass != ITEM_SUBCLASS_WEAPON_THROWN)
                     break;
 

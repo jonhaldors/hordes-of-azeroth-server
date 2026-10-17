@@ -182,7 +182,6 @@ void DynamicObject::Update(uint32 update_diff, uint32 p_time)
     if (m_deleted)
         return;
 
-    // Vanilla Bonk: a ground spell stands still while its caster's time does.
     if (Unit* unitCaster = caster->ToUnit())
         if (unitCaster->IsTimeFrozen())
             return;
