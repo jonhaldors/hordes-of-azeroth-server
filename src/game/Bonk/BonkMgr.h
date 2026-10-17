@@ -291,6 +291,8 @@ enum BonkWeaponFlags : uint32
     BONK_WEAPON_FLAG_SWEEP            = 0x200000,
     BONK_WEAPON_FLAG_ON_BLINK         = 0x400000,
     BONK_WEAPON_FLAG_BLINK_DASH       = 0x800000,
+    BONK_WEAPON_FLAG_HYDRA            = 0x1000000,
+    BONK_WEAPON_FLAG_ELEMENTAL_SHIFT  = 0x2000000,
 };
 
 float const BONK_CLEAVE_RADIUS    = 6.0f;
@@ -419,6 +421,26 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_PYROBLAST     = 55,
     BONK_BEHAVIOR_FIRE_BLAST    = 56,
     BONK_BEHAVIOR_ARCANE_MISSILES = 57,
+    BONK_BEHAVIOR_ICE_SHARDS    = 58,
+    BONK_BEHAVIOR_FROST_SHATTER = 59,
+    BONK_BEHAVIOR_DEEP_FREEZE   = 60,
+    BONK_BEHAVIOR_FROSTBITE     = 61,
+    BONK_BEHAVIOR_ICE_NOVA      = 62,
+    BONK_BEHAVIOR_ICE_BARRIER   = 63,
+    BONK_BEHAVIOR_WILDFIRE      = 64,
+    BONK_BEHAVIOR_LIVING_BOMB   = 65,
+    BONK_BEHAVIOR_FIREWALK      = 66,
+    BONK_BEHAVIOR_BURNING_GROUND = 67,
+    BONK_BEHAVIOR_METEOR        = 68,
+    BONK_BEHAVIOR_METEOR_SHOWER = 69,
+    BONK_BEHAVIOR_BLAST_WAVE    = 70,
+    BONK_BEHAVIOR_HOT_STREAK    = 71,
+    BONK_BEHAVIOR_PHASE_RUSH    = 72,
+    BONK_BEHAVIOR_SHIMMER       = 73,
+    BONK_BEHAVIOR_SLOW_TIME     = 74,
+    BONK_BEHAVIOR_PRESENCE_OF_MIND = 75,
+    BONK_BEHAVIOR_ARCANE_BARRAGE = 76,
+    BONK_BEHAVIOR_ARCANE_POWER  = 77,
     MAX_BONK_BEHAVIOR
 };
 
@@ -523,6 +545,22 @@ struct BonkWeapon
     {
         return behavior == BONK_BEHAVIOR_DEEP_WOUNDS || behavior == BONK_BEHAVIOR_ROLLING_THUNDER || IsRevenge();
     }
+    bool IsBlink() const
+    {
+        return behavior == BONK_BEHAVIOR_BLINK || behavior == BONK_BEHAVIOR_PHASE_RUSH || behavior == BONK_BEHAVIOR_SHIMMER;
+    }
+    bool IsPyroblast() const
+    {
+        return behavior == BONK_BEHAVIOR_PYROBLAST || behavior == BONK_BEHAVIOR_METEOR || behavior == BONK_BEHAVIOR_METEOR_SHOWER;
+    }
+    bool IsFireBlast() const
+    {
+        return behavior == BONK_BEHAVIOR_FIRE_BLAST || behavior == BONK_BEHAVIOR_HOT_STREAK;
+    }
+    bool IsArcaneMissiles() const
+    {
+        return behavior == BONK_BEHAVIOR_ARCANE_MISSILES || behavior == BONK_BEHAVIOR_ARCANE_BARRAGE || behavior == BONK_BEHAVIOR_ARCANE_POWER;
+    }
     bool IsAimed() const
     {
         return (target == BONK_TARGET_NEAREST || target == BONK_TARGET_RANDOM || target == BONK_TARGET_STRONGEST || target == BONK_TARGET_FARTHEST) &&
@@ -579,12 +617,14 @@ uint32 const BONK_PET_FAMILY_CAT = 1;
 uint32 const BONK_PET_FAMILY_WATER_ELEMENTAL = 2;
 uint32 const BONK_PET_FAMILY_FIRE_ELEMENTAL = 3;
 uint32 const BONK_PET_FAMILY_ARCANE_ELEMENTAL = 4;
+uint32 const BONK_PET_FAMILY_HYDRA = 5;
 
 enum BonkPetAbilityKind : uint8
 {
     BONK_PET_ABILITY_STRIKE = 0,
     BONK_PET_ABILITY_DASH   = 1,
     BONK_PET_ABILITY_POUNCE = 2,
+    BONK_PET_ABILITY_PULSE  = 3,
     MAX_BONK_PET_ABILITY_KIND
 };
 
@@ -596,6 +636,7 @@ struct BonkPetAbility
     float damage = 0.0f;
     uint8 stacks = 0;
     float value = 0.0f;
+    uint32 kit = 0;
 };
 
 struct BonkPetFamily

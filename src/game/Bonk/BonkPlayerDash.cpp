@@ -89,7 +89,7 @@ bool BonkPlayer::Dash()
 
     if (!m_dashSpent++)
         m_dashRechargeMs = GetDashCooldownMs();
-    m_dashInvulnerableUntilMs = m_dashClockMs + BONK_DASH_INVULNERABLE_MS;
+    m_dashInvulnerableUntilMs = m_dashClockMs + std::max(BONK_DASH_INVULNERABLE_MS, blink ? m_run->GetBlinkInvulnerableMs() : 0u);
     SendDash();
     return true;
 }

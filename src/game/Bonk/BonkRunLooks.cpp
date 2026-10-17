@@ -14,6 +14,8 @@ namespace
         33449,
         33450,
         33451,
+        33452,
+        33453,
     };
 
     uint32 const BONK_HERO_RING_FIRST_SPELLS[] =

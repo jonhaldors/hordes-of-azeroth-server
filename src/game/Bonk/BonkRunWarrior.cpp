@@ -205,7 +205,7 @@ void BonkRun::OnCriticalStrike(SpellCaster const* caster, SpellEntry const* spel
 {
     if (m_state != STATE_RUNNING || caster != m_player || !spell || !victim || m_criticalStrikes.size() >= BONK_MAX_PENDING_CRITS)
         return;
-    if (!HasBehavior(BONK_BEHAVIOR_DEEP_WOUNDS) && !HasBehavior(BONK_BEHAVIOR_BLOODTHIRST))
+    if (!HasBehavior(BONK_BEHAVIOR_DEEP_WOUNDS) && !HasBehavior(BONK_BEHAVIOR_BLOODTHIRST) && !HasBehavior(BONK_BEHAVIOR_HOT_STREAK))
         return;
     m_criticalStrikes.emplace_back(victim->GetObjectGuid(), spell->Id);
 }
@@ -227,9 +227,11 @@ void BonkRun::ResolveCriticalStrikes()
         OwnedWeapon const* striker = FindOwnedBySpell(crit.second);
         if (striker && striker->weapon.behavior == BONK_BEHAVIOR_BLOODTHIRST)
             Enrage();
-        if (deepWounds)
-            if (Creature* mob = map->GetCreature(crit.first))
-                OpenDeepWound(*deepWounds, mob);
+        Creature* mob = map->GetCreature(crit.first);
+        if (deepWounds && mob)
+            OpenDeepWound(*deepWounds, mob);
+        if (striker && striker->weapon.behavior == BONK_BEHAVIOR_HOT_STREAK && mob)
+            TriggerHotStreak(*striker, mob);
     }
 }
 

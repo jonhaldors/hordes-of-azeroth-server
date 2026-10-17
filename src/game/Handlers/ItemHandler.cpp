@@ -31,6 +31,7 @@
 #include "Chat.h"
 #include "Conditions.h"
 #include "Anticheat.h"
+#include "Bonk/BonkPlayer.h"
 
 void WorldSession::HandleSplitItemOpcode(WorldPackets::Item::SplitItem const& packet)
 {
@@ -719,6 +720,9 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid, uint8 menu_type)
 
     GetPlayer()->InterruptSpellsWithChannelFlags(AURA_INTERRUPT_INTERACTING_CANCELS);
     GetPlayer()->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_INTERACTING_CANCELS);
+
+    if (BonkPlayer* bonk = GetPlayer()->GetBonkPlayer())
+        bonk->SendGearTabs(pCreature);
 
     VendorItemData const* vItems = menu_type & VENDOR_MENU_NORMAL ? pCreature->GetVendorItems() : nullptr;
     VendorItemData const* tItems = menu_type & VENDOR_MENU_TEMPLATE ? pCreature->GetVendorTemplateItems() : nullptr;

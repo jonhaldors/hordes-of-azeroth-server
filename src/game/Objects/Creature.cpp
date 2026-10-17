@@ -55,6 +55,7 @@
 #include "GuardMgr.h"
 #include "Utilities/Random.h"
 #include "Bonk/BonkMobAI.h"
+#include "Bonk/BonkPlayer.h"
 #include "Bonk/BonkSandbox.h"
 
 namespace
@@ -2523,6 +2524,9 @@ bool Creature::IsVisibleInGridForPlayer(Player const* pl) const
         return false;
 
     if (BonkSandbox::IsHiddenFrom(this, pl))
+        return false;
+
+    if (BonkPlayer::IsHiddenFrom(this, pl))
         return false;
 
     // Live player (or with not release body see live creatures or death creatures with corpse disappearing time > 0

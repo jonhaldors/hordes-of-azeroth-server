@@ -47,6 +47,9 @@ class BonkPlayer
         bool IsTierUnlocked(BonkTier const& tier) const;
         bool IsTierCleared(BonkTier const& tier) const;
         bool CanBuyGear(uint32 itemEntry) const;
+        bool ShowsGearItem(Creature const* vendor, uint32 itemEntry) const;
+        void SendGearTabs(Creature const* vendor) const;
+        void SelectGearTab(uint32 group);
         std::string GetUnlockHint(BonkTier const& tier) const;
         void RecordStage(uint32 tierId, uint32 stage);
 
@@ -189,6 +192,7 @@ class BonkPlayer
 
         void ResetCharacter();
         bool IsAtCamp() const;
+        static bool IsHiddenFrom(Creature const* creature, Player const* viewer);
         void TeleportToCamp();
         void AnnounceMailAtCamp() { m_campMailNoticeMs = BONK_CAMP_MAIL_NOTICE_DELAY_MS; }
         bool MoveToCampBeforeLogin(bool gameMaster);
@@ -241,6 +245,13 @@ class BonkPlayer
         static constexpr uint32 BONK_CAMP_MAIL_NOTICE_DELAY_MS = 1500;
         uint32 m_campMailNoticeMs = 0;
         void UpdateCampMailNotice(uint32 diff);
+        uint32 m_gearTab = 0;
+        std::vector<uint32> GetGearTabs(Creature const* vendor) const;
+        uint32 GetShownGearTab(std::vector<uint32> const& tabs) const;
+        uint32 m_mailboxGlowMs = 0;
+        bool m_mailboxGlowShown = false;
+        bool HasUnreadMail() const;
+        void UpdateMailboxGlow(uint32 diff);
         bool m_goldLoaded = false;
         std::map<uint32, uint32> m_bestStages;
         Record m_record;

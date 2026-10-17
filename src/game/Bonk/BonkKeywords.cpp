@@ -207,7 +207,12 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
         return false;
 
     if (keyword == BONK_KEYWORD_FROZEN)
-        return Freeze(mob);
+    {
+        if (!Freeze(mob))
+            return false;
+        OnFrozen(mob, sourceSpellId);
+        return true;
+    }
 
     uint32 const length = durationMs ? durationMs : info->durationMs;
 
@@ -222,6 +227,7 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
     if (keyword == BONK_KEYWORD_CHILL && total >= info->maxStacks && Freeze(mob))
     {
         mob->RemoveAurasByCasterSpell(info->spellId, m_player->GetObjectGuid());
+        OnFrozen(mob, sourceSpellId);
         return true;
     }
 

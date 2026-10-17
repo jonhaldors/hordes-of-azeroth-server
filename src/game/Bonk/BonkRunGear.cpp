@@ -12,6 +12,7 @@
 #include "Player.h"
 #include "Utilities/Random.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace
@@ -35,6 +36,39 @@ namespace
     char const* const BONK_HEARTH_LABEL  = "Hearthstone";
     float const BONK_VAULT_REACH         = 8.0f;
     float const BONK_VAULT_RING_OFFSET   = 2.5f;
+
+    std::vector<uint8> GetEquipSlotsFor(uint32 inventoryType)
+    {
+        switch (inventoryType)
+        {
+            case INVTYPE_HEAD:           return { EQUIPMENT_SLOT_HEAD };
+            case INVTYPE_NECK:           return { EQUIPMENT_SLOT_NECK };
+            case INVTYPE_SHOULDERS:      return { EQUIPMENT_SLOT_SHOULDERS };
+            case INVTYPE_BODY:           return { EQUIPMENT_SLOT_BODY };
+            case INVTYPE_CHEST:
+            case INVTYPE_ROBE:           return { EQUIPMENT_SLOT_CHEST };
+            case INVTYPE_WAIST:          return { EQUIPMENT_SLOT_WAIST };
+            case INVTYPE_LEGS:           return { EQUIPMENT_SLOT_LEGS };
+            case INVTYPE_FEET:           return { EQUIPMENT_SLOT_FEET };
+            case INVTYPE_WRISTS:         return { EQUIPMENT_SLOT_WRISTS };
+            case INVTYPE_HANDS:          return { EQUIPMENT_SLOT_HANDS };
+            case INVTYPE_FINGER:         return { EQUIPMENT_SLOT_FINGER1, EQUIPMENT_SLOT_FINGER2 };
+            case INVTYPE_TRINKET:        return { EQUIPMENT_SLOT_TRINKET1, EQUIPMENT_SLOT_TRINKET2 };
+            case INVTYPE_CLOAK:          return { EQUIPMENT_SLOT_BACK };
+            case INVTYPE_WEAPON:
+            case INVTYPE_2HWEAPON:
+            case INVTYPE_WEAPONMAINHAND: return { EQUIPMENT_SLOT_MAINHAND };
+            case INVTYPE_SHIELD:
+            case INVTYPE_WEAPONOFFHAND:
+            case INVTYPE_HOLDABLE:       return { EQUIPMENT_SLOT_OFFHAND };
+            case INVTYPE_RANGED:
+            case INVTYPE_THROWN:
+            case INVTYPE_RANGEDRIGHT:
+            case INVTYPE_RELIC:          return { EQUIPMENT_SLOT_RANGED };
+            case INVTYPE_TABARD:         return { EQUIPMENT_SLOT_TABARD };
+            default:                     return {};
+        }
+    }
 
     struct EquippingGear
     {
@@ -227,18 +261,23 @@ void BonkRun::SendGearOffer() const
     if (!proto)
         return;
 
-    uint32 replaced = 0;
-    uint8 const slot = m_player->FindEquipSlot(proto, NULL_SLOT, true);
-    if (slot != NULL_SLOT)
-        if (Item const* current = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            replaced = current->GetEntry();
+    auto wornIn = [this](uint8 slot)
+    {
+        Item const* current = slot != NULL_SLOT ? m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot) : nullptr;
+        return current ? current->GetEntry() : 0u;
+    };
+    std::vector<uint8> const choices = GetGearSlotChoices(m_gearOfferEntry);
+    bool const twoSlots = choices.size() >= 2;
+    uint32 const replaced = wornIn(twoSlots ? choices[0] : m_player->FindEquipSlot(proto, NULL_SLOT, true));
+    std::string const slotChoice = twoSlots ? "~" + std::to_string(choices[0]) + "~" + std::to_string(choices[1]) + "~" +
+        std::to_string(wornIn(choices[1])) : std::string();
 
     uint32 const valor = GetGearSalvage(m_gearOfferEntry);
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (bonk->IsAddonReady())
     {
         bonk->SendAddon("gearoffer~" + std::to_string(m_gearOfferEntry) + "~" + std::to_string(replaced) + "~" + std::to_string(valor) + "~" +
-            std::to_string(proto->Quality));
+            std::to_string(proto->Quality) + slotChoice);
         return;
     }
 
@@ -254,7 +293,7 @@ void BonkRun::CloseGearOffer()
     m_player->GetBonkPlayer()->SendAddon("gearclose");
 }
 
-bool BonkRun::ChooseGear(bool equip, std::string& error)
+bool BonkRun::ChooseGear(bool equip, uint8 slot, std::string& error)
 {
     if (!m_gearOfferEntry)
     {
@@ -266,8 +305,18 @@ bool BonkRun::ChooseGear(bool equip, std::string& error)
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
     std::string const name = proto ? proto->Name1 : "the gear";
+    if (equip && slot != NULL_SLOT)
+    {
+        std::vector<uint8> const choices = GetGearSlotChoices(entry);
+        if (std::find(choices.begin(), choices.end(), slot) == choices.end())
+        {
+            error = name + " doesn't go in that slot.";
+            return false;
+        }
+    }
+
     std::string why;
-    if (equip && EquipRunGear(entry, why))
+    if (equip && EquipRunGear(entry, slot, why))
         bonk->Notify("You equipped " + name + ".");
     else
     {
@@ -283,7 +332,7 @@ bool BonkRun::ChooseGear(bool equip, std::string& error)
     return true;
 }
 
-bool BonkRun::EquipRunGear(uint32 entry, std::string& error)
+bool BonkRun::EquipRunGear(uint32 entry, uint8 slot, std::string& error)
 {
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
     std::string const name = proto ? proto->Name1 : "the gear";
@@ -302,7 +351,7 @@ bool BonkRun::EquipRunGear(uint32 entry, std::string& error)
 
     EquippingGear const equipping(m_player->GetBonkPlayer());
     uint16 equipDest;
-    if (m_player->CanEquipItem(NULL_SLOT, equipDest, item, true) != EQUIP_ERR_OK)
+    if (m_player->CanEquipItem(slot, equipDest, item, true) != EQUIP_ERR_OK)
     {
         m_player->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
         error = "You can't use " + name;
@@ -582,6 +631,33 @@ std::vector<BonkRun::VaultFind> BonkRun::GetVaultFinds() const
     return finds;
 }
 
+std::vector<uint8> BonkRun::GetGearSlotChoices(uint32 entry) const
+{
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
+    if (!proto)
+        return {};
+    std::vector<uint8> slots = GetEquipSlotsFor(proto->InventoryType);
+    if (proto->InventoryType == INVTYPE_WEAPON && m_player->CanDualWield())
+    {
+        Item const* mainHand = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+        if (!mainHand || mainHand->GetProto()->InventoryType != INVTYPE_2HWEAPON)
+            slots.push_back(EQUIPMENT_SLOT_OFFHAND);
+    }
+    return slots;
+}
+
+std::string BonkRun::DescribeBroughtGearFor(uint32 entry) const
+{
+    std::string entries;
+    for (uint8 slot : GetGearSlotChoices(entry))
+    {
+        auto itr = m_broughtGear.find(slot);
+        if (Item const* brought = itr != m_broughtGear.end() ? m_player->GetItemByGuid(itr->second) : nullptr)
+            entries += (entries.empty() ? "" : ",") + std::to_string(brought->GetEntry());
+    }
+    return entries;
+}
+
 bool BonkRun::IsVaultEmptyWithFinds() const
 {
     return m_vault.empty() && !GetVaultFinds().empty();
@@ -618,7 +694,8 @@ void BonkRun::SendVault() const
     for (VaultFind const& find : GetVaultFinds())
     {
         bonk->SendAddon("vaultitem~" + std::to_string(find.guid.GetCounter()) + "~" + std::to_string(find.entry) + "~" +
-            std::to_string(find.quality) + "~" + (find.worn ? "1" : "0") + "~" + std::to_string(find.sellCopper));
+            std::to_string(find.quality) + "~" + (find.worn ? "1" : "0") + "~" + std::to_string(find.sellCopper) + "~" +
+            DescribeBroughtGearFor(find.entry));
         if (find.inVault)
             chosen += (chosen.empty() ? "" : ",") + std::to_string(find.guid.GetCounter());
     }

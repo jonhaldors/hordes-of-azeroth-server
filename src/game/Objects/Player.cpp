@@ -18381,6 +18381,9 @@ bool Player::IsVendorItemVisible(Creature* vendor, VendorItem const* vendorItem,
     if (m_bonkPlayer && !m_bonkPlayer->CanBuyGear(itemProto->ItemId))
         return false;
 
+    if (m_bonkPlayer && !m_bonkPlayer->ShowsGearItem(vendor, itemProto->ItemId))
+        return false;
+
     return !vendorItem->conditionId ||
         IsConditionSatisfied(vendorItem->conditionId, this, vendor->GetMap(), vendor, CONDITION_FROM_VENDOR);
 }

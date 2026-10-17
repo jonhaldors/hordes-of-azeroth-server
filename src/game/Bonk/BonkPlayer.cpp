@@ -11,6 +11,7 @@
 #include "DBCStores.h"
 #include "Log.h"
 #include "Map.h"
+#include "MasterPlayer.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "SpellAuras.h"
@@ -29,6 +30,13 @@ namespace
     float const BONK_CAMP_RADIUS = 300.0f;
 
     float const BONK_SHOP_RANGE = 15.0f;
+
+    uint32 const BONK_GEAR_VENDOR = 900004;
+    float const BONK_GEAR_VENDOR_RANGE = 10.0f;
+
+    uint32 const BONK_MAILBOX_BEACON = 900129;
+    uint32 const BONK_MAILBOX_CHECK_MS = 1000;
+    float const BONK_MAILBOX_GLOW_RANGE = 100.0f;
 
     uint32 const BONK_ITEM_STARTER_BAG = 900225;
     uint32 const BONK_ITEM_RUN_HEARTHSTONE = 900230;
@@ -1290,6 +1298,7 @@ void BonkPlayer::Update(uint32 diff)
     m_previewTelegraphs.Update(m_player, diff);
     UpdateDash(diff);
     UpdateCampMailNotice(diff);
+    UpdateMailboxGlow(diff);
 
     if (m_run)
     {
@@ -1324,6 +1333,97 @@ bool BonkPlayer::CanBuyGear(uint32 itemEntry) const
         return true;
     BonkTier const* tier = sBonkMgr.GetTier(stat->unlockTier);
     return tier && IsTierCleared(*tier);
+}
+
+namespace
+{
+    uint32 GetGearGroup(uint32 itemEntry)
+    {
+        BonkItemStat const* stat = sBonkMgr.GetItemStat(itemEntry);
+        return stat ? stat->unlockTier : 0;
+    }
+
+    BonkTier const* GetGearGroupTier(uint32 group, size_t* order = nullptr)
+    {
+        std::vector<BonkTier const*> const tiers = BonkPlayer::GetTiersInOrder();
+        for (size_t i = 0; i < tiers.size(); ++i)
+            if (tiers[i]->unlockTierId == group)
+            {
+                if (order)
+                    *order = i;
+                return tiers[i];
+            }
+        if (order)
+            *order = tiers.size();
+        return nullptr;
+    }
+}
+
+std::vector<uint32> BonkPlayer::GetGearTabs(Creature const* vendor) const
+{
+    std::vector<uint32> tabs;
+    VendorItemData const* items = vendor->GetVendorItems();
+    if (!items)
+        return tabs;
+    for (uint32 i = 0; i < items->GetItemCount(); ++i)
+    {
+        VendorItem const* item = items->GetItem(i);
+        if (!item || !CanBuyGear(item->item))
+            continue;
+        uint32 const group = GetGearGroup(item->item);
+        if (std::find(tabs.begin(), tabs.end(), group) == tabs.end())
+            tabs.push_back(group);
+    }
+    std::sort(tabs.begin(), tabs.end(), [](uint32 a, uint32 b)
+    {
+        size_t orderA, orderB;
+        GetGearGroupTier(a, &orderA);
+        GetGearGroupTier(b, &orderB);
+        return orderA != orderB ? orderA < orderB : a < b;
+    });
+    return tabs;
+}
+
+uint32 BonkPlayer::GetShownGearTab(std::vector<uint32> const& tabs) const
+{
+    if (std::find(tabs.begin(), tabs.end(), m_gearTab) != tabs.end())
+        return m_gearTab;
+    return tabs.empty() ? 0 : tabs.front();
+}
+
+bool BonkPlayer::ShowsGearItem(Creature const* vendor, uint32 itemEntry) const
+{
+    if (vendor->GetEntry() != BONK_GEAR_VENDOR)
+        return true;
+    std::vector<uint32> const tabs = GetGearTabs(vendor);
+    return tabs.size() < 2 || GetGearGroup(itemEntry) == GetShownGearTab(tabs);
+}
+
+void BonkPlayer::SendGearTabs(Creature const* vendor) const
+{
+    if (vendor->GetEntry() != BONK_GEAR_VENDOR)
+        return;
+    std::vector<uint32> const tabs = GetGearTabs(vendor);
+    std::string line = "geartabs~" + std::to_string(GetShownGearTab(tabs));
+    if (tabs.size() >= 2)
+        for (uint32 group : tabs)
+        {
+            BonkTier const* tier = GetGearGroupTier(group);
+            line += "~" + std::to_string(group) + "~" + (tier ? tier->name : std::string("Gear"));
+        }
+    SendAddon(line);
+}
+
+void BonkPlayer::SelectGearTab(uint32 group)
+{
+    Creature* vendor = m_player->FindNearestCreature(BONK_GEAR_VENDOR, BONK_GEAR_VENDOR_RANGE);
+    if (!vendor)
+        return;
+    std::vector<uint32> const tabs = GetGearTabs(vendor);
+    if (std::find(tabs.begin(), tabs.end(), group) == tabs.end())
+        return;
+    m_gearTab = group;
+    m_player->GetSession()->SendListInventory(vendor->GetObjectGuid());
 }
 
 bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkMap const* dungeon)
@@ -1657,6 +1757,32 @@ void BonkPlayer::UpdateCampMailNotice(uint32 diff)
     }
     m_campMailNoticeMs = 0;
     Notify("You got mail!");
+}
+
+bool BonkPlayer::HasUnreadMail() const
+{
+    MasterPlayer const* master = m_player->GetSession()->GetMasterPlayer();
+    return master && master->HasUnreadMail();
+}
+
+bool BonkPlayer::IsHiddenFrom(Creature const* creature, Player const* viewer)
+{
+    return creature->GetEntry() == BONK_MAILBOX_BEACON && !viewer->GetBonkPlayer()->HasUnreadMail();
+}
+
+void BonkPlayer::UpdateMailboxGlow(uint32 diff)
+{
+    m_mailboxGlowMs += diff;
+    if (m_mailboxGlowMs < BONK_MAILBOX_CHECK_MS)
+        return;
+    m_mailboxGlowMs = 0;
+
+    bool const unread = HasUnreadMail();
+    if (unread == m_mailboxGlowShown || m_run || m_player->IsBeingTeleported() || !IsAtCamp())
+        return;
+    m_mailboxGlowShown = unread;
+    if (Creature* beacon = m_player->FindNearestCreature(BONK_MAILBOX_BEACON, BONK_MAILBOX_GLOW_RANGE))
+        m_player->UpdateVisibilityOf(m_player, beacon);
 }
 
 bool BonkPlayer::MoveToCampBeforeLogin(bool gameMaster)

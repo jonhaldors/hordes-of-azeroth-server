@@ -65,6 +65,8 @@ enum class BonkHeroLook : uint8
     Bladestorm,
     Vengeance,
     VengeanceCharged,
+    ArcanePower,
+    PhaseRush,
     Count
 };
 
@@ -142,7 +144,7 @@ class BonkRun
         bool ForceEvolve(uint32 weaponId, std::string& error);
         bool GivePassive(uint32 passiveId, std::string& error);
 
-        bool ChooseGear(bool equip, std::string& error);
+        bool ChooseGear(bool equip, uint8 slot, std::string& error);
         bool ChooseGlyph(uint32 choice, std::string& error);
         bool UseHidden(GameObject* go);
         bool UseItem(Item* item);
@@ -160,6 +162,7 @@ class BonkRun
         bool PutInVault(uint32 guidLow, std::string& error);
         bool TakeFromVault(uint32 guidLow, std::string& error);
         std::vector<VaultFind> GetVaultFinds() const;
+        std::string DescribeBroughtGearFor(uint32 entry) const;
         uint32 GetVaultSlots() const;
         bool IsVaultEmptyWithFinds() const;
 
@@ -211,6 +214,7 @@ class BonkRun
         bool IsBlinkDash() const;
         uint32 GetBlinkCharges() const;
         float GetBlinkRechargeRate() const;
+        uint32 GetBlinkInvulnerableMs() const;
 
         void MakeSandbox(bool godBefore) { m_sandbox = true; m_sandboxGodBefore = godBefore; }
         bool IsSandbox() const { return m_sandbox; }
@@ -529,6 +533,7 @@ class BonkRun
         void UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey);
         bool Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey);
         void PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkPetAbility const& ability);
+        bool PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability);
         void DespawnPets();
         bool IsSummon(Unit const* unit) const;
         uint32 GetSummonRoom(OwnedWeapon const& owned) const;
@@ -680,7 +685,8 @@ class BonkRun
         void SendGearOffer() const;
         void CloseGearOffer();
         uint32 GetGearSalvage(uint32 entry) const;
-        bool EquipRunGear(uint32 entry, std::string& error);
+        bool EquipRunGear(uint32 entry, uint8 slot, std::string& error);
+        std::vector<uint8> GetGearSlotChoices(uint32 entry) const;
         void SnapshotBroughtGear();
         void RestoreBroughtGear();
         void ResolveRunGear(bool extract);
@@ -979,6 +985,14 @@ class BonkRun
             bool shieldThrow = false;
             bool blinkLanding = false;
             bool pyroblastSplash = false;
+            bool iceShard = false;
+            bool frostShatter = false;
+            bool livingBomb = false;
+            bool meteor = false;
+            bool meteorShower = false;
+            bool phaseRush = false;
+            bool presenceOfMind = false;
+            float radius = 0.0f;
             uint32 kit = 0;
             uint32 hops = 0;
             float share = 1.0f;
@@ -1344,12 +1358,91 @@ class BonkRun
         void SplashPyroblast(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         void SortMostBurningFirst(std::vector<Creature*>& mobs) const;
         void QueueMissiles(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float share);
-        void FireMissileVolley(OwnedWeapon& owned);
+        void FireMissileVolley(OwnedWeapon& owned, uint32 extraMissiles);
         void LandBlink(OwnedWeapon& owned);
         uint32 GetElementalFamily() const;
         bool m_blinkDash = false;
         std::vector<Creature*> PickGroupCenters(std::vector<Creature*> const& mobs, float radius, uint32 count) const;
         bool IsFrostSpellOnFrozen(SpellEntry const* spell, Unit const* victim) const;
+        void ResetMageState();
+        void UpdateMage(uint32 diff);
+        void OnMageStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share, Unit const* from);
+        void OnMageSelfArea(OwnedWeapon& owned);
+        void OnMageGroundDrop(OwnedWeapon const& owned, float x, float y, float z);
+        void WalkFire(OwnedWeapon const& owned, SpellEntry const* spellInfo, float x, float y, float z, float radius);
+        void OnFrozen(Creature* mob, uint32 sourceSpellId);
+        bool BurstIceNovas(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void BurstIceNova(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* center);
+        void QueueIceShard(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, Unit const* from, float share,
+            std::vector<ObjectGuid> struck, uint32 hops);
+        void BounceIceShard(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        Creature* PickFrozenBounce(WorldObject const* from, std::vector<ObjectGuid> const& struck) const;
+        void ShatterFrozen(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        struct FrostStorm
+        {
+            uint32 weaponId = 0;
+            float x = 0.0f, y = 0.0f;
+            float radius = 0.0f;
+            uint32 untilMs = 0;
+        };
+        std::vector<FrostStorm> m_frostStorms;
+        void AddFrostStorm(OwnedWeapon const& owned, float x, float y);
+        void DeepFreeze(Creature* mob, FrostStorm const& storm);
+        void Frostbite(Creature* mob, OwnedWeapon const& owned);
+        void GainIceBarrier(OwnedWeapon const& owned);
+        uint32 m_iceBarrierCast = 0;
+        float m_iceBarrierGiven = 0.0f;
+        std::vector<ObjectGuid> m_frostboltTargets;
+        void NoteFrostboltTarget(Creature* target);
+        struct Wildfire
+        {
+            ObjectGuid guid;
+            uint32 weaponId = 0;
+            uint32 untilMs = 0;
+        };
+        std::vector<Wildfire> m_wildfires;
+        int32 m_wildfireMs = 0;
+        void KindleWildfire(OwnedWeapon const& owned, Creature* target);
+        void SpreadWildfire(uint32 diff);
+        void PlantLivingBomb(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, Unit const* from);
+        void ExplodeLivingBomb(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        bool DropMeteors(OwnedWeapon& owned, SpellEntry const* spellInfo, std::vector<Creature*> const& mobs);
+        bool RainMeteors(OwnedWeapon& owned, SpellEntry const* spellInfo, std::vector<Creature*> const& mobs);
+        void QueueMeteor(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* aim, float share, float radius, bool shower);
+        void LandMeteor(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        void EruptBurning(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void TriggerHotStreak(OwnedWeapon const& hotStreak, Creature* target);
+        uint32 m_hotStreakCast = 0;
+        void RushThrough(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        struct TimeBubble
+        {
+            float x = 0.0f, y = 0.0f;
+            float radius = 0.0f;
+            uint32 untilMs = 0;
+        };
+        std::vector<TimeBubble> m_timeBubbles;
+        int32 m_timeBubbleSlowMs = 0;
+        void LeaveTimeBubble(OwnedWeapon const& owned);
+        void UpdateTimeBubbles(uint32 diff);
+        float GetTimeBubbleMultiplier(Unit const* victim) const;
+        void QueuePresenceOfMind(OwnedWeapon const& owned);
+        void CastPresenceOfMind(OwnedWeapon const& source);
+        uint32 m_presenceOfMindMs = 0;
+        void BankMissiles(OwnedWeapon const& owned);
+        uint32 m_bankedMissiles = 0;
+        float GetArcanePowerMultiplier() const;
+        uint32 m_arcanePowerUntilMs = 0;
+        void PlantHydra(Creature* pet);
+        void ReplantHydras();
+        float GetMageDamageMultiplier(Unit const* victim) const;
+        OwnedWeapon const* FindOwnedWhere(bool (BonkWeapon::*test)() const) const;
+        void ShiftElemental(Creature* pet, uint32 entry);
+        void UpdateElementalShift();
+        uint32 m_shiftFamily = 0;
+        bool GetMageCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind) const;
+        void DealExactHit(SpellEntry const* spellInfo, Unit* target, uint32 damage, Unit* attacker = nullptr);
+        void ShowFallingAt(SpellEntry const* spellInfo, float x, float y, float z);
+        void PlaceAreaLook(uint32 spellId, float x, float y, float z, float radius, uint32 durationMs);
         struct Bladestorm
         {
             uint32 weaponId = 0;
@@ -1440,6 +1533,7 @@ class BonkRun
         std::vector<PendingKeyword> m_pendingKeywords;
         std::vector<PendingKeyword> m_pendingConsumes;
         bool GetWeaponKeyword(OwnedWeapon const& owned, PendingKeyword& keyword) const;
+        bool GetPetAbilityKeyword(OwnedWeapon const& owned, BonkPetAbility const& ability, PendingKeyword& keyword) const;
         void ConsumePendingKeywords();
         float ConsumeDotStacks(Creature* mob, BonkKeywordInfo const& info);
         struct DyingKeyword

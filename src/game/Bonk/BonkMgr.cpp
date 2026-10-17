@@ -804,7 +804,7 @@ void BonkMgr::LoadWeapons()
                 continue;
             }
             if ((upgrade == BONK_SPELL_UPGRADE_SHIELD_SIZE && !weapon->second.IsShieldBlock() && weapon->second.behavior != BONK_BEHAVIOR_WARD &&
-                    weapon->second.behavior != BONK_BEHAVIOR_BULWARK) ||
+                    weapon->second.behavior != BONK_BEHAVIOR_BULWARK && weapon->second.behavior != BONK_BEHAVIOR_ICE_BARRIER) ||
                 (upgrade == BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN && !weapon->second.IsTrigger()))
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u neither shields you nor triggers, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
@@ -1807,7 +1807,7 @@ void BonkMgr::LoadPetFamilies()
 void BonkMgr::LoadPetAbilities()
 {
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `family`, `spell_id`, `kind`, `cooldown_ms`, `damage`, `stacks`, `value` FROM `bonk_pet_ability`"));
+        "SELECT `family`, `spell_id`, `kind`, `cooldown_ms`, `damage`, `stacks`, `value`, `kit` FROM `bonk_pet_ability`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk pet abilities: pets only bite.");
@@ -1826,11 +1826,13 @@ void BonkMgr::LoadPetAbilities()
         ability.damage = std::max(0.0f, fields[4].GetFloat());
         ability.stacks = fields[5].GetUInt8();
         ability.value = fields[6].GetFloat();
+        ability.kit = fields[7].GetUInt32();
 
         auto family = m_petFamilies.find(familyId);
-        if (family == m_petFamilies.end() || kind >= MAX_BONK_PET_ABILITY_KIND || !sSpellMgr.GetSpellEntry(ability.spellId) || ability.cooldownMs < 500)
+        if (family == m_petFamilies.end() || kind >= MAX_BONK_PET_ABILITY_KIND || !sSpellMgr.GetSpellEntry(ability.spellId) || ability.cooldownMs < 500 ||
+            (kind == BONK_PET_ABILITY_PULSE && ability.value <= 0.0f))
         {
-            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_ability`: family %u, spell %u, kind %u is not valid (unknown family, kind or spell, or a cooldown under 500 ms); skipped.",
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_ability`: family %u, spell %u, kind %u is not valid (unknown family, kind or spell, a cooldown under 500 ms, or a pulse without a radius); skipped.",
                 familyId, ability.spellId, uint32(kind));
             continue;
         }

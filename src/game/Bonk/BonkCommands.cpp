@@ -379,6 +379,13 @@ bool ChatHandler::HandleBonkGlyphCommand(char* args)
 
 bool ChatHandler::HandleBonkGearCommand(char* args)
 {
+    std::string const tab = args ? args : "";
+    if (tab.compare(0, 4, "tab ") == 0)
+    {
+        m_session->GetPlayer()->GetBonkPlayer()->SelectGearTab(uint32(atoi(tab.c_str() + 4)));
+        return true;
+    }
+
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
     {
@@ -388,15 +395,17 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
     }
 
     std::string const choice = args ? args : "";
-    if (choice != "equip" && choice != "salvage")
+    bool const equipInSlot = choice.compare(0, 6, "equip ") == 0;
+    if (choice != "equip" && choice != "salvage" && !equipInSlot)
     {
-        SendSysMessage("Use .bonk gear equip or .bonk gear salvage.");
+        SendSysMessage("Use .bonk gear equip, .bonk gear equip <slot> or .bonk gear salvage.");
         SetSentErrorMessage(true);
         return false;
     }
 
     std::string error;
-    if (!run->ChooseGear(choice == "equip", error))
+    uint8 const slot = equipInSlot ? uint8(atoi(choice.c_str() + 6)) : uint8(NULL_SLOT);
+    if (!run->ChooseGear(choice != "salvage", slot, error))
     {
         SendSysMessage(error.c_str());
         SetSentErrorMessage(true);
