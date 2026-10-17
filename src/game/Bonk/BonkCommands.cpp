@@ -520,7 +520,7 @@ bool ChatHandler::HandleBonkCodexCommand(char*)
     Player* player = m_session->GetPlayer();
     if (!player->GetBonkPlayer()->IsAddonReady())
     {
-        SendSysMessage("The spellbook needs the Vanilla Bonk addon.");
+        SendSysMessage("The spellbook needs the Hordes of Azeroth addon.");
         return true;
     }
     BonkCodex::Send(player, "");
