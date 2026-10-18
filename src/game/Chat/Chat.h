@@ -231,6 +231,7 @@ class ChatHandler
         bool HandleBonkCodexCommand(char* args);
         bool HandleBonkMapsCommand(char* args);
         bool HandleBonkCampCommand(char* args);
+        bool HandleBonkSpotCommand(char* args);
         bool HandleBonkReloadCommand(char* args);
         bool HandleBonkTelegraphCommand(char* args);
         bool HandleBonkObjectiveCommand(char* args);

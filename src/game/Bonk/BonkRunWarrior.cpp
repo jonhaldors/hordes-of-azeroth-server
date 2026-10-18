@@ -171,25 +171,26 @@ bool BonkRun::IsPeriodicHit()
 
 float BonkRun::GetEnrageHaste() const
 {
-    return IsEnraged() ? BONK_ENRAGE_HASTE : 0.0f;
+    return IsEnraged() ? BONK_ENRAGE_HASTE + m_mastery.enrageHaste : 0.0f;
 }
 
 void BonkRun::Enrage()
 {
     if (m_state != STATE_RUNNING || !m_player->IsAlive())
         return;
-    if (IsEnraged() && m_enrageUntilMs - m_totalMs + BONK_ENRAGE_REFRESH_GAP_MS > BONK_ENRAGE_MS)
+    uint32 const length = BONK_ENRAGE_MS + uint32(m_mastery.enrageDuration * IN_MILLISECONDS);
+    if (IsEnraged() && m_enrageUntilMs - m_totalMs + BONK_ENRAGE_REFRESH_GAP_MS > length)
         return;
 
-    m_enrageUntilMs = m_totalMs + BONK_ENRAGE_MS;
+    m_enrageUntilMs = m_totalMs + length;
     if (SpellAuraHolder* holder = m_player->GetSpellAuraHolder(BONK_SPELL_ENRAGE_LOOK, m_player->GetObjectGuid()))
     {
-        holder->SetAuraMaxDuration(int32(BONK_ENRAGE_MS));
+        holder->SetAuraMaxDuration(int32(length));
         holder->RefreshHolder();
         return;
     }
     BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(BONK_SPELL_ENRAGE_LOOK);
-    tweak.durationMs = BONK_ENRAGE_MS;
+    tweak.durationMs = length;
     tweak.durationScale = 1.0f;
     m_player->CastCustomSpell(m_player, BONK_SPELL_ENRAGE_LOOK, 0, 0, {}, true);
 }
@@ -331,8 +332,13 @@ bool BonkRun::WasStruckRecently() const
 
 uint32 BonkRun::GetShieldGain(OwnedWeapon const& owned) const
 {
-    float const size = (1.0f + owned.damageBonus / 100.0f) * (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_SHIELD_SIZE) / 100.0f);
-    return uint32(m_player->GetMaxHealth() * owned.weapon.behaviorValue / 100.0f * size);
+    float const percent = GetShieldPercent(owned.weapon, owned.damageBonus, GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_SHIELD_SIZE));
+    return uint32(m_player->GetMaxHealth() * percent / 100.0f) + (owned.weapon.IsShieldBlock() ? GetShieldBlockTalent() : 0);
+}
+
+float BonkRun::GetShieldPercent(BonkWeapon const& weapon, float damageBonus, float sizeUpgrade)
+{
+    return weapon.behaviorValue * (1.0f + damageBonus / 100.0f) * (1.0f + sizeUpgrade / 100.0f);
 }
 
 float BonkRun::GetShieldSlamMultiplier(OwnedWeapon const& owned) const

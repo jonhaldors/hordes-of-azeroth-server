@@ -105,6 +105,7 @@ void BonkCodex::Send(Player* player, std::string const& npc)
 
 bool GossipHello_npc_bonk_codex(Player* player, Creature* creature)
 {
+    player->GetBonkPlayer()->VisitSpellbook(creature);
     BonkCodex::Send(player, player->GetBonkPlayer()->IsAddonReady() ? creature->GetName() : "");
     player->SEND_GOSSIP_MENU(BONK_TEXT_SPELLBOOK, creature->GetObjectGuid());
     return true;

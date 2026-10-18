@@ -9726,6 +9726,8 @@ InventoryResult Player::CanEquipItem(uint8 slot, uint16& dest, ItemPrototype con
         uint8 eslot = FindEquipSlot(pProto, slot, swap);
         if (eslot == NULL_SLOT)
             return EQUIP_ERR_ITEM_CANT_BE_EQUIPPED;
+        if (not_loading && m_bonkPlayer && m_bonkPlayer->IsSlotUnusedByClass(eslot))
+            return EQUIP_ERR_ITEM_CANT_BE_EQUIPPED;
 
         InventoryResult msg = pItem ? CanUseItem(pItem , not_loading) : CanUseItem(pProto, not_loading);
         if (msg != EQUIP_ERR_OK)

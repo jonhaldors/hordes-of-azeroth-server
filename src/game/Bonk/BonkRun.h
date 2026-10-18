@@ -112,6 +112,9 @@ class BonkRun
         bool IsPortalOpen() const { return m_state == STATE_PORTAL; }
         BonkMap const& GetMap() const { return m_map; }
         BonkTier const& GetTier() const { return m_tier; }
+        uint32 GetEliteAffixes() const { return m_tier.eliteAffixes + m_bonuses.eliteAffixes; }
+        uint32 GetEvolveRank() const;
+        void BringBossEarlier();
         uint32 GetStage() const { return m_stage; }
 
         void OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer = nullptr);
@@ -127,7 +130,8 @@ class BonkRun
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
         static uint32 GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed);
         bool RollDodge(Unit const* victim) const;
-        float GetCritChance(SpellEntry const* spell = nullptr, Unit const* victim = nullptr) const;
+        float GetCritChance(SpellEntry const* spell = nullptr, Unit const* victim = nullptr, Unit const* attacker = nullptr) const;
+        float GetSummonDamageMultiplier(Unit const* attacker) const;
         float GetMobDamageMultiplier(Creature const* mob) const;
         void OnHeroDodge();
         void OnHeroStruck(Creature* attacker);
@@ -214,6 +218,7 @@ class BonkRun
         bool IsBlinkDash() const;
         uint32 GetBlinkCharges() const;
         float GetBlinkRechargeRate() const;
+        float GetDashRechargeRate() const;
         uint32 GetBlinkInvulnerableMs() const;
 
         void MakeSandbox(bool godBefore) { m_sandbox = true; m_sandboxGodBefore = godBefore; }
@@ -328,6 +333,7 @@ class BonkRun
         void OnMiniEventTargetKilled(Creature* mob);
         void SendMiniEventTimer(bool force = false) const;
         void EndMiniEvent();
+        void DespawnMiniEvent();
         void UpdateShrines(uint32 diff);
         bool PlaceShrine(BonkShrineType type);
         BonkShrineType PickShrineType() const;
@@ -515,7 +521,7 @@ class BonkRun
         void OnMarkedDeath(Creature const* mob);
         float GetBuffPower() const;
         bool IsReckless() const;
-        void DropTraps(OwnedWeapon& owned);
+        void DropTraps(OwnedWeapon& owned, bool armed = false);
         void UpdateTraps(uint32 diff);
         void SpringTrap(OwnedWeapon& owned, float x, float y, float z);
         void DespawnTraps();
@@ -526,6 +532,9 @@ class BonkRun
         bool Howl(OwnedWeapon& owned);
         float GetFrenzyDamage() const;
         bool IsPetFrenzied() const;
+        bool IsHowlFrenzied() const;
+        float GetBestialWrathFrenzy() const;
+        float GetPackPowerShare() const;
         void UpdateDefensive(uint32 diff);
         void UpdatePets(OwnedWeapon& owned);
         void UpdatePetTargets(uint32 diff);
@@ -594,6 +603,17 @@ class BonkRun
             std::vector<Offer>* drawn = nullptr);
         std::string DescribeOffer(Offer const& offer, std::string* icon) const;
         std::string DescribeStep(Offer const& offer) const;
+        std::string DescribeRankUp(Offer const& offer, BonkWeapon const& weapon) const;
+        struct WeaponStrength
+        {
+            std::string lead;
+            std::string tail;
+            float value = 0.0f;
+            BonkSpellUpgrade folded = BONK_SPELL_UPGRADE_NONE;
+            std::string Describe() const;
+        };
+        bool GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, float const* upgrades, WeaponStrength& strength) const;
+        void GetSpellUpgrades(OwnedWeapon const* owned, float* upgrades) const;
         OwnedWeapon* FindOwned(uint32 weaponId);
         OwnedWeapon const* FindOwned(uint32 weaponId) const;
 
@@ -776,6 +796,9 @@ class BonkRun
         uint32 m_minuteHealed = 0;
         uint32 m_minuteKills = 0;
         uint32 m_minuteLowestHealth = 100;
+        uint32 m_minuteClientObjectsPeak = 0;
+        uint32 CountClientObjects() const;
+        std::string DescribeClientObjects() const;
         std::string m_lastStriker;
         uint32 m_lastStrikeDamage = 0;
         std::vector<std::pair<uint32, uint32>> m_recentHits;
@@ -1080,6 +1103,7 @@ class BonkRun
             uint32 stacks = 0;
             ObjectGuid look;
             uint32 lookAura = 0;
+            ObjectGuid area;
         };
         struct KeywordCloudKind
         {
@@ -1135,6 +1159,42 @@ class BonkRun
         void SlowNormalMob(Creature* mob, SpellEntry const* spellInfo, int32 const* points, int32 durationMs);
         void ApplyMasterySlow(Creature* mob, float percent);
         std::vector<std::pair<ObjectGuid, float>> m_pendingSlows;
+
+        void ApplyMasteryTo(BonkWeapon& weapon) const;
+        float GetSpecDamage(uint32 weaponId) const;
+        float GetTalentDamagePercent() const;
+        float GetCapstoneDamageMultiplier(bool ownSpell, Unit const* victim) const;
+        OwnedWeapon const* FindSummonOwner(Unit const* unit) const;
+        float GetTalentCritChance(Unit const* victim, Unit const* attacker) const;
+        bool IsWeaponMasterStrike(SpellEntry const* spell) const;
+        float GetKeywordTalentDamage(uint32 keyword) const;
+        uint32 GetExtraSpreadTargets(uint32 keyword) const;
+        uint32 GetChillFreezeStacks(BonkKeywordInfo const& chill) const;
+        uint32 GetChillTalentMs() const;
+        void QueueTalentStun(OwnedWeapon const& owned, Unit* victim);
+        void ApplyPendingStuns();
+        uint32 GetSpellShieldCap() const;
+        uint32 GetShieldBlockTalent() const;
+        void RechargeJuggernautShield(uint32 diff, uint32 max);
+        uint32 ApplyTalentDamageTaken(uint32 damage) const;
+        bool IsIceBlocked() const;
+        uint32 GuardLowHealth(uint32 damage);
+        void BurstIceBlock();
+        void CastOnStruck();
+        void UpdateTalents();
+        void OnTalentDash();
+        void OnTalentBlink();
+        bool IsTalentBlinkDash() const;
+        float GetTrapTalentDuration(OwnedWeapon const& owned) const;
+        void SpringEntrapment(OwnedWeapon const& owned, float x, float y, float radius);
+        void PreferMarked(std::vector<Creature*>& mobs) const;
+        std::vector<ObjectGuid> m_pendingStuns;
+        std::map<uint32, uint32> m_struckCastReadyMs;
+        uint32 m_talentStruckSeenMs = 0;
+        uint32 m_lowHealthGuardStage = 0;
+        uint32 m_iceBlockUntilMs = 0;
+        bool m_iceBlockBurstPending = false;
+        float m_juggernautCarry = 0.0f;
 
         enum BeastKind : uint8
         {
@@ -1199,7 +1259,6 @@ class BonkRun
         void FeedFrenzy();
         void GlowFrenzy();
         Creature* SummonPet(OwnedWeapon const& owned, uint32 entry, float x, float y, float z, float orientation);
-        bool HasPoisonSource() const;
         float GetPoisonDamageScale() const;
 
         bool m_keywordlessHits = false;
@@ -1282,6 +1341,7 @@ class BonkRun
         OwnedWeapon const* FindOwnedByBehavior(BonkWeaponBehavior behavior) const;
         bool WasStruckRecently() const;
         uint32 GetShieldGain(OwnedWeapon const& owned) const;
+        static float GetShieldPercent(BonkWeapon const& weapon, float damageBonus, float sizeUpgrade);
         float GetShieldSlamMultiplier(OwnedWeapon const& owned) const;
         void SpinWhirlwind(OwnedWeapon const& owned, SpellEntry const* spellInfo);
         void ShowWhirlwindSpin();
@@ -1503,7 +1563,9 @@ class BonkRun
         uint32 CountKeywords(Unit const* victim) const;
         float GetKeywordDamageMultiplier(SpellEntry const* spell, Unit const* victim) const;
         float GetHuntersMarkBonus() const;
+        float GetMarkStrength(float damageBonus, float markUpgrade) const;
         float GetSlowedBonus(Unit const* victim) const;
+        static float GetSlowedStrength(float damageBonus, float slowedUpgrade);
         SpellAuraHolder* AddKeywordAura(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points = 0);
         int32 GetKeywordPoints(BonkKeywordInfo const& info) const;
         struct DotStack

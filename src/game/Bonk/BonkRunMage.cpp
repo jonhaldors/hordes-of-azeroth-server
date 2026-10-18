@@ -230,13 +230,17 @@ uint32 BonkRun::GetBlinkInvulnerableMs() const
 bool BonkRun::IsBlinkDash() const
 {
     return m_blinkDash || FindOwnedWhere(&BonkWeapon::IsBlink) || HasBehavior(BONK_BEHAVIOR_ARCANE_BARRAGE) ||
-        HasBehavior(BONK_BEHAVIOR_ARCANE_POWER);
+        HasBehavior(BONK_BEHAVIOR_ARCANE_POWER) || IsTalentBlinkDash();
 }
 
 void BonkRun::OnDash()
 {
-    if (m_state != STATE_RUNNING || !m_player->IsAlive() || !IsBlinkDash())
+    if (m_state != STATE_RUNNING || !m_player->IsAlive())
         return;
+    OnTalentDash();
+    if (!IsBlinkDash())
+        return;
+    OnTalentBlink();
 
     float x, y, z;
     m_player->GetPosition(x, y, z);

@@ -9,6 +9,7 @@
 #include "Creature.h"
 #include "Database/DatabaseEnv.h"
 #include "DBCStores.h"
+#include "GameObject.h"
 #include "Log.h"
 #include "Map.h"
 #include "MasterPlayer.h"
@@ -28,6 +29,9 @@
 namespace
 {
     float const BONK_CAMP_RADIUS = 300.0f;
+    uint32 const BONK_CAMP_SIT_DELAY_MS = 500;
+    float const BONK_CAMP_CHAIR_RANGE = 3.0f;
+    float const BONK_CAMP_CHAIR_TAKEN = 1.0f;
 
     float const BONK_SHOP_RANGE = 15.0f;
 
@@ -351,7 +355,7 @@ bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
 
     if (GetMasterySpent() >= GetMasteryPoints())
     {
-        message = "You have no talent points left. Level up your Mastery or finish class quests to earn more.";
+        message = "You have no talent points left. Level up your Mastery to earn more.";
         return false;
     }
 
@@ -789,6 +793,11 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
         message = "Visit Sayge at camp to unlock Darkmoon Cards.";
         return false;
     }
+    if (type != BONK_REWARD_CARD && !IsAtSpellbook())
+    {
+        message = "Visit the Spellbook Keeper at camp to unlock " + name + ".";
+        return false;
+    }
 
     uint32 const account = m_player->GetSession()->GetAccountId();
     if (!sBonkQuests.IsForSale(account, type, id))
@@ -800,10 +809,14 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
         return false;
     }
 
-    if (!Spend(sBonkQuests.GetUnlockPrice(account, type, id), message))
+    uint32 const price = sBonkQuests.GetUnlockPrice(account, type, id);
+    bool const paid = BonkQuests::IsTicketUnlock(type) ? SpendShards(price, message) : Spend(price, message);
+    if (!paid)
         return false;
     sBonkQuests.Buy(account, type, id);
     message = name + " unlocked!";
+    if (BonkQuests::IsTicketUnlock(type))
+        SendShop(false);
     return true;
 }
 
@@ -1045,6 +1058,20 @@ void BonkPlayer::OpenShop(BonkShop shop, Creature const* npc)
     SendShop(true);
 }
 
+void BonkPlayer::VisitSpellbook(Creature const* keeper)
+{
+    m_spellbookKeeper = keeper->GetObjectGuid();
+}
+
+bool BonkPlayer::IsAtSpellbook() const
+{
+    if (m_spellbookKeeper.IsEmpty() || !m_player->IsInWorld())
+        return false;
+
+    Creature const* keeper = m_player->GetMap()->GetCreature(m_spellbookKeeper);
+    return keeper && keeper->IsAlive() && m_player->IsWithinDistInMap(keeper, BONK_SHOP_RANGE);
+}
+
 bool BonkPlayer::IsAtShop() const
 {
     if (m_shop == BONK_SHOP_NONE || !m_player->IsInWorld())
@@ -1272,6 +1299,11 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
             case BONK_TALENT_SPELL_SLOT:   bonuses.spellSlots += uint32(value); break;
             case BONK_TALENT_PASSIVE_SLOT: bonuses.passiveSlots += uint32(value); break;
             case BONK_TALENT_SECOND_SIGHT: bonuses.secondSight = bonuses.secondSight || value > 0.0f; break;
+            case BONK_TALENT_EXPERIENCE:   bonuses.passives[BONK_PASSIVE_GROWTH] += value; break;
+            case BONK_TALENT_PREMONITION:  bonuses.earlierEvolutions += uint32(value); break;
+            case BONK_TALENT_CURSED_GROUND: bonuses.healingCut += value; break;
+            case BONK_TALENT_DOOM_CLOCK:   bonuses.earlierBossSeconds += uint32(value); break;
+            case BONK_TALENT_ELITE_AFFIX:  bonuses.eliteAffixes += uint32(value); break;
             default: break;
         }
     }
@@ -1296,6 +1328,7 @@ void BonkPlayer::Update(uint32 diff)
     }
 
     m_previewTelegraphs.Update(m_player, diff);
+    UpdateCampSeat(diff);
     UpdateDash(diff);
     UpdateCampMailNotice(diff);
     UpdateMailboxGlow(diff);
@@ -1324,6 +1357,18 @@ void BonkPlayer::Update(uint32 diff)
 bool BonkPlayer::IsTierCleared(BonkTier const& tier) const
 {
     return tier.stages && GetBestStage(tier.id) > tier.stages;
+}
+
+bool BonkPlayer::IsSlotUnusedByClass(uint8 slot) const
+{
+    uint8 const playerClass = m_player->GetClass();
+    switch (slot)
+    {
+        case EQUIPMENT_SLOT_MAINHAND: return playerClass == CLASS_HUNTER;
+        case EQUIPMENT_SLOT_OFFHAND:  return playerClass == CLASS_HUNTER || playerClass == CLASS_DRUID;
+        case EQUIPMENT_SLOT_RANGED:   return playerClass != CLASS_HUNTER;
+        default:                      return false;
+    }
 }
 
 bool BonkPlayer::CanBuyGear(uint32 itemEntry) const
@@ -1742,7 +1787,39 @@ bool BonkPlayer::IsAtCamp() const
 
 void BonkPlayer::TeleportToCamp()
 {
-    m_player->TeleportTo(BONK_CAMP_LOCATION);
+    m_player->TeleportTo(BONK_CAMP_ARRIVAL);
+    m_sitAtCampMs = BONK_CAMP_SIT_DELAY_MS;
+}
+
+void BonkPlayer::UpdateCampSeat(uint32 diff)
+{
+    if (!m_sitAtCampMs || !m_player->IsInWorld() || m_player->IsBeingTeleported())
+        return;
+    if (diff < m_sitAtCampMs)
+    {
+        m_sitAtCampMs -= diff;
+        return;
+    }
+    m_sitAtCampMs = 0;
+    SitAtCamp();
+}
+
+void BonkPlayer::SitAtCamp()
+{
+    if (m_run || !m_player->IsAlive() || !IsAtCamp())
+        return;
+
+    GameObject* chair = m_player->FindNearestGameObject(BONK_CAMP_CHAIR, BONK_CAMP_CHAIR_RANGE);
+    if (!chair)
+        return;
+    for (auto const& ref : m_player->GetMap()->GetPlayers())
+    {
+        Player const* other = ref.getSource();
+        if (other && other != m_player && other->GetStandState() != UNIT_STAND_STATE_STAND &&
+            other->GetDistance2d(chair) <= BONK_CAMP_CHAIR_TAKEN)
+            return;
+    }
+    chair->Use(m_player);
 }
 
 void BonkPlayer::UpdateCampMailNotice(uint32 diff)
@@ -1790,7 +1867,8 @@ bool BonkPlayer::MoveToCampBeforeLogin(bool gameMaster)
     if (gameMaster || IsAtCamp())
         return false;
 
-    m_player->SetLocationMapId(BONK_CAMP_LOCATION.mapId);
-    m_player->Relocate(BONK_CAMP_LOCATION.x, BONK_CAMP_LOCATION.y, BONK_CAMP_LOCATION.z, BONK_CAMP_LOCATION.o);
+    m_player->SetLocationMapId(BONK_CAMP_ARRIVAL.mapId);
+    m_player->Relocate(BONK_CAMP_ARRIVAL.x, BONK_CAMP_ARRIVAL.y, BONK_CAMP_ARRIVAL.z, BONK_CAMP_ARRIVAL.o);
+    m_sitAtCampMs = BONK_CAMP_SIT_DELAY_MS;
     return true;
 }

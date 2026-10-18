@@ -79,6 +79,7 @@ class BonkPlayer
         uint32 CountDarkFortunes() const { return uint32(m_enabledTalents.size()); }
         bool BuyUpgrade(uint32 upgradeId, std::string& message);
         bool BuyUnlock(BonkQuestReward type, uint32 id, std::string& message);
+        void VisitSpellbook(Creature const* keeper);
         bool BuyTalent(uint32 talentId, std::string& message);
         bool ResetUpgrades(std::string& message);
         bool ResetTalents(std::string& message);
@@ -112,6 +113,7 @@ class BonkPlayer
         bool IsFiringWeapon() const { return m_firingWeapon; }
         void SetEquippingGear(bool equipping) { m_equippingGear = equipping; }
         bool IsEquippingGear() const { return m_equippingGear; }
+        bool IsSlotUnusedByClass(uint8 slot) const;
         struct SpellTweak
         {
             float areaScale = 1.0f;
@@ -227,6 +229,7 @@ class BonkPlayer
         void SendShop(bool open) const;
         void SendArena(std::string const& npc) const;
         bool IsAtShop() const;
+        bool IsAtSpellbook() const;
 
         Player* m_player;
         std::unique_ptr<BonkRun> m_run;
@@ -242,6 +245,9 @@ class BonkPlayer
         }
         bool m_testGod = false;
         bool m_campCheckPending = false;
+        uint32 m_sitAtCampMs = 0;
+        void UpdateCampSeat(uint32 diff);
+        void SitAtCamp();
         static constexpr uint32 BONK_CAMP_MAIL_NOTICE_DELAY_MS = 1500;
         uint32 m_campMailNoticeMs = 0;
         void UpdateCampMailNotice(uint32 diff);
@@ -264,6 +270,7 @@ class BonkPlayer
         uint32 m_starterChoice = 0;
         BonkShop m_shop{};
         ObjectGuid m_shopNpc;
+        ObjectGuid m_spellbookKeeper;
         std::string m_shopNpcName;
 
         float GetDashDistance() const;

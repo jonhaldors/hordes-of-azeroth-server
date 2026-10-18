@@ -24,6 +24,7 @@
 #include "ObjectMgr.h"
 #include "MapManager.h"
 #include "Util.h"
+#include "Bonk/BonkPlayer.h"
 
 bool ChatHandler::HandleTeleCommand(char* args)
 {
@@ -1040,6 +1041,13 @@ bool ChatHandler::HandleStartCommand(char* /*args*/)
 {
     Player* chr = m_session->GetPlayer();
 
+    if (chr->GetBonkPlayer()->GetRun())
+    {
+        SendSysMessage("Leave the run first with .bonk stop.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
     if (chr->IsTaxiFlying())
     {
         SendSysMessage(LANG_YOU_IN_FLIGHT);
@@ -1071,6 +1079,13 @@ bool ChatHandler::HandleUnstuckCommand(char* /*args*/)
 
     if (!pPlayer)
         return false;
+
+    if (pPlayer->GetBonkPlayer()->GetRun())
+    {
+        SendSysMessage("Leave the run first with .bonk stop.");
+        SetSentErrorMessage(true);
+        return false;
+    }
 
     SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(SPELL_UNDYING_SOUL);
     if (pPlayer->IsInCombat() || pPlayer->InBattleGround() || pPlayer->IsTaxiFlying() || !pPlayer->IsSpellReady(pSpellEntry) || (pPlayer->GetDeathState() == CORPSE) || (pPlayer->GetLevel() < 10))

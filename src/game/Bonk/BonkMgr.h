@@ -15,6 +15,8 @@ class Map;
 class Player;
 
 WorldLocation const BONK_CAMP_LOCATION(1, 16226.2f, 16257.0f, 13.2022f, 1.65007f);
+WorldLocation const BONK_CAMP_ARRIVAL(1, 16242.1f, 16304.9f, 20.899f, 6.1865f);
+uint32 const BONK_CAMP_CHAIR = 101766;
 
 uint32 const BONK_GO_CHEST      = 900001;
 uint32 const BONK_GO_CHEST_FREE = 900002;
@@ -511,6 +513,7 @@ struct BonkWeapon
     uint8 applyStacks = 0;
     BonkKeyword uses = BONK_KEYWORD_NONE;
     float usesPct = 0.0f;
+    uint32 spec = 0;
     std::vector<BonkWeaponUpgrade> upgrades;
 
     int32 damageEffectIndex = -1;
@@ -521,6 +524,11 @@ struct BonkWeapon
 
     bool HasFlag(BonkWeaponFlags flag) const { return (flags & flag) != 0; }
     bool IsKeywordOnly() const { return damageEffectIndex < 0 && !weaponDamage; }
+    bool AppliesPoison() const
+    {
+        return applies == BONK_KEYWORD_POISON || behavior == BONK_BEHAVIOR_VENOM_BOLTS || behavior == BONK_BEHAVIOR_VENOM_CLOUD ||
+            HasFlag(BONK_WEAPON_FLAG_SNAKES) || HasFlag(BONK_WEAPON_FLAG_PLAGUE);
+    }
     bool IsWhirlwind() const
     {
         return behavior == BONK_BEHAVIOR_WHIRLWIND || behavior == BONK_BEHAVIOR_BLADESTORM || behavior == BONK_BEHAVIOR_STEEL_CYCLONE;
@@ -829,6 +837,11 @@ enum BonkTalentEffect : uint8
     BONK_TALENT_SPELL_SLOT   = 9,
     BONK_TALENT_PASSIVE_SLOT = 10,
     BONK_TALENT_SECOND_SIGHT = 11,
+    BONK_TALENT_EXPERIENCE   = 12,
+    BONK_TALENT_PREMONITION  = 13,
+    BONK_TALENT_CURSED_GROUND = 14,
+    BONK_TALENT_DOOM_CLOCK   = 15,
+    BONK_TALENT_ELITE_AFFIX  = 16,
     MAX_BONK_TALENT_EFFECT
 };
 
@@ -846,7 +859,11 @@ struct BonkTalent
     BonkShopNode layout;
     std::vector<uint32> rankQuests;
 
-    bool IsToggle() const { return effect <= BONK_TALENT_ELITE_RATE; }
+    bool IsToggle() const
+    {
+        return effect <= BONK_TALENT_ELITE_RATE || effect == BONK_TALENT_CURSED_GROUND || effect == BONK_TALENT_DOOM_CLOCK ||
+            effect == BONK_TALENT_ELITE_AFFIX;
+    }
     uint32 GetCost(uint8 ownedRanks) const;
 };
 
@@ -867,6 +884,10 @@ struct BonkRunBonuses
     uint32 spellSlots = 0;
     uint32 passiveSlots = 0;
     bool secondSight = false;
+    uint32 earlierEvolutions = 0;
+    float healingCut = 0.0f;
+    uint32 earlierBossSeconds = 0;
+    uint32 eliteAffixes = 0;
 };
 
 struct BonkItemStat
@@ -1023,7 +1044,9 @@ class BonkMgr
         std::map<uint32, BonkWeapon> const& GetWeapons() const { return m_weapons; }
         std::vector<BonkWeapon const*> GetEvolutions(uint32 weaponId) const;
         bool HasStarterSpell(uint32 classMask) const;
+        bool HasPoisonSpell(uint32 classMask) const;
         std::string DescribeEvolutionNames(uint32 weaponId) const;
+        std::string DescribeEvolutionAdds(BonkWeapon const& evolved) const;
 
         BonkProjectileInfo const* GetProjectile(uint32 spellId) const;
 
@@ -1038,7 +1061,8 @@ class BonkMgr
         std::vector<BonkScalingPoint> const& GetScaling() const { return m_scaling; }
 
         BonkPassive const* GetPassive(uint32 id) const;
-        std::string DescribePassive(BonkPassive const& passive) const;
+        std::string DescribePassive(BonkPassive const& passive, uint32 rank = 1) const;
+        std::string DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const;
         std::map<uint32, BonkPassive> const& GetPassives() const { return m_passives; }
 
         std::vector<BonkPowerup> const& GetPowerups() const { return m_powerups; }

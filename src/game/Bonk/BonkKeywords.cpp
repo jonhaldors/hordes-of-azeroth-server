@@ -51,6 +51,7 @@ void BonkRun::OnWeaponHit(Unit* victim, SpellEntry const* spell)
     auto slow = m_mastery.spellSlow.find(GetRootWeapon(owned->weapon));
     if (slow != m_mastery.spellSlow.end())
         m_pendingSlows.emplace_back(victim->GetObjectGuid(), slow->second);
+    QueueTalentStun(*owned, victim);
 
     if (owned->weapon.HasFlag(BONK_WEAPON_FLAG_CONSUME))
     {
@@ -153,6 +154,7 @@ void BonkRun::UpdateKeywords(uint32 diff)
             if (Creature* mob = map->GetCreature(slow.first))
                 ApplyMasterySlow(mob, slow.second);
     }
+    ApplyPendingStuns();
     UpdateDotStacks(diff);
 }
 
@@ -214,7 +216,7 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
         return true;
     }
 
-    uint32 const length = durationMs ? durationMs : info->durationMs;
+    uint32 const length = (durationMs ? durationMs : info->durationMs) + (keyword == BONK_KEYWORD_CHILL ? GetChillTalentMs() : 0);
 
     if (info->IsDamageOverTime())
     {
@@ -224,7 +226,7 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
 
     uint32 const total = std::min<uint32>(GetKeywordStacks(mob, keyword) + stacks, info->maxStacks);
 
-    if (keyword == BONK_KEYWORD_CHILL && total >= info->maxStacks && Freeze(mob))
+    if (keyword == BONK_KEYWORD_CHILL && total >= GetChillFreezeStacks(*info) && Freeze(mob))
     {
         mob->RemoveAurasByCasterSpell(info->spellId, m_player->GetObjectGuid());
         OnFrozen(mob, sourceSpellId);
@@ -512,21 +514,33 @@ float BonkRun::GetSlowedBonus(Unit const* victim) const
     for (OwnedWeapon const& owned : m_weapons)
         if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_NORMAL_ONLY) && owned.weapon.damageEffectIndex < 0 && !owned.weapon.weaponDamage &&
             victim->HasAura(owned.weapon.spellId))
-            bonus = std::max(bonus, BONK_SLOWED_DAMAGE * (1.0f + owned.damageBonus / 100.0f) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_SLOWED));
-    return std::min(bonus, BONK_MAX_SLOWED_DAMAGE);
+            bonus = std::max(bonus, GetSlowedStrength(owned.damageBonus, GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_SLOWED)));
+    return bonus;
+}
+
+float BonkRun::GetSlowedStrength(float damageBonus, float slowedUpgrade)
+{
+    return std::min(BONK_SLOWED_DAMAGE * (1.0f + damageBonus / 100.0f) + slowedUpgrade, BONK_MAX_SLOWED_DAMAGE);
 }
 
 float BonkRun::GetHuntersMarkBonus() const
 {
+    float bonus = GetMarkStrength(0.0f, 0.0f);
+    for (OwnedWeapon const& owned : m_weapons)
+    {
+        BonkWeapon const* row = sBonkMgr.GetWeapon(owned.weapon.id);
+        if (row && row->applies == BONK_KEYWORD_HUNTERS_MARK)
+            bonus = std::max(bonus, GetMarkStrength(owned.damageBonus, GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_MARK)));
+    }
+    return bonus;
+}
+
+float BonkRun::GetMarkStrength(float damageBonus, float markUpgrade) const
+{
     BonkKeywordInfo const* mark = sBonkMgr.GetKeyword(BONK_KEYWORD_HUNTERS_MARK);
     if (!mark)
         return 0.0f;
-
-    float bonus = mark->valuePerStack;
-    for (OwnedWeapon const& owned : m_weapons)
-        if (owned.weapon.applies == BONK_KEYWORD_HUNTERS_MARK)
-            bonus = std::max(bonus, mark->valuePerStack * (1.0f + owned.damageBonus / 100.0f) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_MARK));
-    return std::min(bonus, BONK_MAX_HUNTERS_MARK);
+    return std::min(mark->valuePerStack * (1.0f + damageBonus / 100.0f) + markUpgrade, BONK_MAX_HUNTERS_MARK) + m_mastery.markBonus;
 }
 
 SpellAuraHolder* BonkRun::AddKeywordAura(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points)
@@ -591,7 +605,7 @@ int32 BonkRun::GetKeywordPoints(BonkKeywordInfo const& info) const
         case BONK_KEYWORD_BLEED:
         case BONK_KEYWORD_POISON:
         {
-            float const scale = info.id == BONK_KEYWORD_POISON ? GetPoisonDamageScale() : 1.0f;
+            float const scale = (info.id == BONK_KEYWORD_POISON ? GetPoisonDamageScale() : 1.0f) + GetKeywordTalentDamage(info.id) / 100.0f;
             return std::max(1, int32(GetMobHealth(GetMobLevel()) * info.valuePerStack * info.tickMs / IN_MILLISECONDS * scale));
         }
         default:
@@ -602,16 +616,6 @@ int32 BonkRun::GetKeywordPoints(BonkKeywordInfo const& info) const
 float BonkRun::GetPoisonDamageScale() const
 {
     return std::max(0.0f, 1.0f + GetPassiveTotal(BONK_PASSIVE_POISON_DAMAGE) / 100.0f);
-}
-
-bool BonkRun::HasPoisonSource() const
-{
-    return std::any_of(m_weapons.begin(), m_weapons.end(), [](OwnedWeapon const& owned)
-    {
-        BonkWeapon const& weapon = owned.weapon;
-        return weapon.applies == BONK_KEYWORD_POISON || weapon.behavior == BONK_BEHAVIOR_VENOM_BOLTS || weapon.behavior == BONK_BEHAVIOR_VENOM_CLOUD ||
-            weapon.HasFlag(BONK_WEAPON_FLAG_SNAKES) || weapon.HasFlag(BONK_WEAPON_FLAG_PLAGUE);
-    });
 }
 
 void BonkRun::SpreadKeywords(Creature const* dead)
@@ -657,7 +661,7 @@ void BonkRun::SpreadKeywords(Creature const* dead)
         uint32 spread = 0;
         for (Creature* next : GetMobsInRange(BONK_KEYWORD_SPREAD_RANGE, dead))
         {
-            if (spread >= BONK_KEYWORD_SPREAD_TARGETS)
+            if (spread >= BONK_KEYWORD_SPREAD_TARGETS + GetExtraSpreadTargets(info->id))
                 break;
             if (!next->IsAlive() || !GetRunAI(next))
                 continue;

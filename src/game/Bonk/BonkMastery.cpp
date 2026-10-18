@@ -7,6 +7,15 @@
 
 INSTANTIATE_SINGLETON_1(BonkMastery);
 
+namespace
+{
+    float const BONK_TRAPMASTER_HEALTH_COST    = 15.0f;
+    float const BONK_WEAPON_MASTER_HASTE_COST  = 10.0f;
+    float const BONK_JUGGERNAUT_POWER_COST     = 15.0f;
+    float const BONK_GLASS_CANNON_CRIT_DAMAGE  = 100.0f;
+    float const BONK_GLASS_CANNON_HEALTH_COST  = 50.0f;
+}
+
 void BonkMastery::Load()
 {
     m_trees.clear();
@@ -29,7 +38,7 @@ void BonkMastery::Load()
     }
 
     result = WorldDatabase.Query("SELECT `id`, `class`, `tree`, `row`, `column`, `icon`, `name`, `description`, `max_rank`, "
-        "`required_id`, `required_rank`, `effect`, `target`, `value_per_rank` FROM `bonk_mastery`");
+        "`required_id`, `required_rank`, `effect`, `target`, `value_per_rank`, `param` FROM `bonk_mastery`");
     if (result)
     {
         do
@@ -50,6 +59,7 @@ void BonkMastery::Load()
             uint8 const effect = fields[11].GetUInt8();
             node.target = fields[12].GetUInt32();
             node.valuePerRank = fields[13].GetFloat();
+            node.param = fields[14].GetUInt32();
 
             auto tree = m_trees.find(node.tree);
             if (tree == m_trees.end() || tree->second.classId != node.classId)
@@ -75,7 +85,28 @@ void BonkMastery::Load()
                 case BONK_MASTERY_SPELL_TARGETS:
                 case BONK_MASTERY_STARTER_UNLOCK:
                 case BONK_MASTERY_SPELL_SLOW:
+                case BONK_MASTERY_USES_BONUS:
+                case BONK_MASTERY_SPELL_HEAL:
+                case BONK_MASTERY_RESET_ON_KILL:
+                case BONK_MASTERY_EXECUTE_THRESHOLD:
+                case BONK_MASTERY_SPELL_STUN:
+                case BONK_MASTERY_STRUCK_CAST:
+                case BONK_MASTERY_ENTRAPMENT:
                     targetOk = sBonkMgr.GetWeapon(node.target) != nullptr;
+                    break;
+                case BONK_MASTERY_SPELL_APPLIES:
+                    targetOk = sBonkMgr.GetWeapon(node.target) != nullptr && sBonkMgr.GetKeyword(BonkKeyword(node.param)) != nullptr;
+                    break;
+                case BONK_MASTERY_SPEC_DAMAGE:
+                    targetOk = m_trees.count(node.target) != 0;
+                    break;
+                case BONK_MASTERY_KEYWORD_DAMAGE:
+                case BONK_MASTERY_CRIT_VS_KEYWORD:
+                case BONK_MASTERY_SPREAD_TARGETS:
+                    targetOk = sBonkMgr.GetKeyword(BonkKeyword(node.target)) != nullptr;
+                    break;
+                case BONK_MASTERY_CAPSTONE:
+                    targetOk = node.target > BONK_CAPSTONE_NONE && node.target < MAX_BONK_CAPSTONE;
                     break;
                 default:
                     break;
@@ -221,8 +252,72 @@ BonkMasteryBonuses BonkMastery::Evaluate(std::map<uint32, uint8> const& ranks) c
             case BONK_MASTERY_CLEARCASTING:   bonuses.clearcasting += value; break;
             case BONK_MASTERY_SOUL_SIPHON:    bonuses.soulSiphon.emplace_back(node->target, value); break;
             case BONK_MASTERY_SPELL_SLOW:     bonuses.spellSlow[node->target] += value; break;
+            case BONK_MASTERY_SPEC_DAMAGE:    bonuses.specDamage[node->target] += value; break;
+            case BONK_MASTERY_KEYWORD_DAMAGE: bonuses.keywordDamage[node->target] += value; break;
+            case BONK_MASTERY_CRIT_VS_KEYWORD: bonuses.critVsKeyword[node->target] += value; break;
+            case BONK_MASTERY_USES_BONUS:     bonuses.usesBonus[node->target] += value; break;
+            case BONK_MASTERY_SPELL_APPLIES:
+            {
+                BonkMasteryApply& apply = bonuses.spellApplies[node->target];
+                apply.keyword = BonkKeyword(node->param);
+                apply.stacks = uint8(std::max(1.0f, value));
+                break;
+            }
+            case BONK_MASTERY_SPELL_HEAL:     bonuses.spellHeal[node->target] += value; break;
+            case BONK_MASTERY_RESET_ON_KILL:  bonuses.resetOnKill.insert(node->target); break;
+            case BONK_MASTERY_EXECUTE_THRESHOLD:
+                bonuses.executeThreshold[node->target] = std::max(bonuses.executeThreshold[node->target], value);
+                break;
+            case BONK_MASTERY_SPELL_STUN:     bonuses.spellStun[node->target] = std::max(bonuses.spellStun[node->target], value); break;
+            case BONK_MASTERY_STRUCK_CAST:    bonuses.struckCast[node->target] = value; break;
+            case BONK_MASTERY_SPREAD_TARGETS: bonuses.spreadTargets[node->target] += uint32(value); break;
+            case BONK_MASTERY_ENTRAPMENT:     bonuses.entrapment.insert(node->target); break;
+            case BONK_MASTERY_ENRAGE_DURATION: bonuses.enrageDuration += value; break;
+            case BONK_MASTERY_ENRAGE_HASTE:   bonuses.enrageHaste += value; break;
+            case BONK_MASTERY_ENRAGE_DAMAGE:  bonuses.enrageDamage += value; break;
+            case BONK_MASTERY_SHIELD_BLOCK:   bonuses.shieldBlock += value; break;
+            case BONK_MASTERY_DASH_RECHARGE:  bonuses.dashRecharge += value; break;
+            case BONK_MASTERY_CHILL_DURATION: bonuses.chillDuration += value; break;
+            case BONK_MASTERY_MARK_BONUS:     bonuses.markBonus += value; break;
+            case BONK_MASTERY_SUMMON_CRIT:    bonuses.summonCrit += value; break;
+            case BONK_MASTERY_PACK_POWER:     bonuses.packPower += value; break;
+            case BONK_MASTERY_FRENZY_DAMAGE:  bonuses.frenzyDamage += value; break;
+            case BONK_MASTERY_LAST_STAND:     bonuses.lastStand = std::max(bonuses.lastStand, value); break;
+            case BONK_MASTERY_ICE_BLOCK:      bonuses.iceBlock = std::max(bonuses.iceBlock, value); break;
+            case BONK_MASTERY_BLINK_SHIELD:   bonuses.blinkShield += value; break;
+            case BONK_MASTERY_TRAP_DURATION:  bonuses.trapDuration += value; break;
+            case BONK_MASTERY_CAPSTONE:       bonuses.capstone = BonkCapstone(node->target); break;
             default: break;
         }
     }
+    ApplyCapstoneCost(bonuses);
     return bonuses;
+}
+
+void BonkMastery::ApplyCapstoneCost(BonkMasteryBonuses& bonuses)
+{
+    switch (bonuses.capstone)
+    {
+        case BONK_CAPSTONE_TRAPMASTER:
+            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_TRAPMASTER_HEALTH_COST;
+            break;
+        case BONK_CAPSTONE_WEAPON_MASTER:
+            bonuses.passives[BONK_PASSIVE_HASTE] -= BONK_WEAPON_MASTER_HASTE_COST;
+            break;
+        case BONK_CAPSTONE_JUGGERNAUT:
+            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_JUGGERNAUT_POWER_COST;
+            break;
+        case BONK_CAPSTONE_GLASS_CANNON:
+            bonuses.passives[BONK_PASSIVE_CRIT_DAMAGE] += BONK_GLASS_CANNON_CRIT_DAMAGE;
+            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_GLASS_CANNON_HEALTH_COST;
+            break;
+        default:
+            break;
+    }
+}
+
+uint32 BonkMastery::GetSpec(uint32 weaponId)
+{
+    BonkWeapon const* root = sBonkMgr.GetWeapon(GetRootWeapon(weaponId));
+    return root ? root->spec : 0;
 }

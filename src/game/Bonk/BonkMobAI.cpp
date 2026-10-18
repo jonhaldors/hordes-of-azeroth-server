@@ -284,7 +284,7 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
 
     Player* owner = GetOwner();
     BonkRun* run = owner ? owner->GetBonkPlayer()->GetRun() : nullptr;
-    uint32 const affixes = s_nextAffixCount >= 0 ? uint32(s_nextAffixCount) : run ? run->GetTier().eliteAffixes : 1;
+    uint32 const affixes = s_nextAffixCount >= 0 ? uint32(s_nextAffixCount) : run ? run->GetEliteAffixes() : 1;
     s_nextAffixCount = -1;
     m_plateIcon = s_nextPlateIcon ? s_nextPlateIcon : "";
     s_nextPlateIcon = nullptr;

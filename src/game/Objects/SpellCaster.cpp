@@ -39,7 +39,10 @@ namespace
 
         Player const* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
         BonkRun const* run = player ? player->GetBonkPlayer()->GetRun() : nullptr;
-        return run ? run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetPowerShare(attacker)) : 1.0f;
+        if (!run)
+            return 1.0f;
+        float const multiplier = run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetPowerShare(attacker));
+        return attacker->IsPlayer() ? multiplier : multiplier * run->GetSummonDamageMultiplier(attacker);
     }
 
     bool HasBonkRunDamage(SpellCaster const* caster, SpellEntry const* spell, SpellEffectIndex index)
@@ -485,7 +488,7 @@ void SpellCaster::RollMeleeOutcomeAgainst(MeleeHitOutcome& outHitOutcome, uint32
             outHitInfo |= HITINFO_ROLLED_DODGE;
             outHitOutcome = MELEE_HIT_DODGE;
         }
-        else if (canCrit && roll_chance_f(run->GetCritChance(pSpellEntry, pVictim)))
+        else if (canCrit && roll_chance_f(run->GetCritChance(pSpellEntry, pVictim, ToUnit())))
         {
             outHitInfo |= HITINFO_CRITICALHIT;
             outHitOutcome = MELEE_HIT_CRIT;

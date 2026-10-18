@@ -5341,7 +5341,7 @@ float Unit::GetSpellCritChance(Unit const* pVictim, SpellEntry const* spellProto
 bool Unit::IsSpellCrit(Unit const* pVictim, SpellEntry const* spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType, Spell* spell) const
 {
     if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
-        return spellProto->CanCrit() && roll_chance_f(run->GetCritChance(spellProto, pVictim));
+        return spellProto->CanCrit() && roll_chance_f(run->GetCritChance(spellProto, pVictim, this));
 
     float critChance = GetSpellCritChance(pVictim, spellProto, schoolMask, attackType, spell);
     return roll_chance_f(critChance);

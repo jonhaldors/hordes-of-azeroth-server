@@ -347,6 +347,26 @@ void BonkRun::SendMiniEventTimer(bool force) const
         std::to_string(m_miniEvent.totalSeconds));
 }
 
+void BonkRun::DespawnMiniEvent()
+{
+    if (!m_miniEventActive)
+        return;
+    if (Map* map = m_player->FindMap())
+    {
+        auto const despawnUntracked = [this, map](ObjectGuid const& guid)
+        {
+            if (std::find(m_mobs.begin(), m_mobs.end(), guid) != m_mobs.end())
+                return;
+            if (Creature* target = map->GetCreature(guid))
+                target->DespawnOrUnsummon();
+        };
+        despawnUntracked(m_miniEvent.target);
+        for (ObjectGuid const& guid : m_miniEvent.targets)
+            despawnUntracked(guid);
+    }
+    EndMiniEvent();
+}
+
 void BonkRun::EndMiniEvent()
 {
     bool const timed = !m_miniEvent.target.IsEmpty() || m_miniEvent.total;

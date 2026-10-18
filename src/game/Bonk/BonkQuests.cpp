@@ -22,7 +22,7 @@ namespace
     uint32 const BONK_TEXT_QUEST_BOARD = 900005;
 
     uint32 const BONK_UNLOCK_BASE_PRICE = 2500;
-    float const BONK_UNLOCK_CARD_RARITY[MAX_BONK_RARITY] = { 1.0f, 1.25f, 1.5f, 2.0f, 2.0f };
+    uint32 const BONK_CARD_UNLOCK_TICKETS[MAX_BONK_RARITY] = { 8, 12, 18, 25, 35 };
     float const BONK_UNLOCK_GLYPH_RARITY[MAX_BONK_RARITY] = { 1.5f, 2.0f, 3.0f, 4.0f, 6.0f };
 
     char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
@@ -170,8 +170,9 @@ void BonkQuests::OnLogin(Player* player)
         do
         {
             Field* fields = result->Fetch();
-            owned.insert(UnlockKey(BonkQuestReward(fields[0].GetUInt8()), fields[1].GetUInt32()));
-            if (fields[2].GetUInt8())
+            BonkQuestReward const type = BonkQuestReward(fields[0].GetUInt8());
+            owned.insert(UnlockKey(type, fields[1].GetUInt32()));
+            if (fields[2].GetUInt8() && !IsTicketUnlock(type))
                 ++paid;
         } while (result->NextRow());
     }
@@ -333,9 +334,10 @@ uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 i
         case BONK_REWARD_PASSIVE:
             break;
         case BONK_REWARD_CARD:
-            if (BonkCard const* card = sBonkMgr.GetCard(id))
-                scale = BONK_UNLOCK_CARD_RARITY[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)];
-            break;
+        {
+            BonkCard const* card = sBonkMgr.GetCard(id);
+            return card ? BONK_CARD_UNLOCK_TICKETS[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)] : 0;
+        }
         case BONK_REWARD_GLYPH:
             if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
                 scale = BONK_UNLOCK_GLYPH_RARITY[std::min<uint32>(glyph->rarity, MAX_BONK_RARITY - 1)];
@@ -360,7 +362,8 @@ void BonkQuests::Buy(uint32 account, BonkQuestReward type, uint32 id)
     {
         std::lock_guard<std::mutex> guard(m_lock);
         m_owned[account].insert(UnlockKey(type, id));
-        ++m_paid[account];
+        if (!IsTicketUnlock(type))
+            ++m_paid[account];
     }
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_unlock` (`account`, `type`, `id`, `paid`) VALUES (%u, %u, %u, 1)", account, uint32(type), id);
 }
@@ -730,7 +733,7 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkCard const* card = sBonkMgr.GetCard(quest.rewardValue))
             {
                 *icon = card->icon;
-                return "Unlocks the Darkmoon Card " + card->name + " for purchase at the Spellbook";
+                return "Unlocks " + (card->name.compare(0, 13, "Darkmoon Card") == 0 ? card->name : "the Darkmoon Card " + card->name) + " at Sayge";
             }
             break;
         case BONK_REWARD_GLYPH:

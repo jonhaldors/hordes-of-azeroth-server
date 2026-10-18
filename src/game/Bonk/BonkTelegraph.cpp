@@ -468,6 +468,17 @@ void BonkTelegraphs::Tend(Player* owner, uint32 diff)
     }
     m_standIns.erase(std::remove_if(m_standIns.begin(), m_standIns.end(),
         [map](StandIn const& standIn) { return !map->GetCreature(standIn.guid); }), m_standIns.end());
+    for (auto itr = m_standIns.begin(); m_standIns.size() > BONK_STANDIN_MAX && itr != m_standIns.end();)
+    {
+        if (itr->busy)
+        {
+            ++itr;
+            continue;
+        }
+        if (Creature* creature = map->GetCreature(itr->guid))
+            creature->DespawnOrUnsummon();
+        itr = m_standIns.erase(itr);
+    }
 
     if (m_warm && CountIdle(false) < BONK_STANDIN_MIN_IDLE && m_standIns.size() < BONK_STANDIN_MAX)
         Summon(owner, std::min<uint32>(BONK_STANDIN_BATCH, BONK_STANDIN_MAX - uint32(m_standIns.size())));

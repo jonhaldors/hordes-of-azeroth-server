@@ -65,6 +65,12 @@ bool ChatHandler::HandleBonkStarterCommand(char* args)
 bool ChatHandler::HandleBonkStartCommand(char* args)
 {
     Player* player = m_session->GetPlayer();
+    if (!player->IsAlive())
+    {
+        SendSysMessage("You can't start a run while dead.");
+        SetSentErrorMessage(true);
+        return false;
+    }
     char* key = ExtractArg(&args);
     char* dungeonKey = ExtractArg(&args);
 
@@ -348,6 +354,12 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
     }
 
     Player* player = m_session->GetPlayer();
+    if (player->GetBonkPlayer()->GetRun())
+    {
+        SendSysMessage("You can't change what runs offer during a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
     std::string error;
     bool const done = sBonkQuests.SetDisabled(player->GetSession()->GetAccountId(), type, id, !strcmp(state, "off"),
         player->GetBonkPlayer()->GetPoolToggleSlots(), error);
@@ -565,15 +577,44 @@ bool ChatHandler::HandleBonkMapsCommand(char*)
 
 bool ChatHandler::HandleBonkCampCommand(char*)
 {
-    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
+    Player* player = m_session->GetPlayer();
+    BonkPlayer* bonk = player->GetBonkPlayer();
     if (bonk->GetRun())
     {
         SendSysMessage("Leave the run first with .bonk stop.");
         SetSentErrorMessage(true);
         return false;
     }
+    if (player->IsInCombat() || player->IsTaxiFlying())
+    {
+        SendSysMessage("You can't go back to camp right now.");
+        SetSentErrorMessage(true);
+        return false;
+    }
 
     bonk->TeleportToCamp();
+    return true;
+}
+
+bool ChatHandler::HandleBonkSpotCommand(char* args)
+{
+    std::string name = args ? args : "";
+    while (!name.empty() && (name.back() == ' ' || name.back() == ':'))
+        name.pop_back();
+    size_t const start = name.find_first_not_of(' ');
+    name = start == std::string::npos ? std::string() : name.substr(start, 48);
+    if (name.empty())
+    {
+        SendSysMessage("Use .bonk spot <name>, for example .bonk spot run master.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    Player* player = m_session->GetPlayer();
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk spot: %s | map %u | %.3f %.3f %.3f | %.4f", name.c_str(), player->GetMapId(),
+        player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation());
+    PSendSysMessage("Saved %s: %.1f %.1f %.1f, facing %.2f.", name.c_str(), player->GetPositionX(), player->GetPositionY(),
+        player->GetPositionZ(), player->GetOrientation());
     return true;
 }
 

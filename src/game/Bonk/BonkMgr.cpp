@@ -78,6 +78,79 @@ namespace
                 return int32(i);
         return -1;
     }
+
+    std::string FormatScaled(float value)
+    {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%.2f", value);
+        std::string text = buffer;
+        while (text.back() == '0')
+            text.pop_back();
+        if (text.back() == '.')
+            text.pop_back();
+        return text;
+    }
+
+    std::string ScalePassiveText(std::string const& text, uint32 rank, std::vector<std::string>* values = nullptr)
+    {
+        std::string scaled;
+        size_t pos = 0;
+        while (pos < text.size())
+        {
+            size_t const open = text.find('{', pos);
+            size_t const close = open == std::string::npos ? std::string::npos : text.find('}', open);
+            if (close == std::string::npos)
+            {
+                scaled += text.substr(pos);
+                break;
+            }
+            scaled += text.substr(pos, open - pos);
+            std::string const inner = text.substr(open + 1, close - open - 1);
+            char* end = nullptr;
+            float const perRank = std::strtof(inner.c_str(), &end);
+            if (inner.empty() || *end)
+                scaled += text.substr(open, close - open + 1);
+            else
+            {
+                std::string const number = FormatScaled(perRank * rank);
+                scaled += number;
+                if (values)
+                    values->push_back(number + (close + 1 < text.size() && text[close + 1] == '%' ? "%" : ""));
+            }
+            pos = close + 1;
+        }
+        return scaled;
+    }
+
+    std::string JoinValues(std::vector<std::string> const& values)
+    {
+        std::string text;
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            if (i)
+                text += i + 1 == values.size() ? " and " : ", ";
+            text += values[i];
+        }
+        return text;
+    }
+
+    std::vector<std::string> SplitSentences(std::string const& text)
+    {
+        std::vector<std::string> sentences;
+        size_t pos = 0;
+        while (pos < text.size())
+        {
+            size_t const end = text.find(". ", pos);
+            if (end == std::string::npos)
+            {
+                sentences.push_back(text.substr(pos));
+                break;
+            }
+            sentences.push_back(text.substr(pos, end + 1 - pos));
+            pos = end + 2;
+        }
+        return sentences;
+    }
 }
 
 void BonkMgr::Load()
@@ -619,7 +692,7 @@ void BonkMgr::LoadWeapons()
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
         "`class_mask`, `starter_class_mask`, `evolves_from`, `heal_pct`, `duration_ms`, "
         "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage`, `base_jumps`, `kill_below_pct`, `flags`, "
-        "`applies`, `apply_stacks`, `uses`, `uses_pct`, `starter_option_mask` "
+        "`applies`, `apply_stacks`, `uses`, `uses_pct`, `starter_option_mask`, `spec` "
         "FROM `bonk_weapon`"));
 
     if (!result)
@@ -663,6 +736,7 @@ void BonkMgr::LoadWeapons()
         weapon.uses = BonkKeyword(fields[27].GetUInt8());
         weapon.usesPct = fields[28].GetFloat();
         weapon.starterOptionMask = fields[29].GetUInt32();
+        weapon.spec = fields[30].GetUInt32();
 
         if (weapon.applies != BONK_KEYWORD_NONE && !GetKeyword(weapon.applies))
         {
@@ -1520,6 +1594,35 @@ bool BonkMgr::HasStarterSpell(uint32 classMask) const
     });
 }
 
+bool BonkMgr::HasPoisonSpell(uint32 classMask) const
+{
+    return std::any_of(m_weapons.begin(), m_weapons.end(), [classMask](std::pair<uint32 const, BonkWeapon> const& itr)
+    {
+        BonkWeapon const& weapon = itr.second;
+        return (!weapon.classMask || (weapon.classMask & classMask)) && weapon.AppliesPoison();
+    });
+}
+
+std::string BonkMgr::DescribeEvolutionAdds(BonkWeapon const& evolved) const
+{
+    BonkWeapon const* base = GetWeapon(evolved.evolvesFrom);
+    if (!base)
+        return evolved.description;
+
+    std::vector<std::string> const baseSentences = SplitSentences(base->description);
+    std::vector<std::string> const sentences = SplitSentences(evolved.description);
+    size_t shared = 0;
+    while (shared < baseSentences.size() && shared < sentences.size() && baseSentences[shared] == sentences[shared])
+        ++shared;
+    if (!shared || shared == sentences.size())
+        return evolved.description;
+
+    std::string adds;
+    for (size_t i = shared; i < sentences.size(); ++i)
+        adds += (adds.empty() ? "" : " ") + sentences[i];
+    return adds;
+}
+
 std::string BonkMgr::DescribeEvolutionNames(uint32 weaponId) const
 {
     std::vector<BonkWeapon const*> const evolutions = GetEvolutions(weaponId);
@@ -1722,12 +1825,26 @@ void BonkMgr::LoadGear()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk run gear", uint32(m_gear.size()));
 }
 
-std::string BonkMgr::DescribePassive(BonkPassive const& passive) const
+std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank) const
 {
+    std::string const text = ScalePassiveText(passive.description, std::max(1u, rank));
     for (auto const& itr : m_passives)
         if (itr.first != passive.id && (itr.first == passive.excludes || itr.second.excludes == passive.id))
-            return passive.description + " You can't have this and " + itr.second.name + " at the same time.";
-    return passive.description;
+            return text + " You can't have this and " + itr.second.name + " at the same time.";
+    return text;
+}
+
+std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const
+{
+    std::string text = DescribePassive(passive, rank);
+    if (rank <= 1)
+        return text;
+
+    std::vector<std::string> before;
+    ScalePassiveText(passive.description, rank - 1, &before);
+    if (!before.empty())
+        text.insert(ScalePassiveText(passive.description, rank).size(), " Up from " + JoinValues(before) + ".");
+    return text;
 }
 
 bool BonkMgr::IsArenaLocation(uint32 mapId, uint32 zoneId) const
