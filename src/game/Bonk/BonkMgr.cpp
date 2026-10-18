@@ -215,6 +215,7 @@ void BonkMgr::Load()
     LoadTalents();
     LoadItemStats();
     LoadMobs();
+    LoadBoltLooks();
     sBonkQuests.Load();
     sBonkMastery.Load();
     LoadPetFamilies();
@@ -486,7 +487,7 @@ void BonkMgr::LoadMapCreatures()
 {
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
         "SELECT `bonk_map_id`, `entry`, `kind`, `min_sec`, `max_sec`, `weight`, `health_multiplier`, `damage_multiplier`, `speed`, `scale`, `max_alive`, "
-        "`archetype` FROM `bonk_map_creature`"));
+        "`archetype`, `flyer` FROM `bonk_map_creature`"));
 
     if (!result)
     {
@@ -518,6 +519,7 @@ void BonkMgr::LoadMapCreatures()
         creature.speed = fields[8].GetFloat();
         creature.scale = fields[9].GetFloat();
         creature.maxAlive = fields[10].GetUInt32();
+        creature.flyer = fields[12].GetBool();
         uint8 const archetype = fields[11].GetUInt8();
         if (archetype < MAX_BONK_ARCHETYPE)
             creature.archetype = BonkArchetype(archetype);
@@ -905,7 +907,8 @@ void BonkMgr::LoadWeapons()
                 continue;
             }
             if ((upgrade == BONK_SPELL_UPGRADE_SHIELD_SIZE && !weapon->second.IsShieldBlock() && weapon->second.behavior != BONK_BEHAVIOR_WARD &&
-                    weapon->second.behavior != BONK_BEHAVIOR_BULWARK && weapon->second.behavior != BONK_BEHAVIOR_ICE_BARRIER) ||
+                    weapon->second.behavior != BONK_BEHAVIOR_BULWARK && weapon->second.behavior != BONK_BEHAVIOR_ICE_BARRIER &&
+                    weapon->second.behavior != BONK_BEHAVIOR_POWER_WORD_SHIELD) ||
                 (upgrade == BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN && !weapon->second.IsTrigger()))
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u neither shields you nor triggers, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
@@ -1676,6 +1679,34 @@ BonkMob const* BonkMgr::GetMob(uint32 entry) const
 {
     auto itr = m_mobs.find(entry);
     return itr != m_mobs.end() ? &itr->second : nullptr;
+}
+
+void BonkMgr::LoadBoltLooks()
+{
+    m_boltLooks.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query(
+        "SELECT `spell_id`, `display_id`, `scale`, `impact_kit`, `cast_near` FROM `bonk_bolt_look`"));
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            BonkBoltLook& look = m_boltLooks[fields[0].GetUInt32()];
+            look.displayId = fields[1].GetUInt32();
+            look.scale = fields[2].GetFloat();
+            look.impactKit = fields[3].GetUInt32();
+            look.castNear = fields[4].GetBool();
+        } while (result->NextRow());
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk bolt looks", uint32(m_boltLooks.size()));
+}
+
+BonkBoltLook const* BonkMgr::GetBoltLook(uint32 spellId) const
+{
+    auto itr = m_boltLooks.find(spellId);
+    return itr != m_boltLooks.end() ? &itr->second : nullptr;
 }
 
 BonkPassive const* BonkMgr::GetPassive(uint32 id) const

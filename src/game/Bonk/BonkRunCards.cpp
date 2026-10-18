@@ -498,6 +498,8 @@ void BonkRun::HealHero(uint32 amount, uint32 textSpellId)
         if (m_spellShield < cap)
             AddSpellShield(std::min(amount - healed, cap - m_spellShield));
     }
+    if (amount > healed)
+        OnPriestOverheal();
 }
 
 void BonkRun::OnCardHitTaken()

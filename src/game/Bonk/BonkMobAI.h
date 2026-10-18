@@ -23,6 +23,7 @@ class BonkMobAI : public CreatureAI
         static void SetNextPlateId(uint32 id) { s_nextPlateId = id; }
         static void SetNextAffixCount(int32 count) { s_nextAffixCount = count; }
         static void SetNextPlateIcon(char const* icon) { s_nextPlateIcon = icon; }
+        static void SetNextFlyer(bool flyer) { s_nextFlyer = flyer; }
         static std::string GetUnitGuidText(Creature const* creature);
         static bool MayCry(Creature* creature);
 
@@ -32,6 +33,7 @@ class BonkMobAI : public CreatureAI
         bool CanBePulled() const { return !m_stampede && !m_stationary && !m_fleeing; }
         void Pull(float x, float y, float z, float speed, uint32 settleMs);
         BonkSpawnKind GetKind() const { return m_kind; }
+        bool IsFlyer() const { return m_creature->IsBonkFlyer(); }
         ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
         void SetArchetype(BonkArchetype archetype) { m_archetype = archetype; }
         BonkArchetype GetArchetype() const { return m_archetype; }
@@ -122,6 +124,8 @@ class BonkMobAI : public CreatureAI
         void UpdateFlee(uint32 diff, Player* owner);
         void UpdateProgressWatch(uint32 diff, Player* owner, BonkRun* run);
         void ResetProgressWatch();
+        void UpdatePerchChase(BonkRun const* run);
+        Unit* GetCastTarget(Creature* target);
         bool FindFleePoint(Player* owner, float distance, float& x, float& y, float& z) const;
 
         ObjectGuid m_ownerGuid;
@@ -191,6 +195,7 @@ class BonkMobAI : public CreatureAI
         static thread_local uint32 s_nextPlateId;
         static thread_local int32 s_nextAffixCount;
         static thread_local char const* s_nextPlateIcon;
+        static thread_local bool s_nextFlyer;
 };
 
 #endif

@@ -218,7 +218,7 @@ namespace
     {
         uint32 total = 0;
         for (BonkMapCreature const& creature : map.creatures)
-            if (creature.kind == BONK_SPAWN_NORMAL)
+            if (creature.kind == BONK_SPAWN_NORMAL && !creature.flyer)
                 total += creature.weight;
         if (!total)
             return nullptr;
@@ -226,7 +226,7 @@ namespace
         uint32 roll = urand(1, total);
         for (BonkMapCreature const& creature : map.creatures)
         {
-            if (creature.kind != BONK_SPAWN_NORMAL)
+            if (creature.kind != BONK_SPAWN_NORMAL || creature.flyer)
                 continue;
             if (roll <= creature.weight)
                 return &creature;

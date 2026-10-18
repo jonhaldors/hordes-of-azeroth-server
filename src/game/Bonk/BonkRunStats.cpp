@@ -52,6 +52,7 @@ namespace
                 case BONK_KEYWORD_BLEED:   return "bleed";
                 case BONK_KEYWORD_POISON:  return "poison";
                 case BONK_KEYWORD_BURNING: return "burn";
+                case BONK_KEYWORD_DECAY:   return "decay";
                 default:                   break;
             }
         }

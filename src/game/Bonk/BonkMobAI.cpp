@@ -30,6 +30,8 @@ namespace
     uint32 const BONK_STUCK_CHECK_MS = 3000;
     float const BONK_STUCK_MIN_MOVE  = 1.5f;
     float const BONK_STUCK_SLACK     = 6.0f;
+    float const BONK_CAST_NEAR_DISTANCE  = 5.5f;
+    uint32 const BONK_CAST_NEAR_LIFETIME_MS = 3000;
 
     uint32 const BONK_CASTER_MANA = 1000000;
 
@@ -218,12 +220,19 @@ BonkMobAI::BonkMobAI(Creature* creature) : CreatureAI(creature)
 thread_local uint32 BonkMobAI::s_nextPlateId = 0;
 thread_local int32 BonkMobAI::s_nextAffixCount = -1;
 thread_local char const* BonkMobAI::s_nextPlateIcon = nullptr;
+thread_local bool BonkMobAI::s_nextFlyer = false;
 
 void BonkMobAI::Install(Creature* creature)
 {
     creature->SetPlateId(s_nextPlateId);
     s_nextPlateId = 0;
     creature->SetBonkEnemy(true);
+    if (s_nextFlyer)
+    {
+        creature->SetBonkFlyer(true);
+        creature->SetFly(true);
+        s_nextFlyer = false;
+    }
 
     creature->GetMotionMaster()->Initialize();
     creature->SetAI(new BonkMobAI(creature));
@@ -581,6 +590,8 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         UpdateFlee(diff, owner);
         return;
     }
+    if (m_creature->HasUnitState(UNIT_STATE_FLEEING))
+        return;
     if (m_stationary || m_passive)
         return;
 
@@ -606,6 +617,7 @@ void BonkMobAI::UpdateAI(uint32 const diff)
     if (m_creature->GetVictim() != owner)
         AttackStart(owner);
 
+    UpdatePerchChase(run);
     UpdateProgressWatch(diff, owner, run);
     if (m_creature->m_targetNotReachableTimer > BONK_UNREACHABLE_MS)
     {
@@ -625,6 +637,17 @@ void BonkMobAI::ResetProgressWatch()
     m_watchTimer = 0;
     m_watchX = m_creature->GetPositionX();
     m_watchY = m_creature->GetPositionY();
+}
+
+void BonkMobAI::UpdatePerchChase(BonkRun const* run)
+{
+    bool const closeIn = run->IsHeroPerched() && !IsFlyer();
+    if (closeIn == m_creature->HasUnitState(UNIT_STATE_ALLOW_INCOMPLETE_PATH))
+        return;
+    if (closeIn)
+        m_creature->AddUnitState(UNIT_STATE_ALLOW_INCOMPLETE_PATH);
+    else
+        m_creature->ClearUnitState(UNIT_STATE_ALLOW_INCOMPLETE_PATH);
 }
 
 void BonkMobAI::UpdateProgressWatch(uint32 diff, Player* owner, BonkRun* run)
@@ -785,6 +808,7 @@ void BonkMobAI::AimBoltNow(Player* owner)
     BonkEnemyHit const hit = MakeHit(run, m_boltSpell, m_boltDamage);
     run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_BOLT_RADIUS, m_boltLead + flight,
         [run, hit, targetGuid, x, y]() { run->LandBolt(hit, targetGuid, x, y, BONK_BOLT_RADIUS); });
+    run->LaunchEnemyMissile(m_creature->GetObjectGuid(), targetGuid, m_boltSpell, m_boltLead, flight, x, y, z);
 }
 
 void BonkMobAI::LaunchBolt()
@@ -797,7 +821,22 @@ void BonkMobAI::LaunchBolt()
         return;
     }
     m_creature->SetFacingToObject(target);
-    m_creature->CastCustomSpell(target, m_boltSpell, 1, 1, 1, false);
+    m_creature->CastCustomSpell(GetCastTarget(target), m_boltSpell, 1, 1, 1, false);
+}
+
+Unit* BonkMobAI::GetCastTarget(Creature* target)
+{
+    BonkBoltLook const* look = sBonkMgr.GetBoltLook(m_boltSpell);
+    Player* owner = GetOwner();
+    BonkRun* run = owner ? owner->GetBonkPlayer()->GetRun() : nullptr;
+    if (!look || !look->castNear || !run)
+        return target;
+
+    float const angle = m_creature->GetAngle(target);
+    float const x = m_creature->GetPositionX() + BONK_CAST_NEAR_DISTANCE * std::cos(angle);
+    float const y = m_creature->GetPositionY() + BONK_CAST_NEAR_DISTANCE * std::sin(angle);
+    Creature* spot = m_creature->GetMap()->GetCreature(run->PlaceBoltTarget(x, y, target->GetPositionZ(), BONK_CAST_NEAR_LIFETIME_MS));
+    return spot ? spot : target;
 }
 
 void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)

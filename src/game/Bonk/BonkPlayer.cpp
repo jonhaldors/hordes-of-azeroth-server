@@ -30,6 +30,7 @@ namespace
 {
     float const BONK_CAMP_RADIUS = 300.0f;
     uint32 const BONK_CAMP_SIT_DELAY_MS = 500;
+    uint32 const BONK_REVIVE_OUTSIDE_RUN_MS = 3000;
     uint32 const BONK_MAILBOX_REFRESH_DELAY_MS = 1500;
     size_t const BONK_PACKET_TOP = 4;
     float const BONK_CAMP_CHAIR_RANGE = 3.0f;
@@ -618,7 +619,7 @@ bool BonkPlayer::IsWipeName(std::string const& name)
 
 bool BonkPlayer::IsPlayableClass(uint8 classId)
 {
-    return classId == CLASS_WARRIOR || classId == CLASS_HUNTER || classId == CLASS_MAGE || classId == CLASS_SHAMAN;
+    return classId == CLASS_WARRIOR || classId == CLASS_HUNTER || classId == CLASS_MAGE || classId == CLASS_SHAMAN || classId == CLASS_PRIEST;
 }
 
 void BonkPlayer::WipeAccount(uint32 accountId)
@@ -1331,6 +1332,7 @@ void BonkPlayer::Update(uint32 diff)
 
     m_previewTelegraphs.Update(m_player, diff);
     UpdateCampSeat(diff);
+    UpdateReviveOutsideRun(diff);
     UpdateMailboxRefresh(diff);
     UpdateDash(diff);
     UpdateCampMailNotice(diff);
@@ -1858,6 +1860,23 @@ void BonkPlayer::UpdateCampSeat(uint32 diff)
     }
     m_sitAtCampMs = 0;
     SitAtCamp();
+}
+
+void BonkPlayer::UpdateReviveOutsideRun(uint32 diff)
+{
+    if (m_run || m_player->IsAlive() || !m_player->IsInWorld() || m_player->IsBeingTeleported())
+    {
+        m_deadOutsideRunMs = 0;
+        return;
+    }
+    m_deadOutsideRunMs += diff;
+    if (m_deadOutsideRunMs < BONK_REVIVE_OUTSIDE_RUN_MS)
+        return;
+    m_deadOutsideRunMs = 0;
+    m_player->ResurrectPlayer(1.0f);
+    m_player->SpawnCorpseBones();
+    TeleportToCamp();
+    Notify("You were brought back to camp.");
 }
 
 void BonkPlayer::SitAtCamp()

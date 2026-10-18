@@ -258,6 +258,8 @@ class BonkPlayer
         bool m_campCheckPending = false;
         uint32 m_sitAtCampMs = 0;
         void UpdateCampSeat(uint32 diff);
+        uint32 m_deadOutsideRunMs = 0;
+        void UpdateReviveOutsideRun(uint32 diff);
         void SitAtCamp();
         uint32 m_mailboxRefreshMs = 0;
         void UpdateMailboxRefresh(uint32 diff);

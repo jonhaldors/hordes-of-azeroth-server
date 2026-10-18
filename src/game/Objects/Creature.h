@@ -164,7 +164,7 @@ class Creature : public Unit
 
         bool CanWalk() const override { return GetCreatureInfo()->inhabit_type & INHABIT_GROUND; }
         bool CanSwim() const override { return IsPet() || GetCreatureInfo()->inhabit_type & INHABIT_WATER; }
-        bool CanFly()  const override { return !IsPet() && GetCreatureInfo()->inhabit_type & INHABIT_AIR; }
+        bool CanFly()  const override { return !IsPet() && (GetCreatureInfo()->inhabit_type & INHABIT_AIR || m_bonkFlyer); }
 
         void SetCreatureReactState(ReactStates st) { m_reactState = st; }
         ReactStates GetCreatureReactState() const { return m_reactState; }
@@ -326,6 +326,8 @@ class Creature : public Unit
         uint32 GetPlateId() const { return m_plateId; }
         void SetBonkEnemy(bool enabled) { m_bonkEnemy = enabled; }
         bool IsBonkEnemy() const { return m_bonkEnemy; }
+        void SetBonkFlyer(bool enabled) { m_bonkFlyer = enabled; }
+        bool IsBonkFlyer() const { return m_bonkFlyer; }
         void SetBonkNormal(bool normal) { m_bonkNormal = normal; }
         bool IsBonkNormal() const { return m_bonkNormal; }
         void SetClientUnselectable(bool enabled) { m_clientUnselectable = enabled; }
@@ -694,6 +696,7 @@ class Creature : public Unit
         float m_baseRunSpeedRate;
         uint32 m_plateId = 0;
         bool m_bonkEnemy = false;
+        bool m_bonkFlyer = false;
         bool m_bonkNormal = false;
         bool m_clientUnselectable = false;
 

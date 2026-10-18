@@ -150,6 +150,7 @@ struct BonkMapCreature
     float damageMultiplier = 1.0f;
     float speed = 0.7f;
     float scale = 1.0f;
+    bool flyer = false;
 };
 
 enum BonkMapType : uint8
@@ -452,6 +453,15 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_LIGHTNING_SHIELD = 81,
     BONK_BEHAVIOR_LAVA_BURST    = 82,
     BONK_BEHAVIOR_EARTH_SHOCK   = 83,
+    BONK_BEHAVIOR_RENEW         = 84,
+    BONK_BEHAVIOR_HALO          = 85,
+    BONK_BEHAVIOR_HOLY_WORD     = 86,
+    BONK_BEHAVIOR_POWER_WORD_SHIELD = 87,
+    BONK_BEHAVIOR_PENANCE       = 88,
+    BONK_BEHAVIOR_PSYCHIC_SCREAM = 89,
+    BONK_BEHAVIOR_SHACKLE       = 90,
+    BONK_BEHAVIOR_MIND_FLAY     = 91,
+    BONK_BEHAVIOR_MIND_BLAST    = 92,
     MAX_BONK_BEHAVIOR
 };
 
@@ -470,6 +480,7 @@ enum BonkKeyword : uint8
     BONK_KEYWORD_DAZED                = 10,
     BONK_KEYWORD_STATIC               = 11,
     BONK_KEYWORD_NATURE_VULNERABILITY = 12,
+    BONK_KEYWORD_DECAY                = 13,
     MAX_BONK_KEYWORD,
     BONK_KEYWORD_VARIETY              = 255
 };
@@ -489,7 +500,7 @@ struct BonkKeywordInfo
 
     bool IsDamageOverTime() const
     {
-        return id == BONK_KEYWORD_BURNING || id == BONK_KEYWORD_BLEED || id == BONK_KEYWORD_POISON;
+        return id == BONK_KEYWORD_BURNING || id == BONK_KEYWORD_BLEED || id == BONK_KEYWORD_POISON || id == BONK_KEYWORD_DECAY;
     }
 };
 
@@ -610,6 +621,8 @@ struct BonkWeapon
             return "totem";
         if (classMask & (1 << (CLASS_SHAMAN - 1)))
             return "spirit wolf";
+        if (classMask & (1 << (CLASS_PRIEST - 1)))
+            return "shadowfiend";
         return (classMask & (1 << (CLASS_MAGE - 1))) ? "elemental" : "beast";
     }
     char const* GetTargetNoun() const
@@ -652,6 +665,7 @@ uint32 const BONK_PET_FAMILY_SEARING_TOTEM = 7;
 uint32 const BONK_PET_FAMILY_MAGMA_TOTEM = 8;
 uint32 const BONK_PET_FAMILY_HEALING_STREAM_TOTEM = 9;
 uint32 const BONK_PET_FAMILY_ELEMENTAL_SPIRIT = 10;
+uint32 const BONK_PET_FAMILY_SHADOWFIEND = 11;
 
 enum BonkPetAbilityKind : uint8
 {
@@ -791,6 +805,14 @@ struct BonkMob
     BonkMobRole role = BONK_ROLE_MELEE;
     float range = 0.0f;
     std::vector<BonkMobAbility> abilities;
+};
+
+struct BonkBoltLook
+{
+    uint32 displayId = 0;
+    float scale = 1.0f;
+    uint32 impactKit = 0;
+    bool castNear = false;
 };
 
 std::string FormatBonkMoney(uint32 copper);
@@ -1094,6 +1116,7 @@ class BonkMgr
         std::map<uint8, BonkKeywordInfo> const& GetKeywords() const { return m_keywords; }
 
         BonkMob const* GetMob(uint32 entry) const;
+        BonkBoltLook const* GetBoltLook(uint32 spellId) const;
 
         BonkArchetypeInfo const& GetArchetype(BonkArchetype archetype) const { return m_archetypes[archetype]; }
         std::vector<BonkWave> const& GetWaves() const { return m_waves; }
@@ -1157,6 +1180,7 @@ class BonkMgr
         void LoadTalents();
         void LoadItemStats();
         void LoadMobs();
+        void LoadBoltLooks();
         void LoadArchetypes();
         void LoadWaves();
         void LoadScaling();
@@ -1186,6 +1210,7 @@ class BonkMgr
         std::map<uint32, BonkItemStat> m_itemStats;
         std::map<uint32, BonkItemSet> m_itemSets;
         std::map<uint32, BonkMob> m_mobs;
+        std::map<uint32, BonkBoltLook> m_boltLooks;
         BonkArchetypeInfo m_archetypes[MAX_BONK_ARCHETYPE];
         std::vector<BonkWave> m_waves;
         std::vector<BonkScalingPoint> m_scaling;

@@ -613,6 +613,7 @@ int32 BonkRun::GetKeywordPoints(BonkKeywordInfo const& info) const
         case BONK_KEYWORD_BURNING:
         case BONK_KEYWORD_BLEED:
         case BONK_KEYWORD_POISON:
+        case BONK_KEYWORD_DECAY:
         {
             float const scale = (info.id == BONK_KEYWORD_POISON ? GetPoisonDamageScale() : 1.0f) + GetKeywordTalentDamage(info.id) / 100.0f;
             return std::max(1, int32(GetMobHealth(GetMobLevel()) * info.valuePerStack * info.tickMs / IN_MILLISECONDS * scale));

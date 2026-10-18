@@ -107,6 +107,7 @@ class BonkRun
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool IsPaused() const { return m_paused; }
+        bool IsHeroPerched() const { return m_perched; }
         void SetMenuOpen(bool open);
         bool IsFinished() const { return m_state == STATE_FINISHED; }
         bool IsPortalOpen() const { return m_state == STATE_PORTAL; }
@@ -190,6 +191,7 @@ class BonkRun
         void StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, float radius, uint32 durationMs);
         void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius);
         ObjectGuid PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs);
+        void LaunchEnemyMissile(ObjectGuid caster, ObjectGuid target, uint32 spellId, uint32 delayMs, uint32 flightMs, float x, float y, float z);
         bool ReserveBolt(uint32 landMs);
         void LandBolt(BonkEnemyHit const& hit, ObjectGuid targetGuid, float x, float y, float radius);
         void LandWarning(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
@@ -403,6 +405,8 @@ class BonkRun
         bool IsInRoster(BonkArchetype archetype) const;
         uint32 CountRoster() const;
         float GetCurveMinAlive() const;
+        float GetOpeningProgress() const;
+        float GetOpeningEase() const;
         uint32 GetSpawnTarget() const;
         float GetCrowdOverflow() const;
         void UpdateWaves();
@@ -426,6 +430,14 @@ class BonkRun
         uint32 GetFrontCap() const;
         bool FindMobPosition(float& x, float& y, float& z, float minDistance, float maxDistance) const;
         void UpdateLanes(uint32 diff);
+        void UpdatePerch(uint32 diff);
+        bool IsHeroReachable() const;
+        bool IsReachableFrom(float x, float y, float z) const;
+        void UpdateFlyers(uint32 diff);
+        void SpawnFlyerPack(uint32 count);
+        bool FindFlyerPosition(float& x, float& y, float& z) const;
+        BonkMapCreature const* PickFlyer() const;
+        uint32 CountFlyers() const;
         bool IsLane(uint32 sector) const;
         bool IsLaneEdge(uint32 sector) const;
         float GetSectorAngle(uint32 sector) const;
@@ -985,6 +997,15 @@ class BonkRun
         mutable std::vector<uint32> m_sectorBlockedUntil;
         int32 m_lanes[2] = { -1, -1 };
         uint32 m_laneTimer = 0;
+        bool m_perched = false;
+        uint32 m_perchTimer = 0;
+        uint32 m_perchChecks = 0;
+        uint32 m_perchedMs = 0;
+        uint32 m_flyerTimer = 0;
+        bool m_hasGround = false;
+        float m_groundX = 0.0f;
+        float m_groundY = 0.0f;
+        float m_groundZ = 0.0f;
         std::vector<ObjectGuid> m_chests;
         std::vector<ObjectGuid> m_powerups;
         std::vector<Orb> m_orbs;
@@ -1064,6 +1085,7 @@ class BonkRun
             bool staticDischarge = false;
             bool maelstrom = false;
             bool overload = false;
+            bool halo = false;
             float radius = 0.0f;
             uint32 kit = 0;
             uint32 hops = 0;
@@ -1346,6 +1368,23 @@ class BonkRun
             std::vector<ObjectGuid> struck;
         };
         std::vector<Projectile> m_projectiles;
+        struct EnemyMissile
+        {
+            ObjectGuid caster;
+            ObjectGuid target;
+            ObjectGuid creature;
+            uint32 spellId = 0;
+            uint32 delayMs = 0;
+            uint32 leftMs = 0;
+            bool launched = false;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            float speed = 0.0f;
+        };
+        std::vector<EnemyMissile> m_enemyMissiles;
+        void UpdateEnemyMissiles(uint32 diff);
+        void FlyEnemyMissile(EnemyMissile& missile);
+        void LandEnemyMissile(EnemyMissile const& missile);
+        void HoldEnemyMissiles(bool hold);
         uint32 m_spellShield = 0;
         bool m_wardBurst = false;
         struct Mark
@@ -1515,6 +1554,56 @@ class BonkRun
         void ShowLightningShield(uint32 charges);
         void ReplantTotems();
         void FlowHealingStreams();
+        void ResetPriestState();
+        void UpdatePriest(uint32 diff);
+        void UpdateBodyAndSoul();
+        void OnPriestStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
+        void OnPriestOverheal();
+        bool GetPriestCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind) const;
+        uint32 ApplyPriestDamageTaken(uint32 damage) const;
+        void OnPriestShieldAbsorbed(uint32 absorbed);
+        void ReflectShieldDamage(Creature* attacker);
+        void SpikeDecay(OwnedWeapon const& owned, Creature* target);
+        void OnPriestPeriodic(uint32 spellId, uint32 damage);
+        void DrainVampiricTouch();
+        void GraspWithVoidTendrils();
+        float GetPriestDamageMultiplier(Unit const* victim) const;
+        float GetPriestMoveSpeed() const;
+        uint32 GetPriestPetFamily(OwnedWeapon const& owned) const;
+        bool ApplyWeaponKeyword(OwnedWeapon const& owned, Creature* mob, BonkKeyword keyword, uint32 stacks);
+        bool FirePriestSpell(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void OnPriestCast(OwnedWeapon const& owned);
+        void ShortenHolyWord(uint32 ms);
+        Creature* FindPriestTarget(float range) const;
+        void HealPriest(float percent, uint32 textSpellId, bool atonement);
+        void PulseRenew(OwnedWeapon& owned);
+        void RingHalo(OwnedWeapon& owned, SpellEntry const* spellInfo, bool fresh);
+        void ResolvePriestCast(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
+        void RaisePowerWordShield(OwnedWeapon& owned);
+        void OnPriestStruck(Creature* attacker);
+        void FirePenance(OwnedWeapon& owned);
+        void HoldMob(Creature* mob, SpellEntry const* spellInfo, AuraType type, int32 durationMs);
+        void ScreamPsychic(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void BindShackle(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void FlayMind(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void SortMostDecayFirst(std::vector<Creature*>& mobs) const;
+        void BlastMind(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void OnPriestPetBite(Creature* pet, Unit* victim);
+        std::vector<std::pair<ObjectGuid, uint32>> m_recentAttackers;
+        ObjectGuid m_mindFlayTarget;
+        bool m_bodyAndSoul = false;
+        uint32 m_flayCarried = 0;
+        uint32 m_searingLightCast = 0;
+        std::vector<uint32> m_echoOfLightTimes;
+        bool m_inEchoOfLight = false;
+        float m_vampiricHeal = 0.0f;
+        uint32 m_reflectStored = 0;
+        float m_barrierX = 0.0f;
+        float m_barrierY = 0.0f;
+        float m_barrierRadius = 0.0f;
+        uint32 m_barrierUntilMs = 0;
+        uint32 m_priestTickMs = 0;
+        uint32 m_voidTendrilsMs = 0;
         uint32 m_maelstromHits = 0;
         uint32 m_lightningCharges = 0;
         uint32 m_shamanTickMs = 0;
@@ -1591,6 +1680,8 @@ class BonkRun
         float GetArcanePowerMultiplier() const;
         uint32 m_arcanePowerUntilMs = 0;
         void PlantHydra(Creature* pet);
+        void HoldPet(Creature* pet, bool hold, bool planted);
+        static bool IsPlanted(BonkWeapon const& weapon);
         void ReplantHydras();
         float GetMageDamageMultiplier(Unit const* victim) const;
         OwnedWeapon const* FindOwnedWhere(bool (BonkWeapon::*test)() const) const;
