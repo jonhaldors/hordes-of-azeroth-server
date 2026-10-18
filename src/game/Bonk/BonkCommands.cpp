@@ -42,6 +42,13 @@ namespace
     }
 }
 
+bool ChatHandler::HandleBonkPerfDipCommand(char* /*args*/)
+{
+    if (BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun())
+        run->LogPerfDip();
+    return true;
+}
+
 bool ChatHandler::HandleBonkStarterCommand(char* args)
 {
     Player* player = m_session->GetPlayer();
@@ -558,6 +565,7 @@ bool ChatHandler::HandleBonkHelloCommand(char*)
     bonk->SendTierList();
     bonk->SendGearInfo();
     BonkMobAI::SendAffixInfo(bonk);
+    BonkCodex::SendKeywordGlossary(bonk);
     bonk->SendGlyphInfo();
     bonk->SendMasteryState();
     bonk->SendWallet();

@@ -517,7 +517,7 @@ class Creature : public Unit
 
         // Auto evade timer (if target not reachable)
         // Tested on retail 5.4.0: Creatures evade after 3 seconds (but does not return to home position)
-        bool IsEvadeBecauseTargetNotReachable() const { return m_targetNotReachableTimer > 3000; }
+        bool IsEvadeBecauseTargetNotReachable() const { return m_targetNotReachableTimer > 3000 && !IsBonkEnemy(); }
         uint32 m_targetNotReachableTimer;
 
         std::shared_ptr<time_t> const& GetLastLeashExtensionTimePtr() const;

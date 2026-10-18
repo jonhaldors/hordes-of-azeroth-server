@@ -249,7 +249,7 @@ void BonkRun::OnDash()
     if (SpellEntry const* spellInfo = blink ? sSpellMgr.GetSpellEntry(blink->weapon.spellId) : nullptr)
     {
         CastSelfArea(*blink, spellInfo, GetWeaponArea(*blink));
-        uint32 const pulses = std::min(uint32(GetStat(BONK_PASSIVE_AMOUNT)), BONK_MAX_COUNT_PULSES);
+        uint32 const pulses = std::min(GetSpellCount(*blink), BONK_MAX_COUNT_PULSES);
         for (uint32 i = 1; i <= pulses; ++i)
         {
             PendingCast again;
@@ -758,7 +758,7 @@ void BonkRun::GainIceBarrier(OwnedWeapon const& owned)
 
 bool BonkRun::BurstIceNovas(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    uint32 const novas = 1 + std::min(uint32(GetStat(BONK_PASSIVE_AMOUNT)), BONK_MAX_COUNT_PULSES);
+    uint32 const novas = 1 + std::min(GetSpellCount(owned), BONK_MAX_COUNT_PULSES);
     std::vector<Creature*> centers;
     Map* map = m_player->GetMap();
     for (auto itr = m_frostboltTargets.rbegin(); itr != m_frostboltTargets.rend() && centers.size() < novas; ++itr)
@@ -937,7 +937,7 @@ bool BonkRun::RainMeteors(OwnedWeapon& owned, SpellEntry const* spellInfo, std::
     std::vector<Creature*> spots = GetMobsInRange(BONK_METEOR_SHOWER_SPREAD * area, centers.front());
     spots.insert(spots.begin(), centers.front());
     SortMostBurningFirst(spots);
-    uint32 const meteors = BONK_METEOR_SHOWER_COUNT + std::min(uint32(GetStat(BONK_PASSIVE_AMOUNT)), BONK_MAX_COUNT_PULSES);
+    uint32 const meteors = BONK_METEOR_SHOWER_COUNT + std::min(GetSpellCount(owned), BONK_MAX_COUNT_PULSES);
     if (spots.size() > meteors)
         spots.resize(meteors);
     for (Creature* spot : spots)

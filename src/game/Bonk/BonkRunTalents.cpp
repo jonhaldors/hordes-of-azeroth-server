@@ -15,7 +15,7 @@ namespace
     float const BONK_TRUESHOT_MARKED            = 1.4f;
     float const BONK_TRUESHOT_UNMARKED          = 0.75f;
     float const BONK_SHATTERLORD_UNFROZEN       = 0.85f;
-    uint32 const BONK_SHATTERLORD_FREEZE_STACKS = 3;
+    uint32 const BONK_SHATTERLORD_FREEZE_STACKS = 6;
     float const BONK_BERSERKER_DAMAGE_TAKEN     = 1.15f;
     float const BONK_SPELL_SHIELD_CAP           = 0.5f;
     float const BONK_JUGGERNAUT_SHIELD_CAP      = 1.0f;
@@ -25,7 +25,7 @@ namespace
     float const BONK_ARCANE_SURGE_HEALTH_COST   = 3.0f;
     float const BONK_LOW_HEALTH_GUARD           = 20.0f;
     float const BONK_ICE_BLOCK_RADIUS           = 10.0f;
-    uint32 const BONK_ICE_BLOCK_CHILL           = 5;
+    uint32 const BONK_ICE_BLOCK_CHILL           = 10;
     uint32 const BONK_KIT_ICE_BLOCK             = 160;
     uint32 const BONK_SPELL_TALENT_STUN         = 7922;
 

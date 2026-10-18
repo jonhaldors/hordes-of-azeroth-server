@@ -10,6 +10,8 @@
 #include "Policies/SingletonImp.h"
 #include "SpellMgr.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <tuple>
@@ -91,6 +93,20 @@ namespace
         return text;
     }
 
+    std::string DescribeScaledValue(std::string const& text, size_t open, size_t close, std::string const& number)
+    {
+        std::string value = (open > 0 && text[open - 1] == '+' ? "+" : "") + number;
+        size_t const after = close + 1;
+        if (after < text.size() && text[after] == '%')
+            return value + "%";
+        if (after + 1 < text.size() && text[after] == ' ' && std::isupper(static_cast<unsigned char>(text[after + 1])))
+        {
+            size_t const wordEnd = text.find_first_of(" .,", after + 1);
+            value += " " + text.substr(after + 1, wordEnd == std::string::npos ? std::string::npos : wordEnd - after - 1);
+        }
+        return value;
+    }
+
     std::string ScalePassiveText(std::string const& text, uint32 rank, std::vector<std::string>* values = nullptr)
     {
         std::string scaled;
@@ -115,7 +131,7 @@ namespace
                 std::string const number = FormatScaled(perRank * rank);
                 scaled += number;
                 if (values)
-                    values->push_back(number + (close + 1 < text.size() && text[close + 1] == '%' ? "%" : ""));
+                    values->push_back(DescribeScaledValue(text, open, close, number));
             }
             pos = close + 1;
         }
@@ -124,12 +140,17 @@ namespace
 
     std::string JoinValues(std::vector<std::string> const& values)
     {
+        auto bare = [](std::string const& value) { return !value.empty() && value[0] == '+' ? value.substr(1) : value; };
+        std::vector<std::string> unique;
+        for (std::string const& value : values)
+            if (std::none_of(unique.begin(), unique.end(), [&](std::string const& seen) { return bare(seen) == bare(value); }))
+                unique.push_back(value);
         std::string text;
-        for (size_t i = 0; i < values.size(); ++i)
+        for (size_t i = 0; i < unique.size(); ++i)
         {
             if (i)
-                text += i + 1 == values.size() ? " and " : ", ";
-            text += values[i];
+                text += i + 1 == unique.size() ? " and " : ", ";
+            text += unique[i];
         }
         return text;
     }
@@ -573,7 +594,7 @@ void BonkMgr::LoadKeywords()
     m_keywords.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `icon`, `spell_id`, `max_stacks`, `value_per_stack`, `tick_ms`, `duration_ms`, `spreads_on_death` FROM `bonk_keyword`"));
+        "SELECT `id`, `name`, `icon`, `spell_id`, `max_stacks`, `value_per_stack`, `tick_ms`, `duration_ms`, `spreads_on_death`, `description` FROM `bonk_keyword`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk keywords.");
@@ -595,6 +616,7 @@ void BonkMgr::LoadKeywords()
         keyword.tickMs = fields[6].GetUInt32();
         keyword.durationMs = fields[7].GetUInt32();
         keyword.spreadsOnDeath = fields[8].GetUInt8() != 0;
+        keyword.description = fields[9].GetCppString();
 
         if (id == BONK_KEYWORD_NONE || id >= MAX_BONK_KEYWORD)
         {
@@ -872,6 +894,11 @@ void BonkMgr::LoadWeapons()
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u neither slows, howls nor places traps, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
                 continue;
             }
+            if (upgrade == BONK_SPELL_UPGRADE_ECHO && !weapon->second.HasFlag(BONK_WEAPON_FLAG_AOE))
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u is not an AoE spell, so Echo would do nothing (Count covers it); skipped.", weaponId);
+                continue;
+            }
             if (upgrade == BONK_SPELL_UPGRADE_CLEAVE && weapon->second.target == BONK_TARGET_CONE)
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u fires a cone, which has no cleave splash, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
@@ -896,6 +923,13 @@ void BonkMgr::LoadWeapons()
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u has no upgrades; its Rare and Epic ranks add damage only.", itr.first);
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk weapons with %u upgrades", uint32(m_weapons.size()), upgrades);
+}
+
+std::string TagBonkWeaponDescription(BonkWeapon const& weapon, std::string const& description)
+{
+    if (!weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
+        return description;
+    return "|cff71d5ffAoE|r " + description;
 }
 
 std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount)
@@ -926,6 +960,8 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         case BONK_SPELL_UPGRADE_TRAP_AREA:  return percent + " trap radius";
         case BONK_SPELL_UPGRADE_SHIELD_SIZE: return percent + " Shield size";
         case BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN: return std::string("-") + number + "% internal cooldown";
+        case BONK_SPELL_UPGRADE_ECHO:
+            return weapon.target == BONK_TARGET_GROUND ? "lands 1 additional at the next largest group of enemies" : "goes off 1 additional time, 0.3 sec later";
         case BONK_SPELL_UPGRADE_MARK:       return percent + " damage taken by marked enemies";
         case BONK_SPELL_UPGRADE_PET_DAMAGE:
             return percent + " damage dealt by its " + weapon.GetTargetNoun() + (weapon.behavior == BONK_BEHAVIOR_WRATH ? "" : "s");
@@ -1836,14 +1872,19 @@ std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank) co
 
 std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const
 {
-    std::string text = DescribePassive(passive, rank);
-    if (rank <= 1)
+    return DescribePassiveNow(passive, rank > 1 ? rank - 1 : 0);
+}
+
+std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank) const
+{
+    std::string text = DescribePassive(passive, 1);
+    if (!rank)
         return text;
 
-    std::vector<std::string> before;
-    ScalePassiveText(passive.description, rank - 1, &before);
-    if (!before.empty())
-        text.insert(ScalePassiveText(passive.description, rank).size(), " Up from " + JoinValues(before) + ".");
+    std::vector<std::string> now;
+    ScalePassiveText(passive.description, rank, &now);
+    if (!now.empty())
+        text += BONK_LINE_BREAK + std::string("Current: ") + JoinValues(now) + ".";
     return text;
 }
 
@@ -1877,7 +1918,7 @@ void BonkMgr::LoadPetFamilies()
     m_petFamilies.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `entry`, `scale`, `attack_ms`, `applies`, `apply_stacks` FROM `bonk_pet_family`"));
+        "SELECT `id`, `name`, `entry`, `scale`, `attack_ms`, `applies`, `apply_stacks`, `description` FROM `bonk_pet_family`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk pet families. Table `bonk_pet_family` is empty or missing; Call Pet summons nothing.");
@@ -1896,6 +1937,7 @@ void BonkMgr::LoadPetFamilies()
         family.attackMs = std::max(500u, fields[4].GetUInt32());
         uint8 const applies = fields[5].GetUInt8();
         family.applyStacks = fields[6].GetUInt8();
+        family.description = fields[7].GetCppString();
 
         if (!sObjectMgr.GetCreatureTemplate(family.entry))
         {

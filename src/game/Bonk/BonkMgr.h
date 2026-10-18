@@ -295,6 +295,8 @@ enum BonkWeaponFlags : uint32
     BONK_WEAPON_FLAG_BLINK_DASH       = 0x800000,
     BONK_WEAPON_FLAG_HYDRA            = 0x1000000,
     BONK_WEAPON_FLAG_ELEMENTAL_SHIFT  = 0x2000000,
+    BONK_WEAPON_FLAG_AOE              = 0x4000000,
+    BONK_WEAPON_FLAG_TOTEM            = 0x8000000,
 };
 
 float const BONK_CLEAVE_RADIUS    = 6.0f;
@@ -336,10 +338,11 @@ enum BonkSpellUpgrade : uint8
     BONK_SPELL_UPGRADE_TRAP_AREA    = 13,
     BONK_SPELL_UPGRADE_SHIELD_SIZE  = 14,
     BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN = 15,
+    BONK_SPELL_UPGRADE_ECHO         = 16,
     MAX_BONK_SPELL_UPGRADE
 };
 
-float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f, 15.0f, 0.0f, 20.0f, 60.0f, 0.0f, 40.0f };
+float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f, 15.0f, 0.0f, 20.0f, 60.0f, 0.0f, 40.0f, 1.0f };
 uint32 const BONK_SPELL_CLEAVE_TARGETS = 2;
 
 struct BonkWeaponUpgrade
@@ -443,6 +446,12 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_PRESENCE_OF_MIND = 75,
     BONK_BEHAVIOR_ARCANE_BARRAGE = 76,
     BONK_BEHAVIOR_ARCANE_POWER  = 77,
+    BONK_BEHAVIOR_WINDFURY      = 78,
+    BONK_BEHAVIOR_STORMSTRIKE   = 79,
+    BONK_BEHAVIOR_MAELSTROM     = 80,
+    BONK_BEHAVIOR_LIGHTNING_SHIELD = 81,
+    BONK_BEHAVIOR_LAVA_BURST    = 82,
+    BONK_BEHAVIOR_EARTH_SHOCK   = 83,
     MAX_BONK_BEHAVIOR
 };
 
@@ -459,6 +468,8 @@ enum BonkKeyword : uint8
     BONK_KEYWORD_SHADOW_VULNERABILITY = 8,
     BONK_KEYWORD_HUNTERS_MARK         = 9,
     BONK_KEYWORD_DAZED                = 10,
+    BONK_KEYWORD_STATIC               = 11,
+    BONK_KEYWORD_NATURE_VULNERABILITY = 12,
     MAX_BONK_KEYWORD,
     BONK_KEYWORD_VARIETY              = 255
 };
@@ -474,6 +485,7 @@ struct BonkKeywordInfo
     uint32 tickMs = 0;
     uint32 durationMs = 0;
     bool spreadsOnDeath = false;
+    std::string description;
 
     bool IsDamageOverTime() const
     {
@@ -551,7 +563,7 @@ struct BonkWeapon
     }
     bool IsTrigger() const
     {
-        return behavior == BONK_BEHAVIOR_DEEP_WOUNDS || behavior == BONK_BEHAVIOR_ROLLING_THUNDER || IsRevenge();
+        return behavior == BONK_BEHAVIOR_DEEP_WOUNDS || behavior == BONK_BEHAVIOR_ROLLING_THUNDER || behavior == BONK_BEHAVIOR_MAELSTROM || IsRevenge();
     }
     bool IsBlink() const
     {
@@ -592,12 +604,20 @@ struct BonkWeapon
             return behavior == BONK_BEHAVIOR_TRAP || behavior == BONK_BEHAVIOR_PET;
         return target != BONK_TARGET_SELF_AREA && target != BONK_TARGET_CONE;
     }
+    char const* GetPetNoun() const
+    {
+        if (HasFlag(BONK_WEAPON_FLAG_TOTEM))
+            return "totem";
+        if (classMask & (1 << (CLASS_SHAMAN - 1)))
+            return "spirit wolf";
+        return (classMask & (1 << (CLASS_MAGE - 1))) ? "elemental" : "beast";
+    }
     char const* GetTargetNoun() const
     {
         if (behavior == BONK_BEHAVIOR_TRAP)
             return "trap";
         if (behavior == BONK_BEHAVIOR_PET)
-            return "beast";
+            return GetPetNoun();
         if (behavior == BONK_BEHAVIOR_WRATH)
             return "wolf";
         return target == BONK_TARGET_GROUND ? "pack" : "target";
@@ -609,7 +629,7 @@ struct BonkWeapon
         if (behavior == BONK_BEHAVIOR_TRAP)
             return (target == BONK_TARGET_GROUND ? "Throws " : "Places ") + number + " trap" + plural + ".";
         if (behavior == BONK_BEHAVIOR_PET)
-            return "Calls up to " + number + " beast" + plural + ".";
+            return "Calls up to " + number + " " + GetPetNoun() + plural + ".";
         if (target == BONK_TARGET_GROUND)
             return "Lands on " + number + " pack" + plural + " of enemies.";
         return "Targets up to " + number + (count == 1 ? " enemy." : " enemies.");
@@ -617,6 +637,7 @@ struct BonkWeapon
 };
 
 std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount);
+std::string TagBonkWeaponDescription(BonkWeapon const& weapon, std::string const& description);
 
 uint32 const BONK_MAX_SUMMONS        = 8;
 float const BONK_SUMMON_POWER_SHARE  = 0.6f;
@@ -626,6 +647,11 @@ uint32 const BONK_PET_FAMILY_WATER_ELEMENTAL = 2;
 uint32 const BONK_PET_FAMILY_FIRE_ELEMENTAL = 3;
 uint32 const BONK_PET_FAMILY_ARCANE_ELEMENTAL = 4;
 uint32 const BONK_PET_FAMILY_HYDRA = 5;
+uint32 const BONK_PET_FAMILY_SPIRIT_WOLF = 6;
+uint32 const BONK_PET_FAMILY_SEARING_TOTEM = 7;
+uint32 const BONK_PET_FAMILY_MAGMA_TOTEM = 8;
+uint32 const BONK_PET_FAMILY_HEALING_STREAM_TOTEM = 9;
+uint32 const BONK_PET_FAMILY_ELEMENTAL_SPIRIT = 10;
 
 enum BonkPetAbilityKind : uint8
 {
@@ -651,6 +677,7 @@ struct BonkPetFamily
 {
     uint32 id = 0;
     std::string name;
+    std::string description;
     uint32 entry = 0;
     float scale = 1.0f;
     uint32 attackMs = 1500;
@@ -684,6 +711,15 @@ enum BonkPassiveEffect : uint8
     MAX_BONK_PASSIVE_EFFECT
 };
 
+char const* const BONK_LINE_BREAK = "|n";
+
+inline std::string JoinBonkLines(std::string text)
+{
+    std::string const lineBreak = BONK_LINE_BREAK;
+    for (size_t pos = text.find(lineBreak); pos != std::string::npos; pos = text.find(lineBreak, pos))
+        text.replace(pos, lineBreak.size(), " ");
+    return text;
+}
 float const BONK_MAX_DODGE          = 60.0f;
 float const BONK_MAX_HIT            = 100.0f;
 float const BONK_MAX_COUNT          = 5.0f;
@@ -711,7 +747,6 @@ enum BonkMobRole : uint8
 {
     BONK_ROLE_MELEE    = 0,
     BONK_ROLE_RANGED   = 1,
-    BONK_ROLE_EXPLODER = 2,
     MAX_BONK_MOB_ROLE
 };
 
@@ -723,11 +758,15 @@ enum BonkAbilityTarget : uint8
 
 enum BonkAbilityShape : uint8
 {
-    BONK_SHAPE_SPELL   = 0,
-    BONK_SHAPE_CONE    = 1,
-    BONK_SHAPE_RING    = 2,
-    BONK_SHAPE_BARRAGE = 3,
-    BONK_SHAPE_TRAIL   = 4,
+    BONK_SHAPE_SPELL     = 0,
+    BONK_SHAPE_CONE      = 1,
+    BONK_SHAPE_RING      = 2,
+    BONK_SHAPE_BARRAGE   = 3,
+    BONK_SHAPE_TRAIL     = 4,
+    BONK_SHAPE_LEAP      = 5,
+    BONK_SHAPE_SHOCKWAVE = 6,
+    BONK_SHAPE_SPOKES    = 7,
+    BONK_SHAPE_POOLS     = 8,
     MAX_BONK_ABILITY_SHAPE
 };
 
@@ -1063,6 +1102,7 @@ class BonkMgr
         BonkPassive const* GetPassive(uint32 id) const;
         std::string DescribePassive(BonkPassive const& passive, uint32 rank = 1) const;
         std::string DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const;
+        std::string DescribePassiveNow(BonkPassive const& passive, uint32 rank) const;
         std::map<uint32, BonkPassive> const& GetPassives() const { return m_passives; }
 
         std::vector<BonkPowerup> const& GetPowerups() const { return m_powerups; }

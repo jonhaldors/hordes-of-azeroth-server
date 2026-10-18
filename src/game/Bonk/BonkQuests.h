@@ -127,7 +127,7 @@ class BonkQuests
             return type == BONK_REWARD_WEAPON || type == BONK_REWARD_PASSIVE || type == BONK_REWARD_CARD || type == BONK_REWARD_GLYPH;
         }
         uint32 GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 id) const;
-        static bool IsTicketUnlock(BonkQuestReward type) { return type == BONK_REWARD_CARD; }
+        static bool IsTicketUnlock(BonkQuestReward type) { return type == BONK_REWARD_CARD || type == BONK_REWARD_GLYPH; }
         void Buy(uint32 account, BonkQuestReward type, uint32 id);
 
         void OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType, uint32 entry, bool standing);

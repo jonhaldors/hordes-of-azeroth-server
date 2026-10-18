@@ -111,14 +111,13 @@ namespace
         ENEMY_CASTER,
         ENEMY_RANGED,
         ENEMY_CHARGER,
-        ENEMY_EXPLODER,
         ENEMY_ELITE,
         ENEMY_MINIBOSS,
         ENEMY_BOSS,
         MAX_ENEMY_TYPE
     };
 
-    char const* const ENEMY_TYPE_LABELS[MAX_ENEMY_TYPE] = { "One caster", "One ranged enemy", "One charger", "One exploder", "One elite",
+    char const* const ENEMY_TYPE_LABELS[MAX_ENEMY_TYPE] = { "One caster", "One ranged enemy", "One charger", "One elite",
         "One mini-boss", "One boss" };
 
     struct SandboxEnemy
@@ -180,8 +179,6 @@ namespace
                 return mob && mob->role == BONK_ROLE_RANGED && hasAbilities;
             case ENEMY_CHARGER:
                 return creature.kind == BONK_SPAWN_NORMAL && creature.archetype == BONK_ARCHETYPE_CHARGER;
-            case ENEMY_EXPLODER:
-                return mob && mob->role == BONK_ROLE_EXPLODER;
             case ENEMY_ELITE:
                 return creature.kind == BONK_SPAWN_ELITE && hasAbilities;
             case ENEMY_MINIBOSS:

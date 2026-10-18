@@ -117,7 +117,7 @@ void BonkPlayer::SendStarters() const
     {
         BonkWeapon const& weapon = *option.weapon;
         SendAddon("starter~" + std::to_string(weapon.id) + "~" + weapon.icon + "~" + weapon.name + "~" + (option.unlocked ? "1" : "0") + "~" +
-            (&weapon == chosen ? "1" : "0") + "~" + option.hint + "~" + weapon.description);
+            (&weapon == chosen ? "1" : "0") + "~" + option.hint + "~" + TagBonkWeaponDescription(weapon, weapon.description));
     }
     SendAddon("starterend");
 }

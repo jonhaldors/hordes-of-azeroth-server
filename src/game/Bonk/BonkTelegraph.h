@@ -42,6 +42,7 @@ class BonkTelegraphs
         void SetPatient(bool patient) { m_patient = patient; }
         size_t Count() const { return m_telegraphs.size(); }
         size_t CountStandIns() const { return m_standIns.size(); }
+        size_t CountBusyStandIns() const { return m_standIns.size() - CountIdle(false); }
 
         ObjectGuid Borrow(Player* owner, float x, float y, float z, uint32 display);
         ObjectGuid BorrowInvisible(Player* owner, float x, float y, float z);

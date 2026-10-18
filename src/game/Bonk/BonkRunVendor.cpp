@@ -490,7 +490,7 @@ void BonkRun::SendVendor() const
             name = DescribeOffer(slot.card, nullptr) + " rank " + std::to_string(slot.card.newLevel);
             if (slot.card.isWeapon && slot.card.step != BONK_STEP_NEW)
                 name += std::string(" (") + GetBonkRarityName(slot.card.rarity) + ")";
-            name += ": " + DescribeStep(slot.card);
+            name += ": " + JoinBonkLines(DescribeStep(slot.card));
         }
         char const* state = slot.state == VENDOR_SOLD ? ", bought" : slot.state == VENDOR_GONE ? ", no longer fits" : slot.locked ? ", locked" : "";
         handler.PSendSysMessage("  %u) %s (%u Valor%s)", uint32(i + 1), name.c_str(), slot.price, state);

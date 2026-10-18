@@ -27,6 +27,7 @@ namespace
     float const BONK_SHIELD_SLAM_MAX_BONUS    = 200.0f;
 
     uint32 const BONK_WARRIOR_CLASS_MASK      = 1 << (CLASS_WARRIOR - 1);
+    uint32 const BONK_SHAMAN_CLASS_MASK       = 1 << (CLASS_SHAMAN - 1);
     uint32 const BONK_SWING_ANIMATION_GAP_MS  = 400;
 
     int32 const BONK_WAKE_DELAY_MS            = 1000;
@@ -249,7 +250,7 @@ void BonkRun::OpenDeepWound(OwnedWeapon const& owned, Creature* mob)
         return;
 
     m_deepWoundsReadyMs[mob->GetObjectGuid()] = m_totalMs + GetWeaponCooldown(owned);
-    uint32 const applications = 1 + std::min(uint32(GetStat(BONK_PASSIVE_AMOUNT)), BONK_MAX_COUNT_PULSES);
+    uint32 const applications = 1 + std::min(GetSpellCount(owned), BONK_MAX_COUNT_PULSES);
     uint32 const stacks = keyword.stacks * applications;
     if (!ApplyKeyword(mob, keyword.keyword, stacks, keyword.durationMs, keyword.damageScale, keyword.spellId))
         return;
@@ -433,6 +434,8 @@ BonkRun::OwnedWeapon const* BonkRun::FindOwnedByFlag(BonkWeaponFlags flag) const
 
 bool BonkRun::SwingsWeapon(BonkWeapon const& weapon)
 {
+    if (weapon.classMask & BONK_SHAMAN_CLASS_MASK)
+        return weapon.behavior == BONK_BEHAVIOR_WINDFURY || weapon.behavior == BONK_BEHAVIOR_STORMSTRIKE;
     if (!(weapon.classMask & BONK_WARRIOR_CLASS_MASK) || weapon.IsKeywordOnly() || weapon.HasFlag(BONK_WEAPON_FLAG_LOOK_ONLY))
         return false;
     if (weapon.IsWhirlwind() || weapon.IsWeaken() || weapon.behavior == BONK_BEHAVIOR_AVENGERS_SHIELD)

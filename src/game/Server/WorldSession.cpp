@@ -203,6 +203,10 @@ void WorldSession::SendPacketImpl(WorldPacket const* packet)
     if (m_sniffFile)
         m_sniffFile->WritePacket(*packet, false, time(nullptr));
 
+    if (_player)
+        if (BonkPlayer* bonk = _player->GetBonkPlayer())
+            bonk->NotePacket(packet->GetOpcode(), packet->size());
+
     m_socket->SendPacket(*packet);
 }
 

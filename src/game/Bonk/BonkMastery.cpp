@@ -14,6 +14,8 @@ namespace
     float const BONK_JUGGERNAUT_POWER_COST     = 15.0f;
     float const BONK_GLASS_CANNON_CRIT_DAMAGE  = 100.0f;
     float const BONK_GLASS_CANNON_HEALTH_COST  = 50.0f;
+    float const BONK_DOOMHAMMER_HEALTH_COST    = 15.0f;
+    float const BONK_TOTEMIC_MASTERY_POWER_COST = 15.0f;
 }
 
 void BonkMastery::Load()
@@ -310,6 +312,12 @@ void BonkMastery::ApplyCapstoneCost(BonkMasteryBonuses& bonuses)
         case BONK_CAPSTONE_GLASS_CANNON:
             bonuses.passives[BONK_PASSIVE_CRIT_DAMAGE] += BONK_GLASS_CANNON_CRIT_DAMAGE;
             bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_GLASS_CANNON_HEALTH_COST;
+            break;
+        case BONK_CAPSTONE_DOOMHAMMER:
+            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_DOOMHAMMER_HEALTH_COST;
+            break;
+        case BONK_CAPSTONE_TOTEMIC_MASTERY:
+            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_TOTEMIC_MASTERY_POWER_COST;
             break;
         default:
             break;

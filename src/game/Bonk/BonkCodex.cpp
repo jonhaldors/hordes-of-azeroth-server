@@ -50,7 +50,7 @@ void BonkCodex::Send(Player* player, std::string const& npc)
         std::string const locked = lockState(BONK_REWARD_WEAPON, weapon.id, price);
         bonk->SendAddon("cdxw~" + id + "~" + weapon.name + "~" + weapon.icon + "~" + std::to_string(weapon.classMask) + "~" +
             std::to_string(weapon.starterClassMask | weapon.starterOptionMask) + "~" + std::to_string(weapon.evolvesFrom) + "~" + locked + "~" + std::to_string(price));
-        bonk->SendAddon("cdxwd~" + id + "~" + weapon.description);
+        bonk->SendAddon("cdxwd~" + id + "~" + TagBonkWeaponDescription(weapon, weapon.description));
         if (locked == "1")
             SendLock(bonk, "w", weapon.id, BONK_REWARD_WEAPON);
     }
@@ -100,7 +100,25 @@ void BonkCodex::Send(Player* player, std::string const& npc)
             SendLock(bonk, "g", itr.first, BONK_REWARD_GLYPH);
     }
 
+    for (auto const& itr : sBonkMgr.GetKeywords())
+    {
+        BonkKeywordInfo const& keyword = itr.second;
+        if (!keyword.description.empty())
+            bonk->SendAddon("cdxk~" + std::to_string(uint32(keyword.id)) + "~" + keyword.name + "~" + keyword.icon + "~" +
+                std::to_string(uint32(keyword.maxStacks)) + "~" + std::to_string(keyword.durationMs) + "~" + keyword.description);
+    }
+
     bonk->SendAddon("cdxend");
+}
+
+void BonkCodex::SendKeywordGlossary(BonkPlayer* bonk)
+{
+    for (auto const& itr : sBonkMgr.GetKeywords())
+    {
+        BonkKeywordInfo const& keyword = itr.second;
+        if (!keyword.description.empty())
+            bonk->SendAddon("kwd~" + std::to_string(uint32(keyword.id)) + "~" + keyword.name + "~" + keyword.icon + "~" + keyword.description);
+    }
 }
 
 bool GossipHello_npc_bonk_codex(Player* player, Creature* creature)

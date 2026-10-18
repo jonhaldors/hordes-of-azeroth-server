@@ -39,6 +39,7 @@ set (game_SRCS
     Bonk/BonkRunHidden.cpp
     Bonk/BonkRunLooks.cpp
     Bonk/BonkRunMage.cpp
+    Bonk/BonkRunShaman.cpp
     Bonk/BonkRunShrines.cpp
     Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp

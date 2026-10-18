@@ -1031,7 +1031,7 @@ void Creature::Update(uint32 update_diff, uint32 diff)
                 }
             }
 
-            if (unreachableTarget && !IsBonkEnemy())
+            if (unreachableTarget)
             {
                 m_targetNotReachableTimer += update_diff;
                 if (GetMapId() == MAP_ALTERAC_VALLEY && CanHaveThreatList() && m_targetNotReachableTimer > 1000) // Alterac Valley exploit fix
@@ -1047,7 +1047,7 @@ void Creature::Update(uint32 update_diff, uint32 diff)
                 try
                 {
                     // Reset after 24 secs
-                    if (leash || (m_targetNotReachableTimer > 24000))
+                    if (leash || (m_targetNotReachableTimer > 24000 && !IsBonkEnemy()))
                         AI()->EnterEvadeMode();
                     else if (!IsEvadeBecauseTargetNotReachable())
                         AI()->UpdateAI(diff);   // AI not react good at real update delays (while freeze in non-active part of map)

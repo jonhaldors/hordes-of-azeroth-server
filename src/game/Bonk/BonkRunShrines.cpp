@@ -79,7 +79,7 @@ namespace
         { BONK_PASSIVE_CRIT_DAMAGE, 25.0f, "Critical Strike Damage", "critical strike damage",                  "Spell_Holy_PowerInfusion",    false },
         { BONK_PASSIVE_SHIELD,      15.0f, "Shield",                 "of your maximum health as a Shield",      "Spell_Holy_InnerFire",        false },
         { BONK_PASSIVE_HASTE,       10.0f, "Haste",                  "Haste",                                   "Racial_Troll_Berserk",        false },
-        { BONK_PASSIVE_AREA,        20.0f, "Area",                   "Area: bigger area spells and melee reach", "Spell_Holy_ArcaneIntellect", false },
+        { BONK_PASSIVE_AREA,        20.0f, "Area",                   "Area: bigger area spells, cones, melee swings and pets", "Spell_Holy_ArcaneIntellect", false },
         { BONK_PASSIVE_MOVE_SPEED,  10.0f, "Movement Speed",         "movement speed",                          "Ability_Mount_JungleTiger",   false },
         { BONK_PASSIVE_PICKUP,      40.0f, "Pickup Range",           "pickup range",                            "INV_Gizmo_02",                false },
         { BONK_PASSIVE_LUCK,        10.0f, "Luck",                   "Luck",                                    "INV_Misc_Foot_Kodo",          true },

@@ -30,6 +30,8 @@ namespace
 {
     float const BONK_CAMP_RADIUS = 300.0f;
     uint32 const BONK_CAMP_SIT_DELAY_MS = 500;
+    uint32 const BONK_MAILBOX_REFRESH_DELAY_MS = 1500;
+    size_t const BONK_PACKET_TOP = 4;
     float const BONK_CAMP_CHAIR_RANGE = 3.0f;
     float const BONK_CAMP_CHAIR_TAKEN = 1.0f;
 
@@ -616,7 +618,7 @@ bool BonkPlayer::IsWipeName(std::string const& name)
 
 bool BonkPlayer::IsPlayableClass(uint8 classId)
 {
-    return classId == CLASS_WARRIOR || classId == CLASS_HUNTER || classId == CLASS_MAGE;
+    return classId == CLASS_WARRIOR || classId == CLASS_HUNTER || classId == CLASS_MAGE || classId == CLASS_SHAMAN;
 }
 
 void BonkPlayer::WipeAccount(uint32 accountId)
@@ -788,12 +790,12 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
         message = "You can't unlock that.";
         return false;
     }
-    if (type == BONK_REWARD_CARD && !IsVisitingShop(BONK_SHOP_TALENTS))
+    if (BonkQuests::IsTicketUnlock(type) && !IsVisitingShop(BONK_SHOP_TALENTS))
     {
-        message = "Visit Sayge at camp to unlock Darkmoon Cards.";
+        message = type == BONK_REWARD_CARD ? "Visit Sayge at camp to unlock Darkmoon Cards." : "Visit Sayge at camp to unlock Glyphs.";
         return false;
     }
-    if (type != BONK_REWARD_CARD && !IsAtSpellbook())
+    if (!BonkQuests::IsTicketUnlock(type) && !IsAtSpellbook())
     {
         message = "Visit the Spellbook Keeper at camp to unlock " + name + ".";
         return false;
@@ -1329,6 +1331,7 @@ void BonkPlayer::Update(uint32 diff)
 
     m_previewTelegraphs.Update(m_player, diff);
     UpdateCampSeat(diff);
+    UpdateMailboxRefresh(diff);
     UpdateDash(diff);
     UpdateCampMailNotice(diff);
     UpdateMailboxGlow(diff);
@@ -1785,10 +1788,63 @@ bool BonkPlayer::IsAtCamp() const
         m_player->IsWithinDist2d(BONK_CAMP_LOCATION.x, BONK_CAMP_LOCATION.y, BONK_CAMP_RADIUS);
 }
 
+void BonkPlayer::NotePacket(uint16 opcode, size_t bytes)
+{
+    if (opcode < PACKET_KINDS)
+        m_packetCounts[opcode].fetch_add(1, std::memory_order_relaxed);
+    m_packetBytes.fetch_add(uint32(bytes), std::memory_order_relaxed);
+}
+
+BonkPlayer::PacketCounts BonkPlayer::TakePacketCounts()
+{
+    PacketCounts counts;
+    counts.bytes = m_packetBytes.exchange(0, std::memory_order_relaxed);
+    for (uint16 opcode = 0; opcode < PACKET_KINDS; ++opcode)
+        if (uint32 const count = m_packetCounts[opcode].exchange(0, std::memory_order_relaxed))
+        {
+            counts.packets += count;
+            counts.top.emplace_back(opcode, count);
+        }
+    std::sort(counts.top.begin(), counts.top.end(), [](auto const& a, auto const& b) { return a.second > b.second; });
+    if (counts.top.size() > BONK_PACKET_TOP)
+        counts.top.resize(BONK_PACKET_TOP);
+    return counts;
+}
+
 void BonkPlayer::TeleportToCamp()
 {
     m_player->TeleportTo(BONK_CAMP_ARRIVAL);
     m_sitAtCampMs = BONK_CAMP_SIT_DELAY_MS;
+    m_mailboxRefreshMs = BONK_MAILBOX_REFRESH_DELAY_MS;
+}
+
+void BonkPlayer::UpdateMailboxRefresh(uint32 diff)
+{
+    if (!m_mailboxRefreshMs || !m_player->IsInWorld() || m_player->IsBeingTeleported())
+        return;
+    if (diff < m_mailboxRefreshMs)
+    {
+        m_mailboxRefreshMs -= diff;
+        return;
+    }
+    m_mailboxRefreshMs = 0;
+    if (!m_run && IsAtCamp())
+        RefreshMailboxBeacon();
+}
+
+void BonkPlayer::RefreshMailboxBeacon()
+{
+    m_mailboxGlowShown = HasUnreadMail();
+    Creature* beacon = m_player->FindNearestCreature(BONK_MAILBOX_BEACON, BONK_MAILBOX_GLOW_RANGE);
+    if (!beacon)
+        return;
+    if (m_mailboxGlowShown && m_player->IsInVisibleList(beacon))
+    {
+        beacon->DestroyForPlayer(m_player);
+        std::unique_lock<std::shared_timed_mutex> lock(m_player->m_visibleGUIDs_lock);
+        m_player->m_visibleGUIDs.erase(beacon->GetObjectGuid());
+    }
+    m_player->UpdateVisibilityOf(m_player, beacon);
 }
 
 void BonkPlayer::UpdateCampSeat(uint32 diff)

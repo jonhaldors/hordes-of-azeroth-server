@@ -6,6 +6,8 @@
 #include "ObjectGuid.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <set>
@@ -199,6 +201,15 @@ class BonkPlayer
         void AnnounceMailAtCamp() { m_campMailNoticeMs = BONK_CAMP_MAIL_NOTICE_DELAY_MS; }
         bool MoveToCampBeforeLogin(bool gameMaster);
 
+        struct PacketCounts
+        {
+            uint32 packets = 0;
+            uint32 bytes = 0;
+            std::vector<std::pair<uint16, uint32>> top;
+        };
+        void NotePacket(uint16 opcode, size_t bytes);
+        PacketCounts TakePacketCounts();
+
     private:
         void ClearAuras();
 
@@ -248,6 +259,9 @@ class BonkPlayer
         uint32 m_sitAtCampMs = 0;
         void UpdateCampSeat(uint32 diff);
         void SitAtCamp();
+        uint32 m_mailboxRefreshMs = 0;
+        void UpdateMailboxRefresh(uint32 diff);
+        void RefreshMailboxBeacon();
         static constexpr uint32 BONK_CAMP_MAIL_NOTICE_DELAY_MS = 1500;
         uint32 m_campMailNoticeMs = 0;
         void UpdateCampMailNotice(uint32 diff);
@@ -256,6 +270,9 @@ class BonkPlayer
         uint32 GetShownGearTab(std::vector<uint32> const& tabs) const;
         uint32 m_mailboxGlowMs = 0;
         bool m_mailboxGlowShown = false;
+        static uint16 const PACKET_KINDS = 1024;
+        std::array<std::atomic<uint32>, PACKET_KINDS> m_packetCounts{};
+        std::atomic<uint32> m_packetBytes{ 0 };
         bool HasUnreadMail() const;
         void UpdateMailboxGlow(uint32 diff);
         bool m_goldLoaded = false;

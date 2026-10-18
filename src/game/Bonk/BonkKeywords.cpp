@@ -76,7 +76,7 @@ bool BonkRun::GetWeaponKeyword(OwnedWeapon const& owned, PendingKeyword& keyword
     keyword.spellId = weapon.spellId;
     uint32 stacks = weapon.applyStacks;
     if (weapon.behavior == BONK_BEHAVIOR_PET && keyword.keyword == BONK_KEYWORD_NONE)
-        if (BonkPetFamily const* family = GetPetFamily())
+        if (BonkPetFamily const* family = GetPetFamily(owned))
         {
             keyword.keyword = family->applies;
             stacks = family->applyStacks;
@@ -96,6 +96,7 @@ void BonkRun::OnKillingBlow(Unit* victim)
 {
     if (m_state != STATE_RUNNING || !GetRunAI(victim))
         return;
+    OnShamanKill(victim);
 
     std::map<uint8, DyingKeyword> carried;
     for (auto const& itr : sBonkMgr.GetKeywords())
@@ -230,6 +231,13 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
     {
         mob->RemoveAurasByCasterSpell(info->spellId, m_player->GetObjectGuid());
         OnFrozen(mob, sourceSpellId);
+        return true;
+    }
+
+    if (keyword == BONK_KEYWORD_STATIC && total >= GetStaticDischargeStacks(*info))
+    {
+        mob->RemoveAurasByCasterSpell(info->spellId, m_player->GetObjectGuid());
+        QueueStaticDischarge(mob, sourceSpellId);
         return true;
     }
 
@@ -600,6 +608,7 @@ int32 BonkRun::GetKeywordPoints(BonkKeywordInfo const& info) const
         case BONK_KEYWORD_FIRE_VULNERABILITY:
         case BONK_KEYWORD_SUNDER_ARMOR:
         case BONK_KEYWORD_SHADOW_VULNERABILITY:
+        case BONK_KEYWORD_NATURE_VULNERABILITY:
             return int32(info.valuePerStack + 0.5f);
         case BONK_KEYWORD_BURNING:
         case BONK_KEYWORD_BLEED:

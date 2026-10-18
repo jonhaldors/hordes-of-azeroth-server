@@ -23,7 +23,7 @@ namespace
 
     uint32 const BONK_UNLOCK_BASE_PRICE = 2500;
     uint32 const BONK_CARD_UNLOCK_TICKETS[MAX_BONK_RARITY] = { 8, 12, 18, 25, 35 };
-    float const BONK_UNLOCK_GLYPH_RARITY[MAX_BONK_RARITY] = { 1.5f, 2.0f, 3.0f, 4.0f, 6.0f };
+    uint32 const BONK_GLYPH_UNLOCK_TICKETS[MAX_BONK_RARITY] = { 10, 15, 20, 30, 40 };
 
     char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
 
@@ -327,7 +327,6 @@ bool BonkQuests::IsOwned(uint32 account, BonkQuestReward type, uint32 id) const
 
 uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 id) const
 {
-    float scale = 1.0f;
     switch (type)
     {
         case BONK_REWARD_WEAPON:
@@ -339,9 +338,10 @@ uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 i
             return card ? BONK_CARD_UNLOCK_TICKETS[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)] : 0;
         }
         case BONK_REWARD_GLYPH:
-            if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
-                scale = BONK_UNLOCK_GLYPH_RARITY[std::min<uint32>(glyph->rarity, MAX_BONK_RARITY - 1)];
-            break;
+        {
+            BonkGlyph const* glyph = sBonkMgr.GetGlyph(id);
+            return glyph ? BONK_GLYPH_UNLOCK_TICKETS[std::min<uint32>(glyph->rarity, MAX_BONK_RARITY - 1)] : 0;
+        }
         default:
             return 0;
     }
@@ -353,7 +353,7 @@ uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 i
         if (itr != m_paid.end())
             paid = float(itr->second);
     }
-    float const copper = BONK_UNLOCK_BASE_PRICE * scale * (1.0f + 0.5f * paid + 0.05f * paid * paid);
+    float const copper = BONK_UNLOCK_BASE_PRICE * (1.0f + 0.5f * paid + 0.05f * paid * paid);
     return std::max(100u, uint32(copper / 100.0f + 0.5f) * 100);
 }
 
@@ -740,7 +740,7 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(quest.rewardValue))
             {
                 *icon = glyph->icon;
-                return "Unlocks " + glyph->name + " for purchase at the Spellbook";
+                return "Unlocks " + glyph->name + " at Sayge";
             }
             break;
         case BONK_REWARD_TITLE:

@@ -181,5 +181,6 @@ void BonkPlayer::SendDash() const
 {
     uint32 const maxCharges = GetDashMaxCharges();
     SendAddon("dash~" + std::to_string(maxCharges - std::min(m_dashSpent, maxCharges)) + "~" + std::to_string(maxCharges) + "~" +
-        std::to_string(m_dashSpent ? m_dashRechargeMs : 0) + "~" + std::to_string(GetDashCooldownMs()));
+        std::to_string(m_dashSpent ? m_dashRechargeMs : 0) + "~" + std::to_string(GetDashCooldownMs()) + "~" +
+        (m_run && m_run->IsBlinkDash() ? "1" : "0"));
 }
