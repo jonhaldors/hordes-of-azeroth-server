@@ -50,7 +50,10 @@ namespace
     float const BONK_KOBOLD_GRAB_RANGE       = 12.0f;
     float const BONK_KOBOLD_HEALTH           = 0.3f;
     float const BONK_KOBOLD_SPEED[3]         = { 0.8f, 0.9f, 1.0f };
-    uint32 const BONK_KOBOLD_HEAD_START_MS   = 1000;
+    uint32 const BONK_KOBOLD_HEAD_START_MS   = 2500;
+    float const BONK_KOBOLD_SPREAD           = 0.6f;
+    float const BONK_KOBOLD_HEADING_SPREAD   = 0.3f;
+    uint32 const BONK_KOBOLD_SPOT_TRIES      = 6;
     float const BONK_KOBOLD_BONUS            = 0.1f;
     char const* const BONK_KOBOLD_SHOUT      = "You no take candle!";
 
@@ -423,12 +426,17 @@ bool BonkRun::SpawnKoboldThieves()
     uint32 const seconds = BONK_KOBOLD_SECONDS + uint32(extra);
     uint32 const headStart = BONK_KOBOLD_HEAD_START_MS + uint32(extra * BONK_EVENT_HEAD_START_SHARE * IN_MILLISECONDS);
 
+    float heading = frand(0.0f, 2.0f * M_PI_F);
+    float seedX, seedY, seedZ;
+    if (FindLyingOrb(heading, M_PI_F, BONK_KOBOLD_MIN_DISTANCE, BONK_KOBOLD_MAX_DISTANCE, seedX, seedY, seedZ))
+        heading = m_player->GetAngle(seedX, seedY);
+
     m_miniEvent.targets.clear();
     m_miniEvent.stolen.clear();
     for (uint32 i = 0; i < count; ++i)
     {
         float x, y, z;
-        bool byOrb = FindLyingOrb(BONK_KOBOLD_MIN_DISTANCE, BONK_KOBOLD_MAX_DISTANCE, x, y, z);
+        bool byOrb = FindLyingOrb(heading, BONK_KOBOLD_SPREAD, BONK_KOBOLD_MIN_DISTANCE, BONK_KOBOLD_MAX_DISTANCE, x, y, z);
         if (byOrb)
         {
             float const angle = frand(0.0f, 2.0f * M_PI_F);
@@ -441,7 +449,7 @@ bool BonkRun::SpawnKoboldThieves()
                 z = kz;
             }
         }
-        else if (!FindSpawnPosition(x, y, z, BONK_KOBOLD_MIN_DISTANCE, BONK_KOBOLD_MAX_DISTANCE))
+        else if (!FindKoboldSpot(heading, x, y, z))
             continue;
 
         BonkMapCreature kobold;
@@ -455,7 +463,10 @@ bool BonkRun::SpawnKoboldThieves()
         if (!mob)
             continue;
         if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+        {
             ai->SetFleeing(false, headStart);
+            ai->SetFleeHeading(heading + frand(-BONK_KOBOLD_HEADING_SPREAD, BONK_KOBOLD_HEADING_SPREAD));
+        }
         if (m_miniEvent.targets.empty())
             mob->MonsterSay(BONK_KOBOLD_SHOUT);
         m_miniEvent.stolen[mob->GetObjectGuid()] = StealOrbs(x, y, BONK_KOBOLD_GRAB_RANGE) + bonus;
@@ -469,6 +480,17 @@ bool BonkRun::SpawnKoboldThieves()
     StartMiniEventGroup("Kobold Thieves", seconds);
     m_player->GetBonkPlayer()->Notify("Kobold thieves stole your experience! Kill them to get it back.");
     return true;
+}
+
+bool BonkRun::FindKoboldSpot(float heading, float& x, float& y, float& z) const
+{
+    for (uint32 attempt = 0; attempt < BONK_KOBOLD_SPOT_TRIES; ++attempt)
+    {
+        float const angle = heading + frand(-BONK_KOBOLD_SPREAD, BONK_KOBOLD_SPREAD);
+        if (FindSpawnPositionAt(angle, frand(BONK_KOBOLD_MIN_DISTANCE, BONK_KOBOLD_MAX_DISTANCE), x, y, z))
+            return true;
+    }
+    return FindSpawnPosition(x, y, z, BONK_KOBOLD_MIN_DISTANCE, BONK_KOBOLD_MAX_DISTANCE);
 }
 
 bool BonkRun::SpawnScourgeInvasion()
@@ -976,6 +998,7 @@ void BonkRun::EndCaravan(bool arrived)
                 ai->ClearRaidTarget();
     if (caravan)
     {
+        bonk->SendAddon("allydone~" + std::to_string(caravan->GetPlateId()) + "~" + BonkMobAI::GetUnitGuidText(caravan));
         if (arrived)
         {
             float const x = caravan->GetPositionX(), y = caravan->GetPositionY();
@@ -994,6 +1017,9 @@ void BonkRun::EndCaravan(bool arrived)
         caravan->DespawnOrUnsummon(arrived ? 3000 : 500);
     }
     else
+    {
+        bonk->SendAddon("allydone");
         bonk->Notify("The caravan is lost.");
+    }
     EndMiniEvent();
 }

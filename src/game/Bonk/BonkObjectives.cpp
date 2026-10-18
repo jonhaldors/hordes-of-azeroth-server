@@ -28,7 +28,12 @@ namespace
         return dx * dx + dy * dy;
     }
 
-    char const* const KIND_NAMES[MAX_BONK_OBJECTIVE_KIND] = { "shrine", "vendor", "event", "extract" };
+    char const* const KIND_NAMES[MAX_BONK_OBJECTIVE_KIND] = { "shrine", "vendor", "event", "extract", "chest" };
+
+    bool HasPillar(BonkObjective const& objective)
+    {
+        return objective.follows.IsEmpty() && objective.kind != BONK_OBJECTIVE_CHEST;
+    }
 
     std::string FormatCoordinate(float value)
     {
@@ -67,7 +72,7 @@ uint32 BonkObjectives::Add(Player* hero, BonkObjectiveKind kind, float x, float 
     objective.icon = icon;
     objective.description = description;
     objective.leftMs = seconds * IN_MILLISECONDS;
-    if (DistanceSq(hero, objective) > BONK_PILLAR_LOWER * BONK_PILLAR_LOWER)
+    if (HasPillar(objective) && DistanceSq(hero, objective) > BONK_PILLAR_LOWER * BONK_PILLAR_LOWER)
         RaisePillar(hero, objective);
 
     m_objectives.push_back(objective);
@@ -146,7 +151,7 @@ std::vector<BonkObjective> BonkObjectives::Update(Player* hero, uint32 diff)
         m_pillarTimer = 0;
         for (BonkObjective& objective : m_objectives)
         {
-            if (!objective.follows.IsEmpty())
+            if (!HasPillar(objective))
                 continue;
             float const distanceSq = DistanceSq(hero, objective);
             if (!objective.pillar.IsEmpty() && distanceSq < BONK_PILLAR_LOWER * BONK_PILLAR_LOWER)

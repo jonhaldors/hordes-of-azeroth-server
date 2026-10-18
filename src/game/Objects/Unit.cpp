@@ -840,6 +840,11 @@ uint32 Unit::DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDa
         }
     }
 
+    if (health <= damage && pVictim->IsPlayer() && pVictim->GetInvincibilityHpThreshold() == 0)
+        if (BonkRun* run = static_cast<Player*>(pVictim)->GetBonkPlayer()->GetRun())
+            if (run->SaveFromDeath())
+                return 0;
+
     if (health <= damage && pVictim->GetInvincibilityHpThreshold() == 0)
     {
         DEBUG_FILTER_LOG(LOG_FILTER_DAMAGE, "DealDamage: victim just died");

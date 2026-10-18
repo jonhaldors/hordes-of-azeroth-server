@@ -25,6 +25,8 @@ namespace
     float const BONK_FLEE_CLIMB         = 6.0f;
     float const BONK_FLEE_BLINK         = 15.0f;
     uint32 const BONK_FLEE_BLINK_MS     = 4000;
+    float const BONK_FLEE_CUT_OFF       = 10.0f;
+    float const BONK_RAID_FOLLOW_DISTANCE = 1.0f;
 
     uint32 const BONK_UNREACHABLE_MS = 1500;
     uint32 const BONK_STUCK_CHECK_MS = 3000;
@@ -600,8 +602,8 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         Creature* target = m_creature->GetMap()->GetCreature(m_raidTarget);
         if (target && target->IsAlive())
         {
-            if (m_creature->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
-                m_creature->GetMotionMaster()->MoveChase(target);
+            if (m_creature->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+                m_creature->GetMotionMaster()->MoveFollow(target, BONK_RAID_FOLLOW_DISTANCE, m_raidAngle);
             return;
         }
         m_raidTarget.Clear();
@@ -1470,10 +1472,11 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
 void BonkMobAI::SetRaidTarget(ObjectGuid target)
 {
     m_raidTarget = target;
+    m_raidAngle = frand(0.0f, 2.0f * M_PI_F);
     m_creature->AttackStop();
     m_creature->GetMotionMaster()->Clear(false);
     if (Creature* caravan = m_creature->GetMap()->GetCreature(target))
-        m_creature->GetMotionMaster()->MoveChase(caravan);
+        m_creature->GetMotionMaster()->MoveFollow(caravan, BONK_RAID_FOLLOW_DISTANCE, m_raidAngle);
 }
 
 void BonkMobAI::SetStationary()
@@ -1584,10 +1587,25 @@ void BonkMobAI::UpdateFlee(uint32 diff, Player* owner)
         m_creature->GetMotionMaster()->MovePoint(1, x, y, z, MOVE_PATHFINDING | MOVE_RUN_MODE);
 }
 
+void BonkMobAI::SetFleeHeading(float heading)
+{
+    m_hasFleeHeading = true;
+    m_fleeHeading = heading;
+}
+
+float BonkMobAI::GetFleeAngle(Player* owner) const
+{
+    float const away = owner->GetAngle(m_creature);
+    if (!m_hasFleeHeading)
+        return away;
+    bool const heroAhead = std::fabs(std::remainder(m_creature->GetAngle(owner) - m_fleeHeading, 2.0f * M_PI_F)) < M_PI_F / 2.0f;
+    return heroAhead && m_creature->IsWithinDistInMap(owner, BONK_FLEE_CUT_OFF) ? away : m_fleeHeading;
+}
+
 bool BonkMobAI::FindFleePoint(Player* owner, float distance, float& x, float& y, float& z) const
 {
     Map* map = m_creature->GetMap();
-    float const away = owner->GetAngle(m_creature);
+    float const away = GetFleeAngle(owner);
     for (float swerve : { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f, 1.6f, -1.6f, 2.2f, -2.2f })
     {
         float const angle = away + swerve + frand(-0.25f, 0.25f);

@@ -292,6 +292,8 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             return;
 
         BonkRun* run = player->GetBonkPlayer()->GetRun();
+        if (owner && spellProto && attacker->GetEntry() != BONK_PROJECTILE)
+            run->FloatSummonDamage(victim, damage, spellProto);
         std::vector<std::pair<uint32, uint32>> credits;
         if (spellProto)
             run->CreditDamageOverTime(victim, spellProto->Id, dealt, credits);

@@ -94,6 +94,7 @@ class BonkRun
         bool SkipTime(uint32 seconds, std::string& error);
         bool StartMiniEventNow(BonkMiniEventType type, std::string& error);
         bool PlaceShrineNow(BonkShrineType type, std::string& error);
+        bool PlacePowerupNow(uint32 entry, std::string& error);
         void UseShrine(GameObject* go);
         bool PickLeyBuff(uint32 index, std::string& error);
         uint32 GetGreedRewardPercent() const;
@@ -106,6 +107,7 @@ class BonkRun
         bool SpawnVendorNow(std::string& error);
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
+        bool SaveFromDeath();
         bool IsPaused() const { return m_paused; }
         bool IsHeroPerched() const { return m_perched; }
         void SetMenuOpen(bool open);
@@ -125,7 +127,9 @@ class BonkRun
         uint32 MitigateDamage(uint32 damage);
         void HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, SpellEffectIndex effectIndex, WeaponAttackType attackType);
         void AddNecroticStack();
-        float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare = 1.0f) const;
+        float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare = 1.0f, float extraPower = 0.0f) const;
+        float RollDamageSpread() const;
+        void FloatSummonDamage(Unit* victim, uint32 damage, SpellEntry const* spellInfo) const;
         float GetPowerShare(Unit const* attacker) const;
 
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
@@ -228,6 +232,7 @@ class BonkRun
         bool IsSandbox() const { return m_sandbox; }
         void ShowSandboxMenu(Creature* keeper, uint32 menu);
         void SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action);
+        bool RunSandboxVerb(std::string const& verb, uint32 first, uint32 second, std::string& error);
         void LeaveSandbox();
 
     private:
@@ -262,6 +267,7 @@ class BonkRun
             bool held = false;
             bool pieResync = false;
             mutable uint32 shownIntervalMs = 0;
+            mutable std::string shownDamage;
         };
 
         struct Offer
@@ -316,6 +322,7 @@ class BonkRun
         bool SpawnTreasureGoblin();
         bool SpawnBounty();
         bool SpawnKoboldThieves();
+        bool FindKoboldSpot(float heading, float& x, float& y, float& z) const;
         bool SpawnScourgeInvasion();
         bool SpawnDemonPortal();
         bool SpawnStampede();
@@ -329,7 +336,7 @@ class BonkRun
         void OnMiniEventGroupKilled(Creature* mob);
         void SpawnEventAdds(Creature const* source, uint32 count, uint32 eliteCount);
         bool IsMiniEventTarget(ObjectGuid const& guid) const;
-        bool FindLyingOrb(float minDistance, float maxDistance, float& x, float& y, float& z) const;
+        bool FindLyingOrb(float heading, float spread, float minDistance, float maxDistance, float& x, float& y, float& z) const;
         uint32 StealOrbs(float x, float y, float range);
         void StartMiniEventTarget(Creature* target, std::string const& label, uint32 seconds);
         void UpdateMiniEventTarget(uint32 diff);
@@ -638,6 +645,15 @@ class BonkRun
             std::string Describe() const;
         };
         bool GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, float const* upgrades, WeaponStrength& strength) const;
+        void AddRankGains(OwnedWeapon& owned, Offer const& offer) const;
+        float GetShownHit(OwnedWeapon const& owned, float extraPower) const;
+        float GetShownSpread(OwnedWeapon const& owned) const;
+        void ResendShownDamage(OwnedWeapon const& owned) const;
+        float GetPetSwingFactor(OwnedWeapon const& owned) const;
+        float GetShownTick(OwnedWeapon const& owned, float extraPower) const;
+        std::string DescribeShownRange(OwnedWeapon const& owned, float extraPower = 0.0f) const;
+        std::string DescribeShownDamage(OwnedWeapon const& owned) const;
+        void DescribeOfferDamage(Offer const& offer, std::string& before, std::string& after, std::string& label) const;
         void GetSpellUpgrades(OwnedWeapon const* owned, float* upgrades) const;
         OwnedWeapon* FindOwned(uint32 weaponId);
         OwnedWeapon const* FindOwned(uint32 weaponId) const;
@@ -770,7 +786,8 @@ class BonkRun
         void SendCooldownPie(uint32 index, OwnedWeapon const& owned) const;
         void SendOffer() const;
 
-        void Revive(bool soulstone = false, BonkGlyph const* glyph = nullptr);
+        void Revive(bool soulstone = false, BonkGlyph const* glyph = nullptr, bool stillAlive = false);
+        uint32 PreventDeath(uint32 damage);
         void SmiteAroundRevive();
         void UpdateGear();
         uint32 GetEliteIntervalMs() const;
@@ -919,6 +936,22 @@ class BonkRun
             std::vector<ObjectGuid> pack;
         };
         std::vector<Shrine> m_shrines;
+        struct PendingSummon
+        {
+            BonkMapCreature const* creature = nullptr;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            uint32 affixes = 0;
+            ObjectGuid altar;
+            bool boss = false;
+            int32 leftMs = 0;
+            int32 glowMs = 0;
+            std::string countdown;
+        };
+        std::vector<PendingSummon> m_pendingSummons;
+        void QueueSummon(BonkMapCreature const* creature, float x, float y, float z, uint32 affixes, ObjectGuid const& altar, bool boss,
+            std::string const& countdown);
+        void UpdatePendingSummons(uint32 diff);
+        bool IsAltarWaking(ObjectGuid const& altar) const;
         uint32 m_shrinesToPlace = 0;
         uint32 m_shrineTimer = 0;
         bool m_moonwellPlaced = false;
@@ -1007,6 +1040,8 @@ class BonkRun
         float m_groundY = 0.0f;
         float m_groundZ = 0.0f;
         std::vector<ObjectGuid> m_chests;
+        std::map<ObjectGuid, uint32> m_chestObjectives;
+        void ForgetChestObjective(ObjectGuid const& chest);
         std::vector<ObjectGuid> m_powerups;
         std::vector<Orb> m_orbs;
         uint32 m_orbTimer = 0;
@@ -1017,10 +1052,14 @@ class BonkRun
         struct HealDrop
         {
             ObjectGuid guid;
+            ObjectGuid sparkle;
             bool pulled = false;
             float aimX = 0.0f, aimY = 0.0f, aimZ = 0.0f;
         };
         std::vector<HealDrop> m_healDrops;
+        void MoveHealDrop(HealDrop const& drop, Creature* leg, float x, float y, float z);
+        void StopHealDrop(HealDrop const& drop, Creature* leg);
+        void RemoveHealDrop(HealDrop const& drop, Creature* leg, bool vanish);
         uint32 m_healTimer = 0;
         uint32 m_shardTimer = 0;
         ObjectGuid m_portalGuid;
@@ -1592,6 +1631,19 @@ class BonkRun
         std::vector<std::pair<ObjectGuid, uint32>> m_recentAttackers;
         ObjectGuid m_mindFlayTarget;
         bool m_bodyAndSoul = false;
+        struct PriestHold
+        {
+            ObjectGuid mob;
+            uint32 weaponId = 0;
+            uint32 spellId = 0;
+            uint32 untilMs = 0;
+            uint32 nextTickMs = 0;
+            float share = 1.0f;
+        };
+        std::vector<PriestHold> m_priestHolds;
+        void TrackPriestHold(OwnedWeapon const& owned, Creature* mob, uint32 spellId, int32 durationMs, float share);
+        void TickPriestHolds();
+        bool LimitShackle(Creature* mob, int32 durationMs);
         uint32 m_flayCarried = 0;
         uint32 m_searingLightCast = 0;
         std::vector<uint32> m_echoOfLightTimes;
@@ -1873,7 +1925,7 @@ class BonkRun
         void ToggleSandbox(uint32 toggle);
         void GiveSandboxLevels(uint32 levels);
         void SetSandboxLevel(uint32 level);
-        void SpawnSandboxCrystals();
+        void SpawnSandboxCrystals(Creature const* keeper);
         OwnedWeapon* FindSandboxSpell(uint32 baseId);
         bool AddSandboxSpell(uint32 baseId, std::string& error);
         void SetSandboxRank(uint32 baseId, uint32 rank);
@@ -1896,6 +1948,9 @@ class BonkRun
         bool m_sandboxGodBefore = false;
         bool m_sandboxPassive = false;
         bool m_sandboxUnkillable = false;
+        bool m_sandboxDeepDummies = false;
+        bool m_sandboxQuietLevels = false;
+        float m_sandboxMinute = -1.0f;
         ObjectGuid m_sandboxKeeper;
         std::map<ObjectGuid, SandboxDummy> m_sandboxDummies;
         uint32 m_sandboxPackLeft = 0;

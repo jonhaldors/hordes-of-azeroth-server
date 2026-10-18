@@ -65,6 +65,10 @@ namespace
     float const BONK_ATONEMENT_CAP            = 10.0f;
     int32 const BONK_FEAR_MS                  = 2000;
     int32 const BONK_SHACKLE_MS               = 2000;
+    uint32 const BONK_SHACKLE_IMMUNE_MS       = 6000;
+    uint32 const BONK_HOLD_TICK_MS            = 1000;
+    float const BONK_FEAR_TICK_SHARE          = 1.0f;
+    float const BONK_SHACKLE_TICK_SHARE       = 0.5f;
     int32 const BONK_MIND_FLAY_SLOW           = -30;
     int32 const BONK_MIND_FLAY_SLOW_MS        = 1000;
     float const BONK_MIND_BLAST_REACH         = 8.0f;
@@ -129,6 +133,7 @@ void BonkRun::ResetPriestState()
 {
     m_recentAttackers.clear();
     m_mindFlayTarget.Clear();
+    m_priestHolds.clear();
     m_bodyAndSoul = false;
     m_flayCarried = 0;
     m_searingLightCast = 0;
@@ -160,7 +165,62 @@ void BonkRun::UpdatePriest(uint32 diff)
         m_voidTendrilsMs = 0;
         GraspWithVoidTendrils();
     }
+    TickPriestHolds();
     UpdateBodyAndSoul();
+}
+
+void BonkRun::TrackPriestHold(OwnedWeapon const& owned, Creature* mob, uint32 spellId, int32 durationMs, float share)
+{
+    ObjectGuid const guid = mob->GetObjectGuid();
+    m_priestHolds.erase(std::remove_if(m_priestHolds.begin(), m_priestHolds.end(), [&guid, spellId](PriestHold const& hold)
+    {
+        return hold.mob == guid && hold.spellId == spellId;
+    }), m_priestHolds.end());
+    PriestHold hold;
+    hold.mob = guid;
+    hold.weaponId = owned.weapon.id;
+    hold.spellId = spellId;
+    hold.untilMs = m_totalMs + uint32(std::max(0, durationMs));
+    hold.nextTickMs = m_totalMs + BONK_HOLD_TICK_MS;
+    hold.share = share;
+    m_priestHolds.push_back(hold);
+}
+
+void BonkRun::TickPriestHolds()
+{
+    if (m_priestHolds.empty())
+        return;
+    Map* map = m_player->GetMap();
+    for (auto itr = m_priestHolds.begin(); itr != m_priestHolds.end();)
+    {
+        Creature* mob = map->GetCreature(itr->mob);
+        bool const held = mob && mob->IsAlive() && (itr->spellId == BONK_SPELL_SHACKLE ? mob->HasAura(BONK_SPELL_SHACKLE) :
+            mob->HasUnitState(UNIT_STATE_FLEEING));
+        if (!held || itr->nextTickMs > itr->untilMs)
+        {
+            itr = m_priestHolds.erase(itr);
+            continue;
+        }
+        if (m_totalMs >= itr->nextTickMs)
+        {
+            itr->nextTickMs += BONK_HOLD_TICK_MS;
+            OwnedWeapon const* owned = FindOwned(itr->weaponId);
+            SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(itr->spellId);
+            if (owned && spellInfo)
+                DealShamanHit(spellInfo, owned->weapon.spellId, mob, GetWeaponDamage(*owned) * itr->share);
+        }
+        ++itr;
+    }
+}
+
+bool BonkRun::LimitShackle(Creature* mob, int32 durationMs)
+{
+    uint32 const now = WorldTimer::getMSTime();
+    CrowdControl& control = m_crowdControl[mob->GetObjectGuid()];
+    if (int32(control.stunImmuneUntil - now) > 0)
+        return false;
+    control.stunImmuneUntil = now + uint32(std::max(0, durationMs)) + BONK_SHACKLE_IMMUNE_MS;
+    return true;
 }
 
 void BonkRun::UpdateBodyAndSoul()
@@ -551,6 +611,7 @@ void BonkRun::ScreamPsychic(OwnedWeapon& owned, SpellEntry const* spellInfo)
     for (Creature* mob : scared)
     {
         HoldMob(mob, spellInfo, SPELL_AURA_MOD_FEAR, durationMs);
+        TrackPriestHold(owned, mob, spellInfo->Id, durationMs, BONK_FEAR_TICK_SHARE);
         if (owned.weapon.id == BONK_WEAPON_SHADOW_TERROR)
             ApplyWeaponKeyword(owned, mob, BONK_KEYWORD_DECAY, BONK_SHADOW_TERROR_STACKS);
     }
@@ -571,9 +632,12 @@ void BonkRun::BindShackle(OwnedWeapon& owned, SpellEntry const* spellInfo)
         ++bound;
         ShowStrike(m_player, spellInfo, mob);
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, GetWeaponDamage(owned));
-        int32 durationMs = BONK_SHACKLE_MS;
-        if (mob->IsAlive() && CanBeBound(mob) && LimitStun(mob, durationMs))
+        int32 const durationMs = int32(BONK_SHACKLE_MS * GetWeaponDurationScale(owned));
+        if (mob->IsAlive() && CanBeBound(mob) && LimitShackle(mob, durationMs))
+        {
             HoldMob(mob, spellInfo, SPELL_AURA_MOD_STUN, durationMs);
+            TrackPriestHold(owned, mob, spellInfo->Id, durationMs, BONK_SHACKLE_TICK_SHARE);
+        }
     }
     owned.timer = bound ? GetWeaponCooldown(owned) : 250;
 }

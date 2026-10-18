@@ -41,6 +41,10 @@ namespace
     uint32 const BONK_ALTAR_AFFIXES        = 2;
     uint32 const BONK_ALTAR_CHEST_CHOICES  = 5;
     float const BONK_ALTAR_PACK_SPREAD     = 6.0f;
+    int32 const BONK_SUMMON_DELAY_MS       = 3000;
+    int32 const BONK_SUMMON_GLOW_MS        = 1000;
+    uint32 const BONK_KIT_SUMMON_CIRCLE    = 1485;
+    uint32 const BONK_SPELL_SUMMON_SMOKE   = 10389;
 
     float const BONK_MOONWELL_RADIUS       = 10.0f;
     uint32 const BONK_MOONWELL_SECONDS     = 10;
@@ -133,6 +137,8 @@ void BonkRun::UpdateShrines(uint32 diff)
         if (PlaceShrine(type))
             --m_shrinesToPlace;
     }
+
+    UpdatePendingSummons(diff);
 
     for (size_t i = 0; i < m_shrines.size(); )
     {
@@ -449,12 +455,8 @@ void BonkRun::UseShrine(GameObject* go)
                         y = shrine.spot.y;
                         z = shrine.spot.z;
                     }
-                    BonkMobAI::SetNextAffixCount(BONK_ALTAR_AFFIXES);
-                    if (Creature* mob = SpawnMobAt(*creature, x, y, z))
-                        shrine.pack.push_back(mob->GetObjectGuid());
-                    BonkMobAI::SetNextAffixCount(0);
+                    QueueSummon(creature, x, y, z, BONK_ALTAR_AFFIXES, shrine.model, false, n ? "" : "The altar's guardians arrive");
                 }
-                bonk->Notify("The altar's guardians awaken!");
                 break;
             }
             case BONK_SHRINE_MOONWELL:
@@ -487,12 +489,7 @@ void BonkRun::UseShrine(GameObject* go)
                     y = shrine.spot.y;
                     z = shrine.spot.z;
                 }
-                ObjectGuid const stageBoss = m_bossGuid;
-                Creature* boss = SpawnMobAt(*creature, x, y, z);
-                m_bossGuid = stageBoss;
-                if (!boss)
-                    break;
-                bonk->Notify(std::string(boss->GetName()) + " answers the summons!");
+                QueueSummon(creature, x, y, z, 0, ObjectGuid(), true, "Something answers the summons. It arrives");
                 RemoveShrine(i);
                 break;
             }
@@ -503,10 +500,81 @@ void BonkRun::UseShrine(GameObject* go)
     }
 }
 
+void BonkRun::QueueSummon(BonkMapCreature const* creature, float x, float y, float z, uint32 affixes, ObjectGuid const& altar, bool boss,
+    std::string const& countdown)
+{
+    PendingSummon summon;
+    summon.creature = creature;
+    summon.x = x;
+    summon.y = y;
+    summon.z = z;
+    summon.affixes = affixes;
+    summon.altar = altar;
+    summon.boss = boss;
+    summon.leftMs = BONK_SUMMON_DELAY_MS;
+    summon.countdown = countdown;
+    m_pendingSummons.push_back(summon);
+}
+
+bool BonkRun::IsAltarWaking(ObjectGuid const& altar) const
+{
+    return std::any_of(m_pendingSummons.begin(), m_pendingSummons.end(), [&altar](PendingSummon const& summon) { return summon.altar == altar; });
+}
+
+void BonkRun::UpdatePendingSummons(uint32 diff)
+{
+    std::vector<PendingSummon> ready;
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    for (auto itr = m_pendingSummons.begin(); itr != m_pendingSummons.end();)
+    {
+        itr->glowMs -= int32(diff);
+        if (itr->glowMs <= 0 && itr->leftMs > 0)
+        {
+            itr->glowMs = BONK_SUMMON_GLOW_MS;
+            PlayKitAt(ObjectGuid(), itr->x, itr->y, itr->z, BONK_KIT_SUMMON_CIRCLE, true);
+            int32 const seconds = (itr->leftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS;
+            if (!itr->countdown.empty())
+                bonk->Notify(itr->countdown + " in " + std::to_string(seconds) + (seconds == 1 ? " second." : " seconds."));
+        }
+        itr->leftMs -= int32(diff);
+        if (itr->leftMs > 0)
+        {
+            ++itr;
+            continue;
+        }
+        ready.push_back(*itr);
+        itr = m_pendingSummons.erase(itr);
+    }
+
+    for (PendingSummon const& summon : ready)
+    {
+        BonkMobAI::SetNextAffixCount(summon.affixes);
+        ObjectGuid const stageBoss = m_bossGuid;
+        Creature* mob = SpawnMobAt(*summon.creature, summon.x, summon.y, summon.z);
+        if (summon.boss)
+            m_bossGuid = stageBoss;
+        BonkMobAI::SetNextAffixCount(0);
+        if (!mob)
+            continue;
+        mob->CastSpell(mob, BONK_SPELL_SUMMON_SMOKE, true);
+        if (summon.boss)
+            bonk->Notify(std::string(mob->GetName()) + " answers the summons!");
+        if (summon.altar.IsEmpty())
+            continue;
+        for (Shrine& shrine : m_shrines)
+            if (shrine.model == summon.altar)
+            {
+                shrine.pack.push_back(mob->GetObjectGuid());
+                if (!IsAltarWaking(summon.altar) && shrine.pack.size() == 1)
+                    bonk->Notify("The altar's guardians awaken!");
+            }
+    }
+}
+
 void BonkRun::UpdateAltar(size_t index)
 {
     Shrine const& shrine = m_shrines[index];
-    if (!shrine.active)
+    if (!shrine.active || IsAltarWaking(shrine.model))
         return;
 
     Map* map = m_player->GetMap();
@@ -595,6 +663,7 @@ void BonkRun::DespawnShrines()
             if (GameObject* model = map->GetGameObject(shrine.model))
                 model->Delete();
     m_shrines.clear();
+    m_pendingSummons.clear();
     m_shrinesToPlace = 0;
     if (m_captureShown)
     {

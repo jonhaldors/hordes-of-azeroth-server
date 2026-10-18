@@ -807,6 +807,39 @@ bool ChatHandler::HandleBonkShrineCommand(char* args)
     return false;
 }
 
+bool ChatHandler::HandleBonkPowerupCommand(char* args)
+{
+    static std::pair<char const*, uint32> const powerups[] =
+    {
+        { "restoration", 900004 }, { "berserking", 900005 }, { "speed", 900006 }, { "magnet", 900050 },
+        { "holynova", 900051 }, { "frostnova", 900052 }, { "valor", 900053 },
+    };
+    char* nameArg = ExtractArg(&args);
+    uint32 entry = 0;
+    for (auto const& powerup : powerups)
+        if (nameArg && !strcmp(nameArg, powerup.first))
+            entry = powerup.second;
+    if (!entry)
+    {
+        SendSysMessage("Usage: .bonk powerup magnet|holynova|frostnova|valor|restoration|berserking|speed");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    std::string error;
+    if (!run)
+        error = "Power-ups need a run or the sandbox.";
+    else if (run->PlacePowerupNow(entry, error))
+    {
+        PSendSysMessage("Power-up %s placed 10 yards in front of you.", nameArg);
+        return true;
+    }
+    SendSysMessage(error.c_str());
+    SetSentErrorMessage(true);
+    return false;
+}
+
 bool ChatHandler::HandleBonkLeyPickCommand(char* args)
 {
     uint32 index = 0;

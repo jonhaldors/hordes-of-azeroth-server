@@ -45,6 +45,15 @@ namespace
         return attacker->IsPlayer() ? multiplier : multiplier * run->GetSummonDamageMultiplier(attacker);
     }
 
+    float RollBonkDamageSpread(Unit const* attacker, Unit const* victim, DamageEffectType damagetype)
+    {
+        if (damagetype != SPELL_DIRECT_DAMAGE || !attacker || victim->GetCharmerOrOwnerPlayerOrPlayerItself())
+            return 1.0f;
+        Player const* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
+        BonkRun const* run = player ? player->GetBonkPlayer()->GetRun() : nullptr;
+        return run ? run->RollDamageSpread() : 1.0f;
+    }
+
     bool HasBonkRunDamage(SpellCaster const* caster, SpellEntry const* spell, SpellEffectIndex index)
     {
         Player const* player = caster->ToPlayer();
@@ -1460,6 +1469,7 @@ float SpellCaster::MeleeDamageBonusDone(Unit const* pVictim, float pdamage, Weap
         DonePercent *= pUnit->GetTotalAuraMultiplierByMiscMask(SPELL_AURA_MOD_DAMAGE_DONE_VERSUS, creatureTypeMask);
 
     DonePercent *= GetBonkDamageMultiplier(pUnit, pVictim, spellProto);
+    DonePercent *= RollBonkDamageSpread(pUnit, pVictim, damagetype);
 
     // final calculation
     // =================
@@ -1689,6 +1699,7 @@ float SpellCaster::SpellDamageBonusDone(Unit const* pVictim, SpellEntry const* s
         DoneTotalMod *= pUnit->GetTotalAuraMultiplierByMiscMask(SPELL_AURA_MOD_DAMAGE_DONE_VERSUS, creatureTypeMask);
 
     DoneTotalMod *= GetBonkDamageMultiplier(pUnit, pVictim, spellProto);
+    DoneTotalMod *= RollBonkDamageSpread(pUnit, pVictim, damagetype);
 
     // Add flat bonus from spell damage creature
     if (pUnit)

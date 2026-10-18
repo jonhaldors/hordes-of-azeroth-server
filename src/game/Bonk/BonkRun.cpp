@@ -59,6 +59,7 @@ namespace
     float const BONK_POWERUP_MAX_DISTANCE  = 50.0f;
     float const BONK_POWERUP_PICKUP_RANGE  = 3.0f;
     uint32 const BONK_POWERUP_LIFETIME_SEC = 90;
+    float const BONK_POWERUP_COMMAND_DISTANCE = 10.0f;
     uint32 const BONK_POWERUP_CHECK_MS     = 250;
     uint32 const BONK_DOT_RETARGET_MS      = 4000;
     float const BONK_LEECH_HEAL            = 1.0f;
@@ -442,6 +443,8 @@ namespace
     size_t const BONK_MAX_HEAL_DROPS     = 20;
 
     uint32 const BONK_SPELL_LOOT_SPARKLE = 33454;
+    uint32 const BONK_HEAL_SPARKLE       = 900135;
+    char const* const BONK_CHEST_PIN_ICON = "INV_Box_02";
     uint32 const BONK_SPELL_SHARD_BEAM   = 25824;
     float const BONK_SHARD_BEAM_SCALE    = 0.5f;
     uint32 const BONK_DISPLAY_INVISIBLE  = 11686;
@@ -1340,6 +1343,8 @@ void BonkRun::UpdateOffers()
         OfferUpgrades(OFFER_CHEST);
     else if (!m_pendingGear.empty())
         OfferGear();
+    else if (m_pendingLevels && m_sandbox && m_sandboxQuietLevels)
+        m_pendingLevels = 0;
     else if (m_pendingLevels)
         OfferUpgrades(OFFER_LEVEL);
     else if (m_pendingLeyOffers)
@@ -2043,7 +2048,7 @@ void BonkRun::UpdateOvertime(uint32 diff)
 BonkScalingPoint BonkRun::GetScalingNow() const
 {
     std::vector<BonkScalingPoint> const& points = sBonkMgr.GetScaling();
-    float const minute = GetRunMinutes();
+    float const minute = m_sandbox && m_sandboxMinute >= 0.0f ? m_sandboxMinute : GetRunMinutes();
     size_t index = 0;
     while (index + 1 < points.size() && points[index + 1].minute <= minute)
         ++index;
@@ -2982,7 +2987,7 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
         if (!m_shield)
             OnShieldBroken();
     }
-    damage = GuardLowHealth(damage);
+    damage = PreventDeath(GuardLowHealth(damage));
     if (!m_shield && !m_spellShield)
         m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
     NoteHeroHit(unshielded, damage < unshielded);
@@ -3291,9 +3296,9 @@ float BonkRun::GetPowerShare(Unit const* attacker) const
     return IsSummon(attacker) ? BONK_SUMMON_POWER_SHARE + GetPackPowerShare() : 1.0f;
 }
 
-float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare) const
+float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare, float extraPower) const
 {
-    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower()) * powerShare;
+    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower) * powerShare;
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim);
     if (!spell)
@@ -3379,7 +3384,30 @@ void BonkRun::AwardMastery()
     m_player->GetBonkPlayer()->AddMasteryXp(m_rewardMs / (MINUTE * IN_MILLISECONDS) * m_tier.masteryXpMinute + m_masteryXp);
 }
 
-void BonkRun::Revive(bool soulstone, BonkGlyph const* glyph)
+uint32 BonkRun::PreventDeath(uint32 damage)
+{
+    if (!damage || damage < m_player->GetHealth() || !SaveFromDeath())
+        return damage;
+    return 0;
+}
+
+bool BonkRun::SaveFromDeath()
+{
+    if (m_sandbox || !m_player->IsAlive() || (m_state != STATE_RUNNING && m_state != STATE_PORTAL))
+        return false;
+    BonkGlyph const* shield = m_state == STATE_RUNNING ? GetGlyph(BONK_GLYPH_DIVINE_SHIELD) : nullptr;
+    if (shield && m_divineShieldStage != m_stage)
+        Revive(false, shield, true);
+    else if (m_revives)
+        Revive(false, nullptr, true);
+    else if (m_soulstones && m_state == STATE_RUNNING)
+        Revive(true, nullptr, true);
+    else
+        return false;
+    return true;
+}
+
+void BonkRun::Revive(bool soulstone, BonkGlyph const* glyph, bool stillAlive)
 {
     if (glyph)
         m_divineShieldStage = m_stage;
@@ -3388,8 +3416,14 @@ void BonkRun::Revive(bool soulstone, BonkGlyph const* glyph)
     else
         --m_revives;
     BonkCard const* stone = m_cardByEffect[BONK_CARD_SOULSTONE];
-    m_player->ResurrectPlayer(glyph ? glyph->values[0] / 100.0f : soulstone && stone ? stone->values[0] / 100.0f : 0.5f);
-    m_player->SpawnCorpseBones();
+    float const restore = glyph ? glyph->values[0] / 100.0f : soulstone && stone ? stone->values[0] / 100.0f : 0.5f;
+    if (stillAlive)
+        m_player->SetHealth(std::max(m_player->GetHealth(), std::max(1u, uint32(m_player->GetMaxHealth() * restore))));
+    else
+    {
+        m_player->ResurrectPlayer(restore);
+        m_player->SpawnCorpseBones();
+    }
     m_player->CastSpell(m_player, BONK_SPELL_REVIVE_SHIELD, true);
     SmiteAroundRevive();
 
@@ -3568,7 +3602,18 @@ bool BonkRun::SpawnChest(bool free, float x, float y, float z, uint32 choices)
         return false;
     m_chests.push_back(chest->GetObjectGuid());
     m_chestChoices[chest->GetObjectGuid()] = choices;
+    m_chestObjectives[chest->GetObjectGuid()] = m_objectives.Add(m_player, BONK_OBJECTIVE_CHEST, x, y, z, chest->GetGOInfo()->name, 0,
+        BONK_CHEST_PIN_ICON, free ? "Opens for free." : "Costs Valor to open.");
     return true;
+}
+
+void BonkRun::ForgetChestObjective(ObjectGuid const& chest)
+{
+    auto const itr = m_chestObjectives.find(chest);
+    if (itr == m_chestObjectives.end())
+        return;
+    m_objectives.Remove(m_player, itr->second);
+    m_chestObjectives.erase(itr);
 }
 
 void BonkRun::DropChest(Creature const* mob, BonkSpawnKind kind)
@@ -3659,6 +3704,30 @@ void BonkRun::SpawnPowerup()
     }
 }
 
+bool BonkRun::PlacePowerupNow(uint32 entry, std::string& error)
+{
+    std::vector<BonkPowerup> const& powerups = sBonkMgr.GetPowerups();
+    if (std::none_of(powerups.begin(), powerups.end(), [entry](BonkPowerup const& powerup) { return powerup.entry == entry; }))
+    {
+        error = "That power-up is not in the database.";
+        return false;
+    }
+    float x, y, z;
+    if (!FindSpawnPositionAt(m_player->GetOrientation(), BONK_POWERUP_COMMAND_DISTANCE, x, y, z) || !m_player->IsWithinLOS(x, y, z))
+    {
+        error = "No open ground 10 yards in front of you.";
+        return false;
+    }
+    GameObject* go = PlaceObject(entry, x, y, z, BONK_POWERUP_LIFETIME_SEC);
+    if (!go)
+    {
+        error = "The power-up could not be placed.";
+        return false;
+    }
+    m_powerups.push_back(go->GetObjectGuid());
+    return true;
+}
+
 void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
 {
     m_powerupCheckTimer += diff;
@@ -3715,7 +3784,7 @@ void BonkRun::UsePowerup(BonkPowerup const& powerup)
     switch (powerup.effect)
     {
         case BONK_POWERUP_MAGNET:
-            CollectAllOrbs();
+            PullAllOrbs();
             break;
         case BONK_POWERUP_HOLY_NOVA:
         {
@@ -3751,16 +3820,18 @@ void BonkRun::DespawnObjects()
     if (Map* map = m_player->FindMap())
     {
         for (ObjectGuid const& guid : m_chests)
+        {
+            ForgetChestObjective(guid);
             if (GameObject* chest = map->GetGameObject(guid))
                 chest->Delete();
+        }
         for (ObjectGuid const& guid : m_powerups)
             if (GameObject* powerup = map->GetGameObject(guid))
                 powerup->Delete();
         for (ShardDrop const& drop : m_shardDrops)
             RemovePickup(drop.guid, drop.marker);
         for (HealDrop const& drop : m_healDrops)
-            if (Creature* leg = map->GetCreature(drop.guid))
-                leg->DespawnOrUnsummon();
+            RemoveHealDrop(drop, map->GetCreature(drop.guid), false);
         for (GearDrop const& drop : m_gearDrops)
             RemovePickup(drop.guid, drop.marker);
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
@@ -3768,6 +3839,7 @@ void BonkRun::DespawnObjects()
     }
     DespawnVault();
     m_chests.clear();
+    m_chestObjectives.clear();
     m_powerups.clear();
     m_voidZones.clear();
     ClearHidden();
@@ -3828,6 +3900,7 @@ void BonkRun::UseChest(GameObject* chest)
         sBonkQuests.OnProgress(m_player, BONK_QUEST_CHESTS_BOUGHT, 0, 1);
     }
 
+    ForgetChestObjective(*itr);
     m_chests.erase(itr);
     if (BonkGlyph const* rigged = GetGlyph(BONK_GLYPH_CHEST_TRAP))
         if (roll_chance_f(rigged->values[0]) && m_player->IsAlive())
@@ -7419,6 +7492,23 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
             else if (!frenzied && pet->HasAura(BONK_SPELL_BESTIAL_WRATH))
                 pet->RemoveAurasDueToSpell(BONK_SPELL_BESTIAL_WRATH);
         }
+    ResendShownDamage(owned);
+}
+
+void BonkRun::ResendShownDamage(OwnedWeapon const& owned) const
+{
+    if (owned.shownDamage == DescribeShownDamage(owned))
+        return;
+    uint32 index = 0;
+    for (OwnedWeapon const& held : m_weapons)
+    {
+        ++index;
+        if (&held == &owned)
+        {
+            SendWeaponInfo(index, owned);
+            return;
+        }
+    }
 }
 
 bool BonkRun::IsSummon(Unit const* unit) const
@@ -8753,11 +8843,20 @@ void BonkRun::CollectAllOrbs()
 
 Creature* BonkRun::SummonCaravan(uint32 entry, float x, float y, float z, float orientation)
 {
-    return m_player->SummonCreature(entry, x, y, z, orientation, TEMPSUMMON_TIMED_DESPAWN, 10 * MINUTE * IN_MILLISECONDS, false, 0,
+    Creature* caravan = m_player->SummonCreature(entry, x, y, z, orientation, TEMPSUMMON_TIMED_DESPAWN, 10 * MINUTE * IN_MILLISECONDS, false, 0,
         &InstallCaravanAI);
+    if (!caravan)
+        return nullptr;
+    m_lastPlateId = m_lastPlateId % BONK_MAX_PLATE_ID + 1;
+    caravan->SetPlateId(m_lastPlateId);
+    caravan->ForceValuesUpdateAtIndex(UNIT_FIELD_HEALTH);
+    caravan->ForceValuesUpdateAtIndex(UNIT_FIELD_MAXHEALTH);
+    m_player->GetBonkPlayer()->SendAddon("ally~" + std::string(caravan->GetName()) + "~" + std::to_string(caravan->GetPlateId()) + "~" +
+        BonkMobAI::GetUnitGuidText(caravan));
+    return caravan;
 }
 
-bool BonkRun::FindLyingOrb(float minDistance, float maxDistance, float& x, float& y, float& z) const
+bool BonkRun::FindLyingOrb(float heading, float spread, float minDistance, float maxDistance, float& x, float& y, float& z) const
 {
     std::vector<Creature const*> lying;
     Map* map = m_player->GetMap();
@@ -8766,7 +8865,8 @@ bool BonkRun::FindLyingOrb(float minDistance, float maxDistance, float& x, float
             if (Creature const* creature = map->GetCreature(orb.guid))
             {
                 float const distance = m_player->GetDistance2d(creature);
-                if (distance >= minDistance && distance <= maxDistance)
+                float const offAngle = std::fabs(std::remainder(m_player->GetAngle(creature) - heading, 2.0f * M_PI_F));
+                if (distance >= minDistance && distance <= maxDistance && offAngle <= spread)
                     lying.push_back(creature);
             }
     if (lying.empty())
@@ -8923,10 +9023,44 @@ void BonkRun::DropHeal(Creature const* mob, BonkSpawnKind kind)
         TEMPSUMMON_TIMED_DESPAWN, BONK_ORB_LIFETIME_MS, false, 0, &InstallOrbAI);
     if (!leg)
         return;
-    leg->AddAura(BONK_SPELL_LOOT_SPARKLE, ADD_AURA_PERMANENT);
     HealDrop drop;
     drop.guid = leg->GetObjectGuid();
+    if (Creature* sparkle = m_player->SummonCreature(BONK_HEAL_SPARKLE, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_ORB_LIFETIME_MS, false, 0,
+        &InstallOrbAI))
+        drop.sparkle = sparkle->GetObjectGuid();
     m_healDrops.push_back(drop);
+}
+
+void BonkRun::MoveHealDrop(HealDrop const& drop, Creature* leg, float x, float y, float z)
+{
+    leg->MonsterMoveWithSpeed(x, y, z, -10.0f, BONK_ORB_FLY_SPEED, MOVE_FLY_MODE);
+    if (Creature* sparkle = m_player->GetMap()->GetCreature(drop.sparkle))
+    {
+        sparkle->NearTeleportTo(leg->GetPositionX(), leg->GetPositionY(), leg->GetPositionZ(), sparkle->GetOrientation());
+        sparkle->MonsterMoveWithSpeed(x, y, z, -10.0f, BONK_ORB_FLY_SPEED, MOVE_FLY_MODE);
+    }
+}
+
+void BonkRun::StopHealDrop(HealDrop const& drop, Creature* leg)
+{
+    leg->StopMoving();
+    if (Creature* sparkle = m_player->GetMap()->GetCreature(drop.sparkle))
+        sparkle->NearTeleportTo(leg->GetPositionX(), leg->GetPositionY(), leg->GetPositionZ(), sparkle->GetOrientation());
+}
+
+void BonkRun::RemoveHealDrop(HealDrop const& drop, Creature* leg, bool vanish)
+{
+    Map* map = m_player->FindMap();
+    Creature* sparkle = map ? map->GetCreature(drop.sparkle) : nullptr;
+    for (Creature* creature : { leg, sparkle })
+    {
+        if (!creature)
+            continue;
+        if (vanish)
+            VanishOrb(creature);
+        else
+            creature->DespawnOrUnsummon();
+    }
 }
 
 void BonkRun::UpdateHeals(uint32 diff)
@@ -8946,6 +9080,7 @@ void BonkRun::UpdateHeals(uint32 diff)
         Creature* leg = map->GetCreature(itr->guid);
         if (!leg)
         {
+            RemoveHealDrop(*itr, nullptr, false);
             itr = m_healDrops.erase(itr);
             continue;
         }
@@ -8954,7 +9089,7 @@ void BonkRun::UpdateHeals(uint32 diff)
             if (itr->pulled)
             {
                 itr->pulled = false;
-                leg->StopMoving();
+                StopHealDrop(*itr, leg);
             }
             ++itr;
             continue;
@@ -8965,7 +9100,7 @@ void BonkRun::UpdateHeals(uint32 diff)
         {
             float const amount = BONK_HEAL_AMOUNT * (1.0f + GetCardTotal(BONK_CARD_JERKY, 1) / 100.0f);
             HealHero(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * amount))), BONK_SPELL_HEAL_TEXT);
-            VanishOrb(leg);
+            RemoveHealDrop(*itr, leg, true);
             itr = m_healDrops.erase(itr);
             hurt = m_player->GetHealth() < m_player->GetMaxHealth();
             continue;
@@ -8980,7 +9115,7 @@ void BonkRun::UpdateHeals(uint32 diff)
             itr->aimX = x;
             itr->aimY = y;
             itr->aimZ = z;
-            leg->MonsterMoveWithSpeed(x, y, z, -10.0f, BONK_ORB_FLY_SPEED, MOVE_FLY_MODE);
+            MoveHealDrop(*itr, leg, x, y, z);
         }
         ++itr;
     }
@@ -9390,15 +9525,7 @@ void BonkRun::ApplyStep(OwnedWeapon& owned, Offer const& offer)
     if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY)
         return;
 
-    owned.damageBonus += BONK_RANK_DAMAGE[offer.rarity];
-    for (uint8 i = 0; i < BONK_RANK_UPGRADES[offer.rarity] && i < BONK_MAX_RANK_UPGRADES; ++i)
-    {
-        float const step = owned.weapon.GetUpgradeStep(offer.upgrades[i]);
-        if (step > 0.0f)
-            owned.upgrades[offer.upgrades[i]] += step;
-        else
-            owned.damageBonus += BONK_RANK_SPARE_DAMAGE;
-    }
+    AddRankGains(owned, offer);
 
     if (owned.weapon.behavior == BONK_BEHAVIOR_PET || owned.weapon.behavior == BONK_BEHAVIOR_WRATH)
         for (OwnedWeapon& other : m_weapons)
@@ -9970,25 +10097,25 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
             adds.push_back(DescribeBonkSpellUpgrade(current, strength.folded, std::round(gain * 10.0f) / 10.0f));
     }
 
-    std::vector<std::string> has;
-    if (damageNow > 0.0f)
-        has.push_back(describeDamage(damageNow));
+    std::vector<std::string> totals;
+    if (damageNow + damage > 0.0f)
+        totals.push_back(describeDamage(damageNow + damage));
     for (uint8 upgrade = BONK_SPELL_UPGRADE_NONE + 1; upgrade < MAX_BONK_SPELL_UPGRADE; ++upgrade)
-        if (now[upgrade] > 0.0f && (!strengthens || upgrade != strength.folded))
-            has.push_back(DescribeBonkSpellUpgrade(current, BonkSpellUpgrade(upgrade), now[upgrade]));
+        if (after[upgrade] > 0.0f && (!strengthens || upgrade != strength.folded))
+            totals.push_back(DescribeBonkSpellUpgrade(current, BonkSpellUpgrade(upgrade), after[upgrade]));
     if (strengthens)
     {
-        std::string held = before.Describe();
-        held[0] = char(tolower(held[0]));
-        has.push_back(held);
+        std::string reached = strength.Describe();
+        reached[0] = char(tolower(reached[0]));
+        totals.push_back(reached);
     }
 
     std::string text = join(adds);
     if (!text.empty())
         text += ".";
-    std::string const held = join(has);
-    if (!held.empty())
-        text += BONK_LINE_BREAK + std::string("Current: ") + held + ".";
+    std::string const total = join(totals);
+    if (!total.empty())
+        text += BONK_LINE_BREAK + std::string("Total: ") + total + ".";
     return text;
 }
 
@@ -10360,7 +10487,7 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
             if (!family->description.empty())
                 description += " " + family->description;
     m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() ? 0u : interval) + "~" +
-        std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + description);
+        std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)));
 }
 
 void BonkRun::SendOffer() const
@@ -10386,10 +10513,12 @@ void BonkRun::SendOffer() const
                 if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
                     maxRank = passive->maxRank;
             bool const ranked = (offer.isWeapon && offer.step != BONK_STEP_NEW) || offer.isCard;
+            std::string before, after, label;
+            DescribeOfferDamage(offer, before, after, label);
 
             bonk->SendAddon("opt~" + std::to_string(i + 1) + "~" + (offer.isCard ? "c" : offer.step == BONK_STEP_EVOLVE ? "e" : offer.isWeapon ? "w" : "p") + "~" +
                 std::to_string(offer.newLevel) + "~" + std::to_string(maxRank) + "~" + name + "~" + icon + "~" + DescribeStep(offer) + "~" +
-                (ranked ? std::to_string(offer.rarity) : "") + "~" + (offer.locked ? "1" : "0"));
+                (ranked ? std::to_string(offer.rarity) : "") + "~" + (offer.locked ? "1" : "0") + "~" + before + "~" + after + "~" + label);
         }
         bonk->SendAddon("offerend");
         return;

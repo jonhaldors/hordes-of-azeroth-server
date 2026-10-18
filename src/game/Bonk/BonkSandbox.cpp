@@ -41,8 +41,10 @@ namespace
     uint32 const BONK_SANDBOX_TICK_MS         = 500;
     uint32 const BONK_SANDBOX_SPAWNS_PER_TICK = 20;
     float const BONK_SANDBOX_ENEMY_DISTANCE   = 20.0f;
-    uint32 const BONK_SANDBOX_CRYSTALS        = 12;
-    float const BONK_SANDBOX_CRYSTAL_RING     = 8.0f;
+    uint32 const BONK_SANDBOX_CRYSTALS        = 100;
+    float const BONK_SANDBOX_CRYSTAL_INNER    = 12.0f;
+    float const BONK_SANDBOX_CRYSTAL_MARGIN   = 4.0f;
+    float const BONK_SANDBOX_CRYSTAL_SPREAD   = 35.0f;
     uint32 const BONK_SANDBOX_PAGE            = 12;
     uint32 const BONK_SANDBOX_RANKS[]         = { 1, 5, 10, 15 };
 
@@ -54,6 +56,9 @@ namespace
     uint32 const BONK_DUMMY_COLUMNS    = 5;
     float const BONK_DUMMY_ELITE_SCALE = 1.35f;
     float const BONK_DUMMY_BOSS_SCALE  = 1.8f;
+    float const BONK_DEEP_DUMMY_HEALTH = 100.0f;
+    float const BONK_DEEP_DUMMY_REFILL = 0.5f;
+    uint32 const BONK_SANDBOX_DEFAULT_PACK = 30;
 
     enum SandboxSender : uint32
     {
@@ -447,7 +452,13 @@ void BonkRun::RefillIdleDummies(uint32 elapsedMs)
 
         SandboxDummy& state = itr->second;
         uint32 const health = dummy->GetHealth();
-        if (health != state.health)
+        if (m_sandboxDeepDummies && health < uint32(dummy->GetMaxHealth() * BONK_DEEP_DUMMY_REFILL))
+        {
+            dummy->SetHealth(dummy->GetMaxHealth());
+            state.health = dummy->GetHealth();
+            state.idleMs = 0;
+        }
+        else if (health != state.health)
         {
             state.health = health;
             state.idleMs = 0;
@@ -546,6 +557,7 @@ void BonkRun::SpawnSandboxDummies(uint32 count, BonkSpawnKind kind)
     dummy.kind = kind;
     dummy.archetype = BONK_ARCHETYPE_GRUNT;
     dummy.scale = kind == BONK_SPAWN_BOSS ? BONK_DUMMY_BOSS_SCALE : kind == BONK_SPAWN_ELITE ? BONK_DUMMY_ELITE_SCALE : 1.0f;
+    dummy.healthMultiplier = m_sandboxDeepDummies ? BONK_DEEP_DUMMY_HEALTH : 1.0f;
 
     uint32 spawned = 0;
     for (uint32 i = 0; i < count; ++i)
@@ -668,7 +680,7 @@ void BonkRun::SetSandboxLevel(uint32 level)
     m_player->GetBonkPlayer()->Notify("You are now level " + std::to_string(m_player->GetLevel()) + ".");
 }
 
-void BonkRun::SpawnSandboxCrystals()
+void BonkRun::SpawnSandboxCrystals(Creature const* keeper)
 {
     uint32 const level = m_player->GetLevel() + m_overcapLevel;
     float const killsForLevel = 4.0f + 1.5f * level + 0.05f * level * level;
@@ -676,17 +688,23 @@ void BonkRun::SpawnSandboxCrystals()
     BonkArchetypeInfo const& grunt = sBonkMgr.GetArchetype(BONK_ARCHETYPE_GRUNT);
     uint32 const xp = std::max(1u, uint32(std::ceil(GetNextLevelXp() / killsForLevel * grunt.experience * growth)));
 
-    float const heroX = m_player->GetPositionX();
-    float const heroY = m_player->GetPositionY();
-    float const heroZ = m_player->GetPositionZ();
+    WorldObject const* center = keeper ? static_cast<WorldObject const*>(keeper) : m_player;
+    float const centerX = center->GetPositionX();
+    float const centerY = center->GetPositionY();
+    float const centerZ = center->GetPositionZ();
+    float const inner = std::max(BONK_SANDBOX_CRYSTAL_INNER,
+        GetMagnetRange() + m_player->GetDistance2d(centerX, centerY) + BONK_SANDBOX_CRYSTAL_MARGIN);
+    float const outer = inner + BONK_SANDBOX_CRYSTAL_SPREAD;
     for (uint32 i = 0; i < BONK_SANDBOX_CRYSTALS; ++i)
     {
-        float const angle = 2.0f * M_PI_F * i / BONK_SANDBOX_CRYSTALS;
-        float const x = heroX + BONK_SANDBOX_CRYSTAL_RING * std::cos(angle);
-        float const y = heroY + BONK_SANDBOX_CRYSTAL_RING * std::sin(angle);
-        SpawnOrb(x, y, GroundHeight(m_player, x, y, heroZ), xp, grunt.orb);
+        float const angle = frand(0.0f, 2.0f * M_PI_F);
+        float const distance = std::sqrt(frand(inner * inner, outer * outer));
+        float const x = centerX + distance * std::cos(angle);
+        float const y = centerY + distance * std::sin(angle);
+        SpawnOrb(x, y, GroundHeight(m_player, x, y, centerZ), xp, grunt.orb);
     }
-    m_player->GetBonkPlayer()->Notify("Experience crystals surround you.");
+    m_player->GetBonkPlayer()->Notify(keeper ? "Experience crystals appear around " + std::string(keeper->GetName()) + "." :
+        "Experience crystals surround you.");
 }
 
 BonkRun::OwnedWeapon* BonkRun::FindSandboxSpell(uint32 baseId)
@@ -1013,7 +1031,7 @@ void BonkRun::SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action
             if (action)
                 GiveSandboxLevels(action);
             else
-                SpawnSandboxCrystals();
+                SpawnSandboxCrystals(keeper);
             break;
         case SENDER_SET_LEVEL:
             SetSandboxLevel(action);
@@ -1110,11 +1128,86 @@ bool GossipSelect_npc_bonk_sandbox(Player* player, Creature* creature, uint32 se
     return true;
 }
 
-bool ChatHandler::HandleBonkSandboxCommand(char*)
+bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 second, std::string& error)
 {
+    if (m_state != STATE_RUNNING)
+    {
+        error = "The sandbox is not ready yet.";
+        return false;
+    }
+
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    if (verb == "pack")
+        QueueSandboxPack(first ? first : BONK_SANDBOX_DEFAULT_PACK);
+    else if (verb == "dummies")
+        SpawnSandboxDummies(std::max(1u, std::min(first, 20u)), BONK_SPAWN_NORMAL);
+    else if (verb == "spell")
+        return AddSandboxSpell(first, error);
+    else if (verb == "evolve")
+        return ForceEvolve(first, error);
+    else if (verb == "rank")
+        SetSandboxRank(first, second);
+    else if (verb == "forget")
+        RemoveSandboxSpells(first);
+    else if (verb == "level")
+        SetSandboxLevel(first);
+    else if (verb == "clear")
+        ResetSandbox(RESET_CLEAR);
+    else if (verb == "heal")
+        ResetSandbox(RESET_HEAL);
+    else if (verb == "cooldowns")
+        ResetSandbox(RESET_COOLDOWNS);
+    else if (verb == "god")
+        ToggleSandbox(TOGGLE_GOD);
+    else if (verb == "passive")
+        ToggleSandbox(TOGGLE_PASSIVE);
+    else if (verb == "unkillable")
+        ToggleSandbox(TOGGLE_UNKILLABLE);
+    else if (verb == "deep")
+    {
+        m_sandboxDeepDummies = !m_sandboxDeepDummies;
+        bonk->Notify(m_sandboxDeepDummies ? "New dummies have 100 times the health and refill below half, so every hit counts on the meter." :
+            "New dummies are normal again.");
+    }
+    else if (verb == "minute")
+    {
+        m_sandboxMinute = first ? float(first) : -1.0f;
+        bonk->Notify(first ? "New enemies are as tough as at minute " + std::to_string(first) + " of a run." :
+            "Enemy toughness follows your time in the sandbox again.");
+    }
+    else if (verb == "quiet")
+    {
+        m_sandboxQuietLevels = !m_sandboxQuietLevels;
+        bonk->Notify(m_sandboxQuietLevels ? "Level-ups no longer offer choices." : "Level-ups offer choices again.");
+    }
+    else
+    {
+        error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|forget|level|clear|heal|cooldowns|god|passive|unkillable|deep|quiet|minute.";
+        return false;
+    }
+    return true;
+}
+
+bool ChatHandler::HandleBonkSandboxCommand(char* args)
+{
+    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     std::string error;
-    if (m_session->GetPlayer()->GetBonkPlayer()->StartSandbox(error))
-        return true;
+    char* verb = ExtractLiteralArg(&args);
+    if (!verb)
+    {
+        if (bonk->StartSandbox(error))
+            return true;
+    }
+    else if (!bonk->IsInSandbox())
+        error = "You are not in the sandbox. Use .bonk sandbox to enter it.";
+    else
+    {
+        uint32 first = 0, second = 0;
+        ExtractUInt32(&args, first);
+        ExtractUInt32(&args, second);
+        if (bonk->GetRun()->RunSandboxVerb(verb, first, second, error))
+            return true;
+    }
 
     SendSysMessage(error.c_str());
     SetSentErrorMessage(true);

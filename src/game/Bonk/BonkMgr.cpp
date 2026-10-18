@@ -1903,7 +1903,15 @@ std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank) co
 
 std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const
 {
-    return DescribePassiveNow(passive, rank > 1 ? rank - 1 : 0);
+    std::string text = DescribePassive(passive, 1);
+    if (rank <= 1)
+        return text;
+
+    std::vector<std::string> total;
+    ScalePassiveText(passive.description, rank, &total);
+    if (!total.empty())
+        text += BONK_LINE_BREAK + std::string("Total: ") + JoinValues(total) + ".";
+    return text;
 }
 
 std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank) const

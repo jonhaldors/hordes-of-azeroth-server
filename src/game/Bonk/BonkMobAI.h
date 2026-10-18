@@ -47,6 +47,7 @@ class BonkMobAI : public CreatureAI
         static void SendAffixInfo(BonkPlayer* bonk);
         void Bolster();
         void SetFleeing(bool blinks, uint32 headStartMs = 0);
+        void SetFleeHeading(float heading);
         bool IsFleeing() const { return m_fleeing; }
         void SetStationary();
         void SetPassive(bool passive);
@@ -126,6 +127,7 @@ class BonkMobAI : public CreatureAI
         void ResetProgressWatch();
         void UpdatePerchChase(BonkRun const* run);
         Unit* GetCastTarget(Creature* target);
+        float GetFleeAngle(Player* owner) const;
         bool FindFleePoint(Player* owner, float distance, float& x, float& y, float& z) const;
 
         ObjectGuid m_ownerGuid;
@@ -189,6 +191,9 @@ class BonkMobAI : public CreatureAI
         bool m_stationary = false;
         bool m_passive = false;
         ObjectGuid m_raidTarget;
+        float m_raidAngle = 0.0f;
+        bool m_hasFleeHeading = false;
+        float m_fleeHeading = 0.0f;
         bool m_stampede = false;
         int32 m_blinkTimer = 0;
 
