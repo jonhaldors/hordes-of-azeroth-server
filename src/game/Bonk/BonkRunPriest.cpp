@@ -43,6 +43,8 @@ namespace
     uint32 const BONK_SPELL_RENEW             = 139;
     uint32 const BONK_SPELL_POWER_WORD_SHIELD = 17;
     uint32 const BONK_SPELL_PENANCE_BOLT      = 591;
+    uint32 const BONK_SPELL_RAPTURE_BOLT      = 598;
+    uint32 const BONK_KIT_PENANCE_CAST        = 119;
     uint32 const BONK_SPELL_HOLY_NOVA         = 15237;
     uint32 const BONK_SPELL_HOLY_STUN         = 7922;
     uint32 const BONK_SPELL_SHADOW_HIT        = 8092;
@@ -62,6 +64,8 @@ namespace
     uint32 const BONK_PENANCE_MEMORY_MS       = 5000;
     size_t const BONK_PENANCE_ATTACKERS       = 8;
     float const BONK_PENANCE_HEAL             = 0.5f;
+    float const BONK_PENANCE_BOLT_SPEED       = 30.0f;
+    int32 const BONK_PENANCE_BOLT_GAP_MS      = 250;
     float const BONK_ATONEMENT_CAP            = 10.0f;
     int32 const BONK_FEAR_MS                  = 2000;
     int32 const BONK_SHACKLE_MS               = 2000;
@@ -446,6 +450,10 @@ void BonkRun::ResolvePriestCast(OwnedWeapon& owned, SpellEntry const* spellInfo,
 {
     if (cast.halo)
         RingHalo(owned, spellInfo, false);
+    else if (cast.penanceLaunch)
+        LaunchPenanceBolt(owned, spellInfo, cast);
+    else if (cast.penanceHit)
+        LandPenanceBolt(owned, spellInfo, cast);
 }
 
 void BonkRun::RaisePowerWordShield(OwnedWeapon& owned)
@@ -543,25 +551,94 @@ void BonkRun::FirePenance(OwnedWeapon& owned)
             targets.push_back(mob);
     }
 
-    SpellEntry const* bolt = sSpellMgr.GetSpellEntry(BONK_SPELL_PENANCE_BOLT);
+    SpellEntry const* bolt = sSpellMgr.GetSpellEntry(owned.weapon.id == BONK_WEAPON_RAPTURE ? BONK_SPELL_RAPTURE_BOLT : BONK_SPELL_PENANCE_BOLT);
     if (targets.empty() || !bolt)
     {
         owned.timer = 250;
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    for (auto itr = m_penanceIncoming.begin(); itr != m_penanceIncoming.end();)
+    {
+        Creature const* mob = map->GetCreature(itr->first);
+        itr = mob && mob->IsAlive() ? std::next(itr) : m_penanceIncoming.erase(itr);
+    }
+    m_player->SendPlaySpellVisualKit(BONK_KIT_PENANCE_CAST);
     for (uint32 i = 0; i < bolts; ++i)
     {
-        Creature* target = targets[i % targets.size()];
-        if (!target->IsAlive())
-            continue;
-        ShowStrike(m_player, bolt, target);
-        if (owned.weapon.id == BONK_WEAPON_CONTRITION)
-            for (Creature* mob : GetMobsInRange(BONK_CONTRITION_RADIUS * GetWeaponArea(owned), target))
-                DealShamanHit(bolt, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_CONTRITION_SHARE);
-        DealShamanHit(bolt, owned.weapon.spellId, target, GetWeaponDamage(owned));
-        HealPriest(BONK_PENANCE_HEAL * (1.0f + owned.damageBonus / 100.0f), owned.weapon.spellId, true);
+        PendingCast launch;
+        launch.weaponId = owned.weapon.id;
+        launch.spellId = bolt->Id;
+        launch.leftMs = int32(i) * BONK_PENANCE_BOLT_GAP_MS;
+        launch.penanceLaunch = true;
+        launch.target = targets[i % targets.size()]->GetObjectGuid();
+        if (i == 0)
+            LaunchPenanceBolt(owned, bolt, launch);
+        else
+            m_pendingCasts.push_back(launch);
     }
+}
+
+Creature* BonkRun::PickPenanceTarget(OwnedWeapon const& owned, ObjectGuid const& wanted) const
+{
+    auto survivesBoltsInFlight = [this](Creature* mob)
+    {
+        auto const incoming = m_penanceIncoming.find(mob->GetObjectGuid());
+        return incoming == m_penanceIncoming.end() || incoming->second < float(mob->GetHealth());
+    };
+
+    Creature* fallback = nullptr;
+    Creature* target = m_player->GetMap()->GetCreature(wanted);
+    if (target && target->IsAlive() && m_player->IsWithinDistInMap(target, owned.weapon.range))
+    {
+        if (survivesBoltsInFlight(target))
+            return target;
+        fallback = target;
+    }
+    for (Creature* mob : GetMobsInRange(owned.weapon.range))
+    {
+        if (!m_player->IsWithinLOSInMap(mob))
+            continue;
+        if (survivesBoltsInFlight(mob))
+            return mob;
+        if (!fallback)
+            fallback = mob;
+    }
+    return fallback;
+}
+
+void BonkRun::LaunchPenanceBolt(OwnedWeapon& owned, SpellEntry const* bolt, PendingCast const& cast)
+{
+    Creature* target = PickPenanceTarget(owned, cast.target);
+    if (!target)
+        return;
+
+    ShowStrike(m_player, bolt, target);
+    PendingCast hit = cast;
+    hit.penanceLaunch = false;
+    hit.penanceHit = true;
+    hit.target = target->GetObjectGuid();
+    hit.leftMs = int32(GetMissileDelay(m_player, target, BONK_PENANCE_BOLT_SPEED));
+    hit.incoming = GetWeaponDamage(owned) * GetDamageMultiplier(bolt, target);
+    target->GetPosition(hit.x, hit.y, hit.z);
+    m_penanceIncoming[hit.target] += hit.incoming;
+    m_pendingCasts.push_back(hit);
+}
+
+void BonkRun::LandPenanceBolt(OwnedWeapon& owned, SpellEntry const* bolt, PendingCast const& cast)
+{
+    auto const incoming = m_penanceIncoming.find(cast.target);
+    if (incoming != m_penanceIncoming.end() && (incoming->second -= cast.incoming) <= 0.5f)
+        m_penanceIncoming.erase(incoming);
+
+    Creature* target = m_player->GetMap()->GetCreature(cast.target);
+    if (!target || !target->IsAlive())
+        return;
+    if (owned.weapon.id == BONK_WEAPON_CONTRITION)
+        for (Creature* mob : GetMobsInRange(BONK_CONTRITION_RADIUS * GetWeaponArea(owned), target))
+            DealShamanHit(bolt, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_CONTRITION_SHARE);
+    DealShamanHit(bolt, owned.weapon.spellId, target, GetWeaponDamage(owned));
+    HealPriest(BONK_PENANCE_HEAL * (1.0f + owned.damageBonus / 100.0f), owned.weapon.spellId, true);
 }
 
 void BonkRun::HoldMob(Creature* mob, SpellEntry const* spellInfo, AuraType type, int32 durationMs)

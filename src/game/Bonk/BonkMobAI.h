@@ -37,6 +37,11 @@ class BonkMobAI : public CreatureAI
         ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
         void SetArchetype(BonkArchetype archetype) { m_archetype = archetype; }
         BonkArchetype GetArchetype() const { return m_archetype; }
+        void SetVeteran(bool veteran) { m_veteran = veteran; }
+        bool IsVeteran() const { return m_veteran; }
+        static constexpr uint32 BONK_PLATE_BRUISER = 5;
+        static constexpr uint32 BONK_PLATE_VETERAN = 6;
+        uint32 GetPlateKind() const;
 
         uint32 GetAffixCount() const;
         bool IsBolstering() const { return HasAffix(AFFIX_BOLSTERING); }
@@ -133,6 +138,7 @@ class BonkMobAI : public CreatureAI
         ObjectGuid m_ownerGuid;
         BonkSpawnKind m_kind = BONK_SPAWN_NORMAL;
         BonkArchetype m_archetype = BONK_ARCHETYPE_GRUNT;
+        bool m_veteran = false;
         BonkMob const* m_mob = nullptr;
         std::vector<int32> m_abilityTimers;
         uint32 m_affixes = 0;

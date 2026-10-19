@@ -71,7 +71,11 @@ namespace
     uint32 const BONK_SPAWN_PER_TICK       = 12;
     uint32 const BONK_OPENING_EASE_MS      = 360000;
     float const BONK_OPENING_CROWD         = 0.5f;
-    uint32 const BONK_OPENING_REFILL_MIN   = 3;
+    uint32 const BONK_OPENING_REFILL_MIN   = 6;
+    float const BONK_VETERAN_HEALTH        = 2.5f;
+    float const BONK_VETERAN_DAMAGE        = 1.25f;
+    float const BONK_VETERAN_REWARD        = 3.5f;
+    float const BONK_VETERAN_SIZE          = 1.2f;
     uint32 const BONK_STRESS_SPAWN_PER_TICK = 40;
     float const BONK_BOSS_CROWD            = 0.5f;
     uint32 const BONK_MOB_SWING_MS         = 2000;
@@ -2685,7 +2689,7 @@ void BonkRun::SpawnTrashPacks(uint32 count)
                     z = centreZ;
                 }
             }
-            if (SpawnMobAt(*creature, x, y, z) && found)
+            if (SpawnMobAt(*creature, x, y, z, RollVeteran(*creature)) && found)
                 crowd[uint32(sector)] += 1.0f;
         }
     }
@@ -3468,7 +3472,16 @@ Creature* BonkRun::SpawnMob(BonkMapCreature const& creature)
     return SpawnMobAt(creature, x, y, z);
 }
 
-Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z)
+bool BonkRun::RollVeteran(BonkMapCreature const& creature) const
+{
+    if (m_stress.on || creature.kind != BONK_SPAWN_NORMAL || m_tier.veteranChance <= 0.0f)
+        return false;
+    if (creature.archetype != BONK_ARCHETYPE_GRUNT && creature.archetype != BONK_ARCHETYPE_CASTER && creature.archetype != BONK_ARCHETYPE_CHARGER)
+        return false;
+    return roll_chance_f(m_tier.veteranChance);
+}
+
+Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran)
 {
     float const facing = std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x);
     m_lastPlateId = m_lastPlateId % BONK_MAX_PLATE_ID + 1;
@@ -3488,16 +3501,16 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     mob->UpdateArmor();
 
     BonkArchetypeInfo const* archetype = creature.kind == BONK_SPAWN_NORMAL ? &sBonkMgr.GetArchetype(creature.archetype) : nullptr;
-    float const overflow = GetCrowdOverflow();
     float const archetypeDamage = archetype ? archetype->damageMultiplier : 1.0f;
-    uint32 const health = GetSpawnHealth(creature.kind, creature.archetype, creature.healthMultiplier);
+    float const veteranDamage = veteran ? BONK_VETERAN_DAMAGE : 1.0f;
+    uint32 const health = GetSpawnHealth(creature.kind, creature.archetype, creature.healthMultiplier * (veteran ? BONK_VETERAN_HEALTH : 1.0f));
     mob->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, float(health));
     mob->SetMaxHealth(health);
     mob->SetHealth(health);
 
     {
         float const damage = std::max(1.0f, GetHeroBaseHealth() * GetScalingNow().hitShare * GetStageDamageMultiplier() *
-            m_map.damageMultiplier * creature.damageMultiplier * archetypeDamage * overflow * GetKindDamage(creature.kind) * m_spawnDamageScale);
+            m_map.damageMultiplier * creature.damageMultiplier * archetypeDamage * veteranDamage * GetKindDamage(creature.kind) * m_spawnDamageScale);
         mob->SetAttackTime(BASE_ATTACK, BONK_MOB_SWING_MS);
         mob->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, damage * 0.85f);
         mob->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, damage * 1.15f);
@@ -3525,11 +3538,17 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
             mob->UpdateModelData();
         }
     }
+    if (veteran)
+    {
+        mob->SetObjectScale(mob->GetObjectScale() * BONK_VETERAN_SIZE);
+        mob->UpdateModelData();
+    }
     mob->SetNoXP();
 
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
     {
         ai->SetArchetype(creature.archetype);
+        ai->SetVeteran(veteran);
         ai->Setup(creature.kind);
     }
 
@@ -6362,7 +6381,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             continue;
         }
 
-        if (cast.halo)
+        if (cast.halo || cast.penanceLaunch || cast.penanceHit)
         {
             ResolvePriestCast(*owned, info, cast);
             continue;
@@ -9213,8 +9232,10 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
         m_masteryXp += m_tier.masteryXpMiniboss * GetBonkMapRewardPercent(m_map.type) / 100;
     else if (kind == BONK_SPAWN_BOSS)
         m_masteryXp += m_tier.masteryXpBoss * GetBonkMapRewardPercent(m_map.type) / 100;
-    uint32 const reward = GetKindReward(kind);
-    GiveGold(m_map.goldPerKill * reward);
+    BonkMobAI const* mobAI = dynamic_cast<BonkMobAI const*>(mob->AI());
+    bool const veteran = mobAI && mobAI->IsVeteran();
+    float const reward = GetKindReward(kind) * (veteran ? BONK_VETERAN_REWARD : 1.0f);
+    GiveGold(uint32(m_map.goldPerKill * reward + 0.5f));
     m_cardValorCarry += m_map.coinsPerKill * reward * (1.0f + GetCardTotal(BONK_CARD_VALOR, 0) / 100.0f);
     m_coins += uint32(m_cardValorCarry);
     m_cardValorCarry -= float(uint32(m_cardValorCarry));
@@ -9227,14 +9248,13 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
         float const killsForLevel = 4.0f + 1.5f * level + 0.05f * level * level;
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
 
-        float experience = float(reward);
+        float experience = reward;
         BonkOrb colour = BONK_ORB_RED;
         if (kind == BONK_SPAWN_NORMAL)
         {
-            BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
-            BonkArchetypeInfo const& archetype = sBonkMgr.GetArchetype(ai ? ai->GetArchetype() : BONK_ARCHETYPE_GRUNT);
+            BonkArchetypeInfo const& archetype = sBonkMgr.GetArchetype(mobAI ? mobAI->GetArchetype() : BONK_ARCHETYPE_GRUNT);
             experience *= archetype.experience;
-            colour = archetype.orb;
+            colour = veteran ? BONK_ORB_GREEN : archetype.orb;
         }
         uint32 xp = uint32(std::ceil(GetNextLevelXp() / killsForLevel * experience * growth));
         if (IsInMoonwell(mob->GetPositionX(), mob->GetPositionY()))
@@ -9253,6 +9273,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
         m_player->GetBonkPlayer()->SendAddon("mobdead~" + std::string(mob->GetName()) + "~" + std::to_string(mob->GetPlateId()) + "~" +
             BonkMobAI::GetUnitGuidText(mob));
     }
+    else if (mobAI && mobAI->GetPlateKind())
+        m_player->GetBonkPlayer()->SendAddon("mobdead~~" + std::to_string(mob->GetPlateId()) + "~" + BonkMobAI::GetUnitGuidText(mob));
 
     if (!m_sandbox)
         DropShards(mob, kind);
@@ -10132,6 +10154,7 @@ bool BonkRun::GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, flo
     {
         strength.lead = "Marked enemies take ";
         strength.tail = " more damage";
+        strength.label = "Damage taken by marked enemies";
         strength.value = GetMarkStrength(damageBonus, upgrades[BONK_SPELL_UPGRADE_MARK]);
         strength.folded = BONK_SPELL_UPGRADE_MARK;
         return true;
@@ -10140,6 +10163,7 @@ bool BonkRun::GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, flo
     {
         strength.lead = "Each Shield is ";
         strength.tail = " of your maximum health";
+        strength.label = "Shield, % of maximum health";
         strength.value = GetShieldPercent(weapon, damageBonus, upgrades[BONK_SPELL_UPGRADE_SHIELD_SIZE]);
         strength.folded = BONK_SPELL_UPGRADE_SHIELD_SIZE;
         return true;
@@ -10148,6 +10172,7 @@ bool BonkRun::GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, flo
     {
         strength.lead = "Heals you for ";
         strength.tail = " of your maximum health every second";
+        strength.label = "Healing each second, % of maximum health";
         strength.value = GetHealPercent(weapon, damageBonus);
         return true;
     }
@@ -10155,6 +10180,7 @@ bool BonkRun::GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, flo
     {
         strength.lead = "Slowed enemies take ";
         strength.tail = " more damage";
+        strength.label = "Damage taken by slowed enemies";
         strength.value = GetSlowedStrength(damageBonus, upgrades[BONK_SPELL_UPGRADE_SLOWED]);
         strength.folded = BONK_SPELL_UPGRADE_SLOWED;
         return true;
@@ -10515,10 +10541,14 @@ void BonkRun::SendOffer() const
             bool const ranked = (offer.isWeapon && offer.step != BONK_STEP_NEW) || offer.isCard;
             std::string before, after, label;
             DescribeOfferDamage(offer, before, after, label);
+            std::vector<BonkStatChange> stats;
+            DescribeOfferStats(offer, stats);
 
             bonk->SendAddon("opt~" + std::to_string(i + 1) + "~" + (offer.isCard ? "c" : offer.step == BONK_STEP_EVOLVE ? "e" : offer.isWeapon ? "w" : "p") + "~" +
                 std::to_string(offer.newLevel) + "~" + std::to_string(maxRank) + "~" + name + "~" + icon + "~" + DescribeStep(offer) + "~" +
                 (ranked ? std::to_string(offer.rarity) : "") + "~" + (offer.locked ? "1" : "0") + "~" + before + "~" + after + "~" + label);
+            for (BonkStatChange const& stat : stats)
+                bonk->SendAddon("ostat~" + std::to_string(i + 1) + "~" + stat.label + "~" + stat.before + "~" + stat.after);
         }
         bonk->SendAddon("offerend");
         return;

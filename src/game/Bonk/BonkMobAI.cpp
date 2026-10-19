@@ -290,9 +290,21 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
     else if (kind == BONK_SPAWN_MINIBOSS)
         RollAffixes(affixes + 1);
 
-    if (kind != BONK_SPAWN_NORMAL && owner)
-        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(kind) + "~" + m_creature->GetName() + "~" + GetAffixIcons() + "~" +
+    uint32 const plateKind = GetPlateKind();
+    if (plateKind && owner)
+        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(plateKind) + "~" + m_creature->GetName() + "~" + GetAffixIcons() + "~" +
             std::to_string(m_creature->GetPlateId()) + "~" + GetUnitGuidText(m_creature));
+}
+
+uint32 BonkMobAI::GetPlateKind() const
+{
+    if (m_kind != BONK_SPAWN_NORMAL)
+        return uint32(m_kind);
+    if (m_veteran)
+        return BONK_PLATE_VETERAN;
+    if (m_archetype == BONK_ARCHETYPE_BRUISER)
+        return BONK_PLATE_BRUISER;
+    return 0;
 }
 
 bool BonkMobAI::MayCry(Creature* creature)

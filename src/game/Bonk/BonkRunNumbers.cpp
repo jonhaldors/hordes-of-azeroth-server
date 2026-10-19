@@ -40,6 +40,56 @@ namespace
         return keyword == BONK_KEYWORD_BURNING || keyword == BONK_KEYWORD_BLEED || keyword == BONK_KEYWORD_POISON ||
             keyword == BONK_KEYWORD_DECAY;
     }
+
+    std::string FormatNumber(float value, char const* format)
+    {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), format, value);
+        return buffer;
+    }
+
+    std::string ShownNumber(float value)
+    {
+        return std::to_string(uint32(std::max(1.0f, std::round(value))));
+    }
+
+    std::string ShownSeconds(float ms)
+    {
+        float const seconds = ms / 1000.0f;
+        return FormatNumber(seconds, seconds < 1.0f ? "%.2f" : "%.1f") + " sec";
+    }
+
+    std::string ShownPercent(float value, bool signed_)
+    {
+        return (signed_ && value >= 0.0f ? "+" : "") + FormatNumber(std::round(value * 10.0f) / 10.0f, "%g") + "%";
+    }
+
+    std::string CapitalizeFirst(std::string text)
+    {
+        if (!text.empty())
+            text[0] = char(toupper(static_cast<unsigned char>(text[0])));
+        return text;
+    }
+
+    std::string GetIntervalLabel(BonkWeapon const& weapon)
+    {
+        if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS || weapon.IsRevenge())
+            return "Can occur every";
+        if (weapon.behavior == BONK_BEHAVIOR_BLOOD_AURA)
+            return "Pulses every";
+        return "Casts every";
+    }
+
+    BonkStatChange SplitUpgradeText(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float before, float after)
+    {
+        std::string const now = DescribeBonkSpellUpgrade(weapon, upgrade, before);
+        std::string const next = DescribeBonkSpellUpgrade(weapon, upgrade, after);
+        size_t const nowSpace = now.find(' ');
+        size_t const nextSpace = next.find(' ');
+        if (nowSpace == std::string::npos || nextSpace == std::string::npos)
+            return {};
+        return { CapitalizeFirst(next.substr(nextSpace + 1)), now.substr(0, nowSpace), next.substr(0, nextSpace) };
+    }
 }
 
 float BonkRun::GetShownSpread(OwnedWeapon const& owned) const
@@ -157,22 +207,7 @@ void BonkRun::DescribeOfferDamage(Offer const& offer, std::string& before, std::
         return;
 
     if (!offer.isWeapon)
-    {
-        BonkPassive const* passive = sBonkMgr.GetPassive(offer.id);
-        if (!passive || passive->effect != BONK_PASSIVE_POWER)
-            return;
-        for (OwnedWeapon const& owned : m_weapons)
-        {
-            std::string const now = DescribeShownRange(owned);
-            if (now.empty())
-                continue;
-            before = now;
-            after = DescribeShownRange(owned, passive->valuePerRank);
-            label = owned.weapon.name;
-            return;
-        }
         return;
-    }
 
     BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id);
     if (!weapon)
@@ -206,4 +241,115 @@ void BonkRun::DescribeOfferDamage(Offer const& offer, std::string& before, std::
     after = DescribeShownRange(next);
     if (before == after)
         before.clear();
+}
+
+void BonkRun::DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const
+{
+    stats.clear();
+    if (offer.isCard || offer.newLevel <= 1)
+        return;
+
+    if (!offer.isWeapon)
+    {
+        if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
+            sBonkMgr.DescribePassiveStats(*passive, offer.newLevel, stats);
+        return;
+    }
+
+    if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY)
+        return;
+    OwnedWeapon const* owned = FindOwned(offer.id);
+    if (!owned)
+        return;
+    OwnedWeapon next = *owned;
+    AddRankGains(next, offer);
+
+    AddDamageStats(*owned, next, stats);
+    bool const hasDamage = !stats.empty();
+
+    float now[MAX_BONK_SPELL_UPGRADE] = {};
+    float after[MAX_BONK_SPELL_UPGRADE] = {};
+    GetSpellUpgrades(owned, now);
+    GetSpellUpgrades(&next, after);
+    WeaponStrength before, strength;
+    if (GetWeaponStrength(owned->weapon, owned->damageBonus, now, before) &&
+        GetWeaponStrength(next.weapon, next.damageBonus, after, strength) && std::fabs(strength.value - before.value) >= 0.05f)
+    {
+        bool const signed_ = strength.folded == BONK_SPELL_UPGRADE_MARK || strength.folded == BONK_SPELL_UPGRADE_SLOWED;
+        stats.push_back({ strength.label, ShownPercent(before.value, signed_), ShownPercent(strength.value, signed_) });
+    }
+
+    AddUpgradeStats(*owned, next, hasDamage, stats);
+}
+
+void BonkRun::AddDamageStats(OwnedWeapon const& owned, OwnedWeapon const& next, std::vector<BonkStatChange>& stats) const
+{
+    float const hit = GetShownHit(next, 0.0f);
+    if (hit > 0.0f)
+        stats.push_back({ "Damage", ShownNumber(GetShownHit(owned, 0.0f)), ShownNumber(hit) });
+
+    float const tick = GetShownTick(next, 0.0f);
+    if (tick > 0.0f)
+        if (BonkKeywordInfo const* info = sBonkMgr.GetKeyword(next.weapon.applies))
+            stats.push_back({ info->name + " damage per stack", ShownNumber(GetShownTick(owned, 0.0f)), ShownNumber(tick) });
+}
+
+void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next, bool hasDamage, std::vector<BonkStatChange>& stats) const
+{
+    float now[MAX_BONK_SPELL_UPGRADE] = {};
+    float after[MAX_BONK_SPELL_UPGRADE] = {};
+    GetSpellUpgrades(&owned, now);
+    GetSpellUpgrades(&next, after);
+    WeaponStrength strength;
+    bool const strengthens = GetWeaponStrength(next.weapon, next.damageBonus, after, strength);
+    BonkWeapon const& weapon = next.weapon;
+
+    for (uint8 index = BONK_SPELL_UPGRADE_NONE + 1; index < MAX_BONK_SPELL_UPGRADE; ++index)
+    {
+        BonkSpellUpgrade const upgrade = BonkSpellUpgrade(index);
+        if (after[upgrade] - now[upgrade] < 0.001f)
+            continue;
+        if (strengthens && upgrade == strength.folded)
+            continue;
+        if (upgrade == BONK_SPELL_UPGRADE_PET_DAMAGE && hasDamage)
+            continue;
+
+        switch (upgrade)
+        {
+            case BONK_SPELL_UPGRADE_HASTE:
+                stats.push_back({ GetIntervalLabel(weapon), ShownSeconds(float(GetWeaponCooldown(owned))), ShownSeconds(float(GetWeaponCooldown(next))) });
+                break;
+            case BONK_SPELL_UPGRADE_DURATION:
+                if (weapon.durationMs > 0)
+                {
+                    BonkStatChange stat = SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]);
+                    stats.push_back({ stat.label, ShownSeconds(weapon.durationMs * GetWeaponDurationScale(owned)),
+                        ShownSeconds(weapon.durationMs * GetWeaponDurationScale(next)) });
+                }
+                else
+                    stats.push_back(SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]));
+                break;
+            case BONK_SPELL_UPGRADE_STACKS:
+            {
+                BonkKeywordInfo const* info = sBonkMgr.GetKeyword(weapon.applies);
+                uint32 const base = std::max<uint32>(1, weapon.applyStacks);
+                stats.push_back({ (info ? info->name : std::string("Effect")) + " stacks per hit", std::to_string(base + uint32(now[upgrade])),
+                    std::to_string(base + uint32(after[upgrade])) });
+                break;
+            }
+            case BONK_SPELL_UPGRADE_ECHO:
+                stats.push_back({ "Extra casts", FormatNumber(now[upgrade], "%g"), FormatNumber(after[upgrade], "%g") });
+                break;
+            case BONK_SPELL_UPGRADE_DEPLOY:
+                stats.push_back({ "Deploy range", "+" + FormatNumber(now[upgrade], "%g") + " yd", "+" + FormatNumber(after[upgrade], "%g") + " yd" });
+                break;
+            default:
+            {
+                BonkStatChange stat = SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]);
+                if (!stat.label.empty())
+                    stats.push_back(stat);
+                break;
+            }
+        }
+    }
 }

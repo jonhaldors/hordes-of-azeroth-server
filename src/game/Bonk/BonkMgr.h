@@ -231,6 +231,7 @@ struct BonkTier
     float stageHealthAccel = 0.05f;
     float stageDamageAccel = 0.05f;
     float minAliveMultiplier = 1.0f;
+    float veteranChance = 0.0f;
     uint32 maxAlive = 200;
     uint32 maxBruisers = 8;
     uint32 firstEliteSecond = 150;
@@ -650,6 +651,13 @@ struct BonkWeapon
 };
 
 std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount);
+
+struct BonkStatChange
+{
+    std::string label;
+    std::string before;
+    std::string after;
+};
 std::string TagBonkWeaponDescription(BonkWeapon const& weapon, std::string const& description);
 
 uint32 const BONK_MAX_SUMMONS        = 8;
@@ -1125,6 +1133,7 @@ class BonkMgr
         BonkPassive const* GetPassive(uint32 id) const;
         std::string DescribePassive(BonkPassive const& passive, uint32 rank = 1) const;
         std::string DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const;
+        void DescribePassiveStats(BonkPassive const& passive, uint32 rank, std::vector<BonkStatChange>& stats) const;
         std::string DescribePassiveNow(BonkPassive const& passive, uint32 rank) const;
         std::map<uint32, BonkPassive> const& GetPassives() const { return m_passives; }
 

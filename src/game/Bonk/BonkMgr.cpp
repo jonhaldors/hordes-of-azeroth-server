@@ -138,6 +138,57 @@ namespace
         return scaled;
     }
 
+    std::vector<std::string> GetScaledNumbers(std::string const& text, uint32 rank)
+    {
+        std::vector<std::string> numbers;
+        for (size_t open = text.find('{'); open != std::string::npos; open = text.find('{', open + 1))
+        {
+            size_t const close = text.find('}', open);
+            if (close == std::string::npos)
+                break;
+            std::string const inner = text.substr(open + 1, close - open - 1);
+            char* end = nullptr;
+            float const perRank = std::strtof(inner.c_str(), &end);
+            if (inner.empty() || *end)
+                continue;
+            std::string value = (open > 0 && text[open - 1] == '+' ? "+" : "") + FormatScaled(perRank * rank);
+            if (close + 1 < text.size() && text[close + 1] == '%')
+                value += "%";
+            numbers.push_back(value);
+        }
+        return numbers;
+    }
+
+    char const* GetPassiveStatLabel(BonkPassiveEffect effect, size_t index)
+    {
+        if (index > 0)
+            return effect == BONK_PASSIVE_LEECH && index == 1 ? "Most healing each second" : nullptr;
+        switch (effect)
+        {
+            case BONK_PASSIVE_POWER:         return "Power";
+            case BONK_PASSIVE_HASTE:         return "Haste";
+            case BONK_PASSIVE_AMOUNT:        return "Count";
+            case BONK_PASSIVE_MOVE_SPEED:    return "Movement speed";
+            case BONK_PASSIVE_MAX_HEALTH:    return "Maximum health";
+            case BONK_PASSIVE_RECOVERY:      return "Health regained each second";
+            case BONK_PASSIVE_GREED:         return "Gold";
+            case BONK_PASSIVE_GROWTH:        return "Experience";
+            case BONK_PASSIVE_PICKUP:        return "Pickup range";
+            case BONK_PASSIVE_LEECH:         return "Chance to heal on hit";
+            case BONK_PASSIVE_AREA:          return "Area";
+            case BONK_PASSIVE_DURATION:      return "Duration";
+            case BONK_PASSIVE_ARMOR:         return "Armor";
+            case BONK_PASSIVE_HIT:           return "Hit chance";
+            case BONK_PASSIVE_DODGE:         return "Dodge chance";
+            case BONK_PASSIVE_CRIT:          return "Critical strike chance";
+            case BONK_PASSIVE_CRIT_DAMAGE:   return "Critical strike damage";
+            case BONK_PASSIVE_SHIELD:        return "Shield, % of maximum health";
+            case BONK_PASSIVE_LUCK:          return "Luck";
+            case BONK_PASSIVE_POISON_DAMAGE: return "Poison damage";
+            default:                         return nullptr;
+        }
+    }
+
     std::string JoinValues(std::vector<std::string> const& values)
     {
         auto bare = [](std::string const& value) { return !value.empty() && value[0] == '+' ? value.substr(1) : value; };
@@ -241,7 +292,7 @@ void BonkMgr::LoadTiers()
         "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes`, "
-        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless` FROM `bonk_tier`"));
+        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -285,6 +336,7 @@ void BonkMgr::LoadTiers()
         tier.chargeIntervalMs = fields[28].GetUInt32();
         tier.stages = fields[29].GetUInt32();
         tier.endless = fields[30].GetUInt8() != 0;
+        tier.veteranChance = fields[31].GetFloat();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -1912,6 +1964,26 @@ std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 ra
     if (!total.empty())
         text += BONK_LINE_BREAK + std::string("Total: ") + JoinValues(total) + ".";
     return text;
+}
+
+void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std::vector<BonkStatChange>& stats) const
+{
+    stats.clear();
+    if (rank <= 1)
+        return;
+    std::vector<std::string> const before = GetScaledNumbers(passive.description, rank - 1);
+    std::vector<std::string> const after = GetScaledNumbers(passive.description, rank);
+    std::vector<std::string> shown;
+    for (size_t i = 0; i < after.size() && i < before.size(); ++i)
+    {
+        if (std::find(shown.begin(), shown.end(), after[i]) != shown.end())
+            continue;
+        shown.push_back(after[i]);
+        char const* label = GetPassiveStatLabel(BonkPassiveEffect(passive.effect), stats.size());
+        if (!label)
+            continue;
+        stats.push_back({ label, before[i], after[i] });
+    }
 }
 
 std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank) const

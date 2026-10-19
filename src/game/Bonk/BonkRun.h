@@ -458,7 +458,8 @@ class BonkRun
         bool PlaceAside(Creature* mob, float heading);
         void MoveMob(Creature* mob, float x, float y, float z);
         Creature* SpawnMob(BonkMapCreature const& creature);
-        Creature* SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z);
+        Creature* SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran = false);
+        bool RollVeteran(BonkMapCreature const& creature) const;
         uint32 SpawnFormation(BonkMapEvent const& event);
         std::vector<Creature*> GetMobsInRange(float range, WorldObject const* center = nullptr) const;
         void DespawnMobs();
@@ -640,6 +641,7 @@ class BonkRun
         {
             std::string lead;
             std::string tail;
+            std::string label;
             float value = 0.0f;
             BonkSpellUpgrade folded = BONK_SPELL_UPGRADE_NONE;
             std::string Describe() const;
@@ -654,6 +656,9 @@ class BonkRun
         std::string DescribeShownRange(OwnedWeapon const& owned, float extraPower = 0.0f) const;
         std::string DescribeShownDamage(OwnedWeapon const& owned) const;
         void DescribeOfferDamage(Offer const& offer, std::string& before, std::string& after, std::string& label) const;
+        void DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const;
+        void AddDamageStats(OwnedWeapon const& owned, OwnedWeapon const& next, std::vector<BonkStatChange>& stats) const;
+        void AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next, bool hasDamage, std::vector<BonkStatChange>& stats) const;
         void GetSpellUpgrades(OwnedWeapon const* owned, float* upgrades) const;
         OwnedWeapon* FindOwned(uint32 weaponId);
         OwnedWeapon const* FindOwned(uint32 weaponId) const;
@@ -1125,6 +1130,9 @@ class BonkRun
             bool maelstrom = false;
             bool overload = false;
             bool halo = false;
+            bool penanceLaunch = false;
+            bool penanceHit = false;
+            float incoming = 0.0f;
             float radius = 0.0f;
             uint32 kit = 0;
             uint32 hops = 0;
@@ -1621,6 +1629,8 @@ class BonkRun
         void RaisePowerWordShield(OwnedWeapon& owned);
         void OnPriestStruck(Creature* attacker);
         void FirePenance(OwnedWeapon& owned);
+        void LaunchPenanceBolt(OwnedWeapon& owned, SpellEntry const* bolt, PendingCast const& cast);
+        void LandPenanceBolt(OwnedWeapon& owned, SpellEntry const* bolt, PendingCast const& cast);
         void HoldMob(Creature* mob, SpellEntry const* spellInfo, AuraType type, int32 durationMs);
         void ScreamPsychic(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void BindShackle(OwnedWeapon& owned, SpellEntry const* spellInfo);
@@ -1629,6 +1639,8 @@ class BonkRun
         void BlastMind(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void OnPriestPetBite(Creature* pet, Unit* victim);
         std::vector<std::pair<ObjectGuid, uint32>> m_recentAttackers;
+        std::map<ObjectGuid, float> m_penanceIncoming;
+        Creature* PickPenanceTarget(OwnedWeapon const& owned, ObjectGuid const& wanted) const;
         ObjectGuid m_mindFlayTarget;
         bool m_bodyAndSoul = false;
         struct PriestHold
