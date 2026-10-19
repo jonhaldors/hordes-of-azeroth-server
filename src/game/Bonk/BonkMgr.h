@@ -169,6 +169,8 @@ struct BonkMap
     std::string key;
     std::string name;
     std::string icon;
+    std::string summary;
+    std::string description;
     uint32 tierId = 0;
     BonkMapType type = BONK_MAP_OPEN;
     uint32 mapId = 0;
@@ -191,6 +193,26 @@ struct BonkMap
 
     std::vector<BonkMapCreature> creatures;
     std::vector<BonkMapEvent> events;
+};
+
+struct BonkZoneOverlay
+{
+    std::string texture;
+    uint32 width = 0, height = 0, x = 0, y = 0;
+};
+
+struct BonkZoneArt
+{
+    std::string file;
+    float left = 0.0f, right = 0.0f, top = 0.0f, bottom = 0.0f;
+    std::vector<BonkZoneOverlay> overlays;
+};
+
+struct BonkRunChoice
+{
+    BonkMap const* startMap = nullptr;
+    BonkMap const* dungeon = nullptr;
+    bool invade = false;
 };
 
 struct BonkMapStart
@@ -237,6 +259,7 @@ struct BonkTier
     uint32 firstEliteSecond = 150;
     uint32 chestCost = 10;
     float chestCostGrowth = 0.5f;
+    float chestCostMinuteGrowth = 0.0f;
     uint32 unlockTierId = 0;
     uint32 unlockStage = 0;
     float shardChanceNormal = 0.1f;
@@ -758,7 +781,8 @@ float const BONK_MAX_DODGE          = 60.0f;
 float const BONK_MAX_HIT            = 100.0f;
 float const BONK_MAX_COUNT          = 5.0f;
 float const BONK_MAX_AREA           = 50.0f;
-float const BONK_MAX_HASTE          = 100.0f;
+float const BONK_MAX_HASTE          = 75.0f;
+float CurveHaste(float raw);
 uint32 const BONK_MAX_COUNT_PULSES  = 2;
 float const BONK_MAX_GEAR_HASTE     = 20.0f;
 float const BONK_BASE_CRIT          = 5.0f;
@@ -801,6 +825,11 @@ enum BonkAbilityShape : uint8
     BONK_SHAPE_SHOCKWAVE = 6,
     BONK_SHAPE_SPOKES    = 7,
     BONK_SHAPE_POOLS     = 8,
+    BONK_SHAPE_NOVA      = 9,
+    BONK_SHAPE_TAIL      = 10,
+    BONK_SHAPE_BREATHS   = 11,
+    BONK_SHAPE_WALLS     = 12,
+    BONK_SHAPE_WREATH    = 13,
     MAX_BONK_ABILITY_SHAPE
 };
 
@@ -818,6 +847,7 @@ struct BonkMobAbility
     uint32 count = 0;
     float size = 0.0f;
     float belowHealth = 100.0f;
+    std::string label;
 };
 
 struct BonkMob
@@ -884,6 +914,7 @@ enum BonkUpgradeUtility : uint8
     BONK_UTILITY_PACK_MULE     = 12,
     BONK_UTILITY_POOL_TOGGLES  = 13,
     BONK_UTILITY_START_GLYPH   = 14,
+    BONK_UTILITY_VENDOR_REROLLS = 15,
     MAX_BONK_UPGRADE_UTILITY
 };
 uint8 const BONK_UPGRADE_UTILITY_BASE = 100;
@@ -1113,11 +1144,14 @@ class BonkMgr
         BonkTier const* GetTier(uint32 id) const;
         BonkTier const* FindTier(std::string const& keyOrId) const;
         BonkMap const* FindDungeon(std::string const& key) const;
+        BonkMap const* FindTierMap(BonkTier const& tier, std::string const& key) const;
         std::vector<BonkMap const*> GetDungeons() const;
         std::map<uint32, BonkTier> const& GetTiers() const { return m_tiers; }
 
         BonkMap const* GetMap(uint32 id) const;
         std::vector<BonkMapStart> GetMapStarts(uint32 bonkMapId) const;
+        BonkZoneArt const* GetZoneArt(uint32 zoneId) const;
+        std::map<uint32, BonkZoneArt> const& GetZoneArts() const { return m_zoneArt; }
         bool AddMapStart(uint32 bonkMapId, BonkMapStart const& start, float spread, size_t max);
         std::map<uint32, BonkMap> const& GetMaps() const { return m_maps; }
 
@@ -1227,6 +1261,8 @@ class BonkMgr
         std::map<uint32, BonkUpgrade> m_upgrades;
         mutable std::mutex m_mapStartLock;
         std::map<uint32, std::vector<BonkMapStart>> m_mapStarts;
+        std::map<uint32, BonkZoneArt> m_zoneArt;
+        void LoadZoneArt();
         std::map<uint32, BonkTalent> m_talents;
         std::map<uint32, BonkItemStat> m_itemStats;
         std::map<uint32, BonkItemSet> m_itemSets;

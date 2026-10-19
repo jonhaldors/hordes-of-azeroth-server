@@ -27,6 +27,7 @@ namespace
     float const BONK_VENDOR_CHARGE_PRICE   = 1.0f;
     float const BONK_VENDOR_REROLL_PRICE   = 0.5f;
     float const BONK_VENDOR_REROLL_GROWTH  = 0.5f;
+    BonkRarity const BONK_VENDOR_MIN_RARITY = BONK_RARITY_RARE;
 
     char const* const BONK_VENDOR_NAME        = "Zixil";
     char const* const BONK_VENDOR_LABEL       = "Wandering Merchant";
@@ -143,62 +144,82 @@ bool BonkRun::SpawnVendor()
 
 void BonkRun::StockVendor(bool reroll)
 {
-    std::vector<VendorSlot> locked;
-    if (reroll)
+    std::vector<VendorSlot> const previous = reroll ? m_vendorStock : std::vector<VendorSlot>();
+    std::vector<VendorSlot> carried;
+    if (!reroll)
     {
-        for (VendorSlot const& slot : m_vendorStock)
-            if (slot.locked && slot.state == VENDOR_FOR_SALE)
-                locked.push_back(slot);
-    }
-    else
-    {
-        locked = m_vendorKept;
+        carried = m_vendorKept;
         m_vendorKept.clear();
     }
 
     std::vector<Offer> kept, shown, keptDarkmoon, shownDarkmoon;
-    for (VendorSlot const& slot : locked)
+    for (VendorSlot const& slot : carried)
         if (!slot.isCharge)
             (slot.card.isCard ? keptDarkmoon : kept).push_back(slot.card);
-    if (reroll)
-        for (VendorSlot const& slot : m_vendorStock)
-            if (!slot.isCharge)
-                (slot.card.isCard ? shownDarkmoon : shown).push_back(slot.card);
+    for (VendorSlot const& slot : previous)
+        if (!slot.isCharge)
+            (slot.card.isCard ? shownDarkmoon : shown).push_back(slot.card);
 
+    m_rarityFloor = BONK_VENDOR_MIN_RARITY;
     std::vector<Offer> cards;
     OfferUpgrades(OFFER_LEVEL, reroll ? &shown : nullptr, &kept, &cards);
-
     if (!sBonkMgr.GetCards().empty())
     {
         std::vector<Offer> darkmoon;
         OfferCards(BONK_VENDOR_DARKMOON_SLOTS, reroll ? &shownDarkmoon : nullptr, &keptDarkmoon, &darkmoon);
         cards.insert(cards.end(), darkmoon.begin(), darkmoon.end());
     }
+    m_rarityFloor = BONK_RARITY_COMMON;
 
-    m_vendorStock.clear();
+    std::vector<VendorSlot> stock;
     for (Offer const& card : cards)
     {
         VendorSlot slot;
         slot.card = card;
         slot.price = GetVendorPrice(&card);
-        for (VendorSlot const& old : locked)
+        for (VendorSlot const& old : carried)
             if (!old.isCharge && old.card.isWeapon == card.isWeapon && old.card.isCard == card.isCard && old.card.id == card.id &&
                 old.card.evolveTo == card.evolveTo)
             {
                 slot.price = old.price;
                 slot.locked = true;
             }
-        m_vendorStock.push_back(slot);
+        stock.push_back(slot);
     }
 
     VendorSlot special;
     special.isCharge = true;
     special.charge = uint8(urand(0, MAX_BONK_VENDOR_CHARGE - 1));
     special.price = GetVendorPrice(nullptr);
-    for (VendorSlot const& old : locked)
+    for (VendorSlot const& old : carried)
         if (old.isCharge)
             special = old;
-    m_vendorStock.push_back(special);
+    stock.push_back(special);
+
+    m_vendorStock = reroll ? KeepVendorPlaces(previous, stock) : stock;
+}
+
+std::vector<BonkRun::VendorSlot> BonkRun::KeepVendorPlaces(std::vector<VendorSlot> const& previous, std::vector<VendorSlot> stock)
+{
+    auto shelf = [](VendorSlot const& slot) { return slot.isCharge ? 2 : slot.card.isCard ? 1 : 0; };
+    for (int shelfId = 0; shelfId < 3; ++shelfId)
+    {
+        std::vector<size_t> places;
+        for (size_t i = 0; i < stock.size(); ++i)
+            if (shelf(stock[i]) == shelfId)
+                places.push_back(i);
+        size_t position = 0;
+        for (VendorSlot const& old : previous)
+        {
+            if (shelf(old) != shelfId)
+                continue;
+            bool const stays = old.state == VENDOR_SOLD || (old.locked && old.state == VENDOR_FOR_SALE);
+            if (stays && position < places.size())
+                stock[places[position]] = old;
+            ++position;
+        }
+    }
+    return stock;
 }
 
 void BonkRun::CheckVendorStock()
@@ -233,6 +254,12 @@ uint32 BonkRun::GetVendorPrice(Offer const* card) const
 uint32 BonkRun::GetVendorRerollCost() const
 {
     return std::max(1u, uint32(GetChestPrice() * BONK_VENDOR_REROLL_PRICE * (1.0f + BONK_VENDOR_REROLL_GROWTH * m_vendorRerolls) + 0.5f));
+}
+
+uint32 BonkRun::GetVendorRestocksLeft() const
+{
+    uint32 const allowed = uint32(GetUtility(BONK_UTILITY_VENDOR_REROLLS) + 0.5f);
+    return allowed > m_vendorRerolls ? allowed - m_vendorRerolls : 0;
 }
 
 void BonkRun::OpenVendor(Creature* vendor)
@@ -370,6 +397,14 @@ bool BonkRun::RerollVendor(std::string& error)
         error = std::string(BONK_VENDOR_NAME) + "'s shop isn't open.";
         return false;
     }
+    if (GetVendorRestocksLeft() == 0)
+    {
+        error = GetUtility(BONK_UTILITY_VENDOR_REROLLS) > 0.0f
+            ? std::string(BONK_VENDOR_NAME) + " has no more wares to restock this visit."
+            : std::string(BONK_VENDOR_NAME) + " doesn't restock. Sayge's Restock upgrade lets him restock during a visit.";
+        SendVendor();
+        return false;
+    }
     uint32 const cost = GetVendorRerollCost();
     if (m_coins < cost)
     {
@@ -437,7 +472,8 @@ void BonkRun::SendVendor() const
     if (bonk->IsAddonReady())
     {
         bonk->SendAddon("vendor~" + std::to_string(m_coins) + "~" + std::to_string(rerollCost) + "~" +
-            std::to_string((m_vendorLeftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS) + "~" + BONK_VENDOR_NAME);
+            std::to_string((m_vendorLeftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS) + "~" + BONK_VENDOR_NAME + "~" +
+            std::to_string(GetVendorRestocksLeft()));
         for (size_t i = 0; i < m_vendorStock.size(); ++i)
         {
             VendorSlot const& slot = m_vendorStock[i];
@@ -478,7 +514,7 @@ void BonkRun::SendVendor() const
 
     ChatHandler handler(m_player);
     handler.PSendSysMessage("%s's wares (you have %u Valor): .bonk vendor buy <number>, .bonk vendor lock <number>, "
-        ".bonk vendor reroll (%u Valor), .bonk vendor close", BONK_VENDOR_NAME, m_coins, rerollCost);
+        ".bonk vendor reroll (%u Valor, %u left), .bonk vendor close", BONK_VENDOR_NAME, m_coins, rerollCost, GetVendorRestocksLeft());
     for (size_t i = 0; i < m_vendorStock.size(); ++i)
     {
         VendorSlot const& slot = m_vendorStock[i];

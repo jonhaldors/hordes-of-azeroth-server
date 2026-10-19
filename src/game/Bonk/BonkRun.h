@@ -84,8 +84,10 @@ class Unit;
 class BonkRun
 {
     public:
-        BonkRun(Player* player, BonkTier const& tier, BonkMap const* dungeon = nullptr);
+        BonkRun(Player* player, BonkTier const& tier, BonkRunChoice const& choice = BonkRunChoice());
         bool IsDungeon() const { return m_dungeonId != 0; }
+        bool IsChallenge() const { return m_dungeonId != 0 || m_invaderId != 0; }
+        bool IsInvasion() const { return m_invaderId != 0; }
 
         bool Begin(std::string& error);
         void Update(uint32 diff);
@@ -234,6 +236,7 @@ class BonkRun
         void SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action);
         bool RunSandboxVerb(std::string const& verb, uint32 first, uint32 second, std::string& error);
         void LeaveSandbox();
+        time_t GetSkyTime() const;
 
     private:
         enum State
@@ -366,6 +369,10 @@ class BonkRun
         void CheckVendorStock();
         uint32 GetVendorPrice(Offer const* card) const;
         uint32 GetVendorRerollCost() const;
+        uint32 GetVendorRestocksLeft() const;
+        uint32 GetSkyKey() const;
+        void UpdateSky();
+        void ClearSky();
         void ApplyVendorCard(Offer const& card);
         void SendVendor() const;
         void DespawnVendor();
@@ -665,6 +672,8 @@ class BonkRun
 
         BonkRarity RollRarity(BonkRarity minimum) const;
         void RollUpgrades(OwnedWeapon const& owned, Offer& offer) const;
+        bool HasteShortensCooldown(OwnedWeapon const& owned, float alreadyRolled, float step) const;
+        float GetRawWeaponHaste(OwnedWeapon const& owned) const;
         Offer MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const;
         Offer MakeEvolveOffer(OwnedWeapon const& owned, uint32 evolveTo) const;
         std::vector<BonkWeapon const*> GetOpenEvolutions(OwnedWeapon const& owned) const;
@@ -803,6 +812,9 @@ class BonkRun
         bool m_menuOpen = false;
         bool m_victory = false;
         uint32 m_dungeonId = 0;
+        uint32 m_invaderId = 0;
+        uint32 m_startMapId = 0;
+        void ApplyInvader();
 
         void Finish(bool wentHome);
         void Exit();
@@ -810,8 +822,8 @@ class BonkRun
 
         Player* m_player;
         BonkTier const m_tier;
-        BonkRunBonuses const m_bonuses;
-        BonkMasteryBonuses const m_mastery;
+        BonkRunBonuses m_bonuses;
+        BonkMasteryBonuses m_mastery;
         std::map<uint32, uint32> m_spellRoots;
         uint32 m_masteryXp = 0;
         mutable uint32 m_crits = 0;
@@ -992,12 +1004,19 @@ class BonkRun
         };
         std::vector<VendorSlot> m_vendorStock;
         std::vector<VendorSlot> m_vendorKept;
+        static std::vector<VendorSlot> KeepVendorPlaces(std::vector<VendorSlot> const& previous, std::vector<VendorSlot> stock);
         std::vector<uint32> m_vendorVisits;
         ObjectGuid m_vendorGuid;
         uint32 m_vendorObjective = 0;
         uint32 m_vendorLeftMs = 0;
         uint32 m_vendorCheckMs = 0;
         uint32 m_vendorRerolls = 0;
+        BonkRarity m_rarityFloor = BONK_RARITY_COMMON;
+        mutable uint32 m_skyKey = 0;
+        mutable time_t m_skyTime = 0;
+        uint32 m_skySentKey = 0;
+        mutable uint8 m_skyWeather = 0;
+        mutable float m_skyWeatherGrade = 0.0f;
         bool m_vendorOpen = false;
         uint32 m_nextMiniEventMs = 0;
         BonkMiniEventType m_lastMiniEvent = MAX_BONK_MINI_EVENT;
@@ -1011,6 +1030,7 @@ class BonkRun
         uint32 m_overtimeWaves = 0;
         int32 m_overtimeTimer = 0;
         float m_spawnDamageScale = 1.0f;
+        float m_spawnHealthScale = 1.0f;
         uint32 m_boundaryTimer = 0;
         uint32 m_nativeTimer = 0;
         uint32 m_recoveryTimer = 0;
@@ -1038,6 +1058,7 @@ class BonkRun
         bool m_perched = false;
         uint32 m_perchTimer = 0;
         uint32 m_perchChecks = 0;
+        uint32 m_reachChecks = 0;
         uint32 m_perchedMs = 0;
         uint32 m_flyerTimer = 0;
         bool m_hasGround = false;
@@ -1048,6 +1069,9 @@ class BonkRun
         std::map<ObjectGuid, uint32> m_chestObjectives;
         void ForgetChestObjective(ObjectGuid const& chest);
         std::vector<ObjectGuid> m_powerups;
+        std::map<ObjectGuid, uint32> m_powerupObjectives;
+        GameObject* PlacePowerup(BonkPowerup const& powerup, float x, float y, float z, uint32 lifetimeSeconds);
+        void ForgetPowerupObjective(ObjectGuid const& powerup);
         std::vector<Orb> m_orbs;
         uint32 m_orbTimer = 0;
         std::vector<OrbMerge> m_orbMerges;
@@ -1814,6 +1838,7 @@ class BonkRun
         bool GetMageCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind) const;
         void DealExactHit(SpellEntry const* spellInfo, Unit* target, uint32 damage, Unit* attacker = nullptr);
         void ShowFallingAt(SpellEntry const* spellInfo, float x, float y, float z);
+        void ShowMissilesAround(SpellEntry const* spellInfo, float radius, uint32 count);
         void PlaceAreaLook(uint32 spellId, float x, float y, float z, float radius, uint32 durationMs);
         struct Bladestorm
         {
@@ -1992,7 +2017,11 @@ class BonkRun
         float GetSandboxFront() const;
         void SpawnSandboxDummies(uint32 count, BonkSpawnKind kind);
         void QueueSandboxPack(uint32 count);
-        void SpawnSandboxEnemy(uint32 entry);
+        Creature* SpawnSandboxEnemy(uint32 entry);
+        bool RunSandboxBossVerb(std::string const& verb, uint32 first, std::string& error);
+        void ListSandboxBosses(BonkSpawnKind kind) const;
+        void DescribeSandboxBoss(Creature const* mob) const;
+        std::vector<Creature*> GetSandboxBosses() const;
         void ToggleSandbox(uint32 toggle);
         void GiveSandboxLevels(uint32 levels);
         void SetSandboxLevel(uint32 level);
@@ -2002,6 +2031,7 @@ class BonkRun
         void SetSandboxRank(uint32 baseId, uint32 rank);
         void RemoveSandboxSpells(uint32 baseId);
         void ResetSandbox(uint32 reset);
+        void EnterSandboxBench();
         void ClearSandboxEnemies();
         void HealInSandbox();
         void ResetSandboxCooldowns();
@@ -2021,6 +2051,7 @@ class BonkRun
         bool m_sandboxUnkillable = false;
         bool m_sandboxDeepDummies = false;
         bool m_sandboxQuietLevels = false;
+        bool m_sandboxBench = false;
         float m_sandboxMinute = -1.0f;
         ObjectGuid m_sandboxKeeper;
         std::map<ObjectGuid, SandboxDummy> m_sandboxDummies;

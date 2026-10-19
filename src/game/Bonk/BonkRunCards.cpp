@@ -310,10 +310,11 @@ void BonkRun::RemoveCard(BonkCard const& card)
 void BonkRun::SyncGearCards()
 {
     std::vector<uint32> worn;
-    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-        if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            if (uint32 const cardId = sBonkMgr.GetItemCard(item->GetEntry()))
-                worn.push_back(cardId);
+    if (!m_sandboxBench)
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                if (uint32 const cardId = sBonkMgr.GetItemCard(item->GetEntry()))
+                    worn.push_back(cardId);
     std::sort(worn.begin(), worn.end());
     if (worn == m_gearCards)
         return;

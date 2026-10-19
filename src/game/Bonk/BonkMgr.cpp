@@ -3,6 +3,8 @@
 #include "BonkQuests.h"
 #include "Database/DatabaseEnv.h"
 #include "DBCStores.h"
+#include "Database/DBCFileLoader.h"
+#include "World.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectMgr.h"
@@ -232,6 +234,7 @@ void BonkMgr::Load()
     LoadWaves();
     LoadScaling();
     LoadMaps();
+    LoadZoneArt();
 
     {
         std::lock_guard<std::mutex> guard(m_mapStartLock);
@@ -292,7 +295,7 @@ void BonkMgr::LoadTiers()
         "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes`, "
-        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance` FROM `bonk_tier`"));
+        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -337,6 +340,7 @@ void BonkMgr::LoadTiers()
         tier.stages = fields[29].GetUInt32();
         tier.endless = fields[30].GetUInt8() != 0;
         tier.veteranChance = fields[31].GetFloat();
+        tier.chestCostMinuteGrowth = fields[32].GetFloat();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -363,7 +367,7 @@ void BonkMgr::LoadMaps()
         "SELECT `id`, `key`, `name`, `tier`, `map_id`, `zone_id`, `position_x`, `position_y`, `position_z`, `orientation`, "
         "`duration_sec`, `level_offset`, `health_multiplier`, `damage_multiplier`, `health_growth_per_min`, "
         "`gold_per_kill`, `stage_gold`, `coins_per_kill`, `powerup_interval_sec`, `powerup_max`, "
-        "`spawn_min_distance`, `spawn_max_distance`, `icon`, `damage_growth_per_min`, `map_type` FROM `bonk_map`"));
+        "`spawn_min_distance`, `spawn_max_distance`, `icon`, `damage_growth_per_min`, `map_type`, `summary`, `description` FROM `bonk_map`"));
 
     if (!result)
     {
@@ -401,6 +405,8 @@ void BonkMgr::LoadMaps()
         map.icon = fields[22].GetCppString();
         map.damageGrowthPerMinute = fields[23].GetFloat();
         map.type = BonkMapType(std::min<uint8>(fields[24].GetUInt8(), MAX_BONK_MAP_TYPE - 1));
+        map.summary = fields[25].GetCppString();
+        map.description = fields[26].GetCppString();
 
         if (!sMapStorage.LookupEntry<MapEntry>(map.mapId))
         {
@@ -1051,7 +1057,7 @@ void BonkMgr::LoadMobs()
 
     uint32 abilities = 0;
     result = WorldDatabase.Query("SELECT `entry`, `spell_id`, `target`, `cooldown_ms`, `first_ms`, `min_range`, `max_range`, `damage`, "
-        "`shape`, `count`, `size`, `below_health` FROM `bonk_mob_ability` ORDER BY `entry`, `spell_id`");
+        "`shape`, `count`, `size`, `below_health`, `comment` FROM `bonk_mob_ability` ORDER BY `entry`, `spell_id`");
     if (result)
     {
         do
@@ -1071,6 +1077,7 @@ void BonkMgr::LoadMobs()
             ability.count = fields[9].GetUInt32();
             ability.size = fields[10].GetFloat();
             ability.belowHealth = fields[11].GetFloat();
+            ability.label = fields[12].GetCppString();
 
             SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(ability.spellId);
             if (!spellInfo)
@@ -1613,6 +1620,65 @@ BonkTier const* BonkMgr::FindTier(std::string const& keyOrId) const
     return nullptr;
 }
 
+void BonkMgr::LoadZoneArt()
+{
+    m_zoneArt.clear();
+    std::set<uint32> zones;
+    for (auto const& itr : m_maps)
+        if (itr.second.type == BONK_MAP_OPEN && itr.second.zoneId)
+            zones.insert(itr.second.zoneId);
+
+    std::string const dbcPath = sWorld.GetDataPath() + std::to_string(uint32(SUPPORTED_CLIENT_BUILD)) + "/dbc/";
+    DBCFileLoader areas;
+    if (!areas.Load((dbcPath + "WorldMapArea.dbc").c_str(), "niisffff"))
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Bonk zone art skipped: WorldMapArea.dbc not found.");
+        return;
+    }
+
+    std::map<uint32, uint32> zoneByArea;
+    for (uint32 i = 0; i < areas.GetNumRows(); ++i)
+    {
+        DBCFileLoader::Record row = areas.getRecord(i);
+        uint32 const zoneId = row.getUInt(2);
+        if (!zones.count(zoneId))
+            continue;
+        BonkZoneArt& art = m_zoneArt[zoneId];
+        art.file = row.getString(3);
+        art.left = row.getFloat(4);
+        art.right = row.getFloat(5);
+        art.top = row.getFloat(6);
+        art.bottom = row.getFloat(7);
+        zoneByArea[row.getUInt(0)] = zoneId;
+    }
+
+    DBCFileLoader overlays;
+    if (overlays.Load((dbcPath + "WorldMapOverlay.dbc").c_str(), "niiiiiiisiiiiiiii"))
+        for (uint32 i = 0; i < overlays.GetNumRows(); ++i)
+        {
+            DBCFileLoader::Record row = overlays.getRecord(i);
+            auto const zone = zoneByArea.find(row.getUInt(1));
+            char const* texture = row.getString(8);
+            if (zone == zoneByArea.end() || !texture || !*texture)
+                continue;
+            BonkZoneOverlay overlay;
+            overlay.texture = texture;
+            overlay.width = row.getUInt(9);
+            overlay.height = row.getUInt(10);
+            overlay.x = row.getUInt(11);
+            overlay.y = row.getUInt(12);
+            m_zoneArt[zone->second].overlays.push_back(overlay);
+        }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded world map art for %u Bonk zones", uint32(m_zoneArt.size()));
+}
+
+BonkZoneArt const* BonkMgr::GetZoneArt(uint32 zoneId) const
+{
+    auto const itr = m_zoneArt.find(zoneId);
+    return itr != m_zoneArt.end() ? &itr->second : nullptr;
+}
+
 std::vector<BonkMapStart> BonkMgr::GetMapStarts(uint32 bonkMapId) const
 {
     std::lock_guard<std::mutex> guard(m_mapStartLock);
@@ -1641,6 +1707,15 @@ BonkMap const* BonkMgr::FindDungeon(std::string const& key) const
     for (auto const& itr : m_maps)
         if (itr.second.type == BONK_MAP_ENCLOSED && itr.second.key == key && !itr.second.creatures.empty())
             return &itr.second;
+    return nullptr;
+}
+
+BonkMap const* BonkMgr::FindTierMap(BonkTier const& tier, std::string const& key) const
+{
+    for (uint32 id : tier.mapIds)
+        if (BonkMap const* map = GetMap(id))
+            if (map->key == key && !map->creatures.empty())
+                return map;
     return nullptr;
 }
 

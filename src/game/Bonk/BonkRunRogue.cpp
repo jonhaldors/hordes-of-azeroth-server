@@ -55,6 +55,7 @@ namespace
     float const BONK_SHURIKEN_SPEED           = 20.0f;
 
     float const BONK_FLURRY_RADIUS            = 8.0f;
+    float const BONK_FLURRY_DAMAGE_SHARE      = 0.5f;
     uint32 const BONK_SPREE_STRIKES_PER_COUNT = 2;
     int32 const BONK_SPREE_GAP_MS             = 200;
     uint32 const BONK_MUTILATE_STABS          = 2;
@@ -72,7 +73,7 @@ namespace
     int32 const BONK_FAN_ECHO_MS              = 300;
     int32 const BONK_ROGUE_IDLE_MS            = 1000;
     int32 const BONK_ROGUE_RETRY_MS           = 250;
-    size_t const BONK_FAN_MAX_KNIFE_LOOKS     = 12;
+    uint32 const BONK_FAN_KNIVES              = 12;
     uint32 const BONK_ROGUE_SWING_GAP_MS      = 400;
 
     float const BONK_MAIN_GAUCHE_REACH        = 8.0f;
@@ -358,6 +359,7 @@ void BonkRun::FlurryFrom(Creature* target, float damage, uint32 creditSpellId)
     SpellEntry const* look = sSpellMgr.GetSpellEntry(shadow ? BONK_SPELL_SHADOW_STRIKE : BONK_SPELL_SINISTER_STRIKE);
     if (!look)
         return;
+    float const share = damage * BONK_FLURRY_DAMAGE_SHARE;
     float const area = std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f);
     uint32 hit = 0;
     for (Creature* mob : GetMobsInRange(BONK_FLURRY_RADIUS * area, target))
@@ -368,10 +370,10 @@ void BonkRun::FlurryFrom(Creature* target, float damage, uint32 creditSpellId)
             continue;
         ShowStrike(m_player, look, mob);
         if (shadow)
-            DealShamanHit(look, credit, mob, damage);
+            DealShamanHit(look, credit, mob, share);
         else
-            DealRogueDamage(credit, look, mob, damage);
-        OnRogueHit(mob, damage, false);
+            DealRogueDamage(credit, look, mob, share);
+        OnRogueHit(mob, share, false);
         if (shadow)
             OpenOnRogueTarget(mob, true);
         ++hit;
@@ -624,14 +626,12 @@ void BonkRun::ThrowFanOfKnives(OwnedWeapon& owned, SpellEntry const* spellInfo, 
             StartKeywordCloud(owned, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
     }
 
+    ShowMissilesAround(spellInfo, owned.weapon.range * GetWeaponArea(owned), BONK_FAN_KNIVES);
     float const damage = GetWeaponDamage(owned);
-    size_t looks = 0;
     for (Creature* mob : mobs)
     {
         if (!mob->IsAlive())
             continue;
-        if (looks++ < BONK_FAN_MAX_KNIFE_LOOKS)
-            ShowStrike(m_player, spellInfo, mob);
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, damage);
         PoisonWithRogue(owned, mob, owned.weapon.applyStacks);
         OnRogueHit(mob, damage, false);

@@ -20,7 +20,11 @@ namespace
     uint32 const BONK_GO_LOOT            = 900040;
     uint32 const BONK_LOOT_LIFETIME_SEC  = 600;
     uint32 const BONK_SPELL_LOOT_BEAM    = 25824;
-    float const BONK_LOOT_BEAM_SCALE     = 0.5f;
+    uint32 const BONK_SPELL_UNCOMMON_LOOT_BEAM  = 33456;
+    uint32 const BONK_SPELL_RARE_LOOT_BEAM      = 33457;
+    uint32 const BONK_SPELL_EPIC_LOOT_BEAM      = 33458;
+    uint32 const BONK_SPELL_LEGENDARY_LOOT_BEAM = 33459;
+    float const BONK_LOOT_BEAM_SCALE     = 0.35f;
     uint32 const BONK_GEAR_CHECK_MS      = 250;
     uint32 const BONK_BANKER_ENTRY       = 900009;
     size_t const BONK_MAX_GEAR_DROPS     = 10;
@@ -81,6 +85,7 @@ namespace
     float const BONK_GEAR_CHANCE_PER_AFFIX = 5.0f;
     float const BONK_GEAR_STAGE_UPGRADE    = 25.0f;
     float const BONK_GEAR_LEGENDARY_CHANCE = 25.0f;
+    float const BONK_INVASION_UPGRADE_CHANCE = 50.0f;
 
     struct GearOdds
     {
@@ -124,6 +129,18 @@ namespace
         }
     }
 
+    uint32 GetLootBeamSpell(uint8 quality)
+    {
+        switch (quality)
+        {
+            case ITEM_QUALITY_UNCOMMON:  return BONK_SPELL_UNCOMMON_LOOT_BEAM;
+            case ITEM_QUALITY_RARE:      return BONK_SPELL_RARE_LOOT_BEAM;
+            case ITEM_QUALITY_EPIC:      return BONK_SPELL_EPIC_LOOT_BEAM;
+            case ITEM_QUALITY_LEGENDARY: return BONK_SPELL_LEGENDARY_LOOT_BEAM;
+            default:                     return BONK_SPELL_LOOT_BEAM;
+        }
+    }
+
     std::string GetItemLink(ItemPrototype const* proto)
     {
         char color[16];
@@ -145,7 +162,7 @@ uint8 BonkRun::RollGearQuality(BonkSpawnKind kind) const
     uint8 quality = roll <= row.green ? ITEM_QUALITY_UNCOMMON : roll <= uint32(row.green + row.blue) ? ITEM_QUALITY_RARE : ITEM_QUALITY_EPIC;
     if (quality < ITEM_QUALITY_EPIC && m_stage > 1 && roll_chance_f(BONK_GEAR_STAGE_UPGRADE * (m_stage - 1)))
         ++quality;
-    if (IsDungeon() && quality < ITEM_QUALITY_EPIC)
+    if (IsChallenge() && quality < ITEM_QUALITY_EPIC && (!IsInvasion() || roll_chance_f(BONK_INVASION_UPGRADE_CHANCE)))
         ++quality;
     if (kind == BONK_SPAWN_BOSS && m_tier.key == "mythic" && m_stage >= 2 && roll_chance_f(BONK_GEAR_LEGENDARY_CHANCE))
         quality = ITEM_QUALITY_LEGENDARY;
@@ -195,7 +212,7 @@ void BonkRun::DropGear(Creature const* mob, BonkSpawnKind kind)
     GearDrop drop;
     drop.guid = go->GetObjectGuid();
     drop.entry = gear->entry;
-    drop.marker = PlaceMarker(go, BONK_SPELL_LOOT_BEAM, BONK_LOOT_BEAM_SCALE);
+    drop.marker = PlaceMarker(go, GetLootBeamSpell(gear->quality), BONK_LOOT_BEAM_SCALE);
     m_gearDrops.push_back(drop);
     m_player->GetBonkPlayer()->Notify(GetQualityName(gear->quality) + " gear dropped!");
 }

@@ -1,12 +1,117 @@
 #include "BonkRun.h"
+#include "BonkPlayer.h"
 #include "BonkTelegraph.h"
+#include "Packets/Misc.h"
 #include "Player.h"
 #include "SpellMgr.h"
+#include "World.h"
+#include "Utilities/Random.h"
+
+#include <ctime>
 
 #include <algorithm>
 
 namespace
 {
+    struct BonkSkyWindow
+    {
+        uint32 weight;
+        uint32 firstMinute;
+        uint32 spanMinutes;
+    };
+
+    BonkSkyWindow const BONK_SKY_WINDOWS[] =
+    {
+        { 25, 22 * 60, 6 * 60 },
+        { 13, 19 * 60 + 30, 90 },
+        { 12, 5 * 60, 90 },
+        { 50, 9 * 60, 8 * 60 },
+    };
+
+    uint32 const BONK_MINUTES_PER_DAY = 24 * 60;
+    float const BONK_WEATHER_CHANCE = 20.0f;
+    float const BONK_WEATHER_MIN_GRADE = 0.4f;
+    float const BONK_WEATHER_MAX_GRADE = 1.0f;
+
+    struct BonkMapWeather
+    {
+        char const* mapKey;
+        WeatherType type;
+    };
+
+    BonkMapWeather const BONK_MAP_WEATHER[] =
+    {
+        { "moltencore", WEATHER_TYPE_FINE },
+        { "dunmorogh", WEATHER_TYPE_SNOW },
+        { "tanaris", WEATHER_TYPE_STORM },
+        { "badlands", WEATHER_TYPE_STORM },
+        { "desolace", WEATHER_TYPE_STORM },
+        { "ruinsaq", WEATHER_TYPE_STORM },
+    };
+
+    uint32 const BONK_WEATHER_SOUNDS[][3] =
+    {
+        { 0, 0, 0 },
+        { 8533, 8534, 8535 },
+        { 8536, 8537, 8538 },
+        { 8556, 8557, 8558 },
+    };
+
+    WeatherType GetMapWeather(std::string const& mapKey)
+    {
+        for (BonkMapWeather const& entry : BONK_MAP_WEATHER)
+            if (mapKey == entry.mapKey)
+                return entry.type;
+        return WEATHER_TYPE_RAIN;
+    }
+
+    uint32 GetWeatherSound(WeatherType type, float grade)
+    {
+        if (type > WEATHER_TYPE_STORM || grade < 0.3f)
+            return 0;
+        return BONK_WEATHER_SOUNDS[type][grade < 0.6f ? 0 : grade < 0.9f ? 1 : 2];
+    }
+
+    void SendWeather(Player* player, WeatherType type, float grade)
+    {
+        auto packet = std::make_unique<WorldPackets::Misc::WeatherUpdate>();
+        packet->weatherType = type;
+        packet->grade = grade;
+        packet->soundId = GetWeatherSound(type, grade);
+        packet->instantChange = true;
+        player->GetSession()->SendPacket(std::move(packet));
+    }
+
+    void SendSkyTime(Player* player, time_t gameTime)
+    {
+        auto packet = std::make_unique<WorldPackets::Misc::LoginSetTimeSpeed>();
+        packet->gameTime = uint32(gameTime);
+        packet->gameSpeedMinutesPerSecond = 1.0f / 60.0f;
+        player->GetSession()->SendPacket(std::move(packet));
+    }
+
+    uint32 RollSkyMinute()
+    {
+        uint32 total = 0;
+        for (BonkSkyWindow const& window : BONK_SKY_WINDOWS)
+            total += window.weight;
+        uint32 roll = urand(0, total - 1);
+        for (BonkSkyWindow const& window : BONK_SKY_WINDOWS)
+        {
+            if (roll < window.weight)
+                return (window.firstMinute + urand(0, window.spanMinutes)) % BONK_MINUTES_PER_DAY;
+            roll -= window.weight;
+        }
+        return 12 * 60;
+    }
+
+    time_t AtMinuteOfToday(uint32 minuteOfDay)
+    {
+        time_t const now = sWorld.GetGameTime();
+        std::tm const local = *std::localtime(&now);
+        time_t const midnight = now - (local.tm_hour * HOUR + local.tm_min * MINUTE + local.tm_sec);
+        return midnight + time_t(minuteOfDay) * MINUTE;
+    }
     uint32 const BONK_HERO_LOOK_SPELLS[] =
     {
         33447,
@@ -80,4 +185,49 @@ void BonkRun::RemoveHeroLooks()
     for (size_t ring = 0; ring < size_t(BonkHeroRing::Count); ++ring)
         RemoveHeroRingAuras(BonkHeroRing(ring));
     m_player->RemoveAurasDueToSpell(BONK_OLD_BLOOD_AURA_LOOK);
+}
+
+uint32 BonkRun::GetSkyKey() const
+{
+    return m_sandbox ? 0 : m_stage * 100000 + m_map.id + 1;
+}
+
+time_t BonkRun::GetSkyTime() const
+{
+    uint32 const key = GetSkyKey();
+    if (!key)
+        return sWorld.GetGameTime();
+    if (key != m_skyKey)
+    {
+        m_skyKey = key;
+        m_skyTime = AtMinuteOfToday(RollSkyMinute());
+        bool const wet = roll_chance_f(BONK_WEATHER_CHANCE);
+        m_skyWeather = wet ? uint8(GetMapWeather(m_map.key)) : uint8(WEATHER_TYPE_FINE);
+        m_skyWeatherGrade = wet ? frand(BONK_WEATHER_MIN_GRADE, BONK_WEATHER_MAX_GRADE) : 0.0f;
+    }
+    return m_skyTime;
+}
+
+void BonkRun::UpdateSky()
+{
+    uint32 const key = GetSkyKey();
+    if (!key || key == m_skySentKey || m_player->GetMapId() != m_map.mapId || m_player->IsBeingTeleported())
+        return;
+    m_skySentKey = key;
+    SendSkyTime(m_player, GetSkyTime());
+    SendWeather(m_player, WeatherType(m_skyWeather), m_skyWeatherGrade);
+}
+
+void BonkRun::ClearSky()
+{
+    if (!m_skySentKey || !m_player->GetSession())
+        return;
+    m_skySentKey = 0;
+    SendSkyTime(m_player, sWorld.GetGameTime());
+    SendWeather(m_player, WEATHER_TYPE_FINE, 0.0f);
+}
+
+time_t BonkPlayer::GetSkyTime() const
+{
+    return m_run ? m_run->GetSkyTime() : sWorld.GetGameTime();
 }

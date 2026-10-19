@@ -19180,7 +19180,7 @@ void Player::SendInitialPacketsBeforeAddToMap()
 
     {
         auto packet = std::make_unique<WorldPackets::Misc::LoginSetTimeSpeed>();
-        packet->gameTime = sWorld.GetGameTime();
+        packet->gameTime = GetBonkPlayer() ? GetBonkPlayer()->GetSkyTime() : sWorld.GetGameTime();
         packet->gameSpeedMinutesPerSecond = 1.0f/60.0f; // 1 minute per 60 seconds
         GetSession()->SendPacket(std::move(packet));
     }

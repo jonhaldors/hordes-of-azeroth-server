@@ -61,6 +61,7 @@ class BonkMobAI : public CreatureAI
         void StartStampede(Player* owner, float angle, float length, uint32 windupMs, float damage);
         void LandWindup(uint32 windId);
         bool IsWindingUp(uint32 windId) const;
+        bool ForceAbility(uint32 number);
         static void KnockBackHero(Player* hero, float angle);
         std::string Describe() const;
 
@@ -93,6 +94,8 @@ class BonkMobAI : public CreatureAI
 
         Player* GetOwner() const;
         void Halt();
+        void HoldStill();
+        void KeepHolding();
         bool HasAffix(Affix affix) const { return (m_affixes & (1u << affix)) != 0; }
         void RollAffixes(uint32 count);
         void ScaleHealth(float factor);
@@ -102,6 +105,8 @@ class BonkMobAI : public CreatureAI
         uint32 GetAreaDamage(BonkMobAbility const& ability, SpellEntry const* spellInfo) const;
         uint32 GetShapeDamage(BonkMobAbility const& ability) const;
         void Cast(BonkMobAbility const& ability, Player* owner, bool triggered);
+        void UseAbility(size_t index, Player* owner);
+        void ReportTest(std::string const& text) const;
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);
         void UpdatePhases(uint32 diff, Player* owner);
@@ -111,6 +116,10 @@ class BonkMobAI : public CreatureAI
         bool StartLeap(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
         void StartLines(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
         void StartPools(BonkMobAbility const& ability, Player* owner, BonkRun* run);
+        void StartBreaths(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
+        void StartFrontAndBack(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
+        void StartWalls(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
+        void StartWreath(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
         std::vector<float> GetLineAngles() const;
         bool IsInLines(float x, float y) const;
         void LaunchLeap();
@@ -165,6 +174,10 @@ class BonkMobAI : public CreatureAI
         int32 m_leapTravelMs = 0;
         bool m_leapLaunched = false;
         int32 m_abilityGapTimer = 0;
+        int32 m_forcedAbility = -1;
+        bool m_areaSelfTimed = false;
+        uint32 m_lastLandedWindId = 0;
+        uint32 m_chargesLeft = 0;
         float m_watchX = 0.0f, m_watchY = 0.0f;
         uint32 m_watchTimer = 0;
         uint32 m_windCount = 0;

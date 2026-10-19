@@ -79,7 +79,6 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
         return false;
     }
     char* key = ExtractArg(&args);
-    char* dungeonKey = ExtractArg(&args);
 
     BonkTier const* tier = key ? sBonkMgr.FindTier(key) : nullptr;
     if (!tier)
@@ -90,20 +89,28 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
         return false;
     }
 
-    BonkMap const* dungeon = nullptr;
-    if (dungeonKey)
+    BonkRunChoice choice;
+    while (char* word = ExtractArg(&args))
     {
-        dungeon = sBonkMgr.FindDungeon(dungeonKey);
-        if (!dungeon)
+        std::string const option = word;
+        if (option == "random")
+            continue;
+        if (option == "invade")
+            choice.invade = true;
+        else if (BonkMap const* dungeon = sBonkMgr.FindDungeon(option))
+            choice.dungeon = dungeon;
+        else if (BonkMap const* map = sBonkMgr.FindTierMap(*tier, option))
+            choice.startMap = map;
+        else
         {
-            SendSysMessage("No such dungeon.");
+            PSendSysMessage("%s has no zone or dungeon called %s.", tier->name.c_str(), option.c_str());
             SetSentErrorMessage(true);
             return false;
         }
     }
 
     std::string error;
-    if (!player->GetBonkPlayer()->StartRun(*tier, error, dungeon))
+    if (!player->GetBonkPlayer()->StartRun(*tier, error, choice))
     {
         SendSysMessage(error.c_str());
         SetSentErrorMessage(true);
@@ -262,6 +269,13 @@ bool ChatHandler::HandleBonkSkipCommand(char* args)
         SendSysMessage(run ? "The sandbox has no stage clock." : "You are not in a run.");
         SetSentErrorMessage(true);
         return false;
+    }
+
+    if (run->IsPortalOpen())
+    {
+        run->EnterNextStage();
+        SendSysMessage(run->IsPortalOpen() ? "Still at the portal." : "Entered the next stage.");
+        return true;
     }
 
     uint32 seconds = 0;

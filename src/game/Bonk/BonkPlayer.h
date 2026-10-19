@@ -23,6 +23,7 @@ enum BonkUpgradeUtility : uint8;
 struct BonkMap;
 struct BonkMasteryBonuses;
 struct BonkRunBonuses;
+struct BonkRunChoice;
 struct BonkTier;
 struct BonkWeapon;
 
@@ -38,8 +39,11 @@ class BonkPlayer
         void Update(uint32 diff);
 
         BonkRun* GetRun() const { return m_run.get(); }
+        time_t GetSkyTime() const;
         void PreviewTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);
-        bool StartRun(BonkTier const& tier, std::string& error, BonkMap const* dungeon = nullptr);
+        bool StartRun(BonkTier const& tier, std::string& error);
+        bool StartRun(BonkTier const& tier, std::string& error, BonkRunChoice const& choice);
+        void SendMapInfo() const;
         bool StartSandbox(std::string& error);
         bool IsInSandbox() const;
         void StopRun();
@@ -174,7 +178,7 @@ class BonkPlayer
         void SetTestGod(bool on) { m_testGod = on; }
         bool IsTestGod() const { return m_testGod; }
 
-        void SetAddonReady() { m_addonReady = true; }
+        void SetAddonReady() { m_addonReady = true; m_zoneArtSent = false; }
         bool IsAddonReady() const { return m_addonReady; }
 
         void SendAddon(std::string const& line) const;
@@ -246,6 +250,8 @@ class BonkPlayer
         std::unique_ptr<BonkRun> m_run;
         BonkTelegraphs m_previewTelegraphs;
         bool m_addonReady = false;
+        mutable bool m_zoneArtSent = false;
+        void SendZoneArt() const;
         bool m_firingWeapon = false;
         bool m_equippingGear = false;
         std::map<uint32, SpellTweak> m_spellTweaks;

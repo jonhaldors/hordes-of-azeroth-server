@@ -595,13 +595,13 @@ void BonkRun::QueueSandboxPack(uint32 count)
         "The sandbox is full. Clear some enemies first.");
 }
 
-void BonkRun::SpawnSandboxEnemy(uint32 entry)
+Creature* BonkRun::SpawnSandboxEnemy(uint32 entry)
 {
     BonkMapCreature const* creature = FindMapCreature(entry);
     if (!creature)
     {
         m_player->GetBonkPlayer()->Notify("That enemy is not on any run map.");
-        return;
+        return nullptr;
     }
 
     float x, y, z;
@@ -609,10 +609,111 @@ void BonkRun::SpawnSandboxEnemy(uint32 entry)
         !FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
     {
         m_player->GetBonkPlayer()->Notify("There is no room for it here. Step into the open and try again.");
+        return nullptr;
+    }
+    Creature* mob = SpawnMobAt(*creature, x, y, z);
+    if (mob)
+        m_player->GetBonkPlayer()->Notify(std::string(mob->GetName()) + " has arrived!");
+    return mob;
+}
+
+std::vector<Creature*> BonkRun::GetSandboxBosses() const
+{
+    std::vector<Creature*> bosses;
+    Map* map = m_player->GetMap();
+    for (ObjectGuid const& guid : m_mobs)
+    {
+        Creature* mob = map->GetCreature(guid);
+        BonkMobAI const* ai = mob && mob->IsAlive() ? dynamic_cast<BonkMobAI const*>(mob->AI()) : nullptr;
+        if (ai && (ai->GetKind() == BONK_SPAWN_BOSS || ai->GetKind() == BONK_SPAWN_MINIBOSS))
+            bosses.push_back(mob);
+    }
+    return bosses;
+}
+
+void BonkRun::ListSandboxBosses(BonkSpawnKind kind) const
+{
+    ChatHandler chat(m_player);
+    std::set<uint32> seen;
+    for (auto const& itr : sBonkMgr.GetMaps())
+    {
+        std::string line;
+        for (BonkMapCreature const& creature : itr.second.creatures)
+        {
+            if (creature.kind != kind || !seen.insert(creature.entry).second)
+                continue;
+            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(creature.entry))
+                line += (line.empty() ? "" : ", ") + info->name + " " + std::to_string(creature.entry);
+        }
+        if (!line.empty())
+            chat.SendSysMessage((itr.second.name + ": " + line).c_str());
+    }
+}
+
+void BonkRun::DescribeSandboxBoss(Creature const* mob) const
+{
+    ChatHandler chat(m_player);
+    char line[512];
+    snprintf(line, sizeof(line), "%s has %u health (%.0f%% of a stage boss's). Its moves, for .bonk sandbox ability <number>:",
+        mob->GetName(), mob->GetMaxHealth(), 100.0f * mob->GetMaxHealth() / std::max(1u, GetSpawnHealth(BONK_SPAWN_BOSS, BONK_ARCHETYPE_GRUNT, 1.0f)));
+    chat.SendSysMessage(line);
+    BonkMob const* info = sBonkMgr.GetMob(mob->GetEntry());
+    if (!info || info->abilities.empty())
+    {
+        chat.SendSysMessage("It has no moves.");
         return;
     }
-    if (Creature* mob = SpawnMobAt(*creature, x, y, z))
-        m_player->GetBonkPlayer()->Notify(std::string(mob->GetName()) + " has arrived!");
+    uint32 number = 0;
+    for (BonkMobAbility const& ability : info->abilities)
+    {
+        std::string const name = ability.label.empty() ? "spell " + std::to_string(ability.spellId) : ability.label;
+        snprintf(line, sizeof(line), "%u. %s (every %.0f s, %.0f-%.0f yd%s)", ++number, name.c_str(), ability.cooldownMs / 1000.0f,
+            ability.minRange, ability.maxRange, ability.belowHealth < 100.0f ? (", below " + std::to_string(int32(ability.belowHealth)) + "% health").c_str() : "");
+        chat.SendSysMessage(line);
+    }
+}
+
+bool BonkRun::RunSandboxBossVerb(std::string const& verb, uint32 first, std::string& error)
+{
+    BonkSpawnKind const kind = verb == "miniboss" ? BONK_SPAWN_MINIBOSS : BONK_SPAWN_BOSS;
+    if (verb == "boss" || verb == "miniboss")
+    {
+        if (!first)
+        {
+            ListSandboxBosses(kind);
+            return true;
+        }
+        Creature* mob = SpawnSandboxEnemy(first);
+        BonkMobAI const* ai = mob ? dynamic_cast<BonkMobAI const*>(mob->AI()) : nullptr;
+        if (ai && ai->GetKind() != BONK_SPAWN_BOSS && ai->GetKind() != BONK_SPAWN_MINIBOSS)
+            ChatHandler(m_player).SendSysMessage("That one is not a boss or mini-boss, so its moves are not reported.");
+        if (mob)
+            DescribeSandboxBoss(mob);
+        return mob != nullptr;
+    }
+
+    std::vector<Creature*> const bosses = GetSandboxBosses();
+    if (bosses.empty())
+    {
+        error = "No boss is here. Use .bonk sandbox boss <entry> first.";
+        return false;
+    }
+    if (verb == "bosshealth")
+    {
+        float const percent = float(std::max(1u, std::min(first, 100u)));
+        for (Creature* mob : bosses)
+            mob->SetHealthPercent(percent);
+        m_player->GetBonkPlayer()->Notify("Bosses here are at " + std::to_string(int32(percent)) + "% health.");
+        return true;
+    }
+    for (Creature* mob : bosses)
+        if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+            if (!ai->ForceAbility(first))
+            {
+                error = std::string(mob->GetName()) + " has no move " + std::to_string(first) + ".";
+                return false;
+            }
+    return true;
 }
 
 void BonkRun::ToggleSandbox(uint32 toggle)
@@ -835,6 +936,18 @@ void BonkRun::HealInSandbox()
     m_shield = GetMaxShield();
     m_shieldIdleMs = 0;
     SetNecroticStacks(0);
+}
+
+void BonkRun::EnterSandboxBench()
+{
+    m_sandboxBench = true;
+    m_bonuses = BonkRunBonuses();
+    m_mastery = BonkMasteryBonuses();
+    RemoveSandboxSpells(0);
+    UpdateGear();
+    ApplyPassives();
+    HealInSandbox();
+    m_player->GetBonkPlayer()->Notify("Bench mode is on: talents, account upgrades and gear don't count until you leave the sandbox.");
 }
 
 void BonkRun::ResetSandboxCooldowns()
@@ -1175,14 +1288,19 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         bonk->Notify(first ? "New enemies are as tough as at minute " + std::to_string(first) + " of a run." :
             "Enemy toughness follows your time in the sandbox again.");
     }
+    else if (verb == "boss" || verb == "miniboss" || verb == "bosshealth" || verb == "ability")
+        return RunSandboxBossVerb(verb, first, error);
     else if (verb == "quiet")
     {
         m_sandboxQuietLevels = !m_sandboxQuietLevels;
         bonk->Notify(m_sandboxQuietLevels ? "Level-ups no longer offer choices." : "Level-ups offer choices again.");
     }
+    else if (verb == "bench")
+        EnterSandboxBench();
     else
     {
-        error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|forget|level|clear|heal|cooldowns|god|passive|unkillable|deep|quiet|minute.";
+        error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|forget|level|clear|heal|cooldowns|god|passive|unkillable|deep|quiet|minute|"
+            "boss|miniboss|bosshealth|ability|bench.";
         return false;
     }
     return true;

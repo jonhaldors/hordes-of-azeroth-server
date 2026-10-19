@@ -498,6 +498,7 @@ void BonkPlayer::WriteHeroScreenStats() const
     struct Hero
     {
         std::string name;
+        uint8 classId = 0;
         Record record;
         uint32 items = 0;
         uint32 itemLevels = 0;
@@ -520,15 +521,29 @@ void BonkPlayer::WriteHeroScreenStats() const
     uint32 const accountId = m_player->GetSession()->GetAccountId();
     uint32 const ownGuid = m_player->GetGUIDLow();
 
-    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `guid`, `name` FROM `characters` WHERE `account` = %u", accountId));
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `guid`, `name`, `class` FROM `characters` WHERE `account` = %u", accountId));
     if (result)
     {
         do
         {
             Field* fields = result->Fetch();
-            heroes[fields[0].GetUInt32()].name = fields[1].GetCppString();
+            Hero& hero = heroes[fields[0].GetUInt32()];
+            hero.name = fields[1].GetCppString();
+            hero.classId = fields[2].GetUInt8();
         } while (result->NextRow());
     }
+
+    std::map<uint8, uint32> masteryXp;
+    result = CharacterDatabase.PQuery("SELECT `class`, `xp` FROM `bonk_account_mastery` WHERE `account` = %u", accountId);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            masteryXp[fields[0].GetUInt8()] = fields[1].GetUInt32();
+        } while (result->NextRow());
+    }
+    masteryXp[m_player->GetClass()] = m_masteryXp;
 
     result = CharacterDatabase.PQuery("SELECT s.`guid`, s.`runs`, s.`best_stage`, s.`best_time_sec`, s.`kills`, s.`gold_earned` "
         "FROM `bonk_character_stats` s JOIN `characters` c ON c.`guid` = s.`guid` WHERE c.`account` = %u", accountId);
@@ -585,7 +600,8 @@ void BonkPlayer::WriteHeroScreenStats() const
             << ", goldEarned = " << hero.record.goldEarned
             << ", items = " << hero.items
             << ", itemLevel = " << (hero.items ? hero.itemLevels / hero.items : 0)
-            << ", gearValue = " << hero.gearValue << " },\n";
+            << ", gearValue = " << hero.gearValue
+            << ", mastery = " << BonkMastery::GetLevel(masteryXp[hero.classId]) << " },\n";
     }
     lua << "\t},\n};\n";
     WriteHeroScreenFile(lua.str());
@@ -1476,7 +1492,12 @@ void BonkPlayer::SelectGearTab(uint32 group)
     m_player->GetSession()->SendListInventory(vendor->GetObjectGuid());
 }
 
-bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkMap const* dungeon)
+bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error)
+{
+    return StartRun(tier, error, BonkRunChoice());
+}
+
+bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkRunChoice const& choice)
 {
     if (m_run)
     {
@@ -1490,9 +1511,9 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkMap cons
         return false;
     }
 
-    if (dungeon && !IsTierCleared(tier))
+    if (choice.dungeon && !IsTierCleared(tier))
     {
-        error = "Clear " + tier.name + " first to unlock its dungeons.";
+        error = "Clear " + tier.name + " first to unlock its challenges.";
         return false;
     }
 
@@ -1515,7 +1536,7 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkMap cons
     }
 
     TrimPoolToggles();
-    m_run.reset(new BonkRun(m_player, tier, dungeon));
+    m_run.reset(new BonkRun(m_player, tier, choice));
     if (!m_run->Begin(error))
     {
         m_run.reset();
@@ -1720,6 +1741,9 @@ void BonkPlayer::SendArena(std::string const& npc) const
             challenges + "~" + perkText);
     }
 
+    if (m_addonReady)
+        SendMapInfo();
+
     for (BonkTier const* tierPtr : GetTiersInOrder())
     {
         BonkTier const& tier = *tierPtr;
@@ -1731,7 +1755,7 @@ void BonkPlayer::SendArena(std::string const& npc) const
             for (uint32 mapId : tier.mapIds)
                 if (BonkMap const* map = sBonkMgr.GetMap(mapId))
                     maps += (maps.empty() ? "" : ",") + map->icon + ":" + map->name + ":" + std::to_string(uint32(map->type)) + ":" +
-                        std::to_string(GetBonkMapRewardPercent(map->type));
+                        std::to_string(GetBonkMapRewardPercent(map->type)) + ":" + map->key;
             std::string dungeons;
             bool const cleared = IsTierCleared(tier);
             for (BonkMap const* dungeon : sBonkMgr.GetDungeons())
@@ -1753,6 +1777,60 @@ void BonkPlayer::SendArena(std::string const& npc) const
     if (m_addonReady)
         SendStarters();
     SendAddon("tierend");
+}
+
+namespace
+{
+    std::string MapFraction(float value)
+    {
+        char text[16];
+        std::snprintf(text, sizeof(text), "%.3f", std::max(0.0f, std::min(1.0f, value)));
+        return text;
+    }
+
+    void PlayAreaCenter(BonkMap const& map, float& x, float& y)
+    {
+        std::vector<BonkMapStart> const starts = sBonkMgr.GetMapStarts(map.id);
+        x = map.x;
+        y = map.y;
+        for (BonkMapStart const& start : starts)
+        {
+            x += start.x;
+            y += start.y;
+        }
+        x /= float(starts.size() + 1);
+        y /= float(starts.size() + 1);
+    }
+}
+
+void BonkPlayer::SendZoneArt() const
+{
+    if (m_zoneArtSent)
+        return;
+    m_zoneArtSent = true;
+    for (auto const& itr : sBonkMgr.GetZoneArts())
+        for (BonkZoneOverlay const& overlay : itr.second.overlays)
+            SendAddon("zoneart~" + itr.second.file + "~" + overlay.texture + "~" + std::to_string(overlay.width) + "~" +
+                std::to_string(overlay.height) + "~" + std::to_string(overlay.x) + "~" + std::to_string(overlay.y));
+}
+
+void BonkPlayer::SendMapInfo() const
+{
+    SendZoneArt();
+    for (auto const& itr : sBonkMgr.GetMaps())
+    {
+        BonkMap const& map = itr.second;
+        std::string art = "~~~";
+        if (BonkZoneArt const* zone = map.type == BONK_MAP_OPEN ? sBonkMgr.GetZoneArt(map.zoneId) : nullptr)
+        {
+            float x, y;
+            PlayAreaCenter(map, x, y);
+            float const u = (zone->left - y) / (zone->left - zone->right);
+            float const v = (zone->top - x) / (zone->top - zone->bottom);
+            art = "~" + zone->file + "~" + MapFraction(u) + "~" + MapFraction(v);
+        }
+        SendAddon("mapinfo~" + map.key + "~" + std::to_string(map.mapId) + "~" + map.summary + "~" + map.description + art);
+    }
 }
 
 void BonkPlayer::ResetCharacter()
