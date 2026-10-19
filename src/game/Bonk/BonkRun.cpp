@@ -1171,6 +1171,7 @@ void BonkRun::StartStage()
     ResetMageState();
     ResetShamanState();
     ResetPriestState();
+    ResetRogueState();
     m_bleedHeal = 0.0f;
     m_player->GetBonkPlayer()->SendAddon("mobclear");
 
@@ -1304,6 +1305,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateMage(diff);
     UpdateShaman(diff);
     UpdatePriest(diff);
+    UpdateRogue(diff);
     UpdateTalents();
     UpdateIcePath(diff);
     UpdateWeaponOrbs(diff);
@@ -2964,7 +2966,7 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     if (!damage)
         return 0;
 
-    if (IsCardImmune() || IsIceBlocked())
+    if (IsCardImmune() || IsIceBlocked() || IsHiddenInSmoke())
         return 0;
 
     damage = ApplyPriestDamageTaken(ApplyTalentDamageTaken(damage));
@@ -3288,7 +3290,7 @@ float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit c
         for (OwnedWeapon const& owned : m_weapons)
             if (owned.weapon.spellId == spell->Id && owned.weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT))
                 return std::max(100.0f, chance);
-    return chance;
+    return GetRogueCritChance(spell, chance);
 }
 
 float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
@@ -3314,7 +3316,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
 {
     float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower) * powerShare;
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
-        GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim);
+        GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim);
 
@@ -5180,6 +5182,9 @@ BonkRun::KeywordCloudKind BonkRun::GetCloudKind(OwnedWeapon const& owned) const
     KeywordCloudKind priest;
     if (GetPriestCloudKind(owned, priest))
         return priest;
+    KeywordCloudKind rogue;
+    if (GetRogueCloudKind(owned, rogue))
+        return rogue;
 
     KeywordCloudKind venom;
     venom.lifeMs = BONK_VENOM_CLOUD_MS;
@@ -5282,6 +5287,7 @@ void BonkRun::PulseKeywordCloud(OwnedWeapon const& owned, KeywordCloud const& cl
     for (Creature* mob : GetMobsNear(cloud.x, cloud.y, cloud.radius))
         ApplyKeyword(mob, keyword.keyword, stacks, keyword.durationMs, keyword.damageScale, keyword.spellId);
     OnShamanCloudPulse(owned, cloud);
+    OnRogueCloudPulse(owned, cloud);
 }
 
 void BonkRun::ScatterBomblets(OwnedWeapon const& owned, SpellEntry const* spellInfo, float x, float y, float z)
@@ -5638,7 +5644,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     owned.killed = false;
 
-    if (FirePriestSpell(owned, spellInfo))
+    if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo))
         return;
 
     if (weapon.IsShieldBlock() || weapon.behavior == BONK_BEHAVIOR_WARD)
@@ -6397,6 +6403,12 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             continue;
         }
 
+        if (cast.killingSpree || cast.fanOfKnives || cast.shadowyShuriken)
+        {
+            ResolveRogueCast(*owned, info, cast);
+            continue;
+        }
+
         if (cast.strike)
         {
             Creature* target = map->GetCreature(cast.target);
@@ -6986,11 +6998,12 @@ void BonkRun::HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, 
     m_player->DealSpellDamage(&hit, true);
 }
 
-void BonkRun::OnHeroDodge()
+void BonkRun::OnHeroDodge(Unit* attacker)
 {
     if (m_state != STATE_RUNNING)
         return;
     ++m_dodgesUnreported;
+    OnRogueDodge(attacker);
 }
 
 void BonkRun::OnHeroStruck(Creature* attacker)
@@ -10810,6 +10823,7 @@ void BonkRun::CleanUp()
     ResetMageState();
     ResetShamanState();
     ResetPriestState();
+    ResetRogueState();
     m_bleedHeal = 0.0f;
     m_spellShield = 0;
     m_chestChoices.clear();

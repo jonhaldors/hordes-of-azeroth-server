@@ -230,9 +230,9 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
         if (lust->values[0] >= 1.0f && m_glyphKills % uint32(lust->values[0]) == 0)
         {
             m_glyphHasteUntilMs = m_totalMs + uint32(lust->values[2]);
-            char text[96];
-            snprintf(text, sizeof(text), "Bloodlust! You attack and dots tick %g%% more often for %g seconds.", lust->values[1],
-                lust->values[2] / 1000.0f);
+            char text[160];
+            snprintf(text, sizeof(text), "Your Glyph of Bloodlust awakens. You attack and damage over time ticks %g%% more often for %g seconds.",
+                lust->values[1], lust->values[2] / 1000.0f);
             bonk->Notify(text);
         }
 
@@ -241,7 +241,7 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
         {
             m_soulHarvestUntilMs = m_totalMs + uint32(harvest->values[2]);
             m_player->SendPlaySpellVisualKit(BONK_KIT_SOUL_HARVEST);
-            bonk->Notify("Soul Harvest! You deal " + FormatTimes(harvest->values[1]) + " damage for " +
+            bonk->Notify("Your Glyph of Soul Harvest awakens. You deal " + FormatTimes(harvest->values[1]) + " damage for " +
                 std::to_string(uint32(harvest->values[2] / IN_MILLISECONDS + 0.5f)) + " seconds.");
         }
 }

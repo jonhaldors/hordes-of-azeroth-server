@@ -1479,7 +1479,7 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
 
             if (Player* hero = damageInfo->target->ToPlayer())
                 if (BonkRun* run = hero->GetBonkPlayer()->GetRun())
-                    run->OnHeroDodge();
+                    run->OnHeroDodge(damageInfo->attacker);
             break;
         }
         case MELEE_HIT_BLOCK:

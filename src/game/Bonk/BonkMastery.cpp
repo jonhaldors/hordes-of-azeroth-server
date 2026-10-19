@@ -20,6 +20,9 @@ namespace
     float const BONK_PAIN_SUPPRESSION_POWER_COST = 15.0f;
     float const BONK_SHADOWFORM_DECAY_DAMAGE   = 30.0f;
     float const BONK_SHADOWFORM_HASTE_COST     = 10.0f;
+    float const BONK_MASTER_POISONER_POWER_COST = 15.0f;
+    float const BONK_BLADE_DANCER_CRIT_COST    = 10.0f;
+    float const BONK_MASTER_OF_SUBTLETY_HEALTH_COST = 15.0f;
 }
 
 void BonkMastery::Load()
@@ -332,6 +335,15 @@ void BonkMastery::ApplyCapstoneCost(BonkMasteryBonuses& bonuses)
         case BONK_CAPSTONE_SHADOWFORM:
             bonuses.keywordDamage[BONK_KEYWORD_DECAY] += BONK_SHADOWFORM_DECAY_DAMAGE;
             bonuses.passives[BONK_PASSIVE_HASTE] -= BONK_SHADOWFORM_HASTE_COST;
+            break;
+        case BONK_CAPSTONE_MASTER_POISONER:
+            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_MASTER_POISONER_POWER_COST;
+            break;
+        case BONK_CAPSTONE_BLADE_DANCER:
+            bonuses.passives[BONK_PASSIVE_CRIT] -= BONK_BLADE_DANCER_CRIT_COST;
+            break;
+        case BONK_CAPSTONE_MASTER_OF_SUBTLETY:
+            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_MASTER_OF_SUBTLETY_HEALTH_COST;
             break;
         default:
             break;
