@@ -1341,6 +1341,16 @@ void BonkRun::UpdateOffers()
     if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_gearOfferEntry || !m_glyphOffer.empty())
         return;
 
+    if (m_stress.on)
+    {
+        m_pendingLevels = 0;
+        m_pendingGlyphPicks = 0;
+        m_pendingGear.clear();
+        m_pendingChestChoices.clear();
+        m_pendingLeyOffers = 0;
+        return;
+    }
+
     if (m_pendingGlyphPicks)
         OfferGlyphs();
     else if (!m_pendingChestChoices.empty())

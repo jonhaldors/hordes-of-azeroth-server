@@ -54,7 +54,7 @@ namespace
     uint32 const BONK_SPELL_BARRIER_LOOK      = 26573;
 
     float const BONK_RENEW_SMITE_RANGE        = 30.0f;
-    float const BONK_HALO_INNER               = 8.0f;
+    float const BONK_HALO_INNER               = 5.0f;
     float const BONK_HALO_HEAL_PER_HIT        = 0.5f;
     float const BONK_HALO_HEAL_CAP            = 5.0f;
     int32 const BONK_HALO_ECHO_MS             = 300;
