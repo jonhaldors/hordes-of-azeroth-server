@@ -186,7 +186,7 @@ void BonkRun::DropGear(Creature const* mob, BonkSpawnKind kind)
     std::vector<BonkGear const*> pool;
     for (uint8 quality = RollGearQuality(kind); quality >= ITEM_QUALITY_UNCOMMON && pool.empty(); --quality)
         for (auto const& itr : sBonkMgr.GetGear())
-            if (itr.second.quality == quality && (itr.second.allowableClass & classMask))
+            if (itr.second.quality == quality && (itr.second.allowableClass & classMask) && itr.second.DropsOn(m_tier.id))
                 pool.push_back(&itr.second);
     if (pool.empty())
         return;

@@ -742,12 +742,27 @@ namespace
         caster->SendObjectMessageToSet(std::move(packet), true);
     }
 
+    uint32 const BONK_SPELL_AMBUSH_PLAYER   = 8676;
+    uint32 const BONK_SPELL_AMBUSH_NPC      = 24337;
+    uint32 const BONK_SPELL_BACKSTAB_PLAYER = 25300;
+    uint32 const BONK_SPELL_BACKSTAB_TEST   = 8627;
+
+    uint32 GetQuietStrikeLook(uint32 spellId)
+    {
+        switch (spellId)
+        {
+            case BONK_SPELL_AMBUSH_PLAYER:   return BONK_SPELL_AMBUSH_NPC;
+            case BONK_SPELL_BACKSTAB_PLAYER: return BONK_SPELL_BACKSTAB_TEST;
+            default:                         return spellId;
+        }
+    }
+
     void ShowStrikeOn(Unit* caster, SpellEntry const* spellInfo, Unit* target)
     {
         auto packet = std::make_unique<WorldPackets::Spell::SpellGo>();
         packet->casterGuid = caster->GetObjectGuid();
         packet->unitCasterGuid = caster->GetObjectGuid();
-        packet->spellId = spellInfo->Id;
+        packet->spellId = GetQuietStrikeLook(spellInfo->Id);
         packet->castFlags = CAST_FLAG_UNKNOWN9;
         packet->hitTargets.push_back(target->GetObjectGuid());
         packet->targets.setUnitTarget(target);

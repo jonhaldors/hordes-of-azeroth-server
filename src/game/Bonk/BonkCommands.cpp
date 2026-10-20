@@ -588,6 +588,7 @@ bool ChatHandler::HandleBonkHelloCommand(char*)
     BonkCodex::SendKeywordGlossary(bonk);
     bonk->SendGlyphInfo();
     bonk->SendMasteryState();
+    bonk->FlushMasteryNotice();
     bonk->SendWallet();
     bonk->SendDash();
     sBonkQuests.SendLog(m_session->GetPlayer(), "");

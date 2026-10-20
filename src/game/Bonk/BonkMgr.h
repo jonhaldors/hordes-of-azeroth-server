@@ -1163,6 +1163,9 @@ struct BonkGear
     uint8 quality = 2;
     uint32 keepEntry = 0;
     uint32 allowableClass = 0;
+    uint32 tierId = 0;
+
+    bool DropsOn(uint32 runTierId) const { return !tierId || tierId == runTierId; }
 };
 
 class BonkMgr

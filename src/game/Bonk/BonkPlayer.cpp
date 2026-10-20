@@ -128,6 +128,7 @@ void BonkPlayer::OnLogin()
     LoadMastery();
     LoadStarter();
     sBonkQuests.OnLogin(m_player);
+    ReconcileMastery();
 
     ResetCharacter();
     ClearAuras();
@@ -240,6 +241,25 @@ void BonkPlayer::LoadMastery()
                 m_masteryRanks[node->id] = std::min(fields[1].GetUInt8(), node->maxRank);
         } while (result->NextRow());
     }
+}
+
+void BonkPlayer::ReconcileMastery()
+{
+    uint32 const earned = GetMasteryPoints();
+    if (GetMasterySpent() <= earned)
+        return;
+    std::string ignored;
+    if (ResetMastery(ignored))
+        m_masteryNotice = "Mastery levels were recalculated, so your talents were reset. You have " + std::to_string(earned) +
+            (earned == 1 ? " talent point" : " talent points") + " to spend again.";
+}
+
+void BonkPlayer::FlushMasteryNotice()
+{
+    if (m_masteryNotice.empty())
+        return;
+    Notify(m_masteryNotice);
+    m_masteryNotice.clear();
 }
 
 std::string BonkPlayer::GetClassName() const

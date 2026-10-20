@@ -1993,7 +1993,7 @@ void BonkMgr::LoadGear()
 {
     m_gear.clear();
 
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `quality`, `keep_entry` FROM `bonk_gear`"));
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `quality`, `keep_entry`, `tier` FROM `bonk_gear`"));
     if (!result)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk run gear.");
@@ -2008,6 +2008,7 @@ void BonkMgr::LoadGear()
         gear.entry = fields[0].GetUInt32();
         gear.quality = fields[1].GetUInt8();
         gear.keepEntry = fields[2].GetUInt32();
+        gear.tierId = fields[3].GetUInt32();
 
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(gear.entry);
         if (!proto)

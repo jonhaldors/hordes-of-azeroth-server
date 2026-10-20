@@ -51,6 +51,8 @@ namespace
     uint32 const BONK_SPELL_CALTROPS_LOOK     = 21070;
     uint32 const BONK_SPELL_SMOKE_BOMB_LOOK   = 8817;
     uint32 const BONK_SPELL_SHURIKEN_LOOK     = 13398;
+    uint32 const BONK_KIT_THROW               = 1184;
+    uint32 const BONK_THROW_ANIMATION_GAP_MS  = 400;
     uint32 const BONK_KIT_SHURIKEN_IMPACT     = 1946;
     float const BONK_SHURIKEN_SPEED           = 20.0f;
 
@@ -753,6 +755,12 @@ void BonkRun::TossShurikens(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    uint32 const now = WorldTimer::getMSTime();
+    if (WorldTimer::getMSTimeDiff(m_castAnimationMs, now) >= BONK_THROW_ANIMATION_GAP_MS)
+    {
+        m_castAnimationMs = now;
+        m_player->SendPlaySpellVisualKit(BONK_KIT_THROW);
+    }
     if (SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_SHURIKEN_LOOK))
         spellInfo = look;
     std::stable_partition(mobs.begin(), mobs.end(), [this](Creature const* mob)

@@ -81,8 +81,8 @@ enum BonkCapstone : uint8
 
 uint32 const BONK_MASTERY_MAX_LEVEL = 30;
 uint32 const BONK_MASTERY_XP_BASE   = 50;
-uint32 const BONK_MASTERY_XP_STEP   = 10;
-uint32 const BONK_MASTERY_XP_CURVE  = 3;
+uint32 const BONK_MASTERY_XP_STEP   = 8;
+uint32 const BONK_MASTERY_XP_CURVE  = 1;
 uint32 const BONK_MASTERY_POINTS_PER_ROW = 5;
 
 struct BonkMasteryTree

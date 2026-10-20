@@ -104,6 +104,7 @@ class BonkPlayer
         void AddMasteryXp(uint32 xp);
         bool LearnMastery(uint32 nodeId, std::string& message);
         bool ResetMastery(std::string& message);
+        void FlushMasteryNotice();
         bool RefundMastery(uint32 nodeId, std::string& message);
         BonkMasteryBonuses GetMasteryBonuses() const;
         void SendMasteryState() const;
@@ -239,6 +240,7 @@ class BonkPlayer
 
         void LoadPurchases();
         void LoadMastery();
+        void ReconcileMastery();
         void LoadStarter();
         void GiveStarterBags();
         void TeachWeaponSkills();
@@ -305,6 +307,7 @@ class BonkPlayer
         ObjectGuid m_shopNpc;
         ObjectGuid m_spellbookKeeper;
         std::string m_shopNpcName;
+        std::string m_masteryNotice;
 
         float GetDashDistance() const;
         uint32 GetDashMaxCharges() const;
