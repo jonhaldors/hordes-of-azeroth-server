@@ -176,6 +176,7 @@ class BonkRun
         };
         bool IsOwnVault(GameObject const* vault) const;
         void OpenVault();
+        void CloseVault();
         bool PutInVault(uint32 guidLow, std::string& error);
         bool TakeFromVault(uint32 guidLow, std::string& error);
         std::vector<VaultFind> GetVaultFinds() const;
@@ -608,6 +609,7 @@ class BonkRun
         void UpdateDefensive(uint32 diff);
         void UpdatePets(OwnedWeapon& owned);
         void UpdatePetTargets(uint32 diff);
+        uint32 GetPetPreyRank(Creature const* mob) const;
         float GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& family) const;
         void UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey);
         bool Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey);
@@ -1056,6 +1058,7 @@ class BonkRun
         mutable uint8 m_skyWeather = 0;
         mutable float m_skyWeatherGrade = 0.0f;
         bool m_vendorOpen = false;
+        bool m_vaultOpen = false;
         uint32 m_nextMiniEventMs = 0;
         BonkMiniEventType m_lastMiniEvent = MAX_BONK_MINI_EVENT;
         float m_gruntRadius = 0.0f;

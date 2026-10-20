@@ -182,6 +182,7 @@ namespace
     uint32 const BONK_ORB_MERGE_SLIDE_MS   = 400;
     float const BONK_ORB_MERGE_SLIDE_SPEED = 12.0f;
     float const BONK_ORB_LIFT              = 0.5f;
+    float const BONK_ORB_GROUND_SEARCH     = 6.0f;
     float const BONK_ORB_RISE_SPEED        = 2.0f;
 
     size_t const BONK_START_SPELL_SLOTS   = 3;
@@ -368,6 +369,7 @@ namespace
     size_t const BONK_MAX_TRAPS            = 8;
     float const BONK_TRAP_AWARE_RANGE      = 25.0f;
     float const BONK_TRAP_SPACING          = 3.0f;
+    float const BONK_TRAP_GROUND_SEARCH    = 30.0f;
     uint32 const BONK_TRAP_CHECK_MS        = 100;
     uint32 const BONK_THROWN_TRAP_ARM_MS   = 400;
     float const BONK_TRAP_THROW_RANGE      = 20.0f;
@@ -716,14 +718,6 @@ namespace
         return -1;
     }
 
-    std::string DescribeEvolution(BonkWeapon const& weapon)
-    {
-        std::string const names = sBonkMgr.DescribeEvolutionNames(weapon.id);
-        if (names.empty())
-            return "";
-        return " Can evolve into " + names + " from rank " + std::to_string(BONK_EVOLVE_RANK) + ".";
-    }
-
     void CastAtGround(Player* player, SpellEntry const* spellInfo, optional<int32> const* basePoints, float x, float y, float z)
     {
         Spell* spell = new Spell(player, spellInfo, true);
@@ -731,8 +725,9 @@ namespace
             if (basePoints[i])
                 spell->m_currentBasePoints[i] = *basePoints[i];
 
+        float const ground = player->GetMap()->GetHeight(x, y, z + 3.0f, true, 10.0f);
         SpellCastTargets targets;
-        targets.setDestination(x, y, z);
+        targets.setDestination(x, y, ground > INVALID_HEIGHT ? ground : z);
         spell->prepare(std::move(targets));
     }
 
@@ -1395,7 +1390,7 @@ void BonkRun::UpdateOffers()
         m_lastLevel = level;
     }
 
-    if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_gearOfferEntry || !m_glyphOffer.empty())
+    if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_vaultOpen || m_gearOfferEntry || !m_glyphOffer.empty())
         return;
 
     if (m_stress.on)
@@ -4166,7 +4161,7 @@ void BonkRun::OpenPortal(Creature* boss)
     }
 
     if (!last)
-        bonk->Notify("You cleared stage " + std::to_string(m_stage) + "! Take the portal to the next stage, or go home.");
+        bonk->Notify("You cleared stage " + std::to_string(m_stage) + "! Take the portal to the next stage, or return to the outpost.");
     else if (!m_tier.endless)
         bonk->Notify("Victory! You cleared " + m_tier.name + ". Take the portal home with your loot.");
     else if (m_stage == m_tier.stages)
@@ -5878,6 +5873,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(spellId);
         tweak.areaScale = areaScale;
         tweak.chainBonus = 0;
+        tweak.jumpRadius = weapon.HasFlag(BONK_WEAPON_FLAG_LONG_JUMPS) ? BONK_LONG_JUMP_RADIUS : CHAIN_SPELL_JUMP_RADIUS;
         tweak.durationMs = weapon.durationMs;
         tweak.durationScale = GetWeaponDurationScale(owned);
         tweak.weaponDamage = weapon.weaponDamage ? std::max(1, int32(GetWeaponDamage(owned))) : 0;
@@ -7307,6 +7303,9 @@ void BonkRun::DropTraps(OwnedWeapon& owned, bool armed)
     float cx = m_player->GetPositionX();
     float cy = m_player->GetPositionY();
     float cz = m_player->GetPositionZ();
+    float const ground = map->GetHeight(cx, cy, cz + 0.5f, true, BONK_TRAP_GROUND_SEARCH);
+    if (ground > INVALID_HEIGHT)
+        cz = ground;
     float const deploy = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_DEPLOY);
     if (deploy > 0.0f)
     {
@@ -8040,6 +8039,12 @@ bool BonkRun::Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey)
     return false;
 }
 
+uint32 BonkRun::GetPetPreyRank(Creature const* mob) const
+{
+    bool const isTreasureGoblin = m_miniEventActive && m_miniEvent.type == BONK_MINI_EVENT_GOBLIN && mob->GetObjectGuid() == m_miniEvent.target;
+    return isTreasureGoblin ? 0 : GetKindRank(mob);
+}
+
 void BonkRun::UpdatePetTargets(uint32 diff)
 {
     m_petTimer += diff;
@@ -8061,7 +8066,7 @@ void BonkRun::UpdatePetTargets(uint32 diff)
     std::vector<Creature*> const prey = GetMobsInRange(BONK_PET_HUNT_RANGE);
     uint32 biggest = 0;
     for (Creature* mob : prey)
-        biggest = std::max(biggest, GetKindRank(mob));
+        biggest = std::max(biggest, GetPetPreyRank(mob));
 
     Map* map = m_player->GetMap();
     uint32 const now = WorldTimer::getMSTime();
@@ -8084,7 +8089,7 @@ void BonkRun::UpdatePetTargets(uint32 diff)
         }
 
         Creature* victim = pet->GetVictim() ? pet->GetVictim()->ToCreature() : nullptr;
-        if (victim && victim->IsAlive() && victim->IsWithinDistInMap(m_player, BONK_PET_HUNT_RANGE) && GetKindRank(victim) >= biggest)
+        if (victim && victim->IsAlive() && victim->IsWithinDistInMap(m_player, BONK_PET_HUNT_RANGE) && GetPetPreyRank(victim) >= biggest)
         {
             hunted.push_back(victim->GetObjectGuid());
             if (owned.weapon.behavior == BONK_BEHAVIOR_PET)
@@ -8132,7 +8137,7 @@ void BonkRun::UpdatePetTargets(uint32 diff)
             };
             Creature* target = nullptr;
             if (biggest > 0)
-                target = nearest([biggest](Creature* mob) { return GetKindRank(mob) == biggest; });
+                target = nearest([this, biggest](Creature* mob) { return GetPetPreyRank(mob) == biggest; });
             else
             {
                 for (Creature* mob : prey)
@@ -8930,6 +8935,9 @@ void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
 
 bool BonkRun::SpawnOrb(float x, float y, float z, uint32 experience, BonkOrb colour)
 {
+    float const ground = m_player->GetMap()->GetHeight(x, y, z + BONK_ORB_GROUND_SEARCH, true, 2.0f * BONK_ORB_GROUND_SEARCH);
+    if (ground > INVALID_HEIGHT && ground > z)
+        z = ground;
     Creature* orb = m_player->SummonCreature(GetOrbEntry(colour), x, y, z, 0.0f,
         TEMPSUMMON_TIMED_DESPAWN, BONK_ORB_LIFETIME_MS, false, 0, &InstallOrbAI);
     if (!orb)
@@ -10369,7 +10377,7 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
         size_t const firstSentence = description.find(". ");
         if (weapon->IsBlink() && IsBlinkDash() && firstSentence != std::string::npos)
             description = description.substr(firstSentence + 2);
-        return TagBonkWeaponDescription(*weapon, description) + DescribeEvolution(*weapon);
+        return TagBonkWeaponDescription(*weapon, description);
     }
     if (offer.step == BONK_STEP_EVOLVE)
     {
@@ -10996,7 +11004,7 @@ void BonkRun::SetMenuOpen(bool open)
             SetPaused(true);
         return;
     }
-    if (m_offer.empty() && m_leyOffer.empty() && !m_vendorOpen && !m_gearOfferEntry && m_glyphOffer.empty())
+    if (m_offer.empty() && m_leyOffer.empty() && !m_vendorOpen && !m_vaultOpen && !m_gearOfferEntry && m_glyphOffer.empty())
         SetPaused(false);
     UpdateOffers();
 }

@@ -97,15 +97,15 @@ namespace
 
     uint32 const BONK_CARAVAN_ENTRY          = 11564;
     float const BONK_CARAVAN_START           = 25.0f;
-    float const BONK_CARAVAN_LENGTH          = 120.0f;
+    float const BONK_CARAVAN_LENGTH          = 160.0f;
     float const BONK_CARAVAN_LEG             = 8.0f;
     float const BONK_CARAVAN_HALF_WIDTH      = 2.5f;
-    float const BONK_CARAVAN_SPEED           = 3.5f;
-    uint32 const BONK_CARAVAN_SPARE_SECONDS  = 20;
-    uint32 const BONK_CARAVAN_BLOWS[3]       = { 70, 55, 45 };
+    float const BONK_CARAVAN_SPEED           = 2.6f;
+    uint32 const BONK_CARAVAN_SPARE_SECONDS  = 3;
+    uint32 const BONK_CARAVAN_BLOWS[3]       = { 40, 32, 26 };
     float const BONK_CARAVAN_REACH           = 5.0f;
-    int32 const BONK_CARAVAN_WAVE_MS         = 7000;
-    uint32 const BONK_CARAVAN_RAIDERS        = 2;
+    int32 const BONK_CARAVAN_WAVE_MS         = 5000;
+    uint32 const BONK_CARAVAN_RAIDERS        = 3;
     float const BONK_CARAVAN_RAID_DISTANCE   = 22.0f;
     uint32 const BONK_CARAVAN_CHEST_CHOICES  = 4;
     char const* const BONK_CARAVAN_ICON      = "Ability_Mount_Kodo_01";

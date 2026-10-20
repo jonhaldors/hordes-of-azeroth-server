@@ -2111,6 +2111,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
         radius = GetSpellMaxRange(sSpellRangeStore.LookupEntry(m_spellInfo->rangeIndex));
 
     uint32 EffectChainTarget = m_spellInfo->EffectChainTarget[effIndex];
+    float chainJumpRadius = CHAIN_SPELL_JUMP_RADIUS;
 
     if (Unit* realCaster = GetAffectiveCaster())
     {
@@ -2118,6 +2119,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
         {
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RADIUS, radius, this);
             modOwner->ApplySpellMod(m_spellInfo->Id, SPELLMOD_JUMP_TARGETS, EffectChainTarget, this);
+            chainJumpRadius = modOwner->GetBonkPlayer()->GetChainJumpRadius(m_spellInfo->Id);
 
             if (m_spellInfo->EffectRadiusIndex[effIndex])
                 radius *= modOwner->GetBonkPlayer()->GetAreaScale(m_spellInfo->Id);
@@ -2160,7 +2162,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
         {
             m_targets.m_targetMask = 0;
             unMaxTargets = EffectChainTarget;
-            float max_range = radius + unMaxTargets * CHAIN_SPELL_JUMP_RADIUS;
+            float max_range = radius + unMaxTargets * chainJumpRadius;
 
             UnitList tempTargetUnitMap;
 
@@ -2199,7 +2201,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
             while (t && next != tempTargetUnitMap.end())
             {
-                if (!prev->IsWithinDist(*next, CHAIN_SPELL_JUMP_RADIUS))
+                if (!prev->IsWithinDist(*next, chainJumpRadius))
                     break;
 
                 if (!(m_spellInfo->AttributesEx2 & SPELL_ATTR_EX2_IGNORE_LINE_OF_SIGHT) && !prev->IsWithinLOSInMap(*next))
@@ -2222,7 +2224,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
         {
             m_targets.m_targetMask = 0;
             unMaxTargets = EffectChainTarget;
-            float max_range = radius + unMaxTargets * CHAIN_SPELL_JUMP_RADIUS;
+            float max_range = radius + unMaxTargets * chainJumpRadius;
             UnitList tempTargetUnitMap;
             {
                 MaNGOS::AnyFriendlyUnitInObjectRangeCheck u_check(m_caster, max_range);
@@ -2259,7 +2261,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
             while (t && next != tempTargetUnitMap.end())
             {
-                if (!prev->IsWithinDist(*next, CHAIN_SPELL_JUMP_RADIUS))
+                if (!prev->IsWithinDist(*next, chainJumpRadius))
                     break;
 
                 if (!(m_spellInfo->AttributesEx2 & SPELL_ATTR_EX2_IGNORE_LINE_OF_SIGHT) && !prev->IsWithinLOSInMap(*next))
@@ -2324,7 +2326,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     max_range = radius;
                 else
                     //FIXME: This very like horrible hack and wrong for most spells
-                    max_range = radius + unMaxTargets * CHAIN_SPELL_JUMP_RADIUS;
+                    max_range = radius + unMaxTargets * chainJumpRadius;
 
                 UnitList tempTargetUnitMap;
 
@@ -2356,7 +2358,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
                 while (t && next != tempTargetUnitMap.end())
                 {
-                    if (!prev->IsWithinDist(*next, CHAIN_SPELL_JUMP_RADIUS))
+                    if (!prev->IsWithinDist(*next, chainJumpRadius))
                         break;
 
                     if (!m_spellInfo->HasAttribute(SPELL_ATTR_EX2_IGNORE_LINE_OF_SIGHT) && !prev->IsWithinLOSInMap(*next))
@@ -2944,7 +2946,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             else
             {
                 unMaxTargets = EffectChainTarget;
-                float max_range = radius + unMaxTargets * CHAIN_SPELL_JUMP_RADIUS;
+                float max_range = radius + unMaxTargets * chainJumpRadius;
 
                 UnitList tempTargetUnitMap;
 
@@ -2968,7 +2970,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
                 while (t && next != tempTargetUnitMap.end())
                 {
-                    if (!prev->IsWithinDist(*next, CHAIN_SPELL_JUMP_RADIUS))
+                    if (!prev->IsWithinDist(*next, chainJumpRadius))
                     {
                         ++next;
                         continue;

@@ -33,9 +33,9 @@ namespace
     float const BONK_HEARTH_CHANCE_MINIBOSS = 30.0f;
     float const BONK_HEARTH_CHANCE_ELITE    = 3.0f;
     float const BONK_HEARTH_RADIUS       = 5.0f;
-    uint32 const BONK_HEARTH_MS          = 10000;
+    uint32 const BONK_HEARTH_MS          = 15000;
     float const BONK_HEARTH_LORE_STEP    = 20.0f;
-    uint32 const BONK_HEARTH_MIN_MS      = 5000;
+    uint32 const BONK_HEARTH_MIN_MS      = 8000;
     uint32 const BONK_HEARTH_SEND_MS     = 250;
     char const* const BONK_HEARTH_LABEL  = "Hearthstone";
     float const BONK_VAULT_REACH         = 8.0f;
@@ -481,8 +481,7 @@ void BonkRun::MaybeDropHearthstone(BonkSpawnKind kind)
     if (!m_player->StoreNewItem(dest, BONK_ITEM_HEARTHSTONE, true))
         return;
     m_hearthDropped = true;
-    m_player->GetBonkPlayer()->Notify("You found a Hearthstone! Use it, then stand in its ring for " +
-        std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds to go home with your loot.");
+    m_player->GetBonkPlayer()->NotifyFind("You found a Hearthstone! Save it for an emergency: it ends the run early and takes you back to the outpost with your Extraction Vault item.");
 }
 
 bool BonkRun::UseItem(Item* item)
@@ -509,7 +508,7 @@ bool BonkRun::UseItem(Item* item)
     m_hearthMs = 0;
     m_hearthSendMs = 0;
     m_hearthShown = false;
-    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds to go home" +
+    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds to return to the outpost" +
         (IsVaultEmptyWithFinds() ? ". Put your best find in the Extraction Vault first!" : " with your loot!"));
     return true;
 }
@@ -538,7 +537,7 @@ void BonkRun::UpdateHearth(uint32 diff)
     {
         bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~100");
         EndHearth();
-        bonk->Notify("Going home!");
+        bonk->Notify("Returning to the outpost!");
         Finish(true);
         return;
     }
@@ -602,6 +601,7 @@ void BonkRun::DespawnVault()
         if (GameObject* vault = map->GetGameObject(m_vaultGuid))
             vault->Delete();
     m_vaultGuid.Clear();
+    m_vaultOpen = false;
     if (m_player->IsInWorld())
         m_player->GetBonkPlayer()->SendAddon("vaultclose");
 }
@@ -698,7 +698,21 @@ bool BonkRun::CheckVaultReach(std::string& error) const
 
 void BonkRun::OpenVault()
 {
+    if (!m_vaultOpen && m_state == STATE_RUNNING)
+    {
+        m_vaultOpen = true;
+        SetPaused(true);
+    }
     SendVault();
+}
+
+void BonkRun::CloseVault()
+{
+    if (!m_vaultOpen)
+        return;
+    m_vaultOpen = false;
+    SetPaused(false);
+    UpdateOffers();
 }
 
 void BonkRun::SendVault() const

@@ -245,6 +245,7 @@ struct BonkTier
     std::string key;
     std::string name;
     std::string description;
+    std::string details;
     std::string art;
     float healthMultiplier = 1.0f;
     float damageMultiplier = 1.0f;
@@ -322,10 +323,12 @@ enum BonkWeaponFlags : uint32
     BONK_WEAPON_FLAG_ELEMENTAL_SHIFT  = 0x2000000,
     BONK_WEAPON_FLAG_AOE              = 0x4000000,
     BONK_WEAPON_FLAG_TOTEM            = 0x8000000,
+    BONK_WEAPON_FLAG_LONG_JUMPS       = 0x10000000,
 };
 
 float const BONK_CLEAVE_RADIUS    = 6.0f;
 float const BONK_SPREAD_RADIUS    = 10.0f;
+float const BONK_LONG_JUMP_RADIUS = 20.0f;
 
 enum BonkRarity : uint8
 {

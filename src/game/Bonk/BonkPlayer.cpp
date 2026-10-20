@@ -813,12 +813,12 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
     }
     if (BonkQuests::IsTicketUnlock(type) && !IsVisitingShop(BONK_SHOP_TALENTS))
     {
-        message = type == BONK_REWARD_CARD ? "Visit Sayge at camp to unlock Darkmoon Cards." : "Visit Sayge at camp to unlock Glyphs.";
+        message = type == BONK_REWARD_CARD ? "Visit Sayge at the outpost to unlock Darkmoon Cards." : "Visit Sayge at the outpost to unlock Glyphs.";
         return false;
     }
     if (!BonkQuests::IsTicketUnlock(type) && !IsAtSpellbook())
     {
-        message = "Visit the Spellbook Keeper at camp to unlock " + name + ".";
+        message = "Visit the Spellbook Keeper at the outpost to unlock " + name + ".";
         return false;
     }
 
@@ -1659,6 +1659,14 @@ void BonkPlayer::Notify(std::string const& text) const
         ChatHandler(m_player).SendSysMessage(text.c_str());
 }
 
+void BonkPlayer::NotifyFind(std::string const& text) const
+{
+    if (m_addonReady)
+        SendAddon("find~" + text);
+    else
+        ChatHandler(m_player).SendSysMessage(text.c_str());
+}
+
 void BonkPlayer::SendGearInfo() const
 {
     for (auto const& itr : sBonkMgr.GetItemStats())
@@ -1766,7 +1774,7 @@ void BonkPlayer::SendArena(std::string const& npc) const
                 dungeons += (dungeons.empty() ? "" : ",") + dungeon->key + ":" + dungeon->icon + ":" + dungeon->name + ":" + (cleared ? "1" : "0");
             SendAddon("tier~" + std::to_string(tier.id) + "~" + tier.key + "~" + tier.name + "~" + (unlocked ? "1" : "0") + "~" +
                 (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best) + "~" + tier.description + "~" + tier.art + "~" + maps + "~" +
-                std::to_string(tier.stages) + "~" + (tier.endless ? "1" : "0") + "~" + dungeons);
+                std::to_string(tier.stages) + "~" + (tier.endless ? "1" : "0") + "~" + dungeons + "~" + tier.details);
         }
         else if (unlocked)
             ChatHandler(m_player).PSendSysMessage("  %s (best: stage %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());
@@ -1958,7 +1966,7 @@ void BonkPlayer::UpdateReviveOutsideRun(uint32 diff)
     m_player->ResurrectPlayer(1.0f);
     m_player->SpawnCorpseBones();
     TeleportToCamp();
-    Notify("You were brought back to camp.");
+    Notify("You were brought back to the outpost.");
 }
 
 void BonkPlayer::SitAtCamp()

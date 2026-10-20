@@ -342,7 +342,7 @@ bool BonkPlayer::StartSandbox(std::string& error)
     else if (m_run)
         error = "You are already in a run. Use .bonk stop to leave it.";
     else if (!IsAtCamp())
-        error = "Go back to camp to enter the sandbox.";
+        error = "Go back to the outpost to enter the sandbox.";
     else if (m_player->IsInCombat())
         error = "You can't enter the sandbox while in combat.";
     else if (m_player->IsTaxiFlying())

@@ -273,7 +273,7 @@ bool GOHello_go_bonk_portal(Player* player, GameObject* go)
         std::string const text = std::string(endless ? "Go on to Endless stage " : "Go on to stage ") + std::to_string(run->GetStage() + 1) + ": " + next->name;
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, text.c_str(), GOSSIP_SENDER_MAIN, PORTAL_ACTION_NEXT);
     }
-    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Return to camp (ends the run)", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME);
+    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Return to the outpost (ends the run)", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME);
     player->SEND_GOSSIP_MENU(BONK_TEXT_PORTAL, go->GetObjectGuid());
     return true;
 }

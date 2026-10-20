@@ -179,6 +179,9 @@ bool BonkRun::ChooseGlyph(uint32 choice, std::string& error)
             case BONK_GLYPH_PRODIGY:
                 RankUpStarter(uint32(glyph->values[0]));
                 break;
+            case BONK_GLYPH_DASH:
+                bonk->SendDash();
+                break;
             default:
                 break;
         }

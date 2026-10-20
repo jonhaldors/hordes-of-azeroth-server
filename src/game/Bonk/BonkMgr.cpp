@@ -295,7 +295,7 @@ void BonkMgr::LoadTiers()
         "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes`, "
-        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth` FROM `bonk_tier`"));
+        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth`, `details` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -341,6 +341,7 @@ void BonkMgr::LoadTiers()
         tier.endless = fields[30].GetUInt8() != 0;
         tier.veteranChance = fields[31].GetFloat();
         tier.chestCostMinuteGrowth = fields[32].GetFloat();
+        tier.details = fields[33].GetCppString();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());

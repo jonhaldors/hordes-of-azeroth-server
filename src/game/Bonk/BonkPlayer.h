@@ -4,6 +4,7 @@
 #include "BonkTelegraph.h"
 #include "Common.h"
 #include "ObjectGuid.h"
+#include "SharedDefines.h"
 
 #include <algorithm>
 #include <array>
@@ -124,6 +125,7 @@ class BonkPlayer
         {
             float areaScale = 1.0f;
             uint32 chainBonus = 0;
+            float jumpRadius = CHAIN_SPELL_JUMP_RADIUS;
             uint32 durationMs = 0;
             float durationScale = 1.0f;
             int32 weaponDamage = 0;
@@ -143,6 +145,11 @@ class BonkPlayer
         {
             SpellTweak const* tweak = FindSpellTweak(spellId);
             return tweak ? tweak->chainBonus : 0;
+        }
+        float GetChainJumpRadius(uint32 spellId) const
+        {
+            SpellTweak const* tweak = FindSpellTweak(spellId);
+            return tweak ? tweak->jumpRadius : CHAIN_SPELL_JUMP_RADIUS;
         }
         bool StrikesOneTargetPerCast(uint32 spellId) const
         {
@@ -183,6 +190,7 @@ class BonkPlayer
 
         void SendAddon(std::string const& line) const;
         void Notify(std::string const& text) const;
+        void NotifyFind(std::string const& text) const;
         void SendGlyphInfo() const;
         uint32 GetPoolToggleSlots() const;
         void TrimPoolToggles() const;

@@ -308,6 +308,12 @@ bool ChatHandler::HandleBonkVaultCommand(char* args)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     char* action = ExtractLiteralArg(&args);
+    if (action && !strcmp(action, "close"))
+    {
+        if (run)
+            run->CloseVault();
+        return true;
+    }
     uint32 guidLow = 0;
     if (!run || !action || (strcmp(action, "put") && strcmp(action, "take")) || !ExtractUInt32(&args, guidLow))
     {
@@ -609,7 +615,7 @@ bool ChatHandler::HandleBonkCampCommand(char*)
     }
     if (player->IsInCombat() || player->IsTaxiFlying())
     {
-        SendSysMessage("You can't go back to camp right now.");
+        SendSysMessage("You can't go back to the outpost right now.");
         SetSentErrorMessage(true);
         return false;
     }
