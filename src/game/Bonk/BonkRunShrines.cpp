@@ -27,6 +27,7 @@ namespace
     };
     ShrineCount const BONK_SHRINE_COUNT[MAX_BONK_MAP_TYPE] = { { 4, 2 }, { 3, 1 }, { 1, 1 } };
     uint32 const BONK_SHRINE_WEIGHTS[MAX_BONK_SHRINE] = { 35, 30, 20, 15, 0 };
+    uint32 const BONK_MAX_LEY_LINES = 2;
 
     float const BONK_LEY_RADIUS            = 7.0f;
     uint32 const BONK_LEY_CAPTURE_MS       = 8000;
@@ -84,7 +85,7 @@ namespace
         { BONK_PASSIVE_CRIT_DAMAGE, 25.0f, "Critical Strike Damage", "critical strike damage",                  "Spell_Holy_PowerInfusion",    false },
         { BONK_PASSIVE_SHIELD,      15.0f, "Shield",                 "of your maximum health as a Shield",      "Spell_Holy_InnerFire",        false },
         { BONK_PASSIVE_HASTE,       10.0f, "Haste",                  "Haste",                                   "Racial_Troll_Berserk",        false },
-        { BONK_PASSIVE_AREA,        20.0f, "Area",                   "Area: bigger area spells, cones, melee swings and pets", "Spell_Holy_ArcaneIntellect", false },
+        { BONK_PASSIVE_AREA,        20.0f, "Area",                   "Area: bigger AoE spells", "Spell_Holy_ArcaneIntellect", false },
         { BONK_PASSIVE_MOVE_SPEED,  10.0f, "Movement Speed",         "movement speed",                          "Ability_Mount_JungleTiger",   false },
         { BONK_PASSIVE_PICKUP,      40.0f, "Pickup Range",           "pickup range",                            "INV_Gizmo_02",                false },
         { BONK_PASSIVE_LUCK,        10.0f, "Luck",                   "Luck",                                    "INV_Misc_Foot_Kodo",          true },
@@ -160,7 +161,8 @@ BonkShrineType BonkRun::PickShrineType() const
 {
     auto const allowed = [this](uint8 type)
     {
-        return type != BONK_SHRINE_STONE && (type != BONK_SHRINE_MOONWELL || !m_moonwellPlaced);
+        return type != BONK_SHRINE_STONE && (type != BONK_SHRINE_MOONWELL || !m_moonwellPlaced) &&
+            (type != BONK_SHRINE_LEY_LINE || m_leyLinesPlaced < BONK_MAX_LEY_LINES);
     };
     uint32 total = 0;
     for (uint8 i = 0; i < MAX_BONK_SHRINE; ++i)
@@ -176,12 +178,13 @@ BonkShrineType BonkRun::PickShrineType() const
             return BonkShrineType(i);
         roll -= BONK_SHRINE_WEIGHTS[i];
     }
-    return BONK_SHRINE_LEY_LINE;
+    return BONK_SHRINE_GREED;
 }
 
 bool BonkRun::PlaceShrine(BonkShrineType type)
 {
-    if ((type == BONK_SHRINE_MOONWELL && m_moonwellPlaced) || (type == BONK_SHRINE_STONE && m_stonePlaced))
+    if ((type == BONK_SHRINE_MOONWELL && m_moonwellPlaced) || (type == BONK_SHRINE_STONE && m_stonePlaced) ||
+        (type == BONK_SHRINE_LEY_LINE && m_leyLinesPlaced >= BONK_MAX_LEY_LINES))
         return false;
 
     Shrine shrine;
@@ -206,6 +209,8 @@ bool BonkRun::PlaceShrine(BonkShrineType type)
         m_moonwellPlaced = true;
     if (type == BONK_SHRINE_STONE)
         m_stonePlaced = true;
+    if (type == BONK_SHRINE_LEY_LINE)
+        ++m_leyLinesPlaced;
     m_shrines.push_back(shrine);
     return true;
 }
@@ -655,6 +660,7 @@ void BonkRun::ResetShrines()
     m_shrinesToPlace = count.least + urand(0, count.extra);
     m_shrineTimer = 0;
     m_moonwellPlaced = false;
+    m_leyLinesPlaced = 0;
     m_stonePlaced = false;
     m_stoneAt = urand(1, std::max(1u, m_shrinesToPlace));
 }
@@ -685,6 +691,11 @@ bool BonkRun::PlaceShrineNow(BonkShrineType type, std::string& error)
     if ((type == BONK_SHRINE_MOONWELL && m_moonwellPlaced) || (type == BONK_SHRINE_STONE && m_stonePlaced))
     {
         error = std::string("This stage has already had its ") + SHRINE_LABELS[type] + ".";
+        return false;
+    }
+    if (type == BONK_SHRINE_LEY_LINE && m_leyLinesPlaced >= BONK_MAX_LEY_LINES)
+    {
+        error = "This stage has already had " + std::to_string(BONK_MAX_LEY_LINES) + " Ley Lines.";
         return false;
     }
     if (!PlaceShrine(type))

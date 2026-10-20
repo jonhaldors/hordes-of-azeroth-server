@@ -30,13 +30,13 @@ float BonkPlayer::GetDashDistance() const
 uint32 BonkPlayer::GetDashCooldownMs() const
 {
     int32 const cooldown = int32(BONK_DASH_COOLDOWN_MS) - int32(GetUpgradeUtility(BONK_UTILITY_DASH_COOLDOWN) * IN_MILLISECONDS);
-    float const blinkRate = m_run ? m_run->GetDashRechargeRate() : 1.0f;
+    float const blinkRate = m_run ? m_run->GetDashRechargeRate() * m_run->GetGlyphDashRecharge() : 1.0f;
     return uint32(std::max(int32(cooldown / blinkRate), int32(BONK_DASH_MIN_COOLDOWN_MS)));
 }
 
 uint32 BonkPlayer::GetDashMaxCharges() const
 {
-    uint32 const blinkCharges = m_run ? m_run->GetBlinkCharges() : 0;
+    uint32 const blinkCharges = m_run ? m_run->GetBlinkCharges() + m_run->GetGlyphDashCharges() : 0;
     return BONK_DASH_CHARGES + uint32(GetUpgradeUtility(BONK_UTILITY_DASH_CHARGES)) + blinkCharges;
 }
 

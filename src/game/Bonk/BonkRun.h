@@ -51,11 +51,15 @@ bool ParseBonkShrine(char const* name, BonkShrineType& type);
 struct BonkEnemyHit
 {
     ObjectGuid caster;
+    ObjectGuid looker;
     std::string striker;
     uint32 windId = 0;
     uint32 spellId = 0;
     uint32 damage = 0;
     float scale = 1.0f;
+    uint32 castKit = 0;
+    uint32 impactKit = 0;
+    bool facesShape = false;
 };
 
 enum class BonkHeroLook : uint8
@@ -112,6 +116,8 @@ class BonkRun
         bool SaveFromDeath();
         bool IsPaused() const { return m_paused; }
         bool IsHeroPerched() const { return m_perched; }
+        uint32 GetGlyphDashCharges() const { return uint32(GetGlyphValue(BONK_GLYPH_DASH, 0)); }
+        float GetGlyphDashRecharge() const { return 1.0f + GetGlyphValue(BONK_GLYPH_DASH, 1) / 100.0f; }
         void SetMenuOpen(bool open);
         bool IsFinished() const { return m_state == STATE_FINISHED; }
         bool IsPortalOpen() const { return m_state == STATE_PORTAL; }
@@ -186,7 +192,7 @@ class BonkRun
         bool LimitStun(Creature* mob, int32& duration);
         bool LimitRoot(Creature* mob, int32& duration);
         void AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-            std::function<void()> onFire = nullptr);
+            std::function<void()> onFire = nullptr, bool lingers = false);
         uint32 AddObjective(BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds);
         void RemoveObjective(uint32 id);
         BonkObjectives const& GetObjectives() const { return m_objectives; }
@@ -196,6 +202,8 @@ class BonkRun
         void SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites);
         void StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, float radius, uint32 durationMs);
         void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius);
+        void ShowKitAt(uint32 kit, float x, float y, float z);
+        void ShowLineImpacts(uint32 kit, float x, float y, float z, float orientation, float length);
         ObjectGuid PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs);
         void LaunchEnemyMissile(ObjectGuid caster, ObjectGuid target, uint32 spellId, uint32 delayMs, uint32 flightMs, float x, float y, float z);
         bool ReserveBolt(uint32 landMs);
@@ -399,8 +407,17 @@ class BonkRun
         };
         std::vector<VoidZone> m_voidZones;
         std::vector<uint32> m_boltLandings;
+        struct ImpactLook
+        {
+            ObjectGuid guid;
+            uint32 kit = 0;
+            uint32 leftMs = 0;
+        };
+        std::vector<ImpactLook> m_impactLooks;
         void UpdateVoidZones(uint32 diff);
-        Creature* ShowEruption(float x, float y, float z);
+        void UpdateImpactLooks(uint32 diff);
+        void ShowImpact(BonkEnemyHit const& hit, float x, float y, float z);
+        void ShowAttackLook(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
         Creature* SummonHazard(float x, float y, float z);
         void StrikeHero(BonkEnemyHit const& hit, uint32 spellId, Unit* source);
         void NoteStruck(std::string const& striker);
@@ -446,7 +463,9 @@ class BonkRun
         void UpdateLanes(uint32 diff);
         void UpdatePerch(uint32 diff);
         bool IsHeroReachable() const;
-        bool IsReachableFrom(float x, float y, float z) const;
+        bool IsReachableFrom(float x, float y, float z, Creature const* prober) const;
+        bool HasStrandedMobs() const;
+        bool FindSpawnPathFrom(float fromX, float fromY, float fromZ, float distance, float& x, float& y, float& z) const;
         void UpdateFlyers(uint32 diff);
         void SpawnFlyerPack(uint32 count);
         bool FindFlyerPosition(float& x, float& y, float& z) const;
@@ -475,6 +494,7 @@ class BonkRun
         bool SpawnChest(bool free, float x, float y, float z, uint32 choices = 3);
         void DropChest(Creature const* mob, BonkSpawnKind kind);
         bool SpawnChestNearby();
+        bool IsFarFromChests(float x, float y) const;
         uint32 GetChestCost() const;
         uint32 GetChestPrice() const;
         float GetUtility(BonkUpgradeUtility utility) const { return m_bonuses.utility[utility]; }
@@ -506,6 +526,12 @@ class BonkRun
         void OnGlyphKill(Creature const* mob, BonkSpawnKind kind);
         void ModifyGlyphHit(Unit* victim, uint32& damage);
         void UpdateGlyphs(uint32 diff);
+        void UpdateGlyphStances();
+        void UpdateGlyphChest();
+        void RankUpStarter(uint32 ranks);
+        bool IsGlyphStill() const;
+        bool IsLastStand() const;
+        float GetAmbitionReward(BonkSpawnKind kind) const;
         void StrikeStorm(BonkGlyph const& glyph);
         void DropMeteor(BonkGlyph const& glyph);
         std::vector<BonkGlyph const*> m_glyphs;
@@ -515,13 +541,19 @@ class BonkRun
         std::set<uint32> m_glyphCardIds;
         uint32 m_glyphKills = 0;
         uint32 m_glyphHasteUntilMs = 0;
+        uint32 m_glyphMovedMs = 0;
+        uint32 m_nomadPenaltyUntilMs = 0;
+        bool m_glyphStill = false;
+        bool m_glyphLastStand = false;
+        bool m_nomadPenalty = false;
+        bool m_glyphChestDue = false;
         uint32 m_soulHarvestUntilMs = 0;
         uint32 m_glyphMiniBosses = 0;
         uint32 m_divineShieldStage = 0;
         int32 m_glyphStormTimer = 0;
         int32 m_glyphMeteorTimer = 0;
 
-        void SpawnPowerup();
+        void SpawnPowerup(WorldObject const* at = nullptr);
         void UpdatePowerups(uint32 diff, bool spawn);
         void UsePowerup(BonkPowerup const& powerup);
         void UpdateObjectives(uint32 diff);
@@ -655,6 +687,10 @@ class BonkRun
         };
         bool GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, float const* upgrades, WeaponStrength& strength) const;
         void AddRankGains(OwnedWeapon& owned, Offer const& offer) const;
+        bool RankDamageCounts(OwnedWeapon const& owned) const;
+        float GetRankDamage(OwnedWeapon const* owned, BonkRarity rarity) const;
+        uint8 GetRankUpgradeCount(OwnedWeapon const* owned, BonkRarity rarity) const;
+        bool KeepsWindowUptime(OwnedWeapon const& owned, float const* rolled, BonkSpellUpgrade upgrade, float step) const;
         float GetShownHit(OwnedWeapon const& owned, float extraPower) const;
         float GetShownSpread(OwnedWeapon const& owned) const;
         void ResendShownDamage(OwnedWeapon const& owned) const;
@@ -673,6 +709,7 @@ class BonkRun
         BonkRarity RollRarity(BonkRarity minimum) const;
         void RollUpgrades(OwnedWeapon const& owned, Offer& offer) const;
         bool HasteShortensCooldown(OwnedWeapon const& owned, float alreadyRolled, float step) const;
+        bool OfferGainsAnything(OwnedWeapon const& owned, Offer const& offer) const;
         float GetRawWeaponHaste(OwnedWeapon const& owned) const;
         Offer MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const;
         Offer MakeEvolveOffer(OwnedWeapon const& owned, uint32 evolveTo) const;
@@ -972,6 +1009,7 @@ class BonkRun
         uint32 m_shrinesToPlace = 0;
         uint32 m_shrineTimer = 0;
         bool m_moonwellPlaced = false;
+        uint32 m_leyLinesPlaced = 0;
         bool m_stonePlaced = false;
         uint32 m_stoneAt = 0;
         bool m_captureShown = false;
@@ -1062,6 +1100,9 @@ class BonkRun
         uint32 m_perchedMs = 0;
         uint32 m_flyerTimer = 0;
         bool m_hasGround = false;
+        mutable bool m_reachFound = false;
+        mutable float m_reachX = 0.0f, m_reachY = 0.0f, m_reachZ = 0.0f;
+        uint32 m_lastStruckMs = 0;
         float m_groundX = 0.0f;
         float m_groundY = 0.0f;
         float m_groundZ = 0.0f;

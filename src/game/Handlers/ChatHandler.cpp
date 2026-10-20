@@ -610,7 +610,7 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
 #endif
         case CHAT_MSG_AFK: // Node side (for combat Check)
         {
-            if (_player && _player->IsInCombat())
+            if (!_player || _player->IsInCombat() || _player->GetBonkPlayer())
                 break;
 
             if (!packet.message.empty() || !_player->IsAFK())

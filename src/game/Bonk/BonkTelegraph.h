@@ -16,7 +16,6 @@ enum BonkTelegraphShape : uint8
     BONK_TELEGRAPH_CIRCLE = 0,
     BONK_TELEGRAPH_CONE   = 1,
     BONK_TELEGRAPH_LINE   = 2,
-    BONK_TELEGRAPH_RING   = 3,
     MAX_BONK_TELEGRAPH_SHAPE
 };
 
@@ -34,7 +33,7 @@ class BonkTelegraphs
 {
     public:
         void Add(Player* owner, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-            std::function<void()> onFire = nullptr);
+            std::function<void()> onFire = nullptr, bool lingers = false);
         void Update(Player* owner, uint32 diff);
         void Clear(Player* owner);
         void Dismiss(Player* owner);
@@ -87,6 +86,7 @@ class BonkTelegraphs
             float x = 0.0f, y = 0.0f, z = 0.0f, orientation = 0.0f, size = 0.0f;
             uint32 durationMs = 0;
             std::function<void()> onFire;
+            bool lingers = false;
         };
 
         static Telegraph Lay(Map* map, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);

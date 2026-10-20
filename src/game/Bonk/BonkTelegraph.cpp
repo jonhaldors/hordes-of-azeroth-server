@@ -17,7 +17,7 @@ namespace
     float const BONK_STANDIN_SIZES[] = { 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f, 4.5f, 5.0f, 5.5f, 6.0f, 6.5f, 7.0f, 7.5f, 8.0f,
         9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f };
     uint32 const BONK_STANDIN_SIZE_COUNT = sizeof(BONK_STANDIN_SIZES) / sizeof(BONK_STANDIN_SIZES[0]);
-    uint32 const BONK_STANDIN_SIZED_SHAPES = 3;
+    uint32 const BONK_STANDIN_SIZED_SHAPES = 2;
     uint32 const BONK_STANDIN_LINE_DISPLAY = BONK_STANDIN_FIRST_DISPLAY +
         BONK_STANDIN_SIZED_SHAPES * (1 + BONK_TELEGRAPH_FILL_COUNT) * BONK_STANDIN_SIZE_COUNT;
     uint32 const BONK_LINE_FILL_PIECE_MS[] = { 60, 80, 100, 125, 150, 200, 250, 300 };
@@ -27,6 +27,7 @@ namespace
 
     uint32 const BONK_STANDIN_INVISIBLE   = 11686;
     uint32 const BONK_STANDIN_READY_MS    = 2500;
+    uint32 const BONK_STANDIN_UNDRESS_MS  = 500;
     uint32 const BONK_STANDIN_MIN_IDLE    = 16;
     uint32 const BONK_STANDIN_BATCH       = 8;
     uint32 const BONK_STANDIN_MAX         = 160;
@@ -40,11 +41,10 @@ namespace
     float const BONK_TELEGRAPH_LIFT     = 0.05f;
 
     float const BONK_CONE_HALF_ANGLE = M_PI_F / 4.0f;
-    float const BONK_RING_INNER      = 0.5f;
     float const BONK_TELEGRAPH_GROUND_ABOVE = 8.0f;
     float const BONK_TELEGRAPH_GROUND_SEARCH = 20.0f;
 
-    char const* const BONK_TELEGRAPH_SHAPE_NAMES[MAX_BONK_TELEGRAPH_SHAPE] = { "circle", "cone", "line", "ring" };
+    char const* const BONK_TELEGRAPH_SHAPE_NAMES[MAX_BONK_TELEGRAPH_SHAPE] = { "circle", "cone", "line" };
 
     uint32 GetLinePieceCount(float length)
     {
@@ -53,7 +53,7 @@ namespace
 
     uint32 GetSizedDisplay(BonkTelegraphShape shape, uint32 model, float size)
     {
-        uint32 const shapeIndex = shape == BONK_TELEGRAPH_CIRCLE ? 0 : shape == BONK_TELEGRAPH_CONE ? 1 : 2;
+        uint32 const shapeIndex = shape == BONK_TELEGRAPH_CONE ? 1 : 0;
         return BONK_STANDIN_FIRST_DISPLAY + (shapeIndex * (1 + BONK_TELEGRAPH_FILL_COUNT) + model) * BONK_STANDIN_SIZE_COUNT +
             GetBonkStandInSizeIndex(size);
     }
@@ -135,8 +135,6 @@ bool IsInBonkTelegraph(BonkTelegraphShape shape, float originX, float originY, f
     float const distance = std::sqrt(dx * dx + dy * dy);
     switch (shape)
     {
-        case BONK_TELEGRAPH_RING:
-            return distance <= size && distance >= size * BONK_RING_INNER;
         case BONK_TELEGRAPH_CONE:
         {
             if (distance > size)
@@ -219,7 +217,7 @@ BonkTelegraphs::Telegraph BonkTelegraphs::Lay(Map* map, BonkTelegraphShape shape
 }
 
 void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-    std::function<void()> onFire)
+    std::function<void()> onFire, bool lingers)
 {
     if (shape >= MAX_BONK_TELEGRAPH_SHAPE || size <= 0.0f || !owner->IsInWorld())
         return;
@@ -236,6 +234,7 @@ void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float
         request.size = size;
         request.durationMs = durationMs;
         request.onFire = std::move(onFire);
+        request.lingers = lingers;
         m_requests.push_back(std::move(request));
         m_warm = true;
         return;
@@ -243,11 +242,12 @@ void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float
 
     telegraph.leftMs = int32(durationMs);
     telegraph.onFire = std::move(onFire);
+    telegraph.filled = lingers;
     Reserve(owner, telegraph);
     if (telegraph.showInMs <= 0)
     {
         Show(owner, telegraph, false);
-        if (telegraph.fillInMs <= 0)
+        if (!telegraph.filled && telegraph.fillInMs <= 0)
             Show(owner, telegraph, true);
     }
     m_telegraphs.push_back(std::move(telegraph));
@@ -271,7 +271,7 @@ void BonkTelegraphs::Update(Player* owner, uint32 diff)
         m_requests.erase(m_requests.begin());
         bool const patient = m_patient;
         m_patient = false;
-        Add(owner, ready.shape, ready.x, ready.y, ready.z, ready.orientation, ready.size, ready.durationMs, std::move(ready.onFire));
+        Add(owner, ready.shape, ready.x, ready.y, ready.z, ready.orientation, ready.size, ready.durationMs, std::move(ready.onFire), ready.lingers);
         m_patient = patient;
     }
 
@@ -431,6 +431,7 @@ void BonkTelegraphs::Undress(Player* owner, ObjectGuid const& guid)
                 if (Creature* creature = map->GetCreature(guid))
                     creature->SetDisplayId(BONK_STANDIN_INVISIBLE);
             standIn.busy = false;
+            standIn.readyAtMs = m_clockMs + BONK_STANDIN_UNDRESS_MS;
             return;
         }
 }

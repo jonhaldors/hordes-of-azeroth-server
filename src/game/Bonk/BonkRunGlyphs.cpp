@@ -15,6 +15,7 @@ namespace
 {
     uint32 const BONK_GLYPH_PICKS      = 2;
     uint32 const BONK_GLYPH_CHOICES    = 4;
+    uint32 const BONK_GLYPH_STILL_MS   = 500;
     uint32 const BONK_GLYPH_MIN_CLEAN  = 2;
     float const BONK_GLYPH_ODDS[MAX_BONK_RARITY] = { 55.0f, 30.0f, 11.0f, 3.5f, 0.5f };
     float const BONK_GLYPH_LUCK[MAX_BONK_RARITY] = { 0.0f, 0.5f, 1.0f, 1.5f, 2.0f };
@@ -169,6 +170,15 @@ bool BonkRun::ChooseGlyph(uint32 choice, std::string& error)
             case BONK_GLYPH_METEOR:
                 m_glyphMeteorTimer = int32(glyph->values[0]);
                 break;
+            case BONK_GLYPH_FORESIGHT:
+                m_rerolls += uint32(glyph->values[0]);
+                break;
+            case BONK_GLYPH_TREASURE:
+                m_glyphChestDue = true;
+                break;
+            case BONK_GLYPH_PRODIGY:
+                RankUpStarter(uint32(glyph->values[0]));
+                break;
             default:
                 break;
         }
@@ -207,11 +217,82 @@ float BonkRun::GetGlyphValue(BonkGlyphEffect effect, uint8 index) const
 
 float BonkRun::GetGlyphPower() const
 {
+    float power = 0.0f;
     BonkGlyph const* vengeance = GetGlyph(BONK_GLYPH_VENGEANCE);
-    if (!vengeance || vengeance->values[0] <= 0.0f || !m_player->GetMaxHealth())
-        return 0.0f;
-    float const missing = 100.0f - m_player->GetHealthPercent();
-    return std::max(0.0f, missing / vengeance->values[0]);
+    if (vengeance && vengeance->values[0] > 0.0f && m_player->GetMaxHealth())
+        power += std::max(0.0f, (100.0f - m_player->GetHealthPercent()) / vengeance->values[0]);
+    if (IsGlyphStill())
+        power += GetGlyphValue(BONK_GLYPH_TURTLE, 0);
+    if (BonkGlyph const* nomad = GetGlyph(BONK_GLYPH_NOMAD))
+    {
+        if (m_nomadPenaltyUntilMs > m_totalMs)
+            power -= nomad->values[1];
+        else if (!m_glyphStill)
+            power += nomad->values[0];
+    }
+    return power;
+}
+
+bool BonkRun::IsGlyphStill() const
+{
+    return m_glyphStill && GetGlyph(BONK_GLYPH_TURTLE);
+}
+
+bool BonkRun::IsLastStand() const
+{
+    BonkGlyph const* stand = GetGlyph(BONK_GLYPH_LAST_STAND);
+    return stand && m_player->IsAlive() && m_player->GetHealthPercent() < stand->values[0];
+}
+
+float BonkRun::GetAmbitionReward(BonkSpawnKind kind) const
+{
+    return kind == BONK_SPAWN_MINIBOSS ? 1.0f + GetGlyphValue(BONK_GLYPH_AMBITION, 1) / 100.0f : 1.0f;
+}
+
+void BonkRun::RankUpStarter(uint32 ranks)
+{
+    if (m_weapons.empty())
+        return;
+    OwnedWeapon& starter = m_weapons.front();
+    for (uint32 i = 0; i < ranks; ++i)
+    {
+        Offer offer;
+        offer.id = starter.weapon.id;
+        offer.newLevel = starter.rank + 1;
+        offer.rarity = RollRarity(BONK_RARITY_COMMON);
+        offer.step = BONK_STEP_RANK;
+        RollUpgrades(starter, offer);
+        ApplyStep(starter, offer);
+    }
+    ApplyPassives();
+    SendLoadout();
+}
+
+void BonkRun::UpdateGlyphStances()
+{
+    if (m_player->IsMoving())
+        m_glyphMovedMs = m_totalMs;
+    bool const still = m_totalMs - m_glyphMovedMs >= BONK_GLYPH_STILL_MS;
+    bool const lastStand = IsLastStand();
+    bool const penalty = m_nomadPenaltyUntilMs > m_totalMs;
+    if (still == m_glyphStill && lastStand == m_glyphLastStand && penalty == m_nomadPenalty)
+        return;
+    m_glyphStill = still;
+    m_glyphLastStand = lastStand;
+    m_nomadPenalty = penalty;
+    if (GetGlyph(BONK_GLYPH_TURTLE) || GetGlyph(BONK_GLYPH_LAST_STAND))
+        ApplyPassives();
+}
+
+void BonkRun::UpdateGlyphChest()
+{
+    BonkGlyph const* treasure = GetGlyph(BONK_GLYPH_TREASURE);
+    if (!m_glyphChestDue || !treasure || m_state != STATE_RUNNING || m_elapsedMs < uint32(treasure->values[0]))
+        return;
+    if (!SpawnChestNearby())
+        return;
+    m_glyphChestDue = false;
+    m_player->GetBonkPlayer()->Notify("Your Glyph of the Treasure Hunter reveals a chest nearby.");
 }
 
 void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
@@ -256,6 +337,8 @@ void BonkRun::ModifyGlyphHit(Unit* , uint32& damage)
 
 void BonkRun::UpdateGlyphs(uint32 diff)
 {
+    UpdateGlyphStances();
+    UpdateGlyphChest();
     if (BonkGlyph const* storm = GetGlyph(BONK_GLYPH_STORM))
     {
         m_glyphStormTimer -= int32(diff);

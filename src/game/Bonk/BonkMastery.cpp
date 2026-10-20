@@ -200,7 +200,8 @@ BonkMasteryNode const* BonkMastery::FindStarterUnlock(uint8 classId, uint32 weap
 
 uint32 BonkMastery::GetXpForLevel(uint32 level)
 {
-    return BONK_MASTERY_XP_BASE + BONK_MASTERY_XP_STEP * (std::max(1u, level) - 1);
+    uint32 const steps = std::max(1u, level) - 1;
+    return BONK_MASTERY_XP_BASE + BONK_MASTERY_XP_STEP * steps + BONK_MASTERY_XP_CURVE * steps * steps / 2;
 }
 
 uint32 BonkMastery::GetLevel(uint32 xp)

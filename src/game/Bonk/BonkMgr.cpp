@@ -959,6 +959,11 @@ void BonkMgr::LoadWeapons()
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u is not an AoE spell, so Echo would do nothing (Count covers it); skipped.", weaponId);
                 continue;
             }
+            if (upgrade == BONK_SPELL_UPGRADE_REACH && !weapon->second.IsMeleeStrike())
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u is not a melee strike, so Reach would do nothing (Area covers AoE spells); skipped.", weaponId);
+                continue;
+            }
             if (upgrade == BONK_SPELL_UPGRADE_CLEAVE && weapon->second.target == BONK_TARGET_CONE)
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon_upgrade`: weapon %u fires a cone, which has no cleave splash, so upgrade %u would do nothing; skipped.", weaponId, upgrade);
@@ -1019,6 +1024,7 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         }
         case BONK_SPELL_UPGRADE_DEPLOY:     return std::string("+") + number + " yd deploy range";
         case BONK_SPELL_UPGRADE_TRAP_AREA:  return percent + " trap radius";
+        case BONK_SPELL_UPGRADE_REACH:      return percent + " reach";
         case BONK_SPELL_UPGRADE_SHIELD_SIZE: return percent + " Shield size";
         case BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN: return std::string("-") + number + "% internal cooldown";
         case BONK_SPELL_UPGRADE_ECHO:
@@ -1057,7 +1063,7 @@ void BonkMgr::LoadMobs()
 
     uint32 abilities = 0;
     result = WorldDatabase.Query("SELECT `entry`, `spell_id`, `target`, `cooldown_ms`, `first_ms`, `min_range`, `max_range`, `damage`, "
-        "`shape`, `count`, `size`, `below_health`, `comment` FROM `bonk_mob_ability` ORDER BY `entry`, `spell_id`");
+        "`shape`, `count`, `size`, `below_health`, `comment`, `cast_kit`, `impact_kit` FROM `bonk_mob_ability` ORDER BY `entry`, `spell_id`");
     if (result)
     {
         do
@@ -1078,6 +1084,8 @@ void BonkMgr::LoadMobs()
             ability.size = fields[10].GetFloat();
             ability.belowHealth = fields[11].GetFloat();
             ability.label = fields[12].GetCppString();
+            ability.castKit = fields[13].GetUInt32();
+            ability.impactKit = fields[14].GetUInt32();
 
             SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(ability.spellId);
             if (!spellInfo)

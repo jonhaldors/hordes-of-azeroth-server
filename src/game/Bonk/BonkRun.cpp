@@ -52,8 +52,10 @@ namespace
     float const BONK_NATIVE_SWEEP_RANGE    = 90.0f;
     uint32 const BONK_NATIVE_RESPAWN_SEC   = 30 * MINUTE;
 
-    float const BONK_CHEST_MIN_DISTANCE    = 15.0f;
-    float const BONK_CHEST_MAX_DISTANCE    = 45.0f;
+    float const BONK_CHEST_MIN_DISTANCE    = 35.0f;
+    float const BONK_CHEST_MAX_DISTANCE    = 70.0f;
+    float const BONK_CHEST_MIN_SPACING     = 40.0f;
+    uint32 const BONK_CHEST_PLACE_ATTEMPTS = 10;
     float const BONK_PORTAL_DISTANCE       = 6.0f;
     float const BONK_POWERUP_MIN_DISTANCE  = 20.0f;
     float const BONK_POWERUP_MAX_DISTANCE  = 50.0f;
@@ -140,6 +142,9 @@ namespace
     uint32 const BONK_PERCH_PROBES         = 3;
     float const BONK_PERCH_REACH           = 3.0f;
     float const BONK_PERCH_RING_DISTANCE   = 8.0f;
+    float const BONK_PERCH_STRANDED_RANGE  = 5.0f;
+    uint32 const BONK_PERCH_STRANDED_MOBS  = 2;
+    uint32 const BONK_PERCH_UNSTRUCK_MS    = 3000;
     uint32 const BONK_PERCH_RING_POINTS    = 6;
     uint32 const BONK_FLYER_FIRST_MS       = 1000;
     uint32 const BONK_FLYER_INTERVAL_MS    = 3000;
@@ -422,8 +427,10 @@ namespace
                 return animation.kitId;
         return 0;
     }
-    uint32 const BONK_SPELL_ERUPTION_LOOK  = 19823;
     uint32 const BONK_SPELL_ERUPTION_HIT   = 13339;
+    uint32 const BONK_SPELL_PLAIN_HIT      = 7482;
+    uint32 const BONK_KIT_FIRE_BURST       = 286;
+    float const BONK_LINE_IMPACT_SPACING   = 6.0f;
     uint32 const BONK_ERUPTION_LOOK_MS     = 3000;
     uint32 const BONK_HAZARD_MS            = 1000;
     float const BONK_MOBINFO_STRIKE_RANGE  = 10.0f;
@@ -538,6 +545,16 @@ namespace
         }
     }
 
+    thread_local uint32 s_nextHelperLevel = 0;
+
+    void ApplyHelperLevel(Creature* creature)
+    {
+        if (!s_nextHelperLevel)
+            return;
+        creature->SetLevel(s_nextHelperLevel);
+        s_nextHelperLevel = 0;
+    }
+
     void InstallOrbAI(Creature* creature)
     {
         creature->GetMotionMaster()->Initialize();
@@ -548,6 +565,7 @@ namespace
 
     void InstallProjectileAI(Creature* creature)
     {
+        ApplyHelperLevel(creature);
         creature->GetMotionMaster()->Initialize();
         creature->SetAI(new NullCreatureAI(creature));
         creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
@@ -635,12 +653,14 @@ namespace
 
     void InstallPetAI(Creature* creature)
     {
+        ApplyHelperLevel(creature);
         creature->GetMotionMaster()->Initialize();
         creature->SetAI(new BonkPetAI(creature));
     }
 
     void InstallChargerAI(Creature* creature)
     {
+        ApplyHelperLevel(creature);
         creature->GetMotionMaster()->Initialize();
         creature->SetAI(new NullCreatureAI(creature));
         creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
@@ -1108,6 +1128,9 @@ void BonkRun::StartStage()
     m_bossGuid.Clear();
     m_powerupSpawnTimer = m_map.powerupIntervalSeconds * IN_MILLISECONDS / 2;
     m_nativeTimer = BONK_NATIVE_SWEEP_MS;
+    if (m_stage > 1)
+        m_rerolls += uint32(GetGlyphValue(BONK_GLYPH_FORESIGHT, 0));
+    m_glyphChestDue = GetGlyph(BONK_GLYPH_TREASURE) != nullptr;
     m_lastLevel = m_player->GetLevel();
     m_safeX = m_player->GetPositionX();
     m_safeY = m_player->GetPositionY();
@@ -1294,6 +1317,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateNecrotic(diff);
     UpdatePools(diff);
     UpdateVoidZones(diff);
+    UpdateImpactLooks(diff);
     UpdatePowerups(diff, !m_sandbox);
     UpdateObjectives(diff);
     UpdateOrbs(diff);
@@ -1611,7 +1635,8 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
         case BONK_EVENT_MINIBOSS:
         {
             std::string name;
-            for (uint32 i = 0; i < event.count; ++i)
+            uint32 const count = event.count + (event.count ? uint32(GetGlyphValue(BONK_GLYPH_AMBITION, 0)) : 0);
+            for (uint32 i = 0; i < count; ++i)
             {
                 BonkMapCreature const* creature = PickCreature(BONK_SPAWN_MINIBOSS);
                 if (!creature)
@@ -1627,7 +1652,8 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
         case BONK_EVENT_ELITES:
         {
             bool spawned = false;
-            for (uint32 i = 0; i < event.count; ++i)
+            uint32 const count = uint32(event.count * (1.0f + GetGlyphValue(BONK_GLYPH_HUNT, 0) / 100.0f) + 0.5f);
+            for (uint32 i = 0; i < count; ++i)
                 if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_ELITE))
                     spawned |= SpawnMob(*creature) != nullptr;
             if (spawned)
@@ -1877,7 +1903,8 @@ void BonkRun::EnterWave(size_t index)
         return;
 
     std::string name;
-    for (uint32 i = 0; i < wave.minibosses; ++i)
+    uint32 const minibosses = wave.minibosses + (wave.minibosses ? uint32(GetGlyphValue(BONK_GLYPH_AMBITION, 0)) : 0);
+    for (uint32 i = 0; i < minibosses; ++i)
     {
         BonkMapCreature const* creature = PickCreature(BONK_SPAWN_MINIBOSS);
         if (!creature)
@@ -1890,7 +1917,8 @@ void BonkRun::EnterWave(size_t index)
         bonk->Notify(name + " has arrived!");
 
     bool elites = false;
-    for (uint32 i = 0; i < wave.elites; ++i)
+    uint32 const eliteCount = uint32(wave.elites * (1.0f + GetGlyphValue(BONK_GLYPH_HUNT, 0) / 100.0f) + 0.5f);
+    for (uint32 i = 0; i < eliteCount; ++i)
         if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_ELITE))
             elites |= SpawnMob(*creature) != nullptr;
 
@@ -2155,7 +2183,7 @@ uint32 BonkRun::GetEliteIntervalMs() const
     uint32 const interval = GetWave().eliteIntervalSeconds;
     if (!interval)
         return 0;
-    return uint32(interval * IN_MILLISECONDS / (1.0f + m_bonuses.eliteRate / 100.0f));
+    return uint32(interval * IN_MILLISECONDS / (1.0f + m_bonuses.eliteRate / 100.0f) / (1.0f + GetGlyphValue(BONK_GLYPH_HUNT, 0) / 100.0f));
 }
 
 BonkMapCreature const* BonkRun::PickTrash() const
@@ -2225,7 +2253,7 @@ uint32 BonkRun::CountBruisers() const
         if (Creature const* mob = map->GetCreature(guid))
             if (mob->IsAlive())
                 if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI()))
-                    if (ai->GetKind() == BONK_SPAWN_NORMAL && ai->GetArchetype() == BONK_ARCHETYPE_BRUISER)
+                    if (ai->GetKind() == BONK_SPAWN_NORMAL && ai->GetArchetype() == BONK_ARCHETYPE_BRUISER && !ai->IsFlyer())
                         ++count;
     return count;
 }
@@ -2304,12 +2332,18 @@ bool BonkRun::FindSpawnPositionAt(float angle, float distance, float& x, float& 
     if (m_map.zoneId && map->GetTerrain()->GetZoneId(x, y, z) != m_map.zoneId)
         return false;
 
+    if (fromGround)
+        return FindSpawnPathFrom(m_groundX, m_groundY, m_groundZ, distance, x, y, z);
+    if (FindSpawnPathFrom(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), distance, x, y, z))
+        return true;
+    return m_hasGround && FindSpawnPathFrom(m_groundX, m_groundY, m_groundZ, distance, x, y, z);
+}
+
+bool BonkRun::FindSpawnPathFrom(float fromX, float fromY, float fromZ, float distance, float& x, float& y, float& z) const
+{
     PathFinder path(m_player);
     path.ExcludeSteepSlopes();
-    if (fromGround)
-        path.calculate(Vector3(m_groundX, m_groundY, m_groundZ), Vector3(x, y, z));
-    else
-        path.calculate(x, y, z);
+    path.calculate(Vector3(fromX, fromY, fromZ), Vector3(x, y, z));
     if (path.getPathType() & PATHFIND_NOT_USING_PATH)
         return true;
     if (!(path.getPathType() & PATHFIND_NORMAL) || path.Length() > distance * BONK_SPAWN_MAX_DETOUR)
@@ -2422,9 +2456,9 @@ void BonkRun::UpdatePerch(uint32 diff)
         m_perchChecks = 0;
         m_reachChecks = 0;
         m_hasGround = true;
-        m_groundX = m_player->GetPositionX();
-        m_groundY = m_player->GetPositionY();
-        m_groundZ = m_player->GetPositionZ();
+        m_groundX = m_reachFound ? m_reachX : m_player->GetPositionX();
+        m_groundY = m_reachFound ? m_reachY : m_player->GetPositionY();
+        m_groundZ = m_reachFound ? m_reachZ : m_player->GetPositionZ();
         return;
     }
 
@@ -2438,13 +2472,17 @@ void BonkRun::UpdatePerch(uint32 diff)
 
 bool BonkRun::IsHeroReachable() const
 {
+    m_reachFound = false;
+    if (HasStrandedMobs())
+        return false;
+
     uint32 probes = 0;
     for (Creature* mob : GetMobsInRange(BONK_PERCH_SENSE_RANGE))
     {
         BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
         if (!ai || ai->IsFlyer() || !ai->CanBePulled())
             continue;
-        if (IsReachableFrom(mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ()))
+        if (IsReachableFrom(mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), mob))
             return true;
         if (++probes >= BONK_PERCH_PROBES)
             return false;
@@ -2458,19 +2496,37 @@ bool BonkRun::IsHeroReachable() const
         float const x = m_player->GetPositionX() + BONK_PERCH_RING_DISTANCE * std::cos(angle);
         float const y = m_player->GetPositionY() + BONK_PERCH_RING_DISTANCE * std::sin(angle);
         float const z = map->GetHeight(x, y, heroZ + BONK_SPAWN_MAX_HEIGHT_DIFF, true, 2.0f * BONK_SPAWN_MAX_HEIGHT_DIFF);
-        if (z > INVALID_HEIGHT && IsReachableFrom(x, y, z))
+        if (z > INVALID_HEIGHT && IsReachableFrom(x, y, z, nullptr))
             return true;
     }
     return false;
 }
 
-bool BonkRun::IsReachableFrom(float x, float y, float z) const
+bool BonkRun::HasStrandedMobs() const
+{
+    if (m_totalMs - m_lastStruckMs < BONK_PERCH_UNSTRUCK_MS)
+        return false;
+    uint32 stranded = 0;
+    for (Creature* mob : GetMobsInRange(BONK_PERCH_STRANDED_RANGE))
+    {
+        BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+        if (!ai || ai->IsFlyer() || !ai->CanBePulled() || mob->IsMoving() ||
+            mob->HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_ROOT | UNIT_STATE_CONFUSED | UNIT_STATE_FLEEING))
+            continue;
+        if (mob->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
+            continue;
+        ++stranded;
+    }
+    return stranded >= BONK_PERCH_STRANDED_MOBS;
+}
+
+bool BonkRun::IsReachableFrom(float x, float y, float z, Creature const* prober) const
 {
     float const heroX = m_player->GetPositionX();
     float const heroY = m_player->GetPositionY();
     float const heroZ = m_player->GetPositionZ();
 
-    PathFinder path(m_player);
+    PathFinder path(prober ? static_cast<Unit const*>(prober) : m_player);
     path.calculate(Vector3(x, y, z), Vector3(heroX, heroY, heroZ));
     if (path.getPathType() & PATHFIND_NOPATH)
         return false;
@@ -2479,7 +2535,16 @@ bool BonkRun::IsReachableFrom(float x, float y, float z) const
     float const dx = end.x - heroX;
     float const dy = end.y - heroY;
     float const dz = end.z - heroZ;
-    return dx * dx + dy * dy + dz * dz <= BONK_PERCH_REACH * BONK_PERCH_REACH;
+    bool const reaches = prober ? prober->CanReachWithMeleeAutoAttackAtPosition(m_player, end.x, end.y, end.z) :
+        dx * dx + dy * dy + dz * dz <= BONK_PERCH_REACH * BONK_PERCH_REACH;
+    if (reaches)
+    {
+        m_reachFound = true;
+        m_reachX = end.x;
+        m_reachY = end.y;
+        m_reachZ = end.z;
+    }
+    return reaches;
 }
 
 void BonkRun::UpdateFlyers(uint32 diff)
@@ -2507,13 +2572,16 @@ void BonkRun::SpawnFlyerPack(uint32 count)
 
     for (uint32 index = 0; index < count; ++index)
     {
-        BonkMapCreature const* creature = PickFlyer();
-        if (!creature)
+        BonkMapCreature const* picked = PickFlyer();
+        if (!picked)
             return;
+        BonkMapCreature creature = *picked;
+        creature.kind = BONK_SPAWN_NORMAL;
+        creature.archetype = BONK_ARCHETYPE_BRUISER;
         float const angle = frand(0.0f, 2.0f * M_PI_F);
         float const offset = frand(0.0f, BONK_FLYER_PACK_RADIUS);
         BonkMobAI::SetNextFlyer(true);
-        if (!SpawnMobAt(*creature, x + offset * std::cos(angle), y + offset * std::sin(angle), z + frand(-1.0f, 1.0f)))
+        if (!SpawnMobAt(creature, x + offset * std::cos(angle), y + offset * std::sin(angle), z + frand(-1.0f, 1.0f)))
             BonkMobAI::SetNextFlyer(false);
     }
 }
@@ -3039,6 +3107,8 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
             OnShieldBroken();
     }
     damage = PreventDeath(GuardLowHealth(damage));
+    if (damage && GetGlyph(BONK_GLYPH_NOMAD))
+        m_nomadPenaltyUntilMs = m_totalMs + uint32(GetGlyphValue(BONK_GLYPH_NOMAD, 2));
     if (!m_shield && !m_spellShield)
         m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
     NoteHeroHit(unshielded, damage < unshielded);
@@ -3175,7 +3245,7 @@ void BonkRun::StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, 
     zone.leftMs = durationMs;
     zone.tickMs = 0;
     m_voidZones.push_back(zone);
-    AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, durationMs);
+    AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, durationMs, nullptr, true);
 }
 
 void BonkRun::UpdateVoidZones(uint32 diff)
@@ -3533,6 +3603,8 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     float const facing = std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x);
     m_lastPlateId = m_lastPlateId % BONK_MAX_PLATE_ID + 1;
     BonkMobAI::SetNextPlateId(m_lastPlateId);
+    uint32 const level = std::min(GetMobLevel() + GetKindLevelBonus(creature.kind), 63u);
+    BonkMobAI::SetNextLevel(level);
     Creature* mob = m_player->SummonCreature(creature.entry, x, y, z, facing, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 2000, false, 0, &BonkMobAI::Install);
     if (!mob)
         return nullptr;
@@ -3541,15 +3613,14 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     mob->SetInvincibilityHpThreshold(0);
     mob->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE);
 
-    uint32 const level = std::min(GetMobLevel() + GetKindLevelBonus(creature.kind), 63u);
-    mob->SetLevel(level);
     mob->InitStatsForLevel();
     mob->SetModifierValue(UNIT_MOD_ARMOR, TOTAL_PCT, 0.0f);
     mob->UpdateArmor();
 
     BonkArchetypeInfo const* archetype = creature.kind == BONK_SPAWN_NORMAL ? &sBonkMgr.GetArchetype(creature.archetype) : nullptr;
     float const archetypeDamage = archetype ? archetype->damageMultiplier : 1.0f;
-    float const veteranDamage = veteran ? BONK_VETERAN_DAMAGE : 1.0f;
+    float const veteranDamage = (veteran ? BONK_VETERAN_DAMAGE : 1.0f) *
+        (creature.kind == BONK_SPAWN_MINIBOSS ? 1.0f + GetGlyphValue(BONK_GLYPH_AMBITION, 2) / 100.0f : 1.0f);
     uint32 const health = GetSpawnHealth(creature.kind, creature.archetype, creature.healthMultiplier * (veteran ? BONK_VETERAN_HEALTH : 1.0f));
     mob->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, float(health));
     mob->SetMaxHealth(health);
@@ -3713,14 +3784,26 @@ void BonkRun::DropChest(Creature const* mob, BonkSpawnKind kind)
     SpawnChest(true, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), choices);
 }
 
+bool BonkRun::IsFarFromChests(float x, float y) const
+{
+    Map* map = m_player->FindMap();
+    if (!map)
+        return true;
+    for (ObjectGuid const& guid : m_chests)
+        if (GameObject const* chest = map->GetGameObject(guid))
+            if (chest->GetDistance2d(x, y) < BONK_CHEST_MIN_SPACING)
+                return false;
+    return true;
+}
+
 bool BonkRun::SpawnChestNearby()
 {
-    for (uint32 attempt = 0; attempt < 5; ++attempt)
+    for (uint32 attempt = 0; attempt < BONK_CHEST_PLACE_ATTEMPTS; ++attempt)
     {
         float x, y, z;
         if (!FindSpawnPosition(x, y, z, BONK_CHEST_MIN_DISTANCE, BONK_CHEST_MAX_DISTANCE))
-            return false;
-        if (!m_player->IsWithinLOS(x, y, z))
+            continue;
+        if (!IsFarFromChests(x, y) || !m_player->IsWithinLOS(x, y, z))
             continue;
         return SpawnChest(false, x, y, z);
     }
@@ -3738,7 +3821,7 @@ uint32 BonkRun::GetChestPrice() const
     return std::max(1u, uint32(GetChestCost() * (1.0f - haggle / 100.0f) + 0.5f));
 }
 
-void BonkRun::SpawnPowerup()
+void BonkRun::SpawnPowerup(WorldObject const* at)
 {
     bool const noHeals = GetGlyph(BONK_GLYPH_NO_HEALS) != nullptr;
     bool const magnetPlaced = !m_powerupObjectives.empty();
@@ -3770,6 +3853,12 @@ void BonkRun::SpawnPowerup()
     if (!chosen)
         return;
 
+    uint32 const lifetime = uint32(BONK_POWERUP_LIFETIME_SEC * (1.0f + GetGlyphValue(BONK_GLYPH_PACKRAT, 0) / 100.0f));
+    if (at)
+    {
+        PlacePowerup(*chosen, at->GetPositionX(), at->GetPositionY(), at->GetPositionZ(), lifetime);
+        return;
+    }
     for (uint32 attempt = 0; attempt < 5; ++attempt)
     {
         float x, y, z;
@@ -3777,7 +3866,6 @@ void BonkRun::SpawnPowerup()
             return;
         if (!m_player->IsWithinLOS(x, y, z))
             continue;
-        uint32 const lifetime = uint32(BONK_POWERUP_LIFETIME_SEC * (1.0f + GetGlyphValue(BONK_GLYPH_PACKRAT, 0) / 100.0f));
         PlacePowerup(*chosen, x, y, z, lifetime);
         return;
     }
@@ -4222,8 +4310,14 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
         total += GetPriestMoveSpeed();
     if (effect == BONK_PASSIVE_HASTE && m_glyphHasteUntilMs > m_totalMs)
         total += GetGlyphValue(BONK_GLYPH_KILL_HASTE, 1);
+    if (effect == BONK_PASSIVE_HASTE && IsLastStand())
+        total += GetGlyphValue(BONK_GLYPH_LAST_STAND, 1);
+    if (effect == BONK_PASSIVE_MOVE_SPEED)
+        total += (IsLastStand() ? GetGlyphValue(BONK_GLYPH_LAST_STAND, 2) : 0.0f) - GetGlyphValue(BONK_GLYPH_TURTLE, 2);
     if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && GetGlyph(BONK_GLYPH_HALF_ARMOR))
         total *= 0.5f;
+    if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && IsGlyphStill())
+        total *= 1.0f + GetGlyphValue(BONK_GLYPH_TURTLE, 1) / 100.0f;
     return total;
 }
 
@@ -4348,7 +4442,9 @@ void BonkRun::UpdateWeapons(uint32 diff)
 
 float BonkRun::GetWeaponArea(OwnedWeapon const& owned) const
 {
-    return std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f);
+    if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
+        return std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f);
+    return 1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_REACH) / 100.0f;
 }
 
 uint32 BonkRun::GetWeaponTargets(OwnedWeapon const& owned) const
@@ -4734,13 +4830,13 @@ bool BonkRun::UsesShotSources() const
 
 Creature* BonkRun::SummonShotSource()
 {
+    s_nextHelperLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
     Creature* source = m_player->SummonCreature(BONK_PROJECTILE, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), 0.0f,
         TEMPSUMMON_TIMED_DESPAWN, BONK_SHOT_SOURCE_LIFETIME_MS, false, 0, &InstallProjectileAI);
     if (!source)
         return nullptr;
     source->SetFactionTemplateId(m_player->GetFactionTemplateId());
     source->SetOwnerGuid(m_player->GetObjectGuid());
-    source->SetLevel(sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL));
     source->SetVirtualItem(RANGED_ATTACK, BONK_SHOT_SOURCE_BOW);
     source->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_DISPLAY + RANGED_ATTACK, 0);
     return source;
@@ -5457,6 +5553,7 @@ void BonkRun::ReleaseSnakes(OwnedWeapon const& owned, float x, float y, float z)
         float sy = y + BONK_SNAKE_SPREAD * std::sin(angle);
         float sz = z;
         map->GetWalkHitPosition(nullptr, x, y, z, sx, sy, sz);
+        s_nextHelperLevel = m_player->GetLevel();
         Creature* snake = m_player->SummonCreature(BONK_SNAKE, sx, sy, sz, angle, TEMPSUMMON_TIMED_DESPAWN,
             BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, false, 0, &InstallPetAI);
         if (!snake)
@@ -5464,7 +5561,6 @@ void BonkRun::ReleaseSnakes(OwnedWeapon const& owned, float x, float y, float z)
         snake->SetOwnerGuid(m_player->GetObjectGuid());
         snake->SetUInt32Value(UNIT_CREATED_BY_SPELL, owned.weapon.spellId);
         snake->SetFactionTemplateId(m_player->GetFactionTemplateId());
-        snake->SetLevel(m_player->GetLevel());
         snake->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
         snake->SetHealth(snake->GetMaxHealth());
         snake->SetInvincibilityHpThreshold(snake->GetMaxHealth());
@@ -6682,6 +6778,7 @@ void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& inf
         return;
 
     uint32 const flightMs = uint32(flight / info.speed * IN_MILLISECONDS);
+    s_nextHelperLevel = m_player->GetLevel();
     Creature* missile = m_player->SummonCreature(BONK_PROJECTILE, x, y, z, angle, TEMPSUMMON_TIMED_DESPAWN, flightMs + 2000, false, 0, &InstallProjectileAI);
     if (!missile)
         return;
@@ -6689,7 +6786,6 @@ void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& inf
     missile->SetObjectScale(info.scale);
     missile->SetFactionTemplateId(m_player->GetFactionTemplateId());
     missile->SetOwnerGuid(m_player->GetObjectGuid());
-    missile->SetLevel(m_player->GetLevel());
     missile->MonsterMoveWithSpeed(ex, ey, ez, angle, info.speed, MOVE_FLY_MODE);
 
     Projectile projectile;
@@ -6916,20 +7012,82 @@ float BonkRun::GetMobDamageMultiplier(Creature const* mob) const
 }
 
 void BonkRun::AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-    std::function<void()> onFire)
+    std::function<void()> onFire, bool lingers)
 {
     if (m_state != STATE_RUNNING || m_paused)
         return;
-    m_telegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs, std::move(onFire));
+    m_telegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs, std::move(onFire), lingers);
 }
 
-Creature* BonkRun::ShowEruption(float x, float y, float z)
+void BonkRun::ShowImpact(BonkEnemyHit const& hit, float x, float y, float z)
 {
-    Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_ERUPTION_LOOK_MS,
-        false, 0, &InstallOrbAI);
-    if (marker)
-        marker->CastSpell(marker, BONK_SPELL_ERUPTION_LOOK, true);
-    return marker;
+    ShowKitAt(hit.impactKit ? hit.impactKit : BONK_KIT_FIRE_BURST, x, y, z);
+}
+
+void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z)
+{
+    ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
+    if (!guid.IsEmpty() && m_player->GetMap()->GetCreature(guid))
+    {
+        ImpactLook look;
+        look.guid = guid;
+        look.kit = kit;
+        look.leftMs = BONK_ERUPTION_LOOK_MS;
+        m_impactLooks.push_back(look);
+        return;
+    }
+    if (Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_ERUPTION_LOOK_MS,
+        false, 0, &InstallOrbAI))
+        marker->SendPlaySpellVisualKit(kit);
+}
+
+void BonkRun::UpdateImpactLooks(uint32 diff)
+{
+    Map* map = m_player->FindMap();
+    for (auto itr = m_impactLooks.begin(); itr != m_impactLooks.end();)
+    {
+        if (itr->kit)
+        {
+            if (Creature* standIn = map ? map->GetCreature(itr->guid) : nullptr)
+                standIn->SendPlaySpellVisualKit(itr->kit);
+            itr->kit = 0;
+        }
+        if (itr->leftMs > diff)
+        {
+            itr->leftMs -= diff;
+            ++itr;
+            continue;
+        }
+        m_telegraphs.Release(m_player, itr->guid);
+        itr = m_impactLooks.erase(itr);
+    }
+}
+
+void BonkRun::ShowLineImpacts(uint32 kit, float x, float y, float z, float orientation, float length)
+{
+    Map* map = m_player->GetMap();
+    for (float along = BONK_LINE_IMPACT_SPACING / 2.0f; along < length; along += BONK_LINE_IMPACT_SPACING)
+    {
+        float const px = x + along * std::cos(orientation), py = y + along * std::sin(orientation);
+        float pz = map->GetHeight(px, py, z + 5.0f, true, 15.0f);
+        if (pz <= INVALID_HEIGHT)
+            pz = z;
+        ShowKitAt(kit, px, py, pz);
+    }
+}
+
+void BonkRun::ShowAttackLook(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size)
+{
+    if (hit.castKit)
+        if (Creature* looker = m_player->GetMap()->GetCreature(hit.looker))
+            if (looker->IsAlive())
+            {
+                if (hit.facesShape)
+                    looker->SetFacingTo(orientation);
+                looker->SendPlaySpellVisualKit(hit.castKit);
+            }
+    if (shape == BONK_TELEGRAPH_LINE && hit.impactKit)
+        ShowLineImpacts(hit.impactKit, x, y, z, orientation, size);
 }
 
 Creature* BonkRun::SummonHazard(float x, float y, float z)
@@ -6941,15 +7099,16 @@ void BonkRun::Erupt(BonkEnemyHit const& hit, float x, float y, float z, float ra
 {
     if (m_state != STATE_RUNNING)
         return;
-    Creature* look = ShowEruption(x, y, z);
+    ShowImpact(hit, x, y, z);
 
     if (!hit.damage || !m_player->IsAlive() || m_player->GetDistance2d(x, y) > radius)
         return;
+    uint32 const hitSpell = hit.impactKit ? BONK_SPELL_PLAIN_HIT : BONK_SPELL_ERUPTION_HIT;
     Creature* mob = m_player->GetMap()->GetCreature(hit.caster);
     if (mob && mob->IsAlive())
-        mob->CastCustomSpell(m_player, BONK_SPELL_ERUPTION_HIT, int32(hit.damage), {}, {}, true);
+        mob->CastCustomSpell(m_player, hitSpell, int32(hit.damage), {}, {}, true);
     else
-        StrikeHero(hit, BONK_SPELL_ERUPTION_HIT, look);
+        StrikeHero(hit, hitSpell, SummonHazard(x, y, z));
 }
 
 void BonkRun::StrikeHero(BonkEnemyHit const& hit, uint32 spellId, Unit* source)
@@ -6986,6 +7145,7 @@ void BonkRun::LandWarning(BonkEnemyHit const& hit, BonkTelegraphShape shape, flo
                 return;
         }
 
+    ShowAttackLook(hit, shape, x, y, z, orientation, size);
     if (!hit.damage || !m_player->IsAlive() || m_player->GetBonkPlayer()->IsDashInvulnerable())
         return;
     float heroX, heroY, heroZ;
@@ -6993,7 +7153,11 @@ void BonkRun::LandWarning(BonkEnemyHit const& hit, BonkTelegraphShape shape, flo
     if (!IsInBonkTelegraph(shape, x, y, orientation, size, heroX, heroY))
         return;
 
-    StrikeHero(hit, hit.spellId, shape == BONK_TELEGRAPH_CIRCLE ? ShowEruption(x, y, z) : SummonHazard(x, y, z));
+    if (shape != BONK_TELEGRAPH_CIRCLE && hit.impactKit)
+        ShowKitAt(hit.impactKit, heroX, heroY, heroZ);
+    if (shape == BONK_TELEGRAPH_CIRCLE)
+        ShowImpact(hit, x, y, z);
+    StrikeHero(hit, hit.spellId, SummonHazard(x, y, z));
     if (shape == BONK_TELEGRAPH_LINE && m_player->IsAlive())
         BonkMobAI::KnockBackHero(m_player, orientation);
 }
@@ -7097,6 +7261,7 @@ void BonkRun::OnHeroDodge(Unit* attacker)
 
 void BonkRun::OnHeroStruck(Creature* attacker)
 {
+    m_lastStruckMs = m_totalMs;
     NoteStruck(DescribeStriker(attacker));
     OnShamanStruck(attacker);
     OnPriestStruck(attacker);
@@ -7654,6 +7819,7 @@ bool BonkRun::IsSummon(Unit const* unit) const
 
 Creature* BonkRun::SummonPet(OwnedWeapon const& owned, uint32 entry, float x, float y, float z, float orientation)
 {
+    s_nextHelperLevel = m_player->GetLevel();
     Creature* pet = m_player->SummonCreature(entry, x, y, z, orientation, TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS,
         false, 0, &InstallPetAI);
     if (!pet)
@@ -7661,7 +7827,6 @@ Creature* BonkRun::SummonPet(OwnedWeapon const& owned, uint32 entry, float x, fl
     pet->SetOwnerGuid(m_player->GetObjectGuid());
     pet->SetUInt32Value(UNIT_CREATED_BY_SPELL, owned.weapon.spellId);
     pet->SetFactionTemplateId(m_player->GetFactionTemplateId());
-    pet->SetLevel(m_player->GetLevel());
     pet->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
     if (m_paused)
         HoldPet(pet, true, IsPlanted(owned.weapon));
@@ -7682,7 +7847,7 @@ uint32 BonkRun::GetSummonRoom(OwnedWeapon const& owned) const
 
 float BonkRun::GetSummonGrowth(OwnedWeapon const& owned) const
 {
-    float const growth = std::max(0.0f, GetStat(BONK_PASSIVE_AREA)) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_PET_SIZE);
+    float const growth = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_PET_SIZE);
     return std::min(growth, BONK_MAX_AREA);
 }
 
@@ -8155,6 +8320,7 @@ Creature* BonkRun::SummonBeast(OwnedWeapon const& owned, BeastKind kind, float x
         case BEAST_WYVERN: entry = BONK_HOWL_WYVERN; break;
         default:           break;
     }
+    s_nextHelperLevel = m_player->GetLevel();
     Creature* creature = m_player->SummonCreature(entry, x, y, z, orientation, TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS,
         false, 0, spectral ? &InstallChargerAI : &InstallPetAI);
     if (!creature)
@@ -8163,7 +8329,6 @@ Creature* BonkRun::SummonBeast(OwnedWeapon const& owned, BeastKind kind, float x
     creature->SetOwnerGuid(m_player->GetObjectGuid());
     creature->SetUInt32Value(UNIT_CREATED_BY_SPELL, owned.weapon.spellId);
     creature->SetFactionTemplateId(m_player->GetFactionTemplateId());
-    creature->SetLevel(m_player->GetLevel());
     if (!spectral)
         creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
     creature->SetHealth(creature->GetMaxHealth());
@@ -9065,7 +9230,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
         case BONK_SPAWN_BOSS:     count = m_tier.shardsBoss; break;
         default: break;
     }
-    uint32 const scaled = count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent());
+    uint32 const scaled = uint32(count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent()) * GetAmbitionReward(kind));
     count = scaled / 100 + (roll_chance_u(scaled % 100) ? 1 : 0);
     if (!count)
         return;
@@ -9354,12 +9519,12 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
         sBonkQuests.OnBossKilled(m_player, m_tier.id, m_stage, m_elapsedMs / IN_MILLISECONDS);
     SoulSiphon(killingSpell);
     if (kind == BONK_SPAWN_MINIBOSS)
-        m_masteryXp += m_tier.masteryXpMiniboss * GetBonkMapRewardPercent(m_map.type) / 100;
+        m_masteryXp += uint32(m_tier.masteryXpMiniboss * GetBonkMapRewardPercent(m_map.type) / 100 * GetAmbitionReward(kind));
     else if (kind == BONK_SPAWN_BOSS)
         m_masteryXp += m_tier.masteryXpBoss * GetBonkMapRewardPercent(m_map.type) / 100;
     BonkMobAI const* mobAI = dynamic_cast<BonkMobAI const*>(mob->AI());
     bool const veteran = mobAI && mobAI->IsVeteran();
-    float const reward = GetKindReward(kind) * (veteran ? BONK_VETERAN_REWARD : 1.0f);
+    float const reward = GetKindReward(kind) * (veteran ? BONK_VETERAN_REWARD : 1.0f) * GetAmbitionReward(kind);
     GiveGold(uint32(m_map.goldPerKill * reward + 0.5f));
     m_cardValorCarry += m_map.coinsPerKill * reward * (1.0f + GetCardTotal(BONK_CARD_VALOR, 0) / 100.0f);
     m_coins += uint32(m_cardValorCarry);
@@ -9374,6 +9539,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
 
         float experience = reward;
+        if (kind == BONK_SPAWN_ELITE && GetGlyph(BONK_GLYPH_HUNT))
+            experience *= GetGlyphValue(BONK_GLYPH_HUNT, 1);
         BonkOrb colour = BONK_ORB_RED;
         if (kind == BONK_SPAWN_NORMAL)
         {
@@ -9404,6 +9571,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
     if (!m_sandbox)
         DropShards(mob, kind);
     DropHeal(mob, kind);
+    if (kind == BONK_SPAWN_ELITE && GetGlyph(BONK_GLYPH_SCAVENGER) && !eventGroup)
+        SpawnPowerup(mob);
     OnGlyphKill(mob, kind);
     ObjectGuid const hiddenBoss = m_hidden.boss;
     OnHiddenKilled(mob);
@@ -9612,7 +9781,8 @@ void BonkRun::RollUpgrades(OwnedWeapon const& owned, Offer& offer) const
         return;
 
     float rolled[MAX_BONK_SPELL_UPGRADE] = {};
-    for (uint8 i = 0; i < BONK_RANK_UPGRADES[offer.rarity] && i < BONK_MAX_RANK_UPGRADES; ++i)
+    uint8 const count = GetRankUpgradeCount(&owned, offer.rarity);
+    for (uint8 i = 0; i < count; ++i)
     {
         std::vector<BonkWeaponUpgrade const*> options;
         for (BonkWeaponUpgrade const& upgrade : owned.weapon.upgrades)
@@ -9624,14 +9794,36 @@ void BonkRun::RollUpgrades(OwnedWeapon const& owned, Offer& offer) const
                 continue;
             if (upgrade.upgrade == BONK_SPELL_UPGRADE_HASTE && !HasteShortensCooldown(owned, rolled[upgrade.upgrade], upgrade.step))
                 continue;
+            if (!KeepsWindowUptime(owned, rolled, upgrade.upgrade, upgrade.step))
+                continue;
             options.push_back(&upgrade);
         }
         if (options.empty())
             break;
-        BonkWeaponUpgrade const* pick = options[urand(0, uint32(options.size() - 1))];
+        float totalWeight = 0.0f;
+        for (BonkWeaponUpgrade const* option : options)
+            totalWeight += GetUpgradeRollWeight(option->upgrade);
+        float roll = frand(0.0f, totalWeight);
+        BonkWeaponUpgrade const* pick = options.back();
+        for (BonkWeaponUpgrade const* option : options)
+        {
+            roll -= GetUpgradeRollWeight(option->upgrade);
+            if (roll <= 0.0f)
+            {
+                pick = option;
+                break;
+            }
+        }
         offer.upgrades[i] = pick->upgrade;
         rolled[pick->upgrade] += pick->step;
     }
+}
+
+bool BonkRun::OfferGainsAnything(OwnedWeapon const& owned, Offer const& offer) const
+{
+    if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY || RankDamageCounts(owned))
+        return true;
+    return offer.upgrades[0] != BONK_SPELL_UPGRADE_NONE;
 }
 
 bool BonkRun::HasteShortensCooldown(OwnedWeapon const& owned, float alreadyRolled, float step) const
@@ -9947,6 +10139,8 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
             continue;
         }
         Offer const offer = MakeRankOffer(owned, BONK_RARITY_COMMON);
+        if (!OfferGainsAnything(owned, offer))
+            continue;
         if (!m_banished.count(GetBanishKey(offer)))
             candidates.push_back({ offer, 3 });
     }
@@ -10195,16 +10389,19 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
 {
     OwnedWeapon const* owned = FindOwned(offer.id);
     BonkWeapon const& current = owned ? owned->weapon : weapon;
-    float damage = BONK_RANK_DAMAGE[offer.rarity];
+    bool const damageCounts = !owned || RankDamageCounts(*owned);
+    float damage = GetRankDamage(owned, offer.rarity);
     float amounts[MAX_BONK_SPELL_UPGRADE] = {};
     std::vector<BonkSpellUpgrade> order;
-    for (uint8 i = 0; i < BONK_RANK_UPGRADES[offer.rarity] && i < BONK_MAX_RANK_UPGRADES; ++i)
+    uint8 const count = GetRankUpgradeCount(owned, offer.rarity);
+    for (uint8 i = 0; i < count; ++i)
     {
         BonkSpellUpgrade const upgrade = offer.upgrades[i];
         float const step = current.GetUpgradeStep(upgrade);
         if (step <= 0.0f)
         {
-            damage += BONK_RANK_SPARE_DAMAGE;
+            if (damageCounts)
+                damage += BONK_RANK_SPARE_DAMAGE;
             continue;
         }
         if (!amounts[upgrade])
@@ -10246,7 +10443,8 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
     };
 
     std::vector<std::string> adds;
-    adds.push_back(describeDamage(damage));
+    if (damage > 0.0f)
+        adds.push_back(describeDamage(damage));
     for (BonkSpellUpgrade upgrade : order)
         if (!strengthens || upgrade != strength.folded)
             adds.push_back(DescribeBonkSpellUpgrade(current, upgrade, amounts[upgrade]));
@@ -10889,11 +11087,16 @@ void BonkRun::HoldAuraTimers(uint32 diff)
 
 void BonkRun::OnMobStuck(Creature* mob)
 {
-    if (m_state != STATE_RUNNING || m_paused || m_perched)
+    if (m_state != STATE_RUNNING || m_paused)
         return;
-    if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI()))
+    if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
         if (ai->IsFlyer())
+        {
+            ai->FlyIn(m_player);
             return;
+        }
+    if (m_perched)
+        return;
 
     float x, y, z;
     if (FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))

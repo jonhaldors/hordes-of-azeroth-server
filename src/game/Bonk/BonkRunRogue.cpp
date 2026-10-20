@@ -360,9 +360,8 @@ void BonkRun::FlurryFrom(Creature* target, float damage, uint32 creditSpellId)
     if (!look)
         return;
     float const share = damage * BONK_FLURRY_DAMAGE_SHARE;
-    float const area = std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f);
     uint32 hit = 0;
-    for (Creature* mob : GetMobsInRange(BONK_FLURRY_RADIUS * area, target))
+    for (Creature* mob : GetMobsInRange(BONK_FLURRY_RADIUS, target))
     {
         if (hit >= extra)
             break;

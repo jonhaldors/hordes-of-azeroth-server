@@ -364,10 +364,18 @@ enum BonkSpellUpgrade : uint8
     BONK_SPELL_UPGRADE_SHIELD_SIZE  = 14,
     BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN = 15,
     BONK_SPELL_UPGRADE_ECHO         = 16,
+    BONK_SPELL_UPGRADE_REACH        = 17,
     MAX_BONK_SPELL_UPGRADE
 };
 
-float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f, 15.0f, 0.0f, 20.0f, 60.0f, 0.0f, 40.0f, 1.0f };
+float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f, 15.0f, 0.0f, 20.0f, 60.0f, 0.0f, 40.0f, 1.0f, 50.0f };
+float const BONK_MELEE_MAX_RANGE = 12.0f;
+float const BONK_REACH_ROLL_WEIGHT = 0.5f;
+
+inline float GetUpgradeRollWeight(BonkSpellUpgrade upgrade)
+{
+    return upgrade == BONK_SPELL_UPGRADE_REACH ? BONK_REACH_ROLL_WEIGHT : 1.0f;
+}
 uint32 const BONK_SPELL_CLEAVE_TARGETS = 2;
 
 struct BonkWeaponUpgrade
@@ -378,7 +386,9 @@ struct BonkWeaponUpgrade
 
 float const BONK_RANK_DAMAGE[BONK_RARITY_LEGENDARY]   = { 10.0f, 18.0f, 15.0f, 15.0f };
 uint8 const BONK_RANK_UPGRADES[BONK_RARITY_LEGENDARY] = { 0, 0, 1, 2 };
-uint8 const BONK_MAX_RANK_UPGRADES                    = 2;
+uint8 const BONK_DAMAGELESS_RANK_UPGRADES[BONK_RARITY_LEGENDARY] = { 1, 2, 2, 3 };
+uint8 const BONK_MAX_RANK_UPGRADES                    = 3;
+float const BONK_WINDOW_MAX_UPTIME                    = 0.75f;
 float const BONK_RANK_SPARE_DAMAGE                    = 10.0f;
 uint32 const BONK_SPREAD_RANK                  = 8;
 uint32 const BONK_EVOLVE_RANK                  = 10;
@@ -583,6 +593,11 @@ struct BonkWeapon
 
     bool HasFlag(BonkWeaponFlags flag) const { return (flags & flag) != 0; }
     bool IsKeywordOnly() const { return damageEffectIndex < 0 && !weaponDamage; }
+    bool IsMeleeStrike() const
+    {
+        return !HasFlag(BONK_WEAPON_FLAG_AOE) && target != BONK_TARGET_SELF && target != BONK_TARGET_GROUND && range > 0.0f &&
+            range <= BONK_MELEE_MAX_RANGE;
+    }
     bool AppliesPoison() const
     {
         return applies == BONK_KEYWORD_POISON || behavior == BONK_BEHAVIOR_VENOM_BOLTS || behavior == BONK_BEHAVIOR_VENOM_CLOUD ||
@@ -818,7 +833,6 @@ enum BonkAbilityShape : uint8
 {
     BONK_SHAPE_SPELL     = 0,
     BONK_SHAPE_CONE      = 1,
-    BONK_SHAPE_RING      = 2,
     BONK_SHAPE_BARRAGE   = 3,
     BONK_SHAPE_TRAIL     = 4,
     BONK_SHAPE_LEAP      = 5,
@@ -847,6 +861,8 @@ struct BonkMobAbility
     uint32 count = 0;
     float size = 0.0f;
     float belowHealth = 100.0f;
+    uint32 castKit = 0;
+    uint32 impactKit = 0;
     std::string label;
 };
 
@@ -1111,6 +1127,16 @@ enum BonkGlyphEffect : uint8
     BONK_GLYPH_GAMBLER        = 12,
     BONK_GLYPH_STORM          = 13,
     BONK_GLYPH_METEOR         = 14,
+    BONK_GLYPH_DASH           = 15,
+    BONK_GLYPH_FORESIGHT      = 16,
+    BONK_GLYPH_TREASURE       = 17,
+    BONK_GLYPH_SCAVENGER      = 18,
+    BONK_GLYPH_PRODIGY        = 19,
+    BONK_GLYPH_AMBITION       = 20,
+    BONK_GLYPH_HUNT           = 21,
+    BONK_GLYPH_LAST_STAND     = 22,
+    BONK_GLYPH_TURTLE         = 23,
+    BONK_GLYPH_NOMAD          = 24,
     MAX_BONK_GLYPH_EFFECT
 };
 

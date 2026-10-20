@@ -111,15 +111,54 @@ float BonkRun::RollDamageSpread() const
 
 void BonkRun::AddRankGains(OwnedWeapon& owned, Offer const& offer) const
 {
-    owned.damageBonus += BONK_RANK_DAMAGE[offer.rarity];
-    for (uint8 i = 0; i < BONK_RANK_UPGRADES[offer.rarity] && i < BONK_MAX_RANK_UPGRADES; ++i)
+    bool const damageCounts = RankDamageCounts(owned);
+    uint8 const count = GetRankUpgradeCount(&owned, offer.rarity);
+    owned.damageBonus += GetRankDamage(&owned, offer.rarity);
+    for (uint8 i = 0; i < count; ++i)
     {
         float const step = owned.weapon.GetUpgradeStep(offer.upgrades[i]);
         if (step > 0.0f)
             owned.upgrades[offer.upgrades[i]] += step;
-        else
+        else if (damageCounts)
             owned.damageBonus += BONK_RANK_SPARE_DAMAGE;
     }
+}
+
+bool BonkRun::RankDamageCounts(OwnedWeapon const& owned) const
+{
+    if (owned.weapon.damageFraction > 0.0f || owned.weapon.healPct > 0.0f)
+        return true;
+    if (IsTickingKeyword(owned.weapon.applies) && owned.weapon.applyStacks)
+        return true;
+    float upgrades[MAX_BONK_SPELL_UPGRADE] = {};
+    GetSpellUpgrades(&owned, upgrades);
+    WeaponStrength strength;
+    return GetWeaponStrength(owned.weapon, owned.damageBonus, upgrades, strength);
+}
+
+float BonkRun::GetRankDamage(OwnedWeapon const* owned, BonkRarity rarity) const
+{
+    return !owned || RankDamageCounts(*owned) ? BONK_RANK_DAMAGE[rarity] : 0.0f;
+}
+
+uint8 BonkRun::GetRankUpgradeCount(OwnedWeapon const* owned, BonkRarity rarity) const
+{
+    uint8 const count = !owned || RankDamageCounts(*owned) ? BONK_RANK_UPGRADES[rarity] : BONK_DAMAGELESS_RANK_UPGRADES[rarity];
+    return std::min(count, BONK_MAX_RANK_UPGRADES);
+}
+
+bool BonkRun::KeepsWindowUptime(OwnedWeapon const& owned, float const* rolled, BonkSpellUpgrade upgrade, float step) const
+{
+    bool const window = owned.weapon.behavior == BONK_BEHAVIOR_BLADE_FLURRY || owned.weapon.behavior == BONK_BEHAVIOR_SHADOW_DANCE ||
+        owned.weapon.behavior == BONK_BEHAVIOR_EVASION;
+    if (!window || owned.weapon.durationMs == 0 || (upgrade != BONK_SPELL_UPGRADE_HASTE && upgrade != BONK_SPELL_UPGRADE_DURATION))
+        return true;
+    OwnedWeapon after = owned;
+    for (uint8 index = 0; index < MAX_BONK_SPELL_UPGRADE; ++index)
+        after.upgrades[index] += rolled[index];
+    after.upgrades[upgrade] += step;
+    uint32 const cooldown = GetWeaponCooldown(after);
+    return cooldown > 0 && owned.weapon.durationMs * GetWeaponDurationScale(after) <= cooldown * BONK_WINDOW_MAX_UPTIME;
 }
 
 float BonkRun::GetShownHit(OwnedWeapon const& owned, float extraPower) const
@@ -340,8 +379,12 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
             case BONK_SPELL_UPGRADE_ECHO:
                 stats.push_back({ "Extra casts", FormatNumber(now[upgrade], "%g"), FormatNumber(after[upgrade], "%g") });
                 break;
+            case BONK_SPELL_UPGRADE_REACH:
+                stats.push_back({ "Reach", FormatNumber(weapon.range * GetWeaponArea(owned), "%.1f") + " yd",
+                    FormatNumber(weapon.range * GetWeaponArea(next), "%.1f") + " yd" });
+                break;
             case BONK_SPELL_UPGRADE_DEPLOY:
-                stats.push_back({ "Deploy range", "+" + FormatNumber(now[upgrade], "%g") + " yd", "+" + FormatNumber(after[upgrade], "%g") + " yd" });
+                stats.push_back({ "Deploy range","+" + FormatNumber(now[upgrade], "%g") + " yd", "+" + FormatNumber(after[upgrade], "%g") + " yd" });
                 break;
             default:
             {

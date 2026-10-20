@@ -499,6 +499,7 @@ void BonkPlayer::WriteHeroScreenStats() const
     {
         std::string name;
         uint8 classId = 0;
+        uint32 played = 0;
         Record record;
         uint32 items = 0;
         uint32 itemLevels = 0;
@@ -521,7 +522,7 @@ void BonkPlayer::WriteHeroScreenStats() const
     uint32 const accountId = m_player->GetSession()->GetAccountId();
     uint32 const ownGuid = m_player->GetGUIDLow();
 
-    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `guid`, `name`, `class` FROM `characters` WHERE `account` = %u", accountId));
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `guid`, `name`, `class`, `played_time_total` FROM `characters` WHERE `account` = %u", accountId));
     if (result)
     {
         do
@@ -530,6 +531,7 @@ void BonkPlayer::WriteHeroScreenStats() const
             Hero& hero = heroes[fields[0].GetUInt32()];
             hero.name = fields[1].GetCppString();
             hero.classId = fields[2].GetUInt8();
+            hero.played = fields[3].GetUInt32();
         } while (result->NextRow());
     }
 
@@ -579,6 +581,7 @@ void BonkPlayer::WriteHeroScreenStats() const
     Hero& self = heroes[ownGuid];
     self.name = m_player->GetName();
     self.record = m_record;
+    self.played = m_player->GetTotalPlayedTime();
     for (uint32 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             addItem(self, slot, item->GetEntry());
@@ -601,6 +604,7 @@ void BonkPlayer::WriteHeroScreenStats() const
             << ", items = " << hero.items
             << ", itemLevel = " << (hero.items ? hero.itemLevels / hero.items : 0)
             << ", gearValue = " << hero.gearValue
+            << ", played = " << hero.played
             << ", mastery = " << BonkMastery::GetLevel(masteryXp[hero.classId]) << " },\n";
     }
     lua << "\t},\n};\n";

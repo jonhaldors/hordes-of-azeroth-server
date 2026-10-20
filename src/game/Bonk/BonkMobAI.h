@@ -24,6 +24,7 @@ class BonkMobAI : public CreatureAI
         static void SetNextAffixCount(int32 count) { s_nextAffixCount = count; }
         static void SetNextPlateIcon(char const* icon) { s_nextPlateIcon = icon; }
         static void SetNextFlyer(bool flyer) { s_nextFlyer = flyer; }
+        static void SetNextLevel(uint32 level) { s_nextLevel = level; }
         static std::string GetUnitGuidText(Creature const* creature);
         static bool MayCry(Creature* creature);
 
@@ -34,6 +35,7 @@ class BonkMobAI : public CreatureAI
         void Pull(float x, float y, float z, float speed, uint32 settleMs);
         BonkSpawnKind GetKind() const { return m_kind; }
         bool IsFlyer() const { return m_creature->IsBonkFlyer(); }
+        void FlyIn(Player* owner);
         ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
         void SetArchetype(BonkArchetype archetype) { m_archetype = archetype; }
         BonkArchetype GetArchetype() const { return m_archetype; }
@@ -102,6 +104,8 @@ class BonkMobAI : public CreatureAI
         float GetMeleeHit() const;
         float GetHitScale(BonkRun const* run) const;
         BonkEnemyHit MakeHit(BonkRun const* run, uint32 spellId, uint32 damage, uint32 windId = 0) const;
+        BonkEnemyHit MakeAbilityHit(BonkRun const* run, BonkMobAbility const& ability, uint32 spellId, uint32 damage, uint32 windId = 0) const;
+        void StrikeOwner(Player* owner, BonkMobAbility const& ability, float x, float y, float z);
         uint32 GetAreaDamage(BonkMobAbility const& ability, SpellEntry const* spellInfo) const;
         uint32 GetShapeDamage(BonkMobAbility const& ability) const;
         void Cast(BonkMobAbility const& ability, Player* owner, bool triggered);
@@ -148,6 +152,7 @@ class BonkMobAI : public CreatureAI
         BonkSpawnKind m_kind = BONK_SPAWN_NORMAL;
         BonkArchetype m_archetype = BONK_ARCHETYPE_GRUNT;
         bool m_veteran = false;
+        bool m_flyingIn = false;
         BonkMob const* m_mob = nullptr;
         std::vector<int32> m_abilityTimers;
         uint32 m_affixes = 0;
@@ -220,6 +225,7 @@ class BonkMobAI : public CreatureAI
         static thread_local int32 s_nextAffixCount;
         static thread_local char const* s_nextPlateIcon;
         static thread_local bool s_nextFlyer;
+        static thread_local uint32 s_nextLevel;
 };
 
 #endif

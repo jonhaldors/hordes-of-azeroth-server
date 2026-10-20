@@ -660,7 +660,7 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
     BonkTelegraphShape shape = BONK_TELEGRAPH_CIRCLE;
     if (!shapeArg || !ParseBonkTelegraphShape(shapeArg, shape))
     {
-        SendSysMessage("Usage: .bonk telegraph circle|cone|line|ring [size] [seconds]");
+        SendSysMessage("Usage: .bonk telegraph circle|cone|line [size] [seconds]");
         SetSentErrorMessage(true);
         return false;
     }
@@ -675,7 +675,7 @@ bool ChatHandler::HandleBonkTelegraphCommand(char* args)
     Player* player = m_session->GetPlayer();
     float const o = player->GetOrientation();
     float x = player->GetPositionX(), y = player->GetPositionY();
-    if (shape == BONK_TELEGRAPH_CIRCLE || shape == BONK_TELEGRAPH_RING)
+    if (shape == BONK_TELEGRAPH_CIRCLE)
     {
         x += (size + 2.0f) * std::cos(o);
         y += (size + 2.0f) * std::sin(o);
