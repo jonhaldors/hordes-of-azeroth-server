@@ -890,6 +890,7 @@ void BonkRun::RemoveSandboxSpells(uint32 baseId)
     ResetWarriorState();
     ResetMageState();
     m_pendingCasts.clear();
+    m_heldShotSources.clear();
     m_marks.clear();
     m_buffs.clear();
 

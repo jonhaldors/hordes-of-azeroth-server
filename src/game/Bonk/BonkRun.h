@@ -1466,6 +1466,7 @@ class BonkRun
         void UpdateShotSources(uint32 diff);
         void DespawnShotSources();
         std::vector<ObjectGuid> m_shotSources;
+        std::set<ObjectGuid> m_heldShotSources;
         size_t m_nextShotSource = 0;
         uint32 m_shotSourceTimer = 0;
         struct WeaponOrb
