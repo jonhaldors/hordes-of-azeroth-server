@@ -15,6 +15,7 @@
  */
 
 #include "scriptPCH.h"
+#include "Bonk/BonkPlayer.h"
 
 // 5246 - Intimidating Shout
 struct WarriorIntimidatingShoutScript : SpellScript
@@ -37,9 +38,16 @@ SpellScript* GetScript_WarriorIntimidatingShout(SpellEntry const*)
 // 23881, 23892, 23893, 23894 - Bloodthirst
 struct WarriorBloodthirstScript : SpellScript
 {
+    static bool IsBonkRunCast(Spell const* spell)
+    {
+        Player const* player = spell->m_casterUnit->ToPlayer();
+        return player && player->GetBonkPlayer() && player->GetBonkPlayer()->GetRun();
+    }
+
+
     bool OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const final
     {
-        if (effIdx == EFFECT_INDEX_0 && spell->m_casterUnit)
+        if (effIdx == EFFECT_INDEX_0 && spell->m_casterUnit && !IsBonkRunCast(spell))
         {
             float attackPower = spell->m_casterUnit->GetTotalAttackPowerValue(BASE_ATTACK);
             if (spell->GetUnitTarget())
