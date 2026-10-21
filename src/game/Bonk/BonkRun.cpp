@@ -257,6 +257,7 @@ namespace
     uint32 const BONK_SHOT_SOURCE_CHECK_MS = 1000;
     float const BONK_SHOT_SOURCE_GATHER    = 50.0f;
     size_t const BONK_SHOT_SOURCES_HELD_MAX = BONK_SHOT_SOURCES / 2;
+    uint32 const BONK_SHOT_SOURCE_LINGER_MS = 1000;
     uint32 const BONK_SHOT_SOURCE_LIFETIME_MS = 60 * MINUTE * IN_MILLISECONDS;
     uint32 const BONK_SHOT_SOURCE_BOW      = 2504;
     uint32 const BONK_RATE_WINDOW_MS       = 1000;
@@ -4758,11 +4759,12 @@ void BonkRun::QueueRicochet(OwnedWeapon const& owned, SpellEntry const* spellInf
     hop.share = share;
     hop.target = target->GetObjectGuid();
     target->GetPosition(hop.x, hop.y, hop.z);
+    PruneHeldShotSources();
     if (m_heldShotSources.size() < BONK_SHOT_SOURCES_HELD_MAX)
         if (Creature* source = TakeShotSource(hop.x, hop.y, hop.z))
         {
             hop.source = source->GetObjectGuid();
-            m_heldShotSources.insert(hop.source);
+            m_heldShotSources[hop.source] = 0;
         }
     hop.struck = std::move(struck);
     m_pendingCasts.push_back(std::move(hop));
@@ -4787,6 +4789,7 @@ void BonkRun::Ricochet(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingC
         FiringWeapon firing(m_player->GetBonkPlayer());
         StrikeWith(owned, spellInfo, next, share, true, source);
     }
+    m_heldShotSources[source->GetObjectGuid()] = WorldTimer::getMSTime() + BONK_SHOT_SOURCE_LINGER_MS;
     QueueRicochet(owned, spellInfo, next, source, share, cast.struck, cast.hops - 1);
 }
 
@@ -4899,12 +4902,33 @@ Creature* BonkRun::TakeShotSource(float x, float y, float z)
         ObjectGuid const guid = m_shotSources[m_nextShotSource];
         m_nextShotSource = (m_nextShotSource + 1) % m_shotSources.size();
         Creature* source = guid.IsEmpty() ? nullptr : map->GetCreature(guid);
-        if (!source || !source->IsAlive() || m_heldShotSources.count(guid))
+        if (!source || !source->IsAlive() || IsShotSourceHeld(guid))
             continue;
         source->NearTeleportTo(x, y, z + BONK_PROJECTILE_HEIGHT, source->GetOrientation());
         return source;
     }
     return nullptr;
+}
+
+bool BonkRun::IsShotSourceHeld(ObjectGuid const& guid)
+{
+    auto itr = m_heldShotSources.find(guid);
+    if (itr == m_heldShotSources.end())
+        return false;
+    if (!itr->second || int32(itr->second - WorldTimer::getMSTime()) > 0)
+        return true;
+    m_heldShotSources.erase(itr);
+    return false;
+}
+
+void BonkRun::PruneHeldShotSources()
+{
+    uint32 const now = WorldTimer::getMSTime();
+    for (auto itr = m_heldShotSources.begin(); itr != m_heldShotSources.end();)
+        if (itr->second && int32(itr->second - now) <= 0)
+            itr = m_heldShotSources.erase(itr);
+        else
+            ++itr;
 }
 
 void BonkRun::UpdateShotSources(uint32 diff)
@@ -4919,7 +4943,7 @@ void BonkRun::UpdateShotSources(uint32 diff)
     WarmShotSources();
     Map* map = m_player->GetMap();
     for (ObjectGuid const& guid : m_shotSources)
-        if (Creature* source = guid.IsEmpty() || m_heldShotSources.count(guid) ? nullptr : map->GetCreature(guid))
+        if (Creature* source = guid.IsEmpty() || IsShotSourceHeld(guid) ? nullptr : map->GetCreature(guid))
             if (!source->IsWithinDistInMap(m_player, BONK_SHOT_SOURCE_GATHER))
                 source->NearTeleportTo(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ() + BONK_PROJECTILE_HEIGHT,
                     source->GetOrientation());
