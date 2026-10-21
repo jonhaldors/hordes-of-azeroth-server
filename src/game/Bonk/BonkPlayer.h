@@ -130,6 +130,8 @@ class BonkPlayer
         bool IsFiringWeapon() const { return m_firingWeapon; }
         void SetEquippingGear(bool equipping) { m_equippingGear = equipping; }
         bool IsEquippingGear() const { return m_equippingGear; }
+        bool CanSwapGearInCombat() const;
+        bool StowTwoHander();
         bool IsSlotUnusedByClass(uint8 slot) const;
         struct SpellTweak
         {

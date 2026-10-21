@@ -161,7 +161,13 @@ class BonkRun
         bool ForceEvolve(uint32 weaponId, std::string& error);
         bool GivePassive(uint32 passiveId, std::string& error);
 
-        bool ChooseGear(bool equip, uint8 slot, std::string& error);
+        enum GearChoice
+        {
+            GEAR_CHOICE_EQUIP,
+            GEAR_CHOICE_LOOT,
+            GEAR_CHOICE_SALVAGE,
+        };
+        bool ChooseGear(GearChoice choice, uint8 slot, std::string& error);
         bool ChooseGlyph(uint32 choice, std::string& error);
         bool UseHidden(GameObject* go);
         bool UseItem(Item* item);
@@ -182,6 +188,7 @@ class BonkRun
         std::vector<VaultFind> GetVaultFinds() const;
         std::string DescribeBroughtGearFor(uint32 entry) const;
         uint32 GetVaultSlots() const;
+        void FitVaultToSlots();
         bool IsVaultEmptyWithFinds() const;
 
         void OnWeaponHit(Unit* victim, SpellEntry const* spell);
@@ -803,6 +810,8 @@ class BonkRun
         void CloseGearOffer();
         uint32 GetGearSalvage(uint32 entry) const;
         bool EquipRunGear(uint32 entry, uint8 slot, std::string& error);
+        Item* StoreRunGear(uint32 entry, std::string& error);
+        bool OfferSandboxGear(uint32 entry, std::string& error);
         std::vector<uint8> GetGearSlotChoices(uint32 entry) const;
         void SnapshotBroughtGear();
         void RestoreBroughtGear();

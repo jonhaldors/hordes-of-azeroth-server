@@ -435,16 +435,18 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
 
     std::string const choice = args ? args : "";
     bool const equipInSlot = choice.compare(0, 6, "equip ") == 0;
-    if (choice != "equip" && choice != "salvage" && !equipInSlot)
+    if (choice != "equip" && choice != "loot" && choice != "salvage" && !equipInSlot)
     {
-        SendSysMessage("Use .bonk gear equip, .bonk gear equip <slot> or .bonk gear salvage.");
+        SendSysMessage("Use .bonk gear equip, .bonk gear equip <slot>, .bonk gear loot or .bonk gear salvage.");
         SetSentErrorMessage(true);
         return false;
     }
 
     std::string error;
     uint8 const slot = equipInSlot ? uint8(atoi(choice.c_str() + 6)) : uint8(NULL_SLOT);
-    if (!run->ChooseGear(choice != "salvage", slot, error))
+    BonkRun::GearChoice const gearChoice = choice == "loot" ? BonkRun::GEAR_CHOICE_LOOT :
+        choice == "salvage" ? BonkRun::GEAR_CHOICE_SALVAGE : BonkRun::GEAR_CHOICE_EQUIP;
+    if (!run->ChooseGear(gearChoice, slot, error))
     {
         SendSysMessage(error.c_str());
         SetSentErrorMessage(true);
@@ -616,7 +618,7 @@ bool ChatHandler::HandleBonkCampCommand(char*)
     }
     if (player->IsInCombat() || player->IsTaxiFlying())
     {
-        SendSysMessage("You can't go back to the outpost right now.");
+        SendSysMessage("You can't go back to the Inn right now.");
         SetSentErrorMessage(true);
         return false;
     }

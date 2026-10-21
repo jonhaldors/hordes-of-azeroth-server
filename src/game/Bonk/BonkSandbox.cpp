@@ -343,7 +343,7 @@ bool BonkPlayer::StartSandbox(std::string& error)
     else if (m_run)
         error = "You are already in a run. Use .bonk stop to leave it.";
     else if (!IsAtCamp())
-        error = "Go back to the outpost to enter the sandbox.";
+        error = "Go back to the Inn to enter the sandbox.";
     else if (m_player->IsInCombat())
         error = "You can't enter the sandbox while in combat.";
     else if (m_player->IsTaxiFlying())
@@ -1267,6 +1267,18 @@ bool GossipSelect_npc_bonk_sandbox(Player* player, Creature* creature, uint32 se
     return true;
 }
 
+bool BonkRun::OfferSandboxGear(uint32 entry, std::string& error)
+{
+    if (!sBonkMgr.GetGear(entry))
+    {
+        error = "That isn't run gear.";
+        return false;
+    }
+    m_pendingGear.push_back(entry);
+    OfferGear();
+    return true;
+}
+
 bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 second, std::string& error)
 {
     if (m_state != STATE_RUNNING)
@@ -1290,6 +1302,8 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         RemoveSandboxSpells(first);
     else if (verb == "level")
         SetSandboxLevel(first);
+    else if (verb == "gear")
+        return OfferSandboxGear(first, error);
     else if (verb == "clear")
         ResetSandbox(RESET_CLEAR);
     else if (verb == "heal")

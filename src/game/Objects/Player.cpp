@@ -9694,9 +9694,9 @@ InventoryResult Player::CanEquipItem(uint8 slot, uint16& dest, ItemPrototype con
             // - It will no longer be possible to swap any equipment while stunned.
             // May be here should be more stronger checks; STUNNED checked
             // ROOT, CONFUSED, DISTRACTED, FLEEING this needs to be checked.
-            bool const runGear = m_bonkPlayer && m_bonkPlayer->IsEquippingGear();
+            bool const runGear = m_bonkPlayer && m_bonkPlayer->CanSwapGearInCombat();
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
-            if (!runGear && HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_PENDING_STUNNED))
+            if (!(m_bonkPlayer && m_bonkPlayer->IsEquippingGear()) && HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_PENDING_STUNNED))
                 return EQUIP_ERR_YOU_ARE_STUNNED;
 #endif
 
@@ -9828,7 +9828,7 @@ InventoryResult Player::CanUnequipItem(uint16 pos, bool swap) const
 #endif
 
     // do not allow unequipping gear except weapons, offhands, projectiles, relics in combat
-    if (!pProto->CanChangeEquipStateInCombat() && !(m_bonkPlayer && m_bonkPlayer->IsEquippingGear()))
+    if (!pProto->CanChangeEquipStateInCombat() && !(m_bonkPlayer && m_bonkPlayer->CanSwapGearInCombat()))
     {
         if (IsInCombat())
             return EQUIP_ERR_NOT_IN_COMBAT;
@@ -11198,6 +11198,8 @@ void Player::SwapItem(uint16 src, uint16 dst)
         {
             uint16 dest;
             InventoryResult msg = CanEquipItem(dstslot, dest, pSrcItem, false);
+            if (msg == EQUIP_ERR_CANT_EQUIP_WITH_TWOHANDED && m_bonkPlayer && m_bonkPlayer->StowTwoHander())
+                msg = CanEquipItem(dstslot, dest, pSrcItem, false);
             if (msg != EQUIP_ERR_OK)
             {
                 SendEquipError(msg, pSrcItem, nullptr);

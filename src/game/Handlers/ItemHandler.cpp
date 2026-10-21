@@ -144,6 +144,8 @@ void WorldSession::HandleAutoEquipItemOpcode(WorldPackets::Item::AutoEquipItem c
 
     uint16 dest;
     InventoryResult msg = _player->CanEquipItem(NULL_SLOT, dest, pSrcItem, !pSrcItem->IsBag());
+    if (msg == EQUIP_ERR_CANT_EQUIP_WITH_TWOHANDED && _player->GetBonkPlayer() && _player->GetBonkPlayer()->StowTwoHander())
+        msg = _player->CanEquipItem(NULL_SLOT, dest, pSrcItem, !pSrcItem->IsBag());
     if (msg != EQUIP_ERR_OK)
     {
         _player->SendEquipError(msg, pSrcItem, nullptr);

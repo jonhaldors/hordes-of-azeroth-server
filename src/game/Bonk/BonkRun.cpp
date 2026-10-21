@@ -4186,7 +4186,7 @@ void BonkRun::OpenPortal(Creature* boss)
     }
 
     if (!last)
-        bonk->Notify("You cleared stage " + std::to_string(m_stage) + "! Take the portal to the next stage, or return to the outpost.");
+        bonk->Notify("You cleared stage " + std::to_string(m_stage) + "! Take the portal to the next stage, or return to the Inn.");
     else if (!m_tier.endless)
         bonk->Notify("Victory! You cleared " + m_tier.name + ". Take the portal home with your loot.");
     else if (m_stage == m_tier.stages)

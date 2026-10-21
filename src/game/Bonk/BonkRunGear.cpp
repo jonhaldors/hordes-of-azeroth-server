@@ -285,7 +285,9 @@ void BonkRun::SendGearOffer() const
     };
     std::vector<uint8> const choices = GetGearSlotChoices(m_gearOfferEntry);
     bool const twoSlots = choices.size() >= 2;
-    uint32 const replaced = wornIn(twoSlots ? choices[0] : m_player->FindEquipSlot(proto, NULL_SLOT, true));
+    uint8 const slot = twoSlots ? choices[0] : m_player->FindEquipSlot(proto, NULL_SLOT, true);
+    bool const blockedByTwoHander = slot == EQUIPMENT_SLOT_OFFHAND && m_player->IsTwoHandUsed();
+    uint32 const replaced = wornIn(blockedByTwoHander ? uint8(EQUIPMENT_SLOT_MAINHAND) : slot);
     std::string const slotChoice = twoSlots ? "~" + std::to_string(choices[0]) + "~" + std::to_string(choices[1]) + "~" +
         std::to_string(wornIn(choices[1])) : std::string();
 
@@ -298,7 +300,7 @@ void BonkRun::SendGearOffer() const
         return;
     }
 
-    ChatHandler(m_player).PSendSysMessage("Loot: %s. Type .bonk gear equip to wear it for this run, or .bonk gear salvage for %u Valor.",
+    ChatHandler(m_player).PSendSysMessage("Loot: %s. Type .bonk gear equip to wear it for this run, .bonk gear loot to carry it in your bags, or .bonk gear salvage for %u Valor.",
         GetItemLink(proto).c_str(), valor);
 }
 
@@ -310,7 +312,7 @@ void BonkRun::CloseGearOffer()
     m_player->GetBonkPlayer()->SendAddon("gearclose");
 }
 
-bool BonkRun::ChooseGear(bool equip, uint8 slot, std::string& error)
+bool BonkRun::ChooseGear(GearChoice choice, uint8 slot, std::string& error)
 {
     if (!m_gearOfferEntry)
     {
@@ -322,7 +324,7 @@ bool BonkRun::ChooseGear(bool equip, uint8 slot, std::string& error)
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
     std::string const name = proto ? proto->Name1 : "the gear";
-    if (equip && slot != NULL_SLOT)
+    if (choice == GEAR_CHOICE_EQUIP && slot != NULL_SLOT)
     {
         std::vector<uint8> const choices = GetGearSlotChoices(entry);
         if (std::find(choices.begin(), choices.end(), slot) == choices.end())
@@ -332,15 +334,29 @@ bool BonkRun::ChooseGear(bool equip, uint8 slot, std::string& error)
         }
     }
 
-    std::string why;
-    if (equip && EquipRunGear(entry, slot, why))
-        bonk->Notify("You equipped " + name + ".");
+    if (choice == GEAR_CHOICE_LOOT)
+    {
+        Item* item = StoreRunGear(entry, error);
+        if (!item)
+        {
+            error += ".";
+            return false;
+        }
+        m_runGear.push_back(item->GetObjectGuid());
+        bonk->Notify("You put " + name + " in your bags. Put it in the Extraction Vault to keep it.");
+    }
     else
     {
-        uint32 const valor = GetGearSalvage(entry);
-        m_coins += valor;
-        bonk->Notify((why.empty() ? "You salvaged " + name : why + ", so you salvaged it") + " for " + std::to_string(valor) + " Valor.");
-        SendState();
+        std::string why;
+        if (choice == GEAR_CHOICE_EQUIP && EquipRunGear(entry, slot, why))
+            bonk->Notify("You equipped " + name + ".");
+        else
+        {
+            uint32 const valor = GetGearSalvage(entry);
+            m_coins += valor;
+            bonk->Notify((why.empty() ? "You salvaged " + name : why + ", so you salvaged it") + " for " + std::to_string(valor) + " Valor.");
+            SendState();
+        }
     }
 
     CloseGearOffer();
@@ -349,7 +365,7 @@ bool BonkRun::ChooseGear(bool equip, uint8 slot, std::string& error)
     return true;
 }
 
-bool BonkRun::EquipRunGear(uint32 entry, uint8 slot, std::string& error)
+Item* BonkRun::StoreRunGear(uint32 entry, std::string& error)
 {
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
     std::string const name = proto ? proto->Name1 : "the gear";
@@ -357,18 +373,37 @@ bool BonkRun::EquipRunGear(uint32 entry, uint8 slot, std::string& error)
     if (m_player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, entry, 1) != EQUIP_ERR_OK)
     {
         error = "You have no room in your bags for " + name;
-        return false;
+        return nullptr;
     }
     Item* item = m_player->StoreNewItem(dest, entry, true);
     if (!item)
-    {
         error = name + " couldn't be created";
-        return false;
-    }
+    return item;
+}
 
-    EquippingGear const equipping(m_player->GetBonkPlayer());
+bool BonkRun::EquipRunGear(uint32 entry, uint8 slot, std::string& error)
+{
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
+    std::string const name = proto ? proto->Name1 : "the gear";
+    Item* item = StoreRunGear(entry, error);
+    if (!item)
+        return false;
+
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    EquippingGear const equipping(bonk);
     uint16 equipDest;
-    if (m_player->CanEquipItem(slot, equipDest, item, true) != EQUIP_ERR_OK)
+    InventoryResult result = m_player->CanEquipItem(slot, equipDest, item, true);
+    if (result == EQUIP_ERR_CANT_EQUIP_WITH_TWOHANDED)
+    {
+        if (!bonk->StowTwoHander())
+        {
+            m_player->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+            error = "You have no room in your bags for your two-handed weapon";
+            return false;
+        }
+        result = m_player->CanEquipItem(slot, equipDest, item, true);
+    }
+    if (result != EQUIP_ERR_OK)
     {
         m_player->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
         error = "You can't use " + name;
@@ -481,7 +516,7 @@ void BonkRun::MaybeDropHearthstone(BonkSpawnKind kind)
     if (!m_player->StoreNewItem(dest, BONK_ITEM_HEARTHSTONE, true))
         return;
     m_hearthDropped = true;
-    m_player->GetBonkPlayer()->NotifyFind("You found a Hearthstone! Save it for an emergency: it ends the run early and takes you back to the outpost with your Extraction Vault item.");
+    m_player->GetBonkPlayer()->NotifyFind("You found a Hearthstone! Save it for an emergency: it lets you escape the run early and takes you back to the Inn with 1 item from your Extraction Vault.");
 }
 
 bool BonkRun::UseItem(Item* item)
@@ -505,10 +540,11 @@ bool BonkRun::UseItem(Item* item)
     float const facing = m_player->GetOrientation();
     PlaceVault(m_hearthX + BONK_VAULT_RING_OFFSET * std::cos(facing), m_hearthY + BONK_VAULT_RING_OFFSET * std::sin(facing), m_hearthZ);
     m_hearthActive = true;
+    FitVaultToSlots();
     m_hearthMs = 0;
     m_hearthSendMs = 0;
     m_hearthShown = false;
-    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds to return to the outpost" +
+    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds to return to the Inn" +
         (IsVaultEmptyWithFinds() ? ". Put your best find in the Extraction Vault first!" : " with your loot!"));
     return true;
 }
@@ -537,7 +573,7 @@ void BonkRun::UpdateHearth(uint32 diff)
     {
         bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~100");
         EndHearth();
-        bonk->Notify("Returning to the outpost!");
+        bonk->Notify("Returning to the Inn!");
         Finish(true);
         return;
     }
@@ -571,7 +607,18 @@ void BonkRun::EndHearth()
 
 uint32 BonkRun::GetVaultSlots() const
 {
+    if (m_hearthActive)
+        return 1;
     return 1 + uint32(GetUtility(BONK_UTILITY_PACK_MULE));
+}
+
+void BonkRun::FitVaultToSlots()
+{
+    if (m_vault.size() <= GetVaultSlots())
+        return;
+    m_vault.erase(m_vault.begin(), m_vault.end() - GetVaultSlots());
+    if (Item const* item = m_player->GetItemByGuid(m_vault.back()))
+        m_player->GetBonkPlayer()->Notify("The Hearthstone's vault holds only 1 item. " + std::string(item->GetProto()->Name1) + " will go home with you.");
 }
 
 uint32 BonkRun::GetGearGold(uint8 quality) const
@@ -745,7 +792,7 @@ bool BonkRun::PutInVault(uint32 guidLow, std::string& error)
     }
     if (!IsInVault(guid))
     {
-        if (m_vault.size() >= GetVaultSlots())
+        while (m_vault.size() >= GetVaultSlots())
             m_vault.erase(m_vault.begin());
         m_vault.push_back(guid);
         if (Item const* item = m_player->GetItemByGuid(guid))

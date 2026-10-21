@@ -927,12 +927,12 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
     }
     if (BonkQuests::IsTicketUnlock(type) && !IsVisitingShop(BONK_SHOP_TALENTS))
     {
-        message = type == BONK_REWARD_CARD ? "Visit Sayge at the outpost to unlock Darkmoon Cards." : "Visit Sayge at the outpost to unlock Glyphs.";
+        message = type == BONK_REWARD_CARD ? "Visit Sayge at the Inn to unlock Darkmoon Cards." : "Visit Sayge at the Inn to unlock Glyphs.";
         return false;
     }
     if (!BonkQuests::IsTicketUnlock(type) && !IsAtSpellbook())
     {
-        message = "Visit the Spellbook Keeper at the outpost to unlock " + name + ".";
+        message = "Visit the Spellbook Keeper at the Inn to unlock " + name + ".";
         return false;
     }
 
@@ -1496,6 +1496,24 @@ void BonkPlayer::Update(uint32 diff)
 bool BonkPlayer::IsTierCleared(BonkTier const& tier) const
 {
     return tier.stages && GetBestStage(tier.id) > tier.stages;
+}
+
+bool BonkPlayer::CanSwapGearInCombat() const
+{
+    return m_equippingGear || (m_run && (m_run->IsActive() || m_run->IsPortalOpen()));
+}
+
+bool BonkPlayer::StowTwoHander()
+{
+    Item* twoHander = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!twoHander || !m_player->IsTwoHandUsed())
+        return false;
+    ItemPosCountVec dest;
+    uint8 bagSlot = 0;
+    if (m_player->CanStoreItem(NULL_BAG, NULL_SLOT, dest, twoHander, bagSlot, false) != EQUIP_ERR_OK)
+        return false;
+    m_player->AutoUnequipItemFromSlot(EQUIPMENT_SLOT_MAINHAND);
+    return true;
 }
 
 bool BonkPlayer::IsSlotUnusedByClass(uint8 slot) const
@@ -2080,7 +2098,7 @@ void BonkPlayer::UpdateReviveOutsideRun(uint32 diff)
     m_player->ResurrectPlayer(1.0f);
     m_player->SpawnCorpseBones();
     TeleportToCamp();
-    Notify("You were brought back to the outpost.");
+    Notify("You were brought back to the Inn.");
 }
 
 void BonkPlayer::SitAtCamp()
