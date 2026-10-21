@@ -57,10 +57,10 @@ void SRP6::CalculateProof(std::string username)
     SHA1::Generator generator;
     generator.UpdateData(t3);
     generator.UpdateData(SHA1::ComputeFrom(username));
-    generator.UpdateData(s);
-    generator.UpdateData(A);
-    generator.UpdateData(B);
-    generator.UpdateData(K);
+    generator.UpdateData(s.AsByteArray(32));
+    generator.UpdateData(A.AsByteArray(32));
+    generator.UpdateData(B.AsByteArray(32));
+    generator.UpdateData(K.AsByteArray(40));
     SHA1::Digest hashM = generator.GetDigest();
 
     M.SetBinary(hashM.data(), hashM.size());
@@ -78,8 +78,8 @@ bool SRP6::CalculateSessionKey(uint8 const* lp_A, int l)
         return false;
 
     Crypto::Hash::SHA1::Generator generator;
-    generator.UpdateData(A);
-    generator.UpdateData(B);
+    generator.UpdateData(A.AsByteArray(32));
+    generator.UpdateData(B.AsByteArray(32));
     u.SetBinary(generator.GetDigest().data(), 20);
 
     S = (A * (v.ModExp(u, N))).ModExp(b, N);
@@ -112,7 +112,7 @@ bool SRP6::CalculateVerifier(const std::string& rI, const char* salt)
 
     Crypto::Hash::SHA1::Generator generator;
     generator.UpdateData(A);
-    generator.UpdateData(s);
+    generator.UpdateData(s.AsByteArray(32));
     generator.UpdateData(mDigest, SHA_DIGEST_LENGTH);
     auto sha1 = generator.GetDigest();
 
@@ -127,28 +127,31 @@ bool SRP6::CalculateVerifier(const std::string& rI, const char* salt)
 void SRP6::HashSessionKey(void)
 {
     uint8 t[32];
-    uint8 t1[16];
-    uint8 vK[40];
     memcpy(t, S.AsByteArray(32).data(), 32);
+
+    int skipped = 0;
+    while (skipped < 32 && !t[skipped])
+        ++skipped;
+    if (skipped & 1)
+        ++skipped;
+    int const offset = skipped / 2;
+    int const halfLength = 16 - offset;
+
+    uint8 even[16];
+    uint8 odd[16];
     for (int i = 0; i < 16; ++i)
     {
-        t1[i] = t[i * 2];
+        even[i] = t[i * 2];
+        odd[i] = t[i * 2 + 1];
     }
 
-    auto t1HashFirst = Crypto::Hash::SHA1::ComputeFrom(t1, 16);
+    auto evenHash = Crypto::Hash::SHA1::ComputeFrom(even + offset, halfLength);
+    auto oddHash = Crypto::Hash::SHA1::ComputeFrom(odd + offset, halfLength);
+    uint8 vK[40];
     for (int i = 0; i < 20; ++i)
     {
-        vK[i * 2] = t1HashFirst[i];
-    }
-    for (int i = 0; i < 16; ++i)
-    {
-        t1[i] = t[i * 2 + 1];
-    }
-
-    auto t1HashSecond = Crypto::Hash::SHA1::ComputeFrom(t1, 16);
-    for (int i = 0; i < 20; ++i)
-    {
-        vK[i * 2 + 1] = t1HashSecond[i];
+        vK[i * 2] = evenHash[i];
+        vK[i * 2 + 1] = oddHash[i];
     }
     K.SetBinary(vK, 40);
 }
@@ -179,9 +182,9 @@ bool SRP6::ProofVerifier(std::string vC)
 Crypto::Hash::SHA1::Digest SRP6::Finalize()
 {
     Crypto::Hash::SHA1::Generator generator;
-    generator.UpdateData(A);
-    generator.UpdateData(M);
-    generator.UpdateData(K);
+    generator.UpdateData(A.AsByteArray(32));
+    generator.UpdateData(M.AsByteArray(20));
+    generator.UpdateData(K.AsByteArray(40));
     return generator.GetDigest();
 }
 
