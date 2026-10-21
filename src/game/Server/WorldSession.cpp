@@ -1116,8 +1116,8 @@ void WorldSession::LoadTutorialsData()
 void WorldSession::SendTutorialsData()
 {
     WorldPacket data(SMSG_TUTORIAL_FLAGS, 4 * 8);
-    for (uint32 tutorial : m_tutorials)
-        data << tutorial;
+    for (int i = 0; i < ACCOUNT_TUTORIALS_COUNT; ++i)
+        data << uint32(0xFFFFFFFF);
     SendPacket(&data);
 }
 

@@ -302,12 +302,12 @@ bool BonkQuests::IsLocked(uint32 account, BonkQuestReward type, uint32 id) const
         if (progress == itr->second.end() || !progress->second.completed)
             return true;
     }
-    return IsBought(type) && !IsOwned(account, type, id);
+    return IsTicketUnlock(type) && !IsOwned(account, type, id);
 }
 
 bool BonkQuests::IsForSale(uint32 account, BonkQuestReward type, uint32 id) const
 {
-    if (!IsBought(type) || !GetUnlockingQuest(type, id) || !IsLocked(account, type, id))
+    if (!IsTicketUnlock(type) || !GetUnlockingQuest(type, id) || !IsLocked(account, type, id))
         return false;
     BonkQuest const* quest = GetUnlockingQuest(type, id);
     std::lock_guard<std::mutex> guard(m_lock);
@@ -681,14 +681,14 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
             {
                 *icon = weapon->icon;
-                return "Unlocks " + weapon->name + " for purchase at the Spellbook";
+                return "Unlocks " + weapon->name;
             }
             break;
         case BONK_REWARD_PASSIVE:
             if (BonkPassive const* passive = sBonkMgr.GetPassive(quest.rewardValue))
             {
                 *icon = passive->icon;
-                return "Unlocks " + passive->name + " for purchase at the Spellbook";
+                return "Unlocks " + passive->name;
             }
             break;
         case BONK_REWARD_TALENT:

@@ -731,21 +731,14 @@ namespace
         spell->prepare(std::move(targets));
     }
 
-    void ShowMissileAt(Unit* caster, SpellEntry const* spellInfo, float x, float y, float z)
-    {
-        auto packet = std::make_unique<WorldPackets::Spell::SpellGo>();
-        packet->casterGuid = caster->GetObjectGuid();
-        packet->unitCasterGuid = caster->GetObjectGuid();
-        packet->spellId = spellInfo->Id;
-        packet->castFlags = CAST_FLAG_UNKNOWN9;
-        packet->targets.setDestination(x, y, z);
-        caster->SendObjectMessageToSet(std::move(packet), true);
-    }
-
     uint32 const BONK_SPELL_AMBUSH_PLAYER   = 8676;
     uint32 const BONK_SPELL_AMBUSH_NPC      = 24337;
     uint32 const BONK_SPELL_BACKSTAB_PLAYER = 25300;
     uint32 const BONK_SPELL_BACKSTAB_TEST   = 8627;
+    uint32 const BONK_SPELL_JUDGEMENT_PLAYER = 20271;
+    uint32 const BONK_SPELL_JUDGEMENT_NPC   = 23590;
+    uint32 const BONK_SPELL_CHEAP_SHOT_PLAYER = 1833;
+    uint32 const BONK_SPELL_CHEAP_SHOT_NPC  = 6409;
 
     uint32 GetQuietStrikeLook(uint32 spellId)
     {
@@ -753,8 +746,21 @@ namespace
         {
             case BONK_SPELL_AMBUSH_PLAYER:   return BONK_SPELL_AMBUSH_NPC;
             case BONK_SPELL_BACKSTAB_PLAYER: return BONK_SPELL_BACKSTAB_TEST;
+            case BONK_SPELL_JUDGEMENT_PLAYER: return BONK_SPELL_JUDGEMENT_NPC;
+            case BONK_SPELL_CHEAP_SHOT_PLAYER: return BONK_SPELL_CHEAP_SHOT_NPC;
             default:                         return spellId;
         }
+    }
+
+    void ShowMissileAt(Unit* caster, SpellEntry const* spellInfo, float x, float y, float z)
+    {
+        auto packet = std::make_unique<WorldPackets::Spell::SpellGo>();
+        packet->casterGuid = caster->GetObjectGuid();
+        packet->unitCasterGuid = caster->GetObjectGuid();
+        packet->spellId = GetQuietStrikeLook(spellInfo->Id);
+        packet->castFlags = CAST_FLAG_UNKNOWN9;
+        packet->targets.setDestination(x, y, z);
+        caster->SendObjectMessageToSet(std::move(packet), true);
     }
 
     void ShowStrikeOn(Unit* caster, SpellEntry const* spellInfo, Unit* target)
@@ -1236,6 +1242,7 @@ void BonkRun::StartStage()
     ResetShamanState();
     ResetPriestState();
     ResetRogueState();
+    ResetPaladinState();
     m_bleedHeal = 0.0f;
     m_player->GetBonkPlayer()->SendAddon("mobclear");
 
@@ -3079,10 +3086,10 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     if (!damage)
         return 0;
 
-    if (IsCardImmune() || IsIceBlocked() || IsHiddenInSmoke())
+    if (IsCardImmune() || IsIceBlocked() || IsHiddenInSmoke() || IsDivinelyShielded() || BlockWithDivineShield(damage))
         return 0;
 
-    damage = ApplyPriestDamageTaken(ApplyTalentDamageTaken(damage));
+    damage = ApplyPaladinDamageTaken(ApplyPriestDamageTaken(ApplyTalentDamageTaken(damage)));
     m_hurt = true;
     m_lastHurtMs = m_totalMs;
 
@@ -3405,7 +3412,7 @@ float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit c
         for (OwnedWeapon const& owned : m_weapons)
             if (owned.weapon.spellId == spell->Id && owned.weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT))
                 return std::max(100.0f, chance);
-    return GetRogueCritChance(spell, chance);
+    return GetPaladinCritChance(spell, GetRogueCritChance(spell, chance));
 }
 
 float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
@@ -3431,7 +3438,8 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
 {
     float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower) * powerShare;
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
-        GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim);
+        GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
+        GetPaladinDamageMultiplier(victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim);
 
@@ -4748,6 +4756,8 @@ void BonkRun::QueueRicochet(OwnedWeapon const& owned, SpellEntry const* spellInf
     hop.share = share;
     hop.target = target->GetObjectGuid();
     target->GetPosition(hop.x, hop.y, hop.z);
+    if (Creature* source = TakeShotSource(hop.x, hop.y, hop.z))
+        hop.source = source->GetObjectGuid();
     hop.struck = std::move(struck);
     m_pendingCasts.push_back(std::move(hop));
 }
@@ -4758,7 +4768,9 @@ void BonkRun::Ricochet(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingC
     if (Creature* last = m_player->GetMap()->GetCreature(cast.target))
         last->GetPosition(x, y, z);
 
-    Creature* source = TakeShotSource(x, y, z);
+    Creature* source = cast.source.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(cast.source);
+    if (!source || !source->IsAlive())
+        source = TakeShotSource(x, y, z);
     Creature* next = source ? PickRicochetTarget(source, cast.struck) : nullptr;
     if (!next)
         return;
@@ -5380,6 +5392,9 @@ BonkRun::KeywordCloudKind BonkRun::GetCloudKind(OwnedWeapon const& owned) const
     KeywordCloudKind rogue;
     if (GetRogueCloudKind(owned, rogue))
         return rogue;
+    KeywordCloudKind paladin;
+    if (GetPaladinCloudKind(owned, paladin))
+        return paladin;
 
     KeywordCloudKind venom;
     venom.lifeMs = BONK_VENOM_CLOUD_MS;
@@ -5475,6 +5490,7 @@ void BonkRun::UpdateKeywordClouds(uint32 diff)
 
 void BonkRun::PulseKeywordCloud(OwnedWeapon const& owned, KeywordCloud const& cloud)
 {
+    OnPaladinCloudPulse(owned, cloud);
     PendingKeyword keyword;
     if (!GetWeaponKeyword(owned, keyword))
         return;
@@ -5839,7 +5855,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     owned.killed = false;
 
-    if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo))
+    if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo))
         return;
 
     if (weapon.IsShieldBlock() || weapon.behavior == BONK_BEHAVIOR_WARD)
@@ -6605,6 +6621,30 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             continue;
         }
 
+        if (cast.hammerOfWrath)
+        {
+            LandHammerOfWrath(*owned, info, cast);
+            continue;
+        }
+
+        if (cast.justiceHammer)
+        {
+            LandJusticeHammer(*owned, info, cast);
+            continue;
+        }
+
+        if (cast.lightsHammerLaunch)
+        {
+            LaunchLightsHammer(*owned, cast);
+            continue;
+        }
+
+        if (cast.lightsHammer)
+        {
+            LandLightsHammer(*owned, info, cast);
+            continue;
+        }
+
         if (cast.strike)
         {
             Creature* target = map->GetCreature(cast.target);
@@ -7276,6 +7316,7 @@ void BonkRun::OnHeroStruck(Creature* attacker)
     NoteStruck(DescribeStriker(attacker));
     OnShamanStruck(attacker);
     OnPriestStruck(attacker);
+    OnPaladinStruck(attacker);
 }
 
 std::string BonkRun::DescribeStriker(Creature const* attacker)
@@ -8206,6 +8247,11 @@ void BonkRun::ShowFallingAt(SpellEntry const* spellInfo, float x, float y, float
         ShowMissileAt(source, spellInfo, x, y, z);
 }
 
+void BonkRun::ShowMissileFrom(Unit* source, SpellEntry const* spellInfo, float x, float y, float z)
+{
+    ShowMissileAt(source, spellInfo, x, y, z);
+}
+
 void BonkRun::ShowMissilesAround(SpellEntry const* spellInfo, float radius, uint32 count)
 {
     float const x = m_player->GetPositionX(), y = m_player->GetPositionY(), z = m_player->GetPositionZ();
@@ -8896,6 +8942,8 @@ void BonkRun::GiveExperience(uint32 xp)
             m_player->SetHealth(std::min(health + heal, m_player->GetMaxHealth()));
         }
         UpdateRunXp(m_overcapLevel != startOvercap);
+        if (m_overcapLevel != startOvercap)
+            OfferLevelsBeforeDing();
         return;
     }
 
@@ -8923,6 +8971,14 @@ void BonkRun::GiveExperience(uint32 xp)
         m_player->SetHealth(std::min(health + heal, m_player->GetMaxHealth()));
     }
     UpdateRunXp(level != startLevel);
+    if (level != startLevel)
+        OfferLevelsBeforeDing();
+}
+
+void BonkRun::OfferLevelsBeforeDing()
+{
+    if (m_state == STATE_RUNNING || m_state == STATE_PORTAL)
+        UpdateOffers();
 }
 
 void BonkRun::DropOrb(Creature const* mob, uint32 experience, BonkOrb colour)
@@ -10509,6 +10565,8 @@ void BonkRun::GetSpellUpgrades(OwnedWeapon const* owned, float* upgrades) const
 
 bool BonkRun::GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, float const* upgrades, WeaponStrength& strength) const
 {
+    if (GetPaladinStrength(weapon, damageBonus, strength))
+        return true;
     BonkWeapon const* row = sBonkMgr.GetWeapon(weapon.id);
     if (row && row->applies == BONK_KEYWORD_HUNTERS_MARK)
     {
@@ -11169,6 +11227,7 @@ void BonkRun::CleanUp()
     ResetShamanState();
     ResetPriestState();
     ResetRogueState();
+    ResetPaladinState();
     m_bleedHeal = 0.0f;
     m_spellShield = 0;
     m_chestChoices.clear();

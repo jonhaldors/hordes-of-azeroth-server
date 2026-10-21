@@ -59,6 +59,7 @@ namespace
     float const BONK_DEEP_DUMMY_HEALTH = 100.0f;
     float const BONK_DEEP_DUMMY_REFILL = 0.5f;
     uint32 const BONK_SANDBOX_DEFAULT_PACK = 30;
+    uint32 const BONK_MELEE_PICK_TRIES     = 20;
 
     enum SandboxSender : uint32
     {
@@ -433,9 +434,17 @@ void BonkRun::SpawnQueuedSandboxPack()
     for (uint32 i = 0; i < BONK_SANDBOX_SPAWNS_PER_TICK && m_sandboxPackLeft; ++i)
     {
         --m_sandboxPackLeft;
-        if (BonkMapCreature const* creature = PickNormalCreature(m_map))
+        if (BonkMapCreature const* creature = PickSandboxPackCreature())
             SpawnMob(*creature);
     }
+}
+
+BonkMapCreature const* BonkRun::PickSandboxPackCreature() const
+{
+    BonkMapCreature const* creature = PickNormalCreature(m_map);
+    for (uint32 tries = 1; m_sandboxPackMeleeOnly && creature && creature->archetype == BONK_ARCHETYPE_CASTER && tries < BONK_MELEE_PICK_TRIES; ++tries)
+        creature = PickNormalCreature(m_map);
+    return creature && m_sandboxPackMeleeOnly && creature->archetype == BONK_ARCHETYPE_CASTER ? nullptr : creature;
 }
 
 void BonkRun::RefillIdleDummies(uint32 elapsedMs)
@@ -540,17 +549,36 @@ float BonkRun::GetSandboxFront() const
     return m_player->GetOrientation();
 }
 
-void BonkRun::SpawnSandboxDummies(uint32 count, BonkSpawnKind kind)
+bool BonkRun::GetSandboxDummySpot(uint32 index, uint32 count, float ringRadius, float& x, float& y) const
+{
+    float const heroX = m_player->GetPositionX();
+    float const heroY = m_player->GetPositionY();
+    if (ringRadius > 0.0f)
+    {
+        float const angle = 2.0f * M_PI_F * index / count;
+        x = heroX + ringRadius * std::cos(angle);
+        y = heroY + ringRadius * std::sin(angle);
+        return true;
+    }
+
+    float const front = GetSandboxFront();
+    uint32 const columns = std::min(count, BONK_DUMMY_COLUMNS);
+    uint32 const rows = (count + columns - 1) / columns;
+    uint32 const row = index / columns;
+    uint32 const column = index % columns;
+    float const ahead = rows > 1 ? BONK_DUMMY_GRID_NEAR + (BONK_DUMMY_GRID_FAR - BONK_DUMMY_GRID_NEAR) * row / float(rows - 1) : BONK_DUMMY_DISTANCE;
+    float const side = (float(column) - float(columns - 1) / 2.0f) * BONK_DUMMY_SPACING;
+    x = heroX + ahead * std::cos(front) - side * std::sin(front);
+    y = heroY + ahead * std::sin(front) + side * std::cos(front);
+    return true;
+}
+
+void BonkRun::SpawnSandboxDummies(uint32 count, BonkSpawnKind kind, float ringRadius)
 {
     if (!count)
         return;
 
-    float const front = GetSandboxFront();
-    float const heroX = m_player->GetPositionX();
-    float const heroY = m_player->GetPositionY();
     float const heroZ = m_player->GetPositionZ();
-    uint32 const columns = std::min(count, BONK_DUMMY_COLUMNS);
-    uint32 const rows = (count + columns - 1) / columns;
 
     BonkMapCreature dummy;
     dummy.entry = BONK_SANDBOX_DUMMY;
@@ -562,12 +590,8 @@ void BonkRun::SpawnSandboxDummies(uint32 count, BonkSpawnKind kind)
     uint32 spawned = 0;
     for (uint32 i = 0; i < count; ++i)
     {
-        uint32 const row = i / columns;
-        uint32 const column = i % columns;
-        float const ahead = rows > 1 ? BONK_DUMMY_GRID_NEAR + (BONK_DUMMY_GRID_FAR - BONK_DUMMY_GRID_NEAR) * row / float(rows - 1) : BONK_DUMMY_DISTANCE;
-        float const side = (float(column) - float(columns - 1) / 2.0f) * BONK_DUMMY_SPACING;
-        float const x = heroX + ahead * std::cos(front) - side * std::sin(front);
-        float const y = heroY + ahead * std::sin(front) + side * std::cos(front);
+        float x = 0.0f, y = 0.0f;
+        GetSandboxDummySpot(i, count, ringRadius, x, y);
         BonkMobAI::SetNextAffixCount(0);
         if (SpawnMobAt(dummy, x, y, GroundHeight(m_player, x, y, heroZ)))
             ++spawned;
@@ -584,8 +608,9 @@ void BonkRun::SpawnSandboxDummies(uint32 count, BonkSpawnKind kind)
         bonk->Notify(std::to_string(spawned) + " " + kindName + "training dummies stand ready.");
 }
 
-void BonkRun::QueueSandboxPack(uint32 count)
+void BonkRun::QueueSandboxPack(uint32 count, bool meleeOnly)
 {
+    m_sandboxPackMeleeOnly = meleeOnly;
     PruneMobs();
     uint32 const busy = uint32(m_mobs.size()) + m_sandboxPackLeft;
     uint32 const room = m_tier.maxAlive > busy ? m_tier.maxAlive - busy : 0;
@@ -1132,7 +1157,7 @@ void BonkRun::SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action
             SpawnSandboxDummies(action & 0xFF, BonkSpawnKind(action >> 8));
             break;
         case SENDER_PACK:
-            QueueSandboxPack(action);
+            QueueSandboxPack(action, false);
             break;
         case SENDER_ENEMY:
             SpawnSandboxEnemy(action);
@@ -1251,9 +1276,9 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (verb == "pack")
-        QueueSandboxPack(first ? first : BONK_SANDBOX_DEFAULT_PACK);
+        QueueSandboxPack(first ? first : BONK_SANDBOX_DEFAULT_PACK, second != 0);
     else if (verb == "dummies")
-        SpawnSandboxDummies(std::max(1u, std::min(first, 20u)), BONK_SPAWN_NORMAL);
+        SpawnSandboxDummies(std::max(1u, std::min(first, 20u)), BONK_SPAWN_NORMAL, float(second));
     else if (verb == "spell")
         return AddSandboxSpell(first, error);
     else if (verb == "evolve")

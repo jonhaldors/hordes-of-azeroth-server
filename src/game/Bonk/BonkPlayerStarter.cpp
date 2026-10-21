@@ -21,10 +21,8 @@ namespace
         return "Learn " + node.name + (tree ? " in the " + tree->name + " talents" : std::string()) + " to unlock it.";
     }
 
-    std::string DescribeSpellUnlock(uint32 account, uint32 weaponId)
+    std::string DescribeSpellUnlock(uint32 weaponId)
     {
-        if (sBonkQuests.IsForSale(account, BONK_REWARD_WEAPON, weaponId))
-            return "Buy it at the Spellbook first.";
         if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(BONK_REWARD_WEAPON, weaponId))
             return "Finish the quest " + quest->name + " first.";
         return "Unlock it first.";
@@ -64,7 +62,7 @@ std::vector<BonkPlayer::StarterOption> BonkPlayer::GetStarterOptions() const
         if (option.unlocked && sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, weapon.id))
         {
             option.unlocked = false;
-            option.hint = DescribeSpellUnlock(account, weapon.id);
+            option.hint = DescribeSpellUnlock(weapon.id);
         }
         options.push_back(option);
     }

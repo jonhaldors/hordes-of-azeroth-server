@@ -178,10 +178,10 @@ bool BonkRun::ApplyShamanKeyword(OwnedWeapon const& owned, Creature* mob, BonkKe
     return ApplyKeyword(mob, keyword, stacks, durationMs, 1.0f + owned.damageBonus / 100.0f, owned.weapon.spellId);
 }
 
-void BonkRun::DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, Unit* target, float damage)
+bool BonkRun::DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, Unit* target, float damage)
 {
     if (!spellInfo || !target || !target->IsAlive() || damage <= 0.0f || !m_player->IsAlive())
-        return;
+        return false;
 
     bool const keywordless = m_keywordlessHits;
     m_keywordlessHits = true;
@@ -194,6 +194,7 @@ void BonkRun::DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, U
     m_player->SendSpellNonMeleeDamageLog(&hit);
     m_player->DealSpellDamage(&hit, true);
     m_keywordlessHits = keywordless;
+    return crit;
 }
 
 void BonkRun::DealTotemHit(OwnedWeapon const& owned, SpellEntry const* spellInfo, Unit* target, uint32 damage)
