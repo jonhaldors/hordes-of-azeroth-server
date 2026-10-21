@@ -37,6 +37,7 @@ namespace
     uint32 const BONK_WEAPON_SMOKE_BOMB       = 635;
 
     uint32 const BONK_SPELL_SINISTER_STRIKE   = 1752;
+    uint32 const BONK_KIT_SPREE_SLASH         = 6351;
     uint32 const BONK_SPELL_EVISCERATE        = 2098;
     uint32 const BONK_SPELL_AMBUSH            = 8676;
     uint32 const BONK_SPELL_BLADE_FLURRY      = 13877;
@@ -570,6 +571,7 @@ void BonkRun::StrikeSpree(OwnedWeapon& owned, SpellEntry const* spellInfo, bool 
     {
         Creature* target = mobs[urand(0, uint32(mobs.size() - 1))];
         SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_SINISTER_STRIKE);
+        target->SendPlaySpellVisualKit(BONK_KIT_SPREE_SLASH);
         StabRogue(owned, look ? look : spellInfo, target, 1.0f, true);
         SwingRogueBlades();
         if (owned.weapon.id == BONK_WEAPON_MURDEROUS_INTENT && !target->IsAlive() && m_spreeBonus < BONK_MURDEROUS_CAP)
