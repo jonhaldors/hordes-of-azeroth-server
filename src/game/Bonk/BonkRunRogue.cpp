@@ -571,8 +571,11 @@ void BonkRun::StrikeSpree(OwnedWeapon& owned, SpellEntry const* spellInfo, bool 
     {
         Creature* target = mobs[urand(0, uint32(mobs.size() - 1))];
         SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_SINISTER_STRIKE);
-        target->SendPlaySpellVisualKit(BONK_KIT_SPREE_SLASH);
+        ObjectGuid const victim = target->GetObjectGuid();
+        float x, y, z;
+        target->GetPosition(x, y, z);
         StabRogue(owned, look ? look : spellInfo, target, 1.0f, true);
+        PlayKitAt(victim, x, y, z, BONK_KIT_SPREE_SLASH, false);
         SwingRogueBlades();
         if (owned.weapon.id == BONK_WEAPON_MURDEROUS_INTENT && !target->IsAlive() && m_spreeBonus < BONK_MURDEROUS_CAP)
             for (uint32 extra = 1; extra <= BONK_MURDEROUS_STRIKES; ++extra)
