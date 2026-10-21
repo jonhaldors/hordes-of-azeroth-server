@@ -9715,7 +9715,7 @@ std::vector<BonkWeapon const*> BonkRun::GetOpenEvolutions(OwnedWeapon const& own
     std::vector<BonkWeapon const*> open;
     if (owned.weapon.evolvesFrom)
         return open;
-    uint32 const account = m_player->GetSession()->GetAccountId();
+    uint32 const account = m_player->GetBonkPlayer()->GetProgressAccount();
     for (BonkWeapon const* evolved : sBonkMgr.GetEvolutions(owned.weapon.id))
         if (!sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, evolved->id) && !IsEvolutionBanished(evolved->id))
             open.push_back(evolved);
@@ -9751,7 +9751,7 @@ float BonkRun::GetLegendaryChance(OwnedWeapon const& owned) const
 std::string BonkRun::DescribeEvolutionChance(OwnedWeapon const& owned, uint32& chance) const
 {
     chance = 0;
-    uint32 const account = m_player->GetSession()->GetAccountId();
+    uint32 const account = m_player->GetBonkPlayer()->GetProgressAccount();
     std::vector<BonkWeapon const*> const evolutions = sBonkMgr.GetEvolutions(owned.weapon.id);
     std::vector<std::string> sentences;
     std::vector<std::string> locks;
@@ -10249,7 +10249,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     }
 
     uint32 const classMask = m_player->GetClassMask();
-    uint32 const account = m_player->GetSession()->GetAccountId();
+    uint32 const account = m_player->GetBonkPlayer()->GetProgressAccount();
     if (m_weapons.size() < GetSpellSlots())
         for (auto const& itr : sBonkMgr.GetWeapons())
         {
@@ -11086,7 +11086,7 @@ void BonkRun::Finish(bool wentHome)
     }
 
     ReportQuestCounts();
-    sBonkQuests.Save(m_player->GetSession()->GetAccountId());
+    sBonkQuests.Save(m_player->GetBonkPlayer()->GetProgressAccount());
     sBonkQuests.SendLog(m_player, "");
 }
 

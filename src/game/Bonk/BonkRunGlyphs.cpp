@@ -74,7 +74,7 @@ void BonkRun::OfferGlyphs()
 {
     --m_pendingGlyphPicks;
 
-    uint32 const account = m_player->GetSession()->GetAccountId();
+    uint32 const account = m_player->GetBonkPlayer()->GetProgressAccount();
     std::vector<BonkGlyph const*> pool;
     for (auto const& itr : sBonkMgr.GetGlyphs())
     {

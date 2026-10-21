@@ -268,6 +268,15 @@ void WorldSession::HandleCharCreateOpcode(WorldPackets::Character::CharCreate co
         return;
     }
 
+    if (BonkPlayer::IsIronmanName(safeName))
+    {
+        BonkPlayer::RequestIronman(GetAccountId());
+        sendResponse(CHAR_CREATE_SUCCESS);
+        return;
+    }
+
+    bool const ironman = BonkPlayer::TakeIronmanRequest(GetAccountId());
+
     if (!BonkPlayer::IsPlayableClass(packet.class_))
     {
         sendResponse(CHAR_CREATE_DISABLED);
@@ -331,6 +340,8 @@ void WorldSession::HandleCharCreateOpcode(WorldPackets::Character::CharCreate co
     if (Player::SaveNewPlayer(this, guidLow, safeName, packet.race, packet.class_, packet.gender, packet.skin, packet.face, packet.hairStyle, packet.hairColor, packet.facialHair))
     {
         m_charactersCount += 1;
+        if (ironman)
+            BonkPlayer::MarkIronman(guidLow);
 
         LoginDatabase.PExecute("REPLACE INTO `realmcharacters` (`numchars`, `acctid`, `realmid`) VALUES (%u, %u, %u)", m_charactersCount, GetAccountId(), realmID);
 

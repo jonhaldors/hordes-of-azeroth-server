@@ -147,7 +147,7 @@ void BonkQuests::Load()
 
 void BonkQuests::OnLogin(Player* player)
 {
-    uint32 const account = player->GetSession()->GetAccountId();
+    uint32 const account = player->GetBonkPlayer()->GetProgressAccount();
 
     AccountProgress loaded;
     std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `quest`, `progress`, `completed` FROM `bonk_account_quest` WHERE `account` = %u", account));
@@ -426,7 +426,7 @@ void BonkQuests::Track(Player* player, std::function<void(BonkQuest const&, Acco
 {
     if (player->GetBonkPlayer()->IsInSandbox())
         return;
-    uint32 const account = player->GetSession()->GetAccountId();
+    uint32 const account = player->GetBonkPlayer()->GetProgressAccount();
     std::vector<BonkQuest const*> done;
     {
         std::lock_guard<std::mutex> guard(m_lock);
@@ -620,7 +620,7 @@ void BonkQuests::OnProgress(Player* player, BonkQuestType type, uint32 target, u
 
 void BonkQuests::Complete(Player* player, BonkQuest const& quest)
 {
-    uint32 const account = player->GetSession()->GetAccountId();
+    uint32 const account = player->GetBonkPlayer()->GetProgressAccount();
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_quest` (`account`, `quest`, `progress`, `completed`) VALUES (%u, %u, %u, 1)",
         account, quest.id, quest.amount);
     {
@@ -769,7 +769,7 @@ void BonkQuests::SendLog(Player* player, std::string const& npc)
     AccountProgress progress;
     {
         std::lock_guard<std::mutex> guard(m_lock);
-        auto itr = m_accounts.find(player->GetSession()->GetAccountId());
+        auto itr = m_accounts.find(player->GetBonkPlayer()->GetProgressAccount());
         if (itr != m_accounts.end())
             progress = itr->second;
     }
@@ -796,7 +796,7 @@ std::vector<std::string> BonkQuests::DescribeAll(Player* player) const
     AccountProgress progress;
     {
         std::lock_guard<std::mutex> guard(m_lock);
-        auto itr = m_accounts.find(player->GetSession()->GetAccountId());
+        auto itr = m_accounts.find(player->GetBonkPlayer()->GetProgressAccount());
         if (itr != m_accounts.end())
             progress = itr->second;
     }

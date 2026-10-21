@@ -23,11 +23,20 @@
 #include <cctype>
 #include <cstdio>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <vector>
 
 namespace
 {
+    char const* const BONK_ACCOUNT_TABLES[] = { "bonk_account", "bonk_account_mastery", "bonk_account_mastery_node", "bonk_account_quest",
+        "bonk_account_starter", "bonk_account_talent", "bonk_account_tier", "bonk_account_upgrade" };
+    char const* const BONK_PROGRESS_ONLY_TABLES[] = { "bonk_account_disabled", "bonk_account_unlock" };
+    uint32 const BONK_IRONMAN_ACCOUNT_BIT = 0x80000000;
+
+    std::mutex s_ironmanRequestsLock;
+    std::set<uint32> s_ironmanRequests;
+
     float const BONK_CAMP_RADIUS = 300.0f;
     uint32 const BONK_CAMP_SIT_DELAY_MS = 500;
     uint32 const BONK_REVIVE_OUTSIDE_RUN_MS = 3000;
@@ -68,7 +77,7 @@ namespace
 
     BonkQuest const* GetLockingQuest(Player* player, BonkQuestReward type, uint32 id)
     {
-        if (!sBonkQuests.IsLocked(player->GetSession()->GetAccountId(), type, id))
+        if (!sBonkQuests.IsLocked(player->GetBonkPlayer()->GetProgressAccount(), type, id))
             return nullptr;
         return sBonkQuests.GetUnlockingQuest(type, id);
     }
@@ -89,7 +98,7 @@ BonkPlayer::~BonkPlayer() = default;
 
 void BonkPlayer::OnLogin()
 {
-    uint32 const accountId = m_player->GetSession()->GetAccountId();
+    uint32 const accountId = GetProgressAccount();
     std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `gold` FROM `bonk_account` WHERE `account` = %u", accountId));
     if (result)
         m_player->SetMoney(result->Fetch()[0].GetUInt32());
@@ -184,7 +193,7 @@ void BonkPlayer::GiveStarterBags()
 
 void BonkPlayer::LoadPurchases()
 {
-    uint32 const accountId = m_player->GetSession()->GetAccountId();
+    uint32 const accountId = GetProgressAccount();
 
     m_upgradeRanks.clear();
     std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `upgrade`, `rank` FROM `bonk_account_upgrade` WHERE `account` = %u", accountId);
@@ -220,7 +229,7 @@ void BonkPlayer::LoadPurchases()
 
 void BonkPlayer::LoadMastery()
 {
-    uint32 const accountId = m_player->GetSession()->GetAccountId();
+    uint32 const accountId = GetProgressAccount();
     uint8 const classId = m_player->GetClass();
 
     m_masteryXp = 0;
@@ -277,7 +286,7 @@ uint32 BonkPlayer::GetMasteryLevel() const
 
 uint32 BonkPlayer::GetMasteryPoints() const
 {
-    return GetMasteryLevel() + sBonkQuests.GetMasteryPoints(m_player->GetSession()->GetAccountId(), m_player->GetClass());
+    return GetMasteryLevel() + sBonkQuests.GetMasteryPoints(GetProgressAccount(), m_player->GetClass());
 }
 
 uint32 BonkPlayer::GetMasterySpent() const
@@ -328,7 +337,7 @@ void BonkPlayer::AddMasteryXp(uint32 xp)
     uint32 const before = GetMasteryLevel();
     m_masteryXp += xp;
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_mastery` (`account`, `class`, `xp`) VALUES (%u, %u, %u)",
-        m_player->GetSession()->GetAccountId(), uint32(m_player->GetClass()), m_masteryXp);
+        GetProgressAccount(), uint32(m_player->GetClass()), m_masteryXp);
 
     uint32 const after = GetMasteryLevel();
     if (after > before)
@@ -384,7 +393,7 @@ bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
 
     m_masteryRanks[nodeId] = rank + 1;
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_mastery_node` (`account`, `node`, `rank`) VALUES (%u, %u, %u)",
-        m_player->GetSession()->GetAccountId(), nodeId, uint32(rank + 1));
+        GetProgressAccount(), nodeId, uint32(rank + 1));
     message = "You learned " + node->name + (node->maxRank > 1 ? " (rank " + std::to_string(rank + 1) + ")." : ".");
     SendMasteryState();
     return true;
@@ -407,7 +416,7 @@ bool BonkPlayer::ResetMastery(std::string& message)
     for (auto const& itr : m_masteryRanks)
         nodes += (nodes.empty() ? "" : ",") + std::to_string(itr.first);
     CharacterDatabase.PExecute("DELETE FROM `bonk_account_mastery_node` WHERE `account` = %u AND `node` IN (%s)",
-        m_player->GetSession()->GetAccountId(), nodes.c_str());
+        GetProgressAccount(), nodes.c_str());
 
     uint32 const refunded = GetMasterySpent();
     m_masteryRanks.clear();
@@ -466,13 +475,13 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
     {
         m_masteryRanks[nodeId] = rank - 1;
         CharacterDatabase.PExecute("REPLACE INTO `bonk_account_mastery_node` (`account`, `node`, `rank`) VALUES (%u, %u, %u)",
-            m_player->GetSession()->GetAccountId(), nodeId, uint32(rank - 1));
+            GetProgressAccount(), nodeId, uint32(rank - 1));
     }
     else
     {
         m_masteryRanks.erase(nodeId);
         CharacterDatabase.PExecute("DELETE FROM `bonk_account_mastery_node` WHERE `account` = %u AND `node` = %u",
-            m_player->GetSession()->GetAccountId(), nodeId);
+            GetProgressAccount(), nodeId);
     }
     message = "You refunded " + (node->maxRank > 1 ? "rank " + std::to_string(rank) + " of " : std::string()) + node->name + " and got 1 talent point back.";
     SendMasteryState();
@@ -489,7 +498,7 @@ void BonkPlayer::OnLogout()
     }
     ClearAuras();
     m_addonReady = false;
-    sBonkQuests.Save(m_player->GetSession()->GetAccountId());
+    sBonkQuests.Save(GetProgressAccount());
 
     WriteHeroScreenStats();
 }
@@ -524,6 +533,9 @@ void BonkPlayer::WriteHeroScreenStats() const
         uint32 items = 0;
         uint32 itemLevels = 0;
         uint32 gearValue = 0;
+        bool ironman = false;
+        uint32 gold = 0;
+        uint32 ironmanMasteryXp = 0;
     };
     std::map<uint32, Hero> heroes;
 
@@ -555,6 +567,24 @@ void BonkPlayer::WriteHeroScreenStats() const
         } while (result->NextRow());
     }
 
+    result = CharacterDatabase.PQuery("SELECT i.`guid`, a.`gold`, m.`xp` FROM `bonk_ironman` i JOIN `characters` c ON c.`guid` = i.`guid` "
+        "LEFT JOIN `bonk_account` a ON a.`account` = (%u | i.`guid`) "
+        "LEFT JOIN `bonk_account_mastery` m ON m.`account` = (%u | i.`guid`) AND m.`class` = c.`class` "
+        "WHERE c.`account` = %u", GetIronmanAccount(0), GetIronmanAccount(0), accountId);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            auto hero = heroes.find(fields[0].GetUInt32());
+            if (hero == heroes.end())
+                continue;
+            hero->second.ironman = true;
+            hero->second.gold = fields[1].GetUInt32();
+            hero->second.ironmanMasteryXp = fields[2].GetUInt32();
+        } while (result->NextRow());
+    }
+
     std::map<uint8, uint32> masteryXp;
     result = CharacterDatabase.PQuery("SELECT `class`, `xp` FROM `bonk_account_mastery` WHERE `account` = %u", accountId);
     if (result)
@@ -565,7 +595,15 @@ void BonkPlayer::WriteHeroScreenStats() const
             masteryXp[fields[0].GetUInt8()] = fields[1].GetUInt32();
         } while (result->NextRow());
     }
-    masteryXp[m_player->GetClass()] = m_masteryXp;
+    if (!IsIronman())
+        masteryXp[m_player->GetClass()] = m_masteryXp;
+
+    uint32 sharedGold = m_player->GetMoney();
+    if (IsIronman())
+    {
+        result = CharacterDatabase.PQuery("SELECT `gold` FROM `bonk_account` WHERE `account` = %u", accountId);
+        sharedGold = result ? result->Fetch()[0].GetUInt32() : 0;
+    }
 
     result = CharacterDatabase.PQuery("SELECT s.`guid`, s.`runs`, s.`best_stage`, s.`best_time_sec`, s.`kills`, s.`gold_earned` "
         "FROM `bonk_character_stats` s JOIN `characters` c ON c.`guid` = s.`guid` WHERE c.`account` = %u", accountId);
@@ -602,13 +640,16 @@ void BonkPlayer::WriteHeroScreenStats() const
     self.name = m_player->GetName();
     self.record = m_record;
     self.played = m_player->GetTotalPlayedTime();
+    self.ironman = IsIronman();
+    self.gold = m_player->GetMoney();
+    self.ironmanMasteryXp = m_masteryXp;
     for (uint32 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             addItem(self, slot, item->GetEntry());
 
     std::ostringstream lua;
     lua << "BONK_STATS = {\n";
-    lua << "\tgold = " << m_player->GetMoney() << ",\n";
+    lua << "\tgold = " << sharedGold << ",\n";
     lua << "\tlastHero = \"" << m_player->GetName() << "\",\n";
     lua << "\theroes = {\n";
     for (auto const& itr : heroes)
@@ -625,7 +666,10 @@ void BonkPlayer::WriteHeroScreenStats() const
             << ", itemLevel = " << (hero.items ? hero.itemLevels / hero.items : 0)
             << ", gearValue = " << hero.gearValue
             << ", played = " << hero.played
-            << ", mastery = " << BonkMastery::GetLevel(masteryXp[hero.classId]) << " },\n";
+            << ", mastery = " << BonkMastery::GetLevel(hero.ironman ? hero.ironmanMasteryXp : masteryXp[hero.classId]);
+        if (hero.ironman)
+            lua << ", ironman = true, gold = " << hero.gold;
+        lua << " },\n";
     }
     lua << "\t},\n};\n";
     WriteHeroScreenFile(lua.str());
@@ -664,18 +708,68 @@ bool BonkPlayer::IsPlayableClass(uint8 classId)
 
 void BonkPlayer::WipeAccount(uint32 accountId)
 {
-    for (char const* table : { "bonk_account", "bonk_account_mastery", "bonk_account_mastery_node", "bonk_account_quest",
-        "bonk_account_starter", "bonk_account_talent", "bonk_account_tier", "bonk_account_upgrade" })
+    for (char const* table : BONK_ACCOUNT_TABLES)
         CharacterDatabase.PExecute("DELETE FROM `%s` WHERE `account` = %u", table, accountId);
 
     WriteHeroScreenFile("BONK_STATS = {\n\tgold = 0,\n\tlastHero = \"\",\n\theroes = {\n\t},\n};\n");
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk: account %u wiped from the hero screen", accountId);
 }
 
+bool BonkPlayer::IsIronmanName(std::string const& name)
+{
+    return name == "Ironmanmode";
+}
+
+void BonkPlayer::RequestIronman(uint32 accountId)
+{
+    std::lock_guard<std::mutex> guard(s_ironmanRequestsLock);
+    s_ironmanRequests.insert(accountId);
+}
+
+bool BonkPlayer::TakeIronmanRequest(uint32 accountId)
+{
+    std::lock_guard<std::mutex> guard(s_ironmanRequestsLock);
+    return s_ironmanRequests.erase(accountId) > 0;
+}
+
+void BonkPlayer::MarkIronman(uint32 guidLow)
+{
+    CharacterDatabase.DirectPExecute("INSERT IGNORE INTO `bonk_ironman` (`guid`) VALUES (%u)", guidLow);
+}
+
+void BonkPlayer::DeleteIronmanProgress(uint32 guidLow)
+{
+    for (char const* table : BONK_ACCOUNT_TABLES)
+        CharacterDatabase.PExecute("DELETE FROM `%s` WHERE `account` = %u", table, GetIronmanAccount(guidLow));
+    for (char const* table : BONK_PROGRESS_ONLY_TABLES)
+        CharacterDatabase.PExecute("DELETE FROM `%s` WHERE `account` = %u", table, GetIronmanAccount(guidLow));
+    CharacterDatabase.PExecute("DELETE FROM `bonk_ironman` WHERE `guid` = %u", guidLow);
+}
+
+uint32 BonkPlayer::GetIronmanAccount(uint32 guidLow)
+{
+    return BONK_IRONMAN_ACCOUNT_BIT | guidLow;
+}
+
+bool BonkPlayer::IsIronman() const
+{
+    if (m_ironman < 0)
+    {
+        std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT 1 FROM `bonk_ironman` WHERE `guid` = %u", m_player->GetGUIDLow()));
+        m_ironman = result ? 1 : 0;
+    }
+    return m_ironman > 0;
+}
+
+uint32 BonkPlayer::GetProgressAccount() const
+{
+    return IsIronman() ? GetIronmanAccount(m_player->GetGUIDLow()) : m_player->GetSession()->GetAccountId();
+}
+
 void BonkPlayer::OnSave()
 {
     SaveGold();
-    sBonkQuests.Save(m_player->GetSession()->GetAccountId());
+    sBonkQuests.Save(GetProgressAccount());
 }
 
 void BonkPlayer::SaveGold() const
@@ -684,7 +778,7 @@ void BonkPlayer::SaveGold() const
         return;
 
     CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `gold`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `gold` = VALUES(`gold`)",
-        m_player->GetSession()->GetAccountId(), m_player->GetMoney());
+        GetProgressAccount(), m_player->GetMoney());
 }
 
 uint8 BonkPlayer::GetUpgradeRank(uint32 upgradeId) const
@@ -763,7 +857,7 @@ void BonkPlayer::SendWallet() const
 void BonkPlayer::SaveShards() const
 {
     CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `shards`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `shards` = VALUES(`shards`)",
-        m_player->GetSession()->GetAccountId(), m_shards);
+        GetProgressAccount(), m_shards);
 }
 
 bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
@@ -797,7 +891,7 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
 
     m_upgradeRanks[upgradeId] = rank + 1;
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_upgrade` (`account`, `upgrade`, `rank`) VALUES (%u, %u, %u)",
-        m_player->GetSession()->GetAccountId(), upgradeId, uint32(rank + 1));
+        GetProgressAccount(), upgradeId, uint32(rank + 1));
     message = upgrade->name + " is now rank " + std::to_string(rank + 1) + ".";
     return true;
 }
@@ -842,7 +936,7 @@ bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message
         return false;
     }
 
-    uint32 const account = m_player->GetSession()->GetAccountId();
+    uint32 const account = GetProgressAccount();
     if (!sBonkQuests.IsForSale(account, type, id))
     {
         if (!sBonkQuests.IsLocked(account, type, id))
@@ -892,7 +986,7 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     if (rank < talent->rankQuests.size())
     {
         uint32 const needed = talent->rankQuests[rank];
-        uint32 const done = sBonkQuests.GetCompletedCount(m_player->GetSession()->GetAccountId());
+        uint32 const done = sBonkQuests.GetCompletedCount(GetProgressAccount());
         if (done < needed)
         {
             message = "You must complete " + std::to_string(needed) + " quests to buy rank " + std::to_string(rank + 1) + " of " + talent->name +
@@ -933,7 +1027,7 @@ bool BonkPlayer::ResetUpgrades(std::string& message)
                 refunded += upgrade->GetCost(rank);
 
     m_upgradeRanks.clear();
-    CharacterDatabase.PExecute("DELETE FROM `bonk_account_upgrade` WHERE `account` = %u", m_player->GetSession()->GetAccountId());
+    CharacterDatabase.PExecute("DELETE FROM `bonk_account_upgrade` WHERE `account` = %u", GetProgressAccount());
     m_player->ModifyMoney(int32(refunded));
     SaveGold();
     message = "You refunded all your upgrades and got " + FormatBonkMoney(refunded) + " back.";
@@ -961,7 +1055,7 @@ bool BonkPlayer::ResetTalents(std::string& message)
 
     m_talentRanks.clear();
     m_enabledTalents.clear();
-    CharacterDatabase.PExecute("DELETE FROM `bonk_account_talent` WHERE `account` = %u", m_player->GetSession()->GetAccountId());
+    CharacterDatabase.PExecute("DELETE FROM `bonk_account_talent` WHERE `account` = %u", GetProgressAccount());
     AddShards(refunded);
     message = "You refunded all your fortunes and got " + FormatBonkShards(refunded) + " back.";
     return true;
@@ -1004,13 +1098,13 @@ bool BonkPlayer::RefundUpgrade(uint32 upgradeId, std::string& message)
     {
         m_upgradeRanks[upgradeId] = rank - 1;
         CharacterDatabase.PExecute("REPLACE INTO `bonk_account_upgrade` (`account`, `upgrade`, `rank`) VALUES (%u, %u, %u)",
-            m_player->GetSession()->GetAccountId(), upgradeId, uint32(rank - 1));
+            GetProgressAccount(), upgradeId, uint32(rank - 1));
     }
     else
     {
         m_upgradeRanks.erase(upgradeId);
         CharacterDatabase.PExecute("DELETE FROM `bonk_account_upgrade` WHERE `account` = %u AND `upgrade` = %u",
-            m_player->GetSession()->GetAccountId(), upgradeId);
+            GetProgressAccount(), upgradeId);
     }
     m_player->ModifyMoney(int32(refunded));
     SaveGold();
@@ -1057,7 +1151,7 @@ bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
         m_talentRanks.erase(talentId);
         m_enabledTalents.erase(talentId);
         CharacterDatabase.PExecute("DELETE FROM `bonk_account_talent` WHERE `account` = %u AND `talent` = %u",
-            m_player->GetSession()->GetAccountId(), talentId);
+            GetProgressAccount(), talentId);
     }
     AddShards(refunded);
     message = "You refunded " + (talent->maxRank > 1 ? "rank " + std::to_string(rank) + " of " : std::string()) + talent->name + " and got " +
@@ -1090,7 +1184,7 @@ bool BonkPlayer::ToggleTalent(uint32 talentId, std::string& message)
 void BonkPlayer::SaveTalent(uint32 talentId) const
 {
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_talent` (`account`, `talent`, `rank`, `enabled`) VALUES (%u, %u, %u, %u)",
-        m_player->GetSession()->GetAccountId(), talentId, uint32(GetTalentRank(talentId)), IsTalentEnabled(talentId) ? 1u : 0u);
+        GetProgressAccount(), talentId, uint32(GetTalentRank(talentId)), IsTalentEnabled(talentId) ? 1u : 0u);
 }
 
 void BonkPlayer::OpenShop(BonkShop shop, Creature const* npc)
@@ -1286,7 +1380,7 @@ void BonkPlayer::SendShop(bool open) const
             uint8 const rank = GetTalentRank(talent.id);
             std::string description = talent.description;
             if (rank < talent.maxRank && rank < talent.rankQuests.size() &&
-                sBonkQuests.GetCompletedCount(m_player->GetSession()->GetAccountId()) < talent.rankQuests[rank])
+                sBonkQuests.GetCompletedCount(GetProgressAccount()) < talent.rankQuests[rank])
                 description += " The next rank unlocks after you complete " + std::to_string(talent.rankQuests[rank]) + " quests.";
             sendNode(talent.id, talent.layout, rank, talent.maxRank, talent.GetCost(rank), rank ? talent.GetCost(rank - 1) : 0, talent.IsToggle(),
                 IsTalentEnabled(talent.id), talent.name, description, talent.valuePerRank);
@@ -1636,7 +1730,7 @@ void BonkPlayer::RecordStage(uint32 tierId, uint32 stage)
 
     m_bestStages[tierId] = stage;
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_tier` (`account`, `tier`, `best_stage`) VALUES (%u, %u, %u)",
-        m_player->GetSession()->GetAccountId(), tierId, stage);
+        GetProgressAccount(), tierId, stage);
 
     for (BonkTier const* tier : locked)
         if (IsTierUnlocked(*tier))
@@ -1658,7 +1752,7 @@ uint32 BonkPlayer::GetPoolToggleSlots() const
 
 void BonkPlayer::TrimPoolToggles() const
 {
-    sBonkQuests.TrimDisabled(m_player->GetSession()->GetAccountId(), GetPoolToggleSlots());
+    sBonkQuests.TrimDisabled(GetProgressAccount(), GetPoolToggleSlots());
 }
 
 void BonkPlayer::SendGlyphInfo() const

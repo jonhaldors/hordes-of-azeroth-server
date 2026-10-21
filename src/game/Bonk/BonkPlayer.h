@@ -64,6 +64,15 @@ class BonkPlayer
         static bool IsPlayableClass(uint8 classId);
         static void WipeAccount(uint32 accountId);
 
+        static bool IsIronmanName(std::string const& name);
+        static void RequestIronman(uint32 accountId);
+        static bool TakeIronmanRequest(uint32 accountId);
+        static void MarkIronman(uint32 guidLow);
+        static void DeleteIronmanProgress(uint32 guidLow);
+        static uint32 GetIronmanAccount(uint32 guidLow);
+        bool IsIronman() const;
+        uint32 GetProgressAccount() const;
+
         void RecordRun(uint32 stage, uint32 seconds, uint32 kills, uint32 goldEarned);
 
         struct StarterOption
@@ -294,6 +303,7 @@ class BonkPlayer
         bool HasUnreadMail() const;
         void UpdateMailboxGlow(uint32 diff);
         bool m_goldLoaded = false;
+        mutable int8 m_ironman = -1;
         std::map<uint32, uint32> m_bestStages;
         Record m_record;
         std::map<uint32, uint8> m_upgradeRanks;

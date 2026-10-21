@@ -28,7 +28,7 @@ void BonkCodex::Send(Player* player, std::string const& npc)
     if (!bonk->IsAddonReady())
         return;
 
-    uint32 const account = player->GetSession()->GetAccountId();
+    uint32 const account = player->GetBonkPlayer()->GetProgressAccount();
     bonk->SendAddon("cdx~" + npc + "~" + std::to_string(player->GetClassMask()));
 
     auto lockState = [account](BonkQuestReward type, uint32 id, uint32& price)

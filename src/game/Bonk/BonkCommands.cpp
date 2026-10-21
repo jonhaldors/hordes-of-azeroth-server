@@ -388,7 +388,7 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
         return false;
     }
     std::string error;
-    bool const done = sBonkQuests.SetDisabled(player->GetSession()->GetAccountId(), type, id, !strcmp(state, "off"),
+    bool const done = sBonkQuests.SetDisabled(player->GetBonkPlayer()->GetProgressAccount(), type, id, !strcmp(state, "off"),
         player->GetBonkPlayer()->GetPoolToggleSlots(), error);
     if (!done)
         player->GetBonkPlayer()->Notify(error);

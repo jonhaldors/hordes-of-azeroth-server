@@ -129,7 +129,7 @@ float BonkRun::GetCardPower(Unit const* victim) const
 
 bool BonkRun::IsCardInPool(BonkCard const& card) const
 {
-    return card.inChests && sBonkQuests.IsInPool(m_player->GetSession()->GetAccountId(), BONK_REWARD_CARD, card.id);
+    return card.inChests && sBonkQuests.IsInPool(m_player->GetBonkPlayer()->GetProgressAccount(), BONK_REWARD_CARD, card.id);
 }
 
 void BonkRun::GiveStartCard()
