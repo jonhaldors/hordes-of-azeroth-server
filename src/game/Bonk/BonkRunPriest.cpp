@@ -56,7 +56,7 @@ namespace
     float const BONK_RENEW_SMITE_RANGE        = 30.0f;
     float const BONK_HALO_INNER               = 0.0f;
     float const BONK_HALO_HEAL_PER_HIT        = 0.5f;
-    float const BONK_HALO_HEAL_CAP            = 5.0f;
+    float const BONK_HALO_HEAL_CAP            = 2.0f;
     int32 const BONK_HALO_ECHO_MS             = 300;
     uint32 const BONK_HOLY_WORD_STEP_MS       = 1000;
     float const BONK_BODY_AND_SOUL_SPEED      = 10.0f;
