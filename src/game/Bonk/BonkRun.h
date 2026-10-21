@@ -1463,12 +1463,10 @@ class BonkRun
         Creature* SummonShotSource();
         void WarmShotSources();
         Creature* TakeShotSource(float x, float y, float z);
-        bool IsShotSourceHeld(ObjectGuid const& guid);
-        void PruneHeldShotSources();
         void UpdateShotSources(uint32 diff);
         void DespawnShotSources();
         std::vector<ObjectGuid> m_shotSources;
-        std::map<ObjectGuid, uint32> m_heldShotSources;
+        std::set<ObjectGuid> m_heldShotSources;
         size_t m_nextShotSource = 0;
         uint32 m_shotSourceTimer = 0;
         struct WeaponOrb
