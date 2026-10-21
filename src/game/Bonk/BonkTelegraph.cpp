@@ -217,7 +217,7 @@ BonkTelegraphs::Telegraph BonkTelegraphs::Lay(Map* map, BonkTelegraphShape shape
 }
 
 void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-    std::function<void()> onFire, bool lingers)
+    std::function<void()> onFire, bool lingers, ObjectGuid const& caster)
 {
     if (shape >= MAX_BONK_TELEGRAPH_SHAPE || size <= 0.0f || !owner->IsInWorld())
         return;
@@ -235,6 +235,7 @@ void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float
         request.durationMs = durationMs;
         request.onFire = std::move(onFire);
         request.lingers = lingers;
+        request.caster = caster;
         m_requests.push_back(std::move(request));
         m_warm = true;
         return;
@@ -243,6 +244,7 @@ void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float
     telegraph.leftMs = int32(durationMs);
     telegraph.onFire = std::move(onFire);
     telegraph.filled = lingers;
+    telegraph.caster = caster;
     Reserve(owner, telegraph);
     if (telegraph.showInMs <= 0)
     {
@@ -271,7 +273,7 @@ void BonkTelegraphs::Update(Player* owner, uint32 diff)
         m_requests.erase(m_requests.begin());
         bool const patient = m_patient;
         m_patient = false;
-        Add(owner, ready.shape, ready.x, ready.y, ready.z, ready.orientation, ready.size, ready.durationMs, std::move(ready.onFire), ready.lingers);
+        Add(owner, ready.shape, ready.x, ready.y, ready.z, ready.orientation, ready.size, ready.durationMs, std::move(ready.onFire), ready.lingers, ready.caster);
         m_patient = patient;
     }
 
@@ -315,6 +317,24 @@ void BonkTelegraphs::Clear(Player* owner)
             TakeOff(owner, telegraph);
     m_telegraphs.clear();
     m_requests.clear();
+}
+
+void BonkTelegraphs::CancelFrom(Player* owner, ObjectGuid const& caster)
+{
+    if (caster.IsEmpty())
+        return;
+
+    bool const onMap = owner->FindMap() != nullptr;
+    m_telegraphs.erase(std::remove_if(m_telegraphs.begin(), m_telegraphs.end(), [&](Telegraph const& telegraph)
+    {
+        if (telegraph.caster != caster)
+            return false;
+        if (onMap)
+            TakeOff(owner, telegraph);
+        return true;
+    }), m_telegraphs.end());
+    m_requests.erase(std::remove_if(m_requests.begin(), m_requests.end(),
+        [&](Request const& request) { return request.caster == caster; }), m_requests.end());
 }
 
 void BonkTelegraphs::Dismiss(Player* owner)

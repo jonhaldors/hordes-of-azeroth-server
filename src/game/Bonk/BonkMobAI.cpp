@@ -941,7 +941,7 @@ void BonkMobAI::AimBoltNow(Player* owner)
 
     ObjectGuid const targetGuid = m_boltTarget;
     BonkEnemyHit const hit = MakeHit(run, m_boltSpell, m_boltDamage);
-    run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_BOLT_RADIUS, m_boltLead + flight,
+    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_BOLT_RADIUS, m_boltLead + flight,
         [run, hit, targetGuid, x, y]() { run->LandBolt(hit, targetGuid, x, y, BONK_BOLT_RADIUS); });
     run->LaunchEnemyMissile(m_creature->GetObjectGuid(), targetGuid, m_boltSpell, m_boltLead, flight, x, y, z);
 }
@@ -1085,7 +1085,7 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
             {
                 float const x = m_creature->GetPositionX(), y = m_creature->GetPositionY(), z = m_creature->GetPositionZ();
                 BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * BONK_BURN_DAMAGE)));
-                run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_BURN_RADIUS, BONK_BURN_WARN_MS,
+                run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_BURN_RADIUS, BONK_BURN_WARN_MS,
                     [run, hit, x, y, z]() { run->Erupt(hit, x, y, z, BONK_BURN_RADIUS); });
             }
         }
@@ -1101,7 +1101,7 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
             {
                 float const x = owner->GetPositionX(), y = owner->GetPositionY(), z = owner->GetPositionZ();
                 BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * BONK_ERUPTION_DAMAGE)));
-                run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_ERUPTION_RADIUS, BONK_ERUPTION_WARN_MS,
+                run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_ERUPTION_RADIUS, BONK_ERUPTION_WARN_MS,
                     [run, hit, x, y, z]() { run->Erupt(hit, x, y, z, BONK_ERUPTION_RADIUS); });
             }
         }
@@ -1149,7 +1149,7 @@ void BonkMobAI::StartArea(int32 abilityIndex, Player* owner)
     m_creature->SetFacingToObject(owner);
     float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ();
     BonkEnemyHit const hit = MakeHit(run, spellId, damage, m_areaWindId);
-    run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, BONK_AREA_WARN_MS,
+    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, BONK_AREA_WARN_MS,
         [run, hit, x, y, z, size]() { run->LandWarning(hit, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size); });
 }
 
@@ -1187,7 +1187,7 @@ void BonkMobAI::StartShape(int32 abilityIndex, Player* owner)
                     y = ay;
                     z = az;
                 }
-                run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
+                run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
                     [run, hit, x, y, z, size]() { run->Erupt(hit, x, y, z, size); });
             }
             return;
@@ -1227,7 +1227,7 @@ void BonkMobAI::StartShape(int32 abilityIndex, Player* owner)
     WindUp(abilityIndex, AimAngle(m_creature, owner, run, warnMs), warnMs);
     float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ(), o = m_areaOrientation;
     BonkEnemyHit const hit = MakeAbilityHit(run, ability, BONK_SPELL_CHARGE_HIT, damage, m_areaWindId);
-    run->AddTelegraph(shape, x, y, z, o, size, warnMs,
+    run->AddEnemyTelegraph(m_creature, shape, x, y, z, o, size, warnMs,
         [run, hit, shape, x, y, z, o, size]() { run->LandWarning(hit, shape, x, y, z, o, size); });
 }
 
@@ -1265,7 +1265,7 @@ bool BonkMobAI::StartLeap(int32 abilityIndex, Player* owner, BonkRun* run, uint3
     WindUp(abilityIndex, m_creature->GetAngle(x, y), warnMs);
     m_creature->HandleEmote(EMOTE_ONESHOT_BATTLEROAR);
     BonkEnemyHit const hit = MakeAbilityHit(run, ability, 0, damage, m_areaWindId);
-    run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
+    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
         [run, hit, x, y, z, size]() { run->LandWarning(hit, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size); });
     return true;
 }
@@ -1293,7 +1293,7 @@ void BonkMobAI::StartLines(int32 abilityIndex, Player* owner, BonkRun* run, uint
     float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ(), length = m_lineLength;
     BonkEnemyHit const hit = MakeAbilityHit(run, ability, BONK_SPELL_CHARGE_HIT, damage, m_areaWindId);
     for (float const angle : GetLineAngles())
-        run->AddTelegraph(BONK_TELEGRAPH_LINE, x, y, z, angle, length, durationMs,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_LINE, x, y, z, angle, length, durationMs,
             [run, hit, x, y, z, angle, length]() { run->LandWarning(hit, BONK_TELEGRAPH_LINE, x, y, z, angle, length); });
 }
 
@@ -1336,7 +1336,7 @@ void BonkMobAI::StartPools(BonkMobAbility const& ability, Player* owner, BonkRun
             if (z <= INVALID_HEIGHT)
                 continue;
         }
-        run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, BONK_AREA_WARN_MS,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, BONK_AREA_WARN_MS,
             [run, hit, x, y, z, size]() { run->StartVoidZone(hit, x, y, z, size, BONK_POOL_DURATION_MS); });
     }
 }
@@ -1370,7 +1370,7 @@ void BonkMobAI::StartBreaths(int32 abilityIndex, Player* owner, BonkRun* run, ui
     {
         float const side = (i % 2 ? 1.0f : -1.0f) * float((i + 1) / 2);
         float const o = m_areaOrientation + side * M_PI_F / 3.0f;
-        run->AddTelegraph(BONK_TELEGRAPH_CONE, x, y, z, o, size, firstMs + i * BONK_BREATH_STAGGER_MS,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CONE, x, y, z, o, size, firstMs + i * BONK_BREATH_STAGGER_MS,
             [run, hit, x, y, z, o, size]() { run->LandWarning(hit, BONK_TELEGRAPH_CONE, x, y, z, o, size); });
     }
 }
@@ -1385,7 +1385,7 @@ void BonkMobAI::StartFrontAndBack(int32 abilityIndex, Player* owner, BonkRun* ru
     float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ();
     BonkEnemyHit const hit = Unbound(MakeAbilityHit(run, ability, BONK_SPELL_CHARGE_HIT, damage));
     for (float const o : { m_areaOrientation, m_areaOrientation + M_PI_F })
-        run->AddTelegraph(BONK_TELEGRAPH_CONE, x, y, z, o, size, warnMs,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CONE, x, y, z, o, size, warnMs,
             [run, hit, x, y, z, o, size]() { run->LandWarning(hit, BONK_TELEGRAPH_CONE, x, y, z, o, size); });
 }
 
@@ -1403,7 +1403,7 @@ void BonkMobAI::StartWalls(int32 abilityIndex, Player* owner, BonkRun* run, uint
     {
         float const offset = (float(i) - float(count - 1) / 2.0f) * BONK_WALL_SPACING;
         float const x = m_areaX - offset * std::sin(o), y = m_areaY + offset * std::cos(o);
-        run->AddTelegraph(BONK_TELEGRAPH_LINE, x, y, z, o, length, durationMs,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_LINE, x, y, z, o, length, durationMs,
             [run, hit, x, y, z, o, length]() { run->LandWarning(hit, BONK_TELEGRAPH_LINE, x, y, z, o, length); });
     }
 }
@@ -1424,7 +1424,7 @@ void BonkMobAI::StartWreath(int32 abilityIndex, Player* owner, BonkRun* run, uin
         float const z = m_creature->GetMap()->GetHeight(x, y, m_creature->GetPositionZ() + 5.0f, true, 15.0f);
         if (z <= INVALID_HEIGHT)
             continue;
-        run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_WREATH_RADIUS, BONK_AREA_WARN_MS,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_WREATH_RADIUS, BONK_AREA_WARN_MS,
             [run, hit, x, y, z]() { run->Erupt(hit, x, y, z, BONK_WREATH_RADIUS); });
     }
 }
@@ -1631,7 +1631,7 @@ void BonkMobAI::WarnCharge(BonkRun* run, uint32 windupMs)
     m_chargeWindId = ++m_windCount;
     float const x = m_chargeX, y = m_chargeY, z = m_chargeZ, o = m_chargeAngle, length = m_chargeLength;
     BonkEnemyHit const hit = MakeHit(run, BONK_SPELL_CHARGE_HIT, uint32(std::max(1.0f, GetMeleeHit() * m_chargeDamage)), m_chargeWindId);
-    run->AddTelegraph(BONK_TELEGRAPH_LINE, x, y, z, o, length, windupMs,
+    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_LINE, x, y, z, o, length, windupMs,
         [run, hit, x, y, z, o, length]() { run->LandWarning(hit, BONK_TELEGRAPH_LINE, x, y, z, o, length); });
 }
 
@@ -1786,7 +1786,7 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
     m_voidTimer = BONK_VOID_INTERVAL;
     float const x = owner->GetPositionX(), y = owner->GetPositionY(), z = owner->GetPositionZ();
     BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * BONK_VOID_DAMAGE)));
-    run->AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_VOID_RADIUS, BONK_VOID_WARN_MS,
+    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_VOID_RADIUS, BONK_VOID_WARN_MS,
         [run, hit, x, y, z]() { run->StartVoidZone(hit, x, y, z, BONK_VOID_RADIUS, BONK_VOID_DURATION_MS); });
 }
 

@@ -33,9 +33,10 @@ class BonkTelegraphs
 {
     public:
         void Add(Player* owner, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-            std::function<void()> onFire = nullptr, bool lingers = false);
+            std::function<void()> onFire = nullptr, bool lingers = false, ObjectGuid const& caster = ObjectGuid());
         void Update(Player* owner, uint32 diff);
         void Clear(Player* owner);
+        void CancelFrom(Player* owner, ObjectGuid const& caster);
         void Dismiss(Player* owner);
         void Warm() { m_warm = true; }
         void SetPatient(bool patient) { m_patient = patient; }
@@ -71,6 +72,7 @@ class BonkTelegraphs
             int32 fillInMs = 0;
             int32 leftMs = 0;
             std::function<void()> onFire;
+            ObjectGuid caster;
         };
 
         struct StandIn
@@ -87,6 +89,7 @@ class BonkTelegraphs
             uint32 durationMs = 0;
             std::function<void()> onFire;
             bool lingers = false;
+            ObjectGuid caster;
         };
 
         static Telegraph Lay(Map* map, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);

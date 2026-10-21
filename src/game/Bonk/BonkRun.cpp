@@ -6989,6 +6989,19 @@ void BonkRun::UpdateEnemyMissiles(uint32 diff)
     }
 }
 
+void BonkRun::DropEnemyMissilesFrom(ObjectGuid const& caster)
+{
+    Map* map = m_player->FindMap();
+    m_enemyMissiles.erase(std::remove_if(m_enemyMissiles.begin(), m_enemyMissiles.end(), [&](EnemyMissile const& missile)
+    {
+        if (missile.caster != caster)
+            return false;
+        if (Creature* creature = map ? map->GetCreature(missile.creature) : nullptr)
+            creature->DespawnOrUnsummon();
+        return true;
+    }), m_enemyMissiles.end());
+}
+
 void BonkRun::FlyEnemyMissile(EnemyMissile& missile)
 {
     Creature* caster = m_player->GetMap()->GetCreature(missile.caster);
@@ -7068,6 +7081,14 @@ void BonkRun::AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, 
     if (m_state != STATE_RUNNING || m_paused)
         return;
     m_telegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs, std::move(onFire), lingers);
+}
+
+void BonkRun::AddEnemyTelegraph(Creature const* caster, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
+    uint32 durationMs, std::function<void()> onFire)
+{
+    if (m_state != STATE_RUNNING || m_paused)
+        return;
+    m_telegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs, std::move(onFire), false, caster->GetObjectGuid());
 }
 
 void BonkRun::ShowImpact(BonkEnemyHit const& hit, float x, float y, float z)
@@ -9568,6 +9589,9 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
 {
     if (m_state != STATE_RUNNING)
         return;
+
+    m_telegraphs.CancelFrom(m_player, mob->GetObjectGuid());
+    DropEnemyMissilesFrom(mob->GetObjectGuid());
 
     bool const eventGroup = m_miniEventActive &&
         std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), mob->GetObjectGuid()) != m_miniEvent.targets.end();

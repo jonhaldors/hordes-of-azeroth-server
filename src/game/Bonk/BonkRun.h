@@ -194,6 +194,8 @@ class BonkRun
         bool LimitRoot(Creature* mob, int32& duration);
         void AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
             std::function<void()> onFire = nullptr, bool lingers = false);
+        void AddEnemyTelegraph(Creature const* caster, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
+            uint32 durationMs, std::function<void()> onFire);
         uint32 AddObjective(BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds);
         void RemoveObjective(uint32 id);
         BonkObjectives const& GetObjectives() const { return m_objectives; }
@@ -1505,6 +1507,7 @@ class BonkRun
         };
         std::vector<EnemyMissile> m_enemyMissiles;
         void UpdateEnemyMissiles(uint32 diff);
+        void DropEnemyMissilesFrom(ObjectGuid const& caster);
         void FlyEnemyMissile(EnemyMissile& missile);
         void LandEnemyMissile(EnemyMissile const& missile);
         void HoldEnemyMissiles(bool hold);
