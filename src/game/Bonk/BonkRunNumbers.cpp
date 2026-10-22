@@ -38,7 +38,7 @@ namespace
     bool IsTickingKeyword(BonkKeyword keyword)
     {
         return keyword == BONK_KEYWORD_BURNING || keyword == BONK_KEYWORD_BLEED || keyword == BONK_KEYWORD_POISON ||
-            keyword == BONK_KEYWORD_DECAY;
+            keyword == BONK_KEYWORD_DECAY || keyword == BONK_KEYWORD_AGONY;
     }
 
     std::string FormatNumber(float value, char const* format)

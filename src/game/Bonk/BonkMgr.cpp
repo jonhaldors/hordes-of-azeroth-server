@@ -2185,7 +2185,7 @@ void BonkMgr::LoadPetAbilities()
 
         auto family = m_petFamilies.find(familyId);
         if (family == m_petFamilies.end() || kind >= MAX_BONK_PET_ABILITY_KIND || !sSpellMgr.GetSpellEntry(ability.spellId) || ability.cooldownMs < 500 ||
-            (kind == BONK_PET_ABILITY_PULSE && ability.value <= 0.0f))
+            ((kind == BONK_PET_ABILITY_PULSE || kind == BONK_PET_ABILITY_CONE) && ability.value <= 0.0f))
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_pet_ability`: family %u, spell %u, kind %u is not valid (unknown family, kind or spell, a cooldown under 500 ms, or a pulse without a radius); skipped.",
                 familyId, ability.spellId, uint32(kind));

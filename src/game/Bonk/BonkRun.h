@@ -9,6 +9,7 @@
 #include "ObjectGuid.h"
 #include "nonstd/optional.hpp"
 
+#include <deque>
 #include <map>
 #include <set>
 #include <string>
@@ -629,7 +630,7 @@ class BonkRun
         void UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey);
         bool Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey);
         void PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkPetAbility const& ability);
-        bool PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability);
+        bool PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability, Creature* coneTarget = nullptr);
         void DespawnPets();
         bool IsSummon(Unit const* unit) const;
         uint32 GetSummonRoom(OwnedWeapon const& owned) const;
@@ -1556,6 +1557,12 @@ class BonkRun
             uint32 busyUntilMs = 0;
         };
         std::map<ObjectGuid, PetState> m_petStates;
+        std::vector<ObjectGuid> m_drainBeams;
+        std::deque<ObjectGuid> m_nightfallQueue;
+        std::vector<uint32> m_nightfallMs;
+        std::map<ObjectGuid, uint32> m_consumedShadows;
+        std::map<ObjectGuid, uint32> m_spellLockReadyMs;
+        uint32 m_devourTimer = 0;
         uint32 m_petFrenzyUntil = 0;
         bool m_petsFrenzied = false;
         int32 m_defensiveTimer = 0;
@@ -1715,6 +1722,23 @@ class BonkRun
         uint32 GetPriestPetFamily(OwnedWeapon const& owned) const;
         uint32 GetWarlockPetFamily(OwnedWeapon const& owned) const;
         bool IsCasterPetFamily(BonkPetFamily const& family) const;
+        bool FireWarlockSpell(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void UpdateWarlock(uint32 diff);
+        void OnWarlockKill(Unit* victim);
+        void OnWarlockPetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey);
+        std::vector<Creature*> PickFreshTargets(std::vector<Creature*> mobs, BonkKeyword keyword, uint32 wanted) const;
+        void SpreadCorruption(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void CurseWithAgony(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void DrainLife(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void LatchDrainBeam(Creature* mob);
+        void ReleaseDrainBeam(ObjectGuid const& guid);
+        void ReleaseDrainBeams();
+        void BurnHellfire(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        OwnedWeapon* FindOwnedByRoot(uint32 rootId);
+        float GetConsumedGrowth(ObjectGuid const& pet) const;
+        void FireNightfall();
+        void BurstConsumedShadows();
+        void DevourHarmfulEffect();
         bool ApplyWeaponKeyword(OwnedWeapon const& owned, Creature* mob, BonkKeyword keyword, uint32 stacks);
         bool FirePriestSpell(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void OnPriestCast(OwnedWeapon const& owned);

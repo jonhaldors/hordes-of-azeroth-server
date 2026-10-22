@@ -392,6 +392,7 @@ namespace
     int32 const BONK_DETERRENCE_COOLDOWN_MS = 60000;
     float const BONK_PET_HUNT_RANGE        = 35.0f;
     float const BONK_CASTER_PET_DISTANCE   = 18.0f;
+    float const BONK_PET_CONE_ARC          = M_PI_F / 2.0f;
     float const BONK_PET_LEASH_RANGE       = 50.0f;
     uint32 const BONK_PET_CHECK_MS         = 250;
     float const BONK_PET_SPEED             = 1.8f;
@@ -1413,6 +1414,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateShaman(diff);
     UpdatePriest(diff);
     UpdateRogue(diff);
+    UpdateWarlock(diff);
     UpdateTalents();
     UpdateIcePath(diff);
     UpdateWeaponOrbs(diff);
@@ -5897,7 +5899,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     owned.killed = false;
 
-    if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo))
+    if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo) || FireWarlockSpell(owned, spellInfo))
         return;
 
     if (weapon.IsShieldBlock() || weapon.behavior == BONK_BEHAVIOR_WARD)
@@ -7890,9 +7892,10 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
                 pet->SetHealth(pet->GetMaxHealth());
                 pet->SetInvincibilityHpThreshold(pet->GetMaxHealth());
             }
-            if (pet->GetObjectScale() != scale)
+            float const grown = scale * GetConsumedGrowth(guid);
+            if (pet->GetObjectScale() != grown)
             {
-                pet->SetObjectScale(scale);
+                pet->SetObjectScale(grown);
                 pet->UpdateModelData();
             }
             if (weapon.altSpellId && !pet->HasAura(weapon.altSpellId))
@@ -8045,6 +8048,12 @@ void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
         {
             PetStrike(owned, pet, prey, ability);
             state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
+            OnWarlockPetStrike(owned, pet, prey);
+            return;
+        }
+        if (ability.kind == BONK_PET_ABILITY_CONE && strikeReach && PetPulse(owned, pet, ability, prey))
+        {
+            state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
             return;
         }
         if (ability.kind == BONK_PET_ABILITY_DASH && !pet->IsWithinDistInMap(prey, BONK_PET_DASH_RANGE))
@@ -8086,7 +8095,7 @@ void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkP
             keyword.damageScale, keyword.spellId);
 }
 
-bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability)
+bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability, Creature* coneTarget)
 {
     BonkPetFamily const* family = GetPetFamily(owned);
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(ability.spellId);
@@ -8094,7 +8103,16 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
         return false;
 
     float const radius = ability.value * GetSummonReach(owned);
-    std::vector<Creature*> const mobs = GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), radius);
+    std::vector<Creature*> mobs = GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), radius);
+    if (coneTarget)
+    {
+        pet->SetFacingToObject(coneTarget);
+        mobs.erase(std::remove_if(mobs.begin(), mobs.end(), [pet, coneTarget](Creature* mob)
+        {
+            return mob != coneTarget && !pet->HasInArc(mob, BONK_PET_CONE_ARC);
+        }), mobs.end());
+        ShowStrike(pet, spellInfo, coneTarget);
+    }
     if (mobs.empty())
         return false;
 
@@ -8300,6 +8318,7 @@ void BonkRun::UpdatePetTargets(uint32 diff)
 
 void BonkRun::DespawnPets()
 {
+    ReleaseDrainBeams();
     Map* map = m_player->FindMap();
     for (OwnedWeapon& owned : m_weapons)
     {
@@ -10606,8 +10625,7 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
         GetWeaponStrength(current, damageNow + damage, after, strength);
 
     BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(current.applies);
-    bool const ticks = current.applies == BONK_KEYWORD_BLEED || current.applies == BONK_KEYWORD_POISON || current.applies == BONK_KEYWORD_BURNING ||
-        current.applies == BONK_KEYWORD_DECAY;
+    bool const ticks = keyword && keyword->IsDamageOverTime();
     auto describeDamage = [&](float bonus) -> std::string
     {
         std::string const amount = "+" + Percent(std::round(bonus * 10.0f) / 10.0f);

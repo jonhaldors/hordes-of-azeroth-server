@@ -99,6 +99,7 @@ void BonkRun::OnKillingBlow(Unit* victim)
     if (m_state != STATE_RUNNING || !GetRunAI(victim))
         return;
     OnShamanKill(victim);
+    OnWarlockKill(victim);
 
     std::map<uint8, DyingKeyword> carried;
     for (auto const& itr : sBonkMgr.GetKeywords())
@@ -255,7 +256,7 @@ void BonkRun::AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 st
     stack.untilMs = stack.appliedMs + std::max(1u, durationMs);
     stack.points = points;
     stack.spellId = spellId;
-    stack.grows = IsGrowingDotSpell(spellId);
+    stack.grows = info.id == BONK_KEYWORD_AGONY || IsGrowingDotSpell(spellId);
     for (DotStack& held : list)
         if (int32(stack.untilMs - held.untilMs) > 0)
             held.untilMs = stack.untilMs;
@@ -698,6 +699,7 @@ int32 BonkRun::GetKeywordPoints(BonkKeywordInfo const& info) const
         case BONK_KEYWORD_BLEED:
         case BONK_KEYWORD_POISON:
         case BONK_KEYWORD_DECAY:
+        case BONK_KEYWORD_AGONY:
         {
             float const scale = (info.id == BONK_KEYWORD_POISON ? GetPoisonDamageScale() : 1.0f) + GetKeywordTalentDamage(info.id) / 100.0f;
             return std::max(1, int32(GetMobHealth(GetMobLevel()) * info.valuePerStack * info.tickMs / IN_MILLISECONDS * scale));

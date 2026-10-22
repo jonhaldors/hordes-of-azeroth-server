@@ -154,9 +154,13 @@ namespace
 
     thread_local bool t_periodicHit = false;
 
-    float GetStackGrowth(uint32 elapsedMs, float tickMs)
+    float const BONK_AGONY_GROWTH             = 0.25f;
+    float const BONK_AGONY_MAX_GROWTH         = 3.0f;
+
+    float GetStackGrowth(uint32 elapsedMs, float tickMs, bool agony)
     {
-        return std::min(BONK_HEMORRHAGE_MAX_GROWTH, BONK_HEMORRHAGE_GROWTH * std::floor(elapsedMs / tickMs));
+        float const step = agony ? BONK_AGONY_GROWTH : BONK_HEMORRHAGE_GROWTH;
+        return std::min(agony ? BONK_AGONY_MAX_GROWTH : BONK_HEMORRHAGE_MAX_GROWTH, step * std::floor(elapsedMs / tickMs));
     }
 }
 
@@ -285,10 +289,13 @@ bool BonkRun::IsGrowingDotSpell(uint32 spellId) const
 
 float BonkRun::GetDotGrowth(Unit const* victim, uint32 spellId) const
 {
-    if (!victim || !FindOwnedByFlag(BONK_WEAPON_FLAG_HEMORRHAGE))
+    if (!victim)
         return 1.0f;
     BonkKeywordInfo const* info = sBonkMgr.GetKeywordBySpell(spellId);
     if (!info || !info->IsDamageOverTime())
+        return 1.0f;
+    bool const agony = info->id == BONK_KEYWORD_AGONY;
+    if (!agony && !FindOwnedByFlag(BONK_WEAPON_FLAG_HEMORRHAGE))
         return 1.0f;
     auto mob = m_dotStacks.find(victim->GetObjectGuid());
     if (mob == m_dotStacks.end())
@@ -304,7 +311,7 @@ float BonkRun::GetDotGrowth(Unit const* victim, uint32 spellId) const
     for (DotStack const& stack : stacks->second)
     {
         total += stack.points;
-        grown += stack.points * (stack.grows ? 1.0f + GetStackGrowth(now - stack.appliedMs, tickMs) : 1.0f);
+        grown += stack.points * (stack.grows ? 1.0f + GetStackGrowth(now - stack.appliedMs, tickMs, agony) : 1.0f);
     }
     return total > 0.0 ? float(grown / total) : 1.0f;
 }
