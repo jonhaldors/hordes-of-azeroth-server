@@ -51,6 +51,7 @@ namespace
     uint32 const BONK_KIT_HOLY_WRATH_CAST     = 329;
     uint32 const BONK_KIT_HOLY_WRATH_IMPACT   = 211;
     uint32 const BONK_KIT_JUDGEMENT_IMPACT    = 212;
+    uint32 const BONK_KIT_JUDGEMENT_CAST      = 119;
     uint32 const BONK_SOUND_THROWN_IMPACT     = 3642;
     uint32 const BONK_KIT_HOLY_BURST          = 7455;
 
@@ -376,6 +377,7 @@ void BonkRun::PassJudgement(OwnedWeapon& owned, SpellEntry const* spellInfo)
     OwnedWeapon const* command = FindOwnedSeal(BONK_WEAPON_SEAL_OF_COMMAND);
     float const damage = GetWeaponDamage(owned) * (FindOwnedSeal(BONK_WEAPON_SEAL_OF_RIGHTEOUSNESS) ? BONK_JUDGEMENT_RIGHTEOUS : 1.0f);
     float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
+    m_player->SendPlaySpellVisualKit(BONK_KIT_JUDGEMENT_CAST);
     size_t struck = 0;
     for (Creature* target : mobs)
     {
