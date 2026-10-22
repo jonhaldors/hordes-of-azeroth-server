@@ -1900,6 +1900,7 @@ class BonkRun
         std::map<ObjectGuid, uint32> m_vengeanceStacks;
         std::set<ObjectGuid> m_rogueTouched;
         std::map<ObjectGuid, uint32> m_findWeakness;
+        std::map<ObjectGuid, uint32> m_ambushReadyMs;
         std::vector<uint32> m_riposteTimes;
         uint32 m_roguePruneMs = 0;
         uint32 m_bladeFlurryUntilMs = 0;

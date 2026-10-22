@@ -325,11 +325,13 @@ void BonkRun::StrikeAsCrusader(OwnedWeapon& owned, SpellEntry const* spellInfo)
     float const damage = GetWeaponDamage(owned) * (verdict ? BONK_VERDICT_DAMAGE : 1.0f);
     float const splash = verdict ? 1.0f : owned.weapon.id == BONK_WEAPON_CRUSADERS_ZEAL ? BONK_ZEAL_SPLASH_SHARE : BONK_CRUSADER_SPLASH_SHARE;
     float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
+    std::set<ObjectGuid> splashed;
     for (Creature* target : mobs)
     {
         ShowStrike(m_player, spellInfo, target);
         for (Creature* mob : GetMobsInRange(BONK_CRUSADER_SPLASH_RADIUS * GetWeaponArea(owned), target))
-            HitAsPaladin(spellInfo, owned.weapon.spellId, mob, damage * splash);
+            if (splashed.insert(mob->GetObjectGuid()).second)
+                HitAsPaladin(spellInfo, owned.weapon.spellId, mob, damage * splash);
         StrikeAsPaladin(spellInfo, owned.weapon.spellId, target, damage, twice);
         if (owned.weapon.id == BONK_WEAPON_AVENGING_CRUSADER && target->IsAlive() && roll_chance_f(BONK_AVENGING_HAMMER_CHANCE))
             CallAvengingHammer(owned, target);

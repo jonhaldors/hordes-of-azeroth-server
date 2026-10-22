@@ -103,6 +103,7 @@ namespace
     int32 const BONK_CHEAP_SHOT_MS            = 1000;
     uint32 const BONK_FIND_WEAKNESS_MS        = 6000;
     float const BONK_FIND_WEAKNESS_BONUS      = 1.2f;
+    uint32 const BONK_AMBUSH_REPEAT_MS        = 1000;
     float const BONK_VANISH_RADIUS            = 10.0f;
     int32 const BONK_VANISH_MS                = 2000;
     float const BONK_SYMBOLS_RANGE            = 20.0f;
@@ -134,6 +135,7 @@ void BonkRun::ResetRogueState()
 {
     m_rogueTouched.clear();
     m_findWeakness.clear();
+    m_ambushReadyMs.clear();
     m_riposteTimes.clear();
     m_roguePruneMs = 0;
     m_bladeFlurryUntilMs = 0;
@@ -167,6 +169,13 @@ void BonkRun::UpdateRogue(uint32 diff)
     {
         if (itr->second <= m_totalMs)
             itr = m_findWeakness.erase(itr);
+        else
+            ++itr;
+    }
+    for (auto itr = m_ambushReadyMs.begin(); itr != m_ambushReadyMs.end();)
+    {
+        if (itr->second <= m_totalMs)
+            itr = m_ambushReadyMs.erase(itr);
         else
             ++itr;
     }
@@ -321,6 +330,10 @@ void BonkRun::OpenOnRogueTarget(Creature* target, bool forced)
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_AMBUSH);
     if (!ambush || !look || !target->IsAlive())
         return;
+    uint32& readyMs = m_ambushReadyMs[target->GetObjectGuid()];
+    if (!fresh && readyMs > m_totalMs)
+        return;
+    readyMs = m_totalMs + BONK_AMBUSH_REPEAT_MS;
     float const damage = GetWeaponDamage(*ambush);
     ShowStrike(m_player, look, target);
     DealShamanHit(look, ambush->weapon.spellId, target, damage);
