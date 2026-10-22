@@ -392,7 +392,7 @@ namespace
     int32 const BONK_DETERRENCE_COOLDOWN_MS = 60000;
     float const BONK_PET_HUNT_RANGE        = 35.0f;
     float const BONK_CASTER_PET_DISTANCE   = 18.0f;
-    float const BONK_PET_CONE_ARC          = M_PI_F / 2.0f;
+    float const BONK_PET_CONE_ARC          = 5.0f * M_PI_F / 6.0f;
     float const BONK_PET_LEASH_RANGE       = 50.0f;
     uint32 const BONK_PET_CHECK_MS         = 250;
     float const BONK_PET_SPEED             = 1.8f;
@@ -8048,7 +8048,7 @@ void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
         {
             PetStrike(owned, pet, prey, ability);
             state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
-            OnWarlockPetStrike(owned, pet, prey);
+            OnWarlockPetStrike(owned, pet, prey, uint32(i));
             return;
         }
         if (ability.kind == BONK_PET_ABILITY_CONE && strikeReach && PetPulse(owned, pet, ability, prey))
@@ -8077,7 +8077,7 @@ void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkP
         return;
 
     float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
-    int32 const damage = std::max(1, int32(GetPetBiteDamage(owned, *family) * ability.damage * frenzy));
+    int32 const damage = std::max(1, int32(GetPetBiteDamage(owned, *family) * ability.damage * frenzy * GetWarlockPetStrikeScale(owned, prey)));
     pet->SetFacingToObject(prey);
     SpellEntry const* abilityInfo = sSpellMgr.GetSpellEntry(ability.spellId);
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM) && abilityInfo)

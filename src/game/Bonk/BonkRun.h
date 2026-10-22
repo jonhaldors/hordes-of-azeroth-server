@@ -1558,6 +1558,15 @@ class BonkRun
         };
         std::map<ObjectGuid, PetState> m_petStates;
         std::vector<ObjectGuid> m_drainBeams;
+        struct ImpVolley
+        {
+            ObjectGuid pet;
+            ObjectGuid prey;
+            uint32 weaponId;
+            uint32 ability;
+            uint32 atMs;
+        };
+        std::vector<ImpVolley> m_impVolleys;
         std::deque<ObjectGuid> m_nightfallQueue;
         std::vector<uint32> m_nightfallMs;
         std::map<ObjectGuid, uint32> m_consumedShadows;
@@ -1725,8 +1734,11 @@ class BonkRun
         bool FireWarlockSpell(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void UpdateWarlock(uint32 diff);
         void OnWarlockKill(Unit* victim);
-        void OnWarlockPetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey);
-        std::vector<Creature*> PickFreshTargets(std::vector<Creature*> mobs, BonkKeyword keyword, uint32 wanted) const;
+        void OnWarlockPetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, uint32 abilityIndex);
+        float GetWarlockPetStrikeScale(OwnedWeapon const& owned, Creature const* prey) const;
+        void QueueImpVolley(OwnedWeapon const& owned, Creature* pet, Creature* prey, uint32 abilityIndex);
+        void FireImpVolleys();
+        void AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword);
         void SpreadCorruption(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void CurseWithAgony(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void DrainLife(OwnedWeapon& owned, SpellEntry const* spellInfo);
