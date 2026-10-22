@@ -979,12 +979,18 @@ void BonkRun::PauseCaravan(bool paused)
     Creature* caravan = m_miniEvent.targets.empty() ? nullptr : m_player->GetMap()->GetCreature(m_miniEvent.targets.front());
     if (!caravan)
         return;
+    caravan->SetTimeFrozen(paused && caravan->IsAlive());
     if (paused)
     {
         caravan->StopMoving();
         caravan->GetMotionMaster()->Clear(false);
         caravan->GetMotionMaster()->MoveIdle();
+        caravan->AddUnitState(UNIT_STATE_ROOT);
+        caravan->SetRooted(true);
+        return;
     }
+    caravan->ClearUnitState(UNIT_STATE_ROOT);
+    caravan->SetRooted(false);
 }
 
 void BonkRun::EndCaravan(bool arrived)

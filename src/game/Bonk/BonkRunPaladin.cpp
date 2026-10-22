@@ -50,6 +50,8 @@ namespace
     uint32 const BONK_SPELL_CONSECRATION_LOOK = 26573;
     uint32 const BONK_KIT_HOLY_WRATH_CAST     = 329;
     uint32 const BONK_KIT_HOLY_WRATH_IMPACT   = 211;
+    uint32 const BONK_KIT_JUDGEMENT_IMPACT    = 212;
+    uint32 const BONK_SOUND_THROWN_IMPACT     = 3642;
     uint32 const BONK_KIT_HOLY_BURST          = 7455;
 
     float const BONK_CRUSADER_SPLASH_RADIUS   = 5.0f;
@@ -378,6 +380,7 @@ void BonkRun::PassJudgement(OwnedWeapon& owned, SpellEntry const* spellInfo)
     for (Creature* target : mobs)
     {
         ShowStrike(m_player, spellInfo, target);
+        target->SendPlaySpellVisualKit(BONK_KIT_JUDGEMENT_IMPACT);
         if (owned.weapon.id == BONK_WEAPON_JUDGEMENT_OF_THE_CRUSADER)
             JudgeTarget(target);
         if (command)
@@ -730,13 +733,19 @@ void BonkRun::HammerOfJustice(OwnedWeapon& owned, SpellEntry const* spellInfo)
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_JUSTICE_HAMMER);
     for (Creature* target : mobs)
     {
-        ShowStrike(m_player, look ? look : spellInfo, target);
+        int32 stunMs = BONK_JUSTICE_STUN_MS;
+        bool const stuns = CanBeStunned(target) && LimitStun(target, stunMs);
+        if (stuns)
+            ShowStrike(m_player, look ? look : spellInfo, target);
+        else
+            ShowThrowAtSpot(m_player, look ? look : spellInfo, target);
         PendingCast hammer;
         hammer.weaponId = owned.weapon.id;
         hammer.spellId = owned.weapon.spellId;
         hammer.target = target->GetObjectGuid();
         hammer.leftMs = int32(m_player->GetDistance(target) / BONK_JUSTICE_SPEED * IN_MILLISECONDS);
         hammer.justiceHammer = true;
+        hammer.stunMs = stuns ? stunMs : 0;
         m_pendingCasts.push_back(hammer);
     }
 }
@@ -751,9 +760,10 @@ void BonkRun::LandJusticeHammer(OwnedWeapon& owned, SpellEntry const* spellInfo,
         for (Creature* mob : GetMobsInRange(BONK_RIGHTEOUS_HAMMER_RADIUS * GetWeaponArea(owned), target))
             HitAsPaladin(spellInfo, owned.weapon.spellId, mob, damage);
     StrikeAsPaladin(spellInfo, owned.weapon.spellId, target, damage, GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE));
-    int32 durationMs = BONK_JUSTICE_STUN_MS;
-    if (target->IsAlive() && CanBeStunned(target) && LimitStun(target, durationMs))
-        HoldMob(target, spellInfo, SPELL_AURA_MOD_STUN, durationMs);
+    if (!cast.stunMs)
+        target->PlayDistanceSound(BONK_SOUND_THROWN_IMPACT);
+    else if (target->IsAlive())
+        HoldMob(target, spellInfo, SPELL_AURA_MOD_STUN, cast.stunMs);
 }
 
 void BonkRun::ChargeDivineShield(OwnedWeapon& owned)

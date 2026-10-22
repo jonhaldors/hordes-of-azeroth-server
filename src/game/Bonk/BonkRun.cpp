@@ -8281,6 +8281,12 @@ void BonkRun::ShowMissileFrom(Unit* source, SpellEntry const* spellInfo, float x
     ShowMissileAt(source, spellInfo, x, y, z);
 }
 
+void BonkRun::ShowThrowAtSpot(Unit* source, SpellEntry const* spellInfo, Unit const* target)
+{
+    ShowMissileAt(source, spellInfo, target->GetPositionX(), target->GetPositionY(),
+        target->GetPositionZ() + target->GetCollisionHeight() / 2.0f);
+}
+
 void BonkRun::ShowMissilesAround(SpellEntry const* spellInfo, float radius, uint32 count)
 {
     float const x = m_player->GetPositionX(), y = m_player->GetPositionY(), z = m_player->GetPositionZ();
@@ -8977,6 +8983,7 @@ void BonkRun::GiveExperience(uint32 xp)
     }
 
     uint32 const startLevel = level;
+    uint32 const startMaxHealth = m_player->GetMaxHealth();
     uint32 current = m_player->GetUInt32Value(PLAYER_XP) + xp;
     uint32 next = m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
     while (current >= next && level < maxLevel)
@@ -8996,8 +9003,9 @@ void BonkRun::GiveExperience(uint32 xp)
 
     if (level != startLevel && m_player->IsAlive())
     {
+        uint32 const gained = m_player->GetMaxHealth() > startMaxHealth ? m_player->GetMaxHealth() - startMaxHealth : 0;
         uint32 const heal = ReduceHealing(uint32(m_player->GetMaxHealth() * BONK_LEVEL_UP_HEAL * (level - startLevel)));
-        m_player->SetHealth(std::min(health + heal, m_player->GetMaxHealth()));
+        m_player->SetHealth(std::min(health + gained + heal, m_player->GetMaxHealth()));
     }
     UpdateRunXp(level != startLevel);
     if (level != startLevel)

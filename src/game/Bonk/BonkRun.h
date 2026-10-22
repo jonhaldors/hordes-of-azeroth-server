@@ -1219,6 +1219,7 @@ class BonkRun
             bool lightsHammer = false;
             bool lightsHammerLaunch = false;
             bool justiceHammer = false;
+            int32 stunMs = 0;
             float incoming = 0.0f;
             float radius = 0.0f;
             uint32 kit = 0;
@@ -1959,6 +1960,7 @@ class BonkRun
         void DealExactHit(SpellEntry const* spellInfo, Unit* target, uint32 damage, Unit* attacker = nullptr);
         void ShowFallingAt(SpellEntry const* spellInfo, float x, float y, float z);
         void ShowMissileFrom(Unit* source, SpellEntry const* spellInfo, float x, float y, float z);
+        void ShowThrowAtSpot(Unit* source, SpellEntry const* spellInfo, Unit const* target);
         void ShowMissilesAround(SpellEntry const* spellInfo, float radius, uint32 count);
         void PlaceAreaLook(uint32 spellId, float x, float y, float z, float radius, uint32 durationMs);
         struct Bladestorm

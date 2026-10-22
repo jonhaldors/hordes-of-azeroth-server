@@ -988,7 +988,7 @@ void BonkRun::LaunchShield(OwnedWeapon const& owned, SpellEntry const* spellInfo
 {
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_AVENGERS_SHIELD_LOOK);
     if (look)
-        ShowStrike(from, look, target);
+        ShowThrowAtSpot(from, look, target);
 
     struck.push_back(target->GetObjectGuid());
     PendingCast flight;
