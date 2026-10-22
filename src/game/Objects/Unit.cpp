@@ -10330,6 +10330,8 @@ bool Unit::GetRandomAttackPoint(Unit const* attacker, float &x, float &y, float 
         if (!ExtrapolateMovement(m_movementInfo, 200, initialPos.x, initialPos.y, initialPos.z, initialPos.o))
             GetPosition(initialPos.x, initialPos.y, initialPos.z);
     }
+    else if (attacker->IsBonkEnemyAgainstPlayer(this))
+        dist = attacker->GetCombatReachToTarget(this, false, 0.0f, true) - 0.5f;
     else
         dist = GetCombatReachToTarget(attacker, false, 0.0f, true) - 0.5f;
 
@@ -10420,7 +10422,11 @@ float Unit::GetCombatReachToTarget(Unit const* pVictim, bool ability, float flat
         ? pVictim->GetCombatReach(true)
         : 0.0f;
 
-    float reach = GetCombatReach(true) + victimReach + flat_mod;
+    float ownReach = GetCombatReach(true);
+    if (IsBonkEnemyAgainstPlayer(pVictim))
+        ownReach = std::min(ownReach, BONK_ENEMY_MAX_MELEE_REACH);
+
+    float reach = ownReach + victimReach + flat_mod;
 
     reach += BASE_MELEERANGE_OFFSET;
     if (reach < ATTACK_DISTANCE)
@@ -10439,9 +10445,32 @@ float Unit::GetCombatReachToTarget(Unit const* pVictim, bool ability, float flat
 
 bool Unit::CanReachWithMeleeAutoAttack(Unit const* pVictim, float flat_mod /*= 0.0f*/) const
 {
+    if (IsBonkEnemyAgainstPlayer(pVictim))
+        if (BonkRun const* run = static_cast<Player const*>(pVictim)->GetBonkPlayer()->GetRun())
+        {
+            BonkSpot const& hero = run->GetHeroPositionThisTick();
+            return CanReachWithMeleeAutoAttackWithVictimAt(pVictim, hero.x, hero.y, hero.z, flat_mod);
+        }
+
     float x = GetPositionX(), y = GetPositionY(), z = GetPositionZ();
 
     return CanReachWithMeleeAutoAttackAtPosition(pVictim, x, y, z, flat_mod);
+}
+
+bool Unit::CanReachWithMeleeAutoAttackWithVictimAt(Unit const* pVictim, float x, float y, float z, float flat_mod /*= 0.0f*/) const
+{
+    if (!pVictim)
+        return false;
+    float const victimLagX = pVictim->GetPositionX() - x;
+    float const victimLagY = pVictim->GetPositionY() - y;
+    float const victimLagZ = pVictim->GetPositionZ() - z;
+    return CanReachWithMeleeAutoAttackAtPosition(pVictim, GetPositionX() + victimLagX, GetPositionY() + victimLagY, GetPositionZ() + victimLagZ, flat_mod);
+}
+
+bool Unit::IsBonkEnemyAgainstPlayer(Unit const* victim) const
+{
+    Creature const* creature = ToCreature();
+    return creature && creature->IsBonkEnemy() && victim && victim->IsPlayer();
 }
 
 bool Unit::CanReachWithMeleeAutoAttackAtPosition(Unit const* pVictim, float x, float y, float z, float flat_mod /*= 0.0f*/) const

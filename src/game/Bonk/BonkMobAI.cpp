@@ -732,7 +732,7 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         AttackStart(owner);
     }
 
-    if (UpdateCharge(diff, owner) || UpdateArea(diff, owner))
+    if (!m_movesOff && (UpdateCharge(diff, owner) || UpdateArea(diff, owner)))
     {
         ResetProgressWatch();
         return;
@@ -762,8 +762,10 @@ void BonkMobAI::UpdateAI(uint32 const diff)
 
     UpdatePhases(diff, owner);
     UpdateAffixes(diff, owner);
-    UpdateAbilities(diff, owner);
-    DoMeleeAttackIfReady();
+    if (!m_movesOff)
+        UpdateAbilities(diff, owner);
+    if (DoMeleeAttackIfReady())
+        run->ReportSandboxSwing(m_creature);
 }
 
 void BonkMobAI::ResetProgressWatch()
@@ -1832,6 +1834,20 @@ void BonkMobAI::SetPassive(bool passive)
     }
     Halt();
     m_creature->GetMotionMaster()->MoveIdle();
+}
+
+void BonkMobAI::SetMovesOff(bool off)
+{
+    m_movesOff = off;
+    if (!off)
+        return;
+    m_chargesLeft = 0;
+    m_chargeState = CHARGE_NONE;
+    m_boltTarget.Clear();
+    m_areaWinding = false;
+    m_creature->InterruptNonMeleeSpells(false);
+    if (Player* owner = GetOwner())
+        ResumeChase(owner);
 }
 
 void BonkMobAI::StartStampede(Player* owner, float angle, float length, uint32 windupMs, float damage)

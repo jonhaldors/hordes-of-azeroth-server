@@ -234,7 +234,8 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
                 bool const predicted = bonkChase ? PredictBonkTarget(i_target.getTarget(), 200, futurePos.x, futurePos.y, futurePos.z) :
                     i_target->ExtrapolateMovement(i_target->m_movementInfo, 200, futurePos.x, futurePos.y, futurePos.z, futurePos.o);
                 if (predicted)
-                    if (!i_target->CanReachWithMeleeAutoAttackAtPosition(&owner, futurePos.x, futurePos.y, futurePos.z))
+                    if (bonkChase ? !owner.CanReachWithMeleeAutoAttackWithVictimAt(i_target.getTarget(), futurePos.x, futurePos.y, futurePos.z) :
+                        !i_target->CanReachWithMeleeAutoAttackAtPosition(&owner, futurePos.x, futurePos.y, futurePos.z))
                         futureOkay = false;
             }
 

@@ -499,7 +499,7 @@ namespace
         switch (kind)
         {
             case BONK_SPAWN_ELITE:    return 4.0f;
-            case BONK_SPAWN_MINIBOSS: return 14.0f;
+            case BONK_SPAWN_MINIBOSS: return 35.0f;
             case BONK_SPAWN_BOSS:     return 110.0f;
             default:                  return 1.0f;
         }
@@ -1046,6 +1046,7 @@ void BonkRun::Update(uint32 diff)
 {
     StressTick const stressTick(*this, diff);
     UpdateSky();
+    RefreshHeroPositionNow();
 
     if (m_paused)
         HoldAuraTimers(diff);
@@ -8281,6 +8282,12 @@ void BonkRun::ShowMissileFrom(Unit* source, SpellEntry const* spellInfo, float x
     ShowMissileAt(source, spellInfo, x, y, z);
 }
 
+void BonkRun::RefreshHeroPositionNow()
+{
+    if (m_player->IsInWorld())
+        GetHeroPositionNow(m_player, m_heroNow.x, m_heroNow.y, m_heroNow.z);
+}
+
 void BonkRun::ShowThrowAtSpot(Unit* source, SpellEntry const* spellInfo, Unit const* target)
 {
     ShowMissileAt(source, spellInfo, target->GetPositionX(), target->GetPositionY(),
@@ -9611,6 +9618,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
 
     bool const eventGroup = m_miniEventActive &&
         std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), mob->GetObjectGuid()) != m_miniEvent.targets.end();
+    bool const eventPaysChest = eventGroup || (m_miniEventActive && mob->GetObjectGuid() == m_miniEvent.target);
     OnMiniEventTargetKilled(mob);
 
     ++m_kills;
@@ -9675,7 +9683,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
 
     if (kind != BONK_SPAWN_NORMAL)
     {
-        if (!eventGroup && !m_sandbox)
+        if (!eventPaysChest && !m_sandbox)
         {
             DropChest(mob, kind);
             DropGear(mob, kind);

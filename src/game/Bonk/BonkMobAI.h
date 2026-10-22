@@ -58,6 +58,7 @@ class BonkMobAI : public CreatureAI
         bool IsFleeing() const { return m_fleeing; }
         void SetStationary();
         void SetPassive(bool passive);
+        void SetMovesOff(bool off);
         void SetRaidTarget(ObjectGuid target);
         void ClearRaidTarget() { m_raidTarget.Clear(); }
         void StartStampede(Player* owner, float angle, float length, uint32 windupMs, float damage);
@@ -214,6 +215,7 @@ class BonkMobAI : public CreatureAI
         bool m_fleeStanding = false;
         bool m_stationary = false;
         bool m_passive = false;
+        bool m_movesOff = false;
         ObjectGuid m_raidTarget;
         float m_raidAngle = 0.0f;
         bool m_hasFleeHeading = false;

@@ -142,6 +142,8 @@ class BonkRun
 
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
         static uint32 GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed);
+        BonkSpot const& GetHeroPositionThisTick() const { return m_heroNow; }
+        void ReportSandboxSwing(Creature const* mob) const;
         bool RollDodge(Unit const* victim) const;
         float GetCritChance(SpellEntry const* spell = nullptr, Unit const* victim = nullptr, Unit const* attacker = nullptr) const;
         float GetSummonDamageMultiplier(Unit const* attacker) const;
@@ -391,6 +393,8 @@ class BonkRun
         uint32 GetVendorRestocksLeft() const;
         uint32 GetSkyKey() const;
         void UpdateSky();
+        void RefreshHeroPositionNow();
+        BonkSpot m_heroNow;
         void ClearSky();
         void ApplyVendorCard(Offer const& card);
         void SendVendor() const;
@@ -2175,6 +2179,8 @@ class BonkRun
         bool m_sandboxPassive = false;
         bool m_sandboxUnkillable = false;
         bool m_sandboxDeepDummies = false;
+        bool m_sandboxMovesOff = false;
+        bool m_sandboxReachReport = false;
         bool m_sandboxQuietLevels = false;
         bool m_sandboxBench = false;
         float m_sandboxMinute = -1.0f;

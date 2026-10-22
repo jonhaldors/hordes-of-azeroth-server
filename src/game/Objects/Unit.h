@@ -1018,6 +1018,8 @@ class Unit : public SpellCaster
 
         bool CanReachWithMeleeAutoAttack(Unit const* pVictim, float flat_mod = 0.0f) const;
         bool CanReachWithMeleeAutoAttackAtPosition(Unit const* pVictim, float x, float y, float z, float flat_mod = 0.0f) const;
+        bool CanReachWithMeleeAutoAttackWithVictimAt(Unit const* pVictim, float x, float y, float z, float flat_mod = 0.0f) const;
+        bool IsBonkEnemyAgainstPlayer(Unit const* victim) const;
         float GetMeleeReach() const;
         float GetCombatReach(bool forMeleeRange /*=true*/) const;
         float GetCombatReachToTarget(Unit const* pVictim, bool ability, float flat_mod, bool ignoreLeeway = false) const;

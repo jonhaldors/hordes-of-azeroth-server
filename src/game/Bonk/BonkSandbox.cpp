@@ -101,6 +101,8 @@ namespace
         TOGGLE_PASSIVE = 1,
         TOGGLE_UNKILLABLE,
         TOGGLE_GOD,
+        TOGGLE_MOVES_OFF,
+        TOGGLE_REACH_REPORT,
     };
 
     enum SandboxReset : uint32
@@ -268,7 +270,7 @@ namespace
         AddBack(player, MENU_MAIN);
     }
 
-    void AddEnemyItems(Player* player, bool passive, bool unkillable)
+    void AddEnemyItems(Player* player, bool passive, bool unkillable, bool movesOff, bool reachReport)
     {
         for (uint32 count : { 10u, 30u, 100u })
             AddItem(player, GOSSIP_ICON_BATTLE, "Pack of " + std::to_string(count) + " enemies", SENDER_PACK, count);
@@ -280,6 +282,8 @@ namespace
         }
         AddItem(player, GOSSIP_ICON_INTERACT_1, Toggled(passive, "Enemies passive"), SENDER_TOGGLE, TOGGLE_PASSIVE);
         AddItem(player, GOSSIP_ICON_INTERACT_1, Toggled(unkillable, "Enemies stop at 1 health"), SENDER_TOGGLE, TOGGLE_UNKILLABLE);
+        AddItem(player, GOSSIP_ICON_INTERACT_1, Toggled(movesOff, "Enemy moves off (melee only)"), SENDER_TOGGLE, TOGGLE_MOVES_OFF);
+        AddItem(player, GOSSIP_ICON_INTERACT_1, Toggled(reachReport, "Report melee swing distance"), SENDER_TOGGLE, TOGGLE_REACH_REPORT);
         AddBack(player, MENU_MAIN);
     }
 
@@ -502,6 +506,8 @@ void BonkRun::PrepareSandboxMob(Creature* mob)
         mob->SetInvincibilityHpThreshold(1);
     if (m_sandboxPassive && ai)
         ai->SetPassive(true);
+    if (m_sandboxMovesOff && ai)
+        ai->SetMovesOff(true);
 }
 
 void BonkRun::ReviveInSandbox()
@@ -752,6 +758,24 @@ void BonkRun::ToggleSandbox(uint32 toggle)
         bonk->Notify(on ? "God mode is on: damage stops at 1 health." : "God mode is off.");
         return;
     }
+    if (toggle == TOGGLE_REACH_REPORT)
+    {
+        m_sandboxReachReport = !m_sandboxReachReport;
+        bonk->Notify(m_sandboxReachReport ? "Each enemy melee swing now reports its distance and reach in chat." :
+            "Melee swing distances are no longer reported.");
+        return;
+    }
+    if (toggle == TOGGLE_MOVES_OFF)
+    {
+        m_sandboxMovesOff = !m_sandboxMovesOff;
+        Map* map = m_player->GetMap();
+        for (ObjectGuid const& guid : m_mobs)
+            if (Creature* mob = map->GetCreature(guid))
+                if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+                    ai->SetMovesOff(m_sandboxMovesOff);
+        bonk->Notify(m_sandboxMovesOff ? "Enemy moves are off: enemies only walk and swing." : "Enemies use their moves again.");
+        return;
+    }
     if (toggle != TOGGLE_PASSIVE && toggle != TOGGLE_UNKILLABLE)
         return;
 
@@ -773,6 +797,16 @@ void BonkRun::ToggleSandbox(uint32 toggle)
         bonk->Notify(setting ? "Enemies are passive now: they don't move, attack or cast." : "Enemies fight again.");
     else
         bonk->Notify(setting ? "Enemies stop at 1 health now." : "Enemies die normally again.");
+}
+
+void BonkRun::ReportSandboxSwing(Creature const* mob) const
+{
+    if (!m_sandbox || !m_sandboxReachReport)
+        return;
+    float const dx = mob->GetPositionX() - m_heroNow.x;
+    float const dy = mob->GetPositionY() - m_heroNow.y;
+    float const reach = mob->GetCombatReachToTarget(m_player, false, 0.0f);
+    ChatHandler(m_player).PSendSysMessage("%s swings from %.1f yd (melee reach %.1f yd).", mob->GetName(), std::sqrt(dx * dx + dy * dy), reach);
 }
 
 void BonkRun::GiveSandboxLevels(uint32 levels)
@@ -1010,7 +1044,7 @@ void BonkRun::ShowSandboxMenu(Creature* keeper, uint32 menu)
             AddDummyItems(m_player);
             break;
         case MENU_ENEMIES:
-            AddEnemyItems(m_player, m_sandboxPassive, m_sandboxUnkillable);
+            AddEnemyItems(m_player, m_sandboxPassive, m_sandboxUnkillable, m_sandboxMovesOff, m_sandboxReachReport);
             break;
         case MENU_ENEMY_LIST:
             AddEnemyList(m_player, SandboxEnemyType(ContextOf(menu)), PageOf(menu));
@@ -1316,6 +1350,10 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         ToggleSandbox(TOGGLE_PASSIVE);
     else if (verb == "unkillable")
         ToggleSandbox(TOGGLE_UNKILLABLE);
+    else if (verb == "moves")
+        ToggleSandbox(TOGGLE_MOVES_OFF);
+    else if (verb == "reach")
+        ToggleSandbox(TOGGLE_REACH_REPORT);
     else if (verb == "deep")
     {
         m_sandboxDeepDummies = !m_sandboxDeepDummies;
@@ -1339,7 +1377,7 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         EnterSandboxBench();
     else
     {
-        error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|forget|level|clear|heal|cooldowns|god|passive|unkillable|deep|quiet|minute|"
+        error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|forget|level|clear|heal|cooldowns|god|passive|unkillable|moves|reach|deep|quiet|minute|"
             "boss|miniboss|bosshealth|ability|bench.";
         return false;
     }

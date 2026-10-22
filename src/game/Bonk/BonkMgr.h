@@ -18,6 +18,8 @@ WorldLocation const BONK_CAMP_LOCATION(1, 16226.2f, 16257.0f, 13.2022f, 1.65007f
 WorldLocation const BONK_CAMP_ARRIVAL(1, 16242.1f, 16304.9f, 20.899f, 6.1865f);
 uint32 const BONK_CAMP_CHAIR = 101766;
 
+float const BONK_ENEMY_MAX_MELEE_REACH = 4.0f;
+
 uint32 const BONK_GO_CHEST      = 900001;
 uint32 const BONK_GO_CHEST_FREE = 900002;
 uint32 const BONK_GO_PORTAL     = 900003;
