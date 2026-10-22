@@ -1047,6 +1047,8 @@ void BonkRun::Update(uint32 diff)
     StressTick const stressTick(*this, diff);
     UpdateSky();
     RefreshHeroPositionNow();
+    if (m_runXpDirty)
+        UpdateRunXp(false);
 
     if (m_paused)
         HoldAuraTimers(diff);
@@ -4018,6 +4020,7 @@ void BonkRun::UsePowerup(BonkPowerup const& powerup)
             break;
         case BONK_POWERUP_VALOR:
             m_coins += std::max(1u, uint32(GetChestCost() * powerup.value + 0.5f));
+            m_player->GetBonkPlayer()->SendAddon("valor");
             SendState();
             break;
         default:
@@ -8914,7 +8917,8 @@ void BonkRun::SendRunXp() const
     uint32 const maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
     uint32 const xp = m_player->GetLevel() >= maxLevel ? m_overcapXp : m_player->GetUInt32Value(PLAYER_XP);
     m_player->GetBonkPlayer()->SendAddon("runxp~" + std::to_string(m_player->GetLevel() + m_overcapLevel) + "~" + std::to_string(xp) + "~" +
-        std::to_string(GetNextLevelXp()));
+        std::to_string(GetNextLevelXp()) + "~" + std::to_string(m_orbsSinceXpSent));
+    m_orbsSinceXpSent = 0;
 }
 
 void BonkRun::UpdateRunXp(bool levelled)
@@ -9217,6 +9221,7 @@ void BonkRun::UpdateOrbs(uint32 diff)
         if (!orb || distance <= BONK_ORB_PICKUP_RANGE)
         {
             collected += itr->experience;
+            ++m_orbsSinceXpSent;
             if (orb)
                 VanishOrb(orb);
             itr = m_orbs.erase(itr);
@@ -9268,6 +9273,7 @@ void BonkRun::CollectAllOrbs()
     uint32 collected = 0;
     for (Orb const& orb : m_orbs)
         collected += orb.experience;
+    m_orbsSinceXpSent += uint32(m_orbs.size());
     DespawnOrbs();
     if (collected)
         GiveExperience(collected);

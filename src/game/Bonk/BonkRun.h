@@ -662,6 +662,7 @@ class BonkRun
         void GiveExperience(uint32 xp);
         uint32 GetNextLevelXp() const;
         void SendRunXp() const;
+        mutable uint32 m_orbsSinceXpSent = 0;
         void UpdateRunXp(bool levelled);
         bool m_runXpDirty = false;
         uint32 m_runXpSentAt = 0;
