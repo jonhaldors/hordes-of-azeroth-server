@@ -378,7 +378,7 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
 
     uint32 const plateKind = GetPlateKind();
     if (plateKind && owner)
-        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(plateKind) + "~" + m_creature->GetName() + "~" + GetAffixIcons() + "~" +
+        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(plateKind) + "~" + m_creature->GetName() + "~" + m_plateIcon + "~" +
             std::to_string(m_creature->GetPlateId()) + "~" + GetUnitGuidText(m_creature));
 }
 
@@ -491,15 +491,6 @@ uint32 BonkMobAI::GetAffixCount() const
         if (HasAffix(Affix(affix)))
             ++count;
     return count;
-}
-
-std::string BonkMobAI::GetAffixIcons() const
-{
-    std::string icons = m_plateIcon;
-    for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
-        if (HasAffix(Affix(affix)))
-            icons += (icons.empty() ? "" : ",") + std::string(BONK_AFFIXES[affix].icon);
-    return icons;
 }
 
 std::string BonkMobAI::GetAffixNames() const

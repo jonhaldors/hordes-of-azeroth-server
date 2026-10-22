@@ -11179,6 +11179,10 @@ void BonkRun::SetPaused(bool paused)
     if (m_paused == paused)
         return;
     m_paused = paused;
+    if (paused)
+        m_pausedAtMs = WorldTimer::getMSTime();
+    else
+        ShiftDotStacks(WorldTimer::getMSTime() - m_pausedAtMs);
 
     m_player->SetTimeFrozen(paused);
     if (m_player->IsInWorld())

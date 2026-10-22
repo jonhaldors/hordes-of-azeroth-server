@@ -35,6 +35,18 @@ namespace
         return player->GetBonkPlayer()->GetRun() != nullptr;
     }
 
+    std::string KeywordStacksText(Player* player, Creature const* victim)
+    {
+        BonkRun const* run = player->GetBonkPlayer()->GetRun();
+        std::string text;
+        if (!run)
+            return text;
+        for (auto const& itr : sBonkMgr.GetKeywords())
+            if (uint32 const stacks = run->GetKeywordStacks(victim, itr.second.id))
+                text += (text.empty() ? "" : ",") + std::to_string(uint32(itr.second.id)) + ":" + std::to_string(stacks);
+        return text;
+    }
+
     char const* const BONK_SCHOOL_TYPES[MAX_SPELL_SCHOOL] = { "phys", "holy", "fire", "nature", "frost", "shadow", "arcane" };
 
     std::string SchoolType(uint32 spellId)
@@ -260,7 +272,7 @@ void BonkStats::UpdateBossBar(Player* player, uint32 diff)
     {
         BonkMobAI const* ai = static_cast<BonkMobAI const*>(shown->AI());
         line += std::string(shown->GetName()) + "~" + std::to_string(shown->GetHealth()) + "~" + std::to_string(shown->GetMaxHealth()) + "~" +
-            (ai->GetKind() == BONK_SPAWN_BOSS ? "boss" : "mini") + "~" + ai->GetAffixNames();
+            (ai->GetKind() == BONK_SPAWN_BOSS ? "boss" : "mini") + "~" + ai->GetAffixNames() + "~" + KeywordStacksText(player, shown) + "~" + BonkMobAI::GetUnitGuidText(shown);
     }
     if (line == bar->lastLine)
         return;

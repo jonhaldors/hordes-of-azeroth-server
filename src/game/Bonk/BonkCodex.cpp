@@ -116,8 +116,11 @@ void BonkCodex::SendKeywordGlossary(BonkPlayer* bonk)
     for (auto const& itr : sBonkMgr.GetKeywords())
     {
         BonkKeywordInfo const& keyword = itr.second;
+        std::string const id = std::to_string(uint32(keyword.id));
         if (!keyword.description.empty())
-            bonk->SendAddon("kwd~" + std::to_string(uint32(keyword.id)) + "~" + keyword.name + "~" + keyword.icon + "~" + keyword.description);
+            bonk->SendAddon("kwd~" + id + "~" + keyword.name + "~" + keyword.icon + "~" + keyword.description);
+        bonk->SendAddon("kwdaura~" + id + "~" + keyword.name + "~" + keyword.icon + "~" + std::to_string(keyword.spellId) + "~" +
+            std::to_string(uint32(keyword.maxStacks)));
     }
 }
 

@@ -26,6 +26,8 @@ namespace
     float const BONK_MIN_CONSUME_TICK_MS     = 100.0f;
     uint32 const BONK_KIT_CONSUME_BURST      = 6377;
     uint32 const BONK_MAX_PAYOFF_DOT_STACKS  = 30;
+    uint32 const BONK_KEYWORD_TIMER_MS       = 200;
+    size_t const BONK_KEYWORD_TIMER_LINE     = 900;
 
     BonkMobAI const* GetRunAI(Unit const* unit)
     {
@@ -157,6 +159,7 @@ void BonkRun::UpdateKeywords(uint32 diff)
     }
     ApplyPendingStuns();
     UpdateDotStacks(diff);
+    SendKeywordTimers(diff);
 }
 
 void BonkRun::ConsumePendingKeywords()
@@ -376,6 +379,85 @@ void BonkRun::SyncDotAura(Creature* mob, BonkKeywordInfo const& info, std::vecto
             }
     holder->SetAuraMaxDuration(leftMs);
     holder->RefreshHolder();
+    MarkKeywordTimer(mob, info.id);
+}
+
+void BonkRun::ShiftDotStacks(uint32 ms)
+{
+    for (auto& mob : m_dotStacks)
+        for (auto& keyword : mob.second)
+            for (DotStack& stack : keyword.second)
+            {
+                stack.appliedMs += ms;
+                stack.untilMs += ms;
+            }
+}
+
+void BonkRun::MarkKeywordTimer(Creature const* mob, BonkKeyword keyword)
+{
+    BonkMobAI const* ai = GetRunAI(mob);
+    if (ai && (ai->GetKind() == BONK_SPAWN_BOSS || ai->GetKind() == BONK_SPAWN_MINIBOSS))
+        m_keywordTimers.insert(std::make_pair(mob->GetObjectGuid(), uint8(keyword)));
+}
+
+bool BonkRun::GetKeywordTimer(Creature* mob, BonkKeywordInfo const& info, uint32 now, uint32& leftMs, uint32& fullMs) const
+{
+    if (info.IsDamageOverTime())
+    {
+        auto victim = m_dotStacks.find(mob->GetObjectGuid());
+        if (victim == m_dotStacks.end())
+            return false;
+        auto stacks = victim->second.find(info.id);
+        if (stacks == victim->second.end() || stacks->second.empty())
+            return false;
+        int32 left = 0;
+        for (DotStack const& stack : stacks->second)
+            left = std::max(left, int32(stack.untilMs - now));
+        DotStack const& newest = stacks->second.back();
+        fullMs = std::max(1u, newest.untilMs - newest.appliedMs);
+        leftMs = uint32(std::min(left, int32(fullMs)));
+        return left > 0;
+    }
+
+    SpellAuraHolder const* holder = mob->GetSpellAuraHolder(info.spellId, m_player->GetObjectGuid());
+    if (!holder || holder->IsPermanent() || holder->GetAuraMaxDuration() <= 0 || holder->GetAuraDuration() <= 0)
+        return false;
+    fullMs = uint32(holder->GetAuraMaxDuration());
+    leftMs = uint32(std::min(holder->GetAuraDuration(), holder->GetAuraMaxDuration()));
+    return true;
+}
+
+void BonkRun::SendKeywordTimers(uint32 diff)
+{
+    m_keywordTimerMs += diff;
+    if (m_keywordTimerMs < BONK_KEYWORD_TIMER_MS || m_keywordTimers.empty())
+        return;
+    m_keywordTimerMs = 0;
+
+    std::set<std::pair<ObjectGuid, uint8>> marked;
+    marked.swap(m_keywordTimers);
+    Map* map = m_player->GetMap();
+    uint32 const now = WorldTimer::getMSTime();
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    std::string line;
+    for (auto const& itr : marked)
+    {
+        Creature* mob = map->GetCreature(itr.first);
+        BonkKeywordInfo const* info = sBonkMgr.GetKeyword(BonkKeyword(itr.second));
+        uint32 leftMs, fullMs;
+        if (!mob || !mob->IsAlive() || !info || !GetKeywordTimer(mob, *info, now, leftMs, fullMs))
+            continue;
+        std::string const entry = BonkMobAI::GetUnitGuidText(mob) + ":" + std::to_string(uint32(itr.second)) + ":" +
+            std::to_string(leftMs) + ":" + std::to_string(fullMs);
+        if (!line.empty() && line.size() + entry.size() + 1 > BONK_KEYWORD_TIMER_LINE)
+        {
+            bonk->SendAddon(line);
+            line.clear();
+        }
+        line += (line.empty() ? "kwdt~" : ",") + entry;
+    }
+    if (!line.empty())
+        bonk->SendAddon(line);
 }
 
 uint32 BonkRun::GetKeywordStacks(Unit const* victim, BonkKeyword keyword) const
@@ -566,6 +648,7 @@ SpellAuraHolder* BonkRun::AddKeywordAura(Creature* mob, BonkKeywordInfo const& i
     if (SpellAuraHolder* holder = mob->GetSpellAuraHolder(info.spellId, m_player->GetObjectGuid()))
     {
         holder->SetStackAmount(stacks);
+        MarkKeywordTimer(mob, info.id);
         return holder;
     }
 
@@ -595,6 +678,7 @@ SpellAuraHolder* BonkRun::AddKeywordAura(Creature* mob, BonkKeywordInfo const& i
         return nullptr;
     if (stacks > 1)
         holder->SetStackAmount(stacks);
+    MarkKeywordTimer(mob, info.id);
     return holder;
 }
 

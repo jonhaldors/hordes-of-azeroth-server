@@ -2044,6 +2044,10 @@ class BonkRun
         void AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points, uint32 spellId);
         void UpdateDotStacks(uint32 diff);
         void SyncDotAura(Creature* mob, BonkKeywordInfo const& info, std::vector<DotStack> const& stacks);
+        void ShiftDotStacks(uint32 ms);
+        void MarkKeywordTimer(Creature const* mob, BonkKeyword keyword);
+        bool GetKeywordTimer(Creature* mob, BonkKeywordInfo const& info, uint32 now, uint32& leftMs, uint32& fullMs) const;
+        void SendKeywordTimers(uint32 diff);
         bool CanKnockBack(Creature const* mob);
         void RebuildWeaponSpells();
         OwnedWeapon const* FindOwnedBySpell(uint32 spellId) const;
@@ -2073,6 +2077,9 @@ class BonkRun
         std::map<ObjectGuid, std::map<uint8, DyingKeyword>> m_dyingKeywords;
         std::map<ObjectGuid, std::map<uint8, std::vector<DotStack>>> m_dotStacks;
         uint32 m_dotTimer = 0;
+        std::set<std::pair<ObjectGuid, uint8>> m_keywordTimers;
+        uint32 m_keywordTimerMs = 0;
+        uint32 m_pausedAtMs = 0;
         struct CrowdControl
         {
             uint32 frozenImmuneUntil = 0;

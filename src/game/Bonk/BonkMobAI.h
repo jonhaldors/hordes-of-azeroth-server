@@ -49,7 +49,6 @@ class BonkMobAI : public CreatureAI
         bool IsBolstering() const { return HasAffix(AFFIX_BOLSTERING); }
         float GetNecroticRange() const;
         bool IsSanguine() const { return HasAffix(AFFIX_SANGUINE); }
-        std::string GetAffixIcons() const;
         std::string GetAffixNames() const;
         static void SendAffixInfo(BonkPlayer* bonk);
         void Bolster();
