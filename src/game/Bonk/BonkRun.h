@@ -1567,6 +1567,39 @@ class BonkRun
             uint32 atMs;
         };
         std::vector<ImpVolley> m_impVolleys;
+        struct WarlockMinion
+        {
+            ObjectGuid guid;
+            uint32 weaponId;
+            uint32 untilMs;
+            float bite;
+        };
+        std::vector<WarlockMinion> m_warlockMinions;
+        struct PendingInfernal
+        {
+            uint32 weaponId;
+            float x, y, z;
+            uint32 atMs;
+        };
+        std::vector<PendingInfernal> m_pendingInfernals;
+        struct PendingSeed
+        {
+            ObjectGuid source;
+            float x, y, z;
+            uint32 depth;
+            uint32 weaponId;
+        };
+        std::vector<PendingSeed> m_pendingSeeds;
+        std::map<ObjectGuid, uint32> m_seedDepth;
+        std::map<ObjectGuid, uint32> m_impPrey;
+        std::map<ObjectGuid, uint32> m_doomAt;
+        std::map<ObjectGuid, uint32> m_seducedUntil;
+        std::map<ObjectGuid, uint32> m_devourAffixReadyMs;
+        std::deque<uint32> m_souls;
+        uint32 m_darkPactUntilMs = 0;
+        uint32 m_darkHarvestReadyMs = 0;
+        uint32 m_voidSlamReadyMs = 0;
+        uint32 m_seductionReadyMs = 0;
         std::deque<ObjectGuid> m_nightfallQueue;
         std::vector<uint32> m_nightfallMs;
         std::map<ObjectGuid, uint32> m_consumedShadows;
@@ -1739,6 +1772,38 @@ class BonkRun
         void QueueImpVolley(OwnedWeapon const& owned, Creature* pet, Creature* prey, uint32 abilityIndex);
         void FireImpVolleys();
         void AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword);
+        void SummonWarlockMinion(OwnedWeapon const& owned, uint32 entry, float x, float y, float z, uint32 lifeMs, float bite, float scale);
+        void DressWarlockMinions();
+        void UpdateWarlockMinions();
+        void DespawnWarlockMinions();
+        std::vector<ObjectGuid> GetWarlockMinionGuids() const;
+        uint32 GetWarlockMinionWeapon(ObjectGuid const& guid) const;
+        bool HasWarlockSpell(uint32 weaponId) const;
+        float GetDarkPactScale() const;
+        float GetWarlockDamageTakenScale(Unit const* victim) const;
+        bool IsWarlockFullLash(OwnedWeapon const& owned) const;
+        uint32 GetWarlockExtraDrops(OwnedWeapon const& owned) const;
+        float GetHellfireReach(OwnedWeapon const& owned) const;
+        void OnWarlockStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
+        void OnNightfallBolt(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target);
+        void OnWarlockGroundDrop(OwnedWeapon const& owned, float x, float y, float z);
+        void CrashInfernals();
+        void OnWarlockEvolvedPetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey);
+        void OnWarlockEvolvedKill(Unit* victim);
+        void PassAgony(Creature* dead);
+        void AddSoul();
+        void ShowSouls();
+        void ExpireSouls();
+        void BurstSeeds();
+        void HarvestDecay();
+        void OnAgonyCurse(OwnedWeapon const& owned, Creature* mob);
+        void FallDoom();
+        void SlamVoid();
+        void SeduceStrongest();
+        void OnConsumedBurst(OwnedWeapon const& owned);
+        void OnDrainOverheal(uint32 heal);
+        void ImmolateDemons(OwnedWeapon const& owned, SpellEntry const* spellInfo);
+        void UpdateWarlockEvolutions();
         void SpreadCorruption(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void CurseWithAgony(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void DrainLife(OwnedWeapon& owned, SpellEntry const* spellInfo);

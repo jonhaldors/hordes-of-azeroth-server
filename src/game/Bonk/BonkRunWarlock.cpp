@@ -84,6 +84,8 @@ void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spell
     {
         ShowStrike(m_player, spellInfo, mob);
         ApplyKeyword(mob, keyword, stacks, durationMs, strength, owned.weapon.spellId);
+        if (keyword == BONK_KEYWORD_AGONY)
+            OnAgonyCurse(owned, mob);
     }
 }
 
@@ -179,12 +181,16 @@ void BonkRun::DrainLife(OwnedWeapon& owned, SpellEntry const* spellInfo)
             ++drained;
         }
     if (drained && owned.weapon.healPct > 0.0f && m_player->IsAlive())
-        HealHero(uint32(m_player->GetMaxHealth() * owned.weapon.healPct * drained / 100.0f), owned.weapon.spellId);
+    {
+        uint32 const heal = uint32(m_player->GetMaxHealth() * owned.weapon.healPct * drained / 100.0f);
+        OnDrainOverheal(heal);
+        HealHero(heal, owned.weapon.spellId);
+    }
 }
 
 void BonkRun::BurnHellfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    std::vector<Creature*> const mobs = GetMobsInRange(owned.weapon.range * GetWeaponArea(owned));
+    std::vector<Creature*> const mobs = GetMobsInRange(owned.weapon.range * GetWeaponArea(owned) * GetHellfireReach(owned));
     if (mobs.empty())
     {
         owned.timer = BONK_WARLOCK_POLL_MS;
@@ -192,6 +198,7 @@ void BonkRun::BurnHellfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
     }
     owned.timer = GetWeaponCooldown(owned);
     ShowStrike(m_player, spellInfo, m_player);
+    ImmolateDemons(owned, spellInfo);
     for (Creature* mob : mobs)
     {
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, GetWeaponDamage(owned));
@@ -212,6 +219,7 @@ void BonkRun::BurnHellfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
 
 void BonkRun::OnWarlockKill(Unit* victim)
 {
+    OnWarlockEvolvedKill(victim);
     bool const afflicted = std::any_of(std::begin(BONK_WARLOCK_AFFLICTIONS), std::end(BONK_WARLOCK_AFFLICTIONS),
         [this, victim](BonkKeyword keyword) { return GetKeywordStacks(victim, keyword) > 0; });
     if (afflicted && FindOwnedByRoot(BONK_WEAPON_SHADOW_BOLT))
@@ -263,6 +271,7 @@ void BonkRun::FireNightfall()
         if (mobs.empty())
             break;
         StrikeWith(*owned, spellInfo, mobs.front(), 1.0f, true);
+        OnNightfallBolt(*owned, spellInfo, mobs.front());
         m_nightfallMs.push_back(now);
     }
     m_nightfallQueue.clear();
@@ -286,6 +295,7 @@ void BonkRun::BurstConsumedShadows()
                 continue;
             m_consumedShadows.erase(stacks);
             ShowStrike(pet, spellInfo, pet);
+            OnConsumedBurst(owned);
             float const hit = GetPetBiteDamage(owned, *family) * BONK_CONSUME_BURST_BITES;
             float const powerShare = GetPowerShare(pet);
             for (Creature* mob : GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), BONK_CONSUME_BURST_RADIUS * GetSummonReach(owned)))
@@ -343,6 +353,7 @@ void BonkRun::FireImpVolleys()
 
 void BonkRun::OnWarlockPetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, uint32 abilityIndex)
 {
+    OnWarlockEvolvedPetStrike(owned, pet, prey);
     if (GetWarlockPetFamily(owned) == BONK_PET_FAMILY_IMP)
     {
         QueueImpVolley(owned, pet, prey, abilityIndex);
@@ -389,6 +400,7 @@ void BonkRun::UpdateWarlock(uint32 diff)
     FireNightfall();
     BurstConsumedShadows();
     FireImpVolleys();
+    UpdateWarlockEvolutions();
 
     if (!m_drainBeams.empty() && !std::any_of(m_weapons.begin(), m_weapons.end(),
         [](OwnedWeapon const& owned) { return owned.weapon.behavior == BONK_BEHAVIOR_DRAIN_LIFE; }))

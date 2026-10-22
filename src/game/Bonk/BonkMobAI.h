@@ -46,6 +46,8 @@ class BonkMobAI : public CreatureAI
         uint32 GetPlateKind() const;
 
         uint32 GetAffixCount() const;
+        void QuietAffixes(uint32 durationMs);
+        bool AreAffixesQuiet() const;
         bool IsBolstering() const { return HasAffix(AFFIX_BOLSTERING); }
         float GetNecroticRange() const;
         bool IsSanguine() const { return HasAffix(AFFIX_SANGUINE); }
@@ -98,7 +100,7 @@ class BonkMobAI : public CreatureAI
         void Halt();
         void HoldStill();
         void KeepHolding();
-        bool HasAffix(Affix affix) const { return (m_affixes & (1u << affix)) != 0; }
+        bool HasAffix(Affix affix) const { return !AreAffixesQuiet() && (m_affixes & (1u << affix)) != 0; }
         void RollAffixes(uint32 count);
         void ScaleHealth(float factor);
         float GetMeleeHit() const;
@@ -156,6 +158,7 @@ class BonkMobAI : public CreatureAI
         BonkMob const* m_mob = nullptr;
         std::vector<int32> m_abilityTimers;
         uint32 m_affixes = 0;
+        uint32 m_affixesQuietUntilMs = 0;
         int32 m_shieldTimer = 0;
         int32 m_burnTimer = 0;
         int32 m_eruptionTimer = 3000;

@@ -671,6 +671,16 @@ void BonkMobAI::EnterEvadeMode()
     CreatureAI::EnterEvadeMode();
 }
 
+void BonkMobAI::QuietAffixes(uint32 durationMs)
+{
+    m_affixesQuietUntilMs = WorldTimer::getMSTime() + durationMs;
+}
+
+bool BonkMobAI::AreAffixesQuiet() const
+{
+    return m_affixesQuietUntilMs && int32(m_affixesQuietUntilMs - WorldTimer::getMSTime()) > 0;
+}
+
 void BonkMobAI::UpdateAI(uint32 const diff)
 {
     if (m_creature->HasCreatureState(CSTATE_DESPAWNING))

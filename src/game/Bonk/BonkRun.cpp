@@ -4656,6 +4656,7 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
     OnMageStrike(owned, shotInfo, target, shotShare, source ? static_cast<Unit const*>(source) : m_player);
     OnShamanStrike(owned, shotInfo, target, shotShare);
     OnPriestStrike(owned, shotInfo, target, shotShare);
+    OnWarlockStrike(owned, shotInfo, target, shotShare);
 
     if (weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
         KnockBack(target);
@@ -6204,7 +6205,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         bool const keywordOnly = weapon.damageEffectIndex < 0 && !weapon.weaponDamage && weapon.applies != BONK_KEYWORD_NONE;
         float const radius = weapon.groundRadius * areaScale;
 
-        uint32 const drops = 1 + GetSpellCount(owned);
+        uint32 const drops = 1 + GetSpellCount(owned) + GetWarlockExtraDrops(owned);
         std::vector<Creature*> const spots = PickGroundSpots(mobs, radius, drops);
         if (spots.empty())
         {
@@ -6233,6 +6234,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
             if (weapon.behavior == BONK_BEHAVIOR_FLARE)
                 LightFlare(owned, x, y, z, radius);
             OnMageGroundDrop(owned, x, y, z);
+            OnWarlockGroundDrop(owned, x, y, z);
 
             PendingKeyword keyword;
             if (keywordOnly && GetWeaponKeyword(owned, keyword))
@@ -8001,7 +8003,7 @@ float BonkRun::GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& f
         if (ability.kind == BONK_PET_ABILITY_STRIKE || ability.kind == BONK_PET_ABILITY_PULSE)
             rate += ability.damage * IN_MILLISECONDS / float(ability.cooldownMs);
     uint32 const spellMs = std::max(500u, owned.weapon.tickMs);
-    return GetWeaponDamage(owned) * IN_MILLISECONDS / float(spellMs) / rate;
+    return GetWeaponDamage(owned) * IN_MILLISECONDS / float(spellMs) / rate * GetDarkPactScale();
 }
 
 void BonkRun::StartPetAttack(OwnedWeapon const& owned, Creature* pet, Creature* target)
@@ -8107,9 +8109,10 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
     if (coneTarget)
     {
         pet->SetFacingToObject(coneTarget);
-        mobs.erase(std::remove_if(mobs.begin(), mobs.end(), [pet, coneTarget](Creature* mob)
+        bool const allAround = IsWarlockFullLash(owned);
+        mobs.erase(std::remove_if(mobs.begin(), mobs.end(), [pet, coneTarget, allAround](Creature* mob)
         {
-            return mob != coneTarget && !pet->HasInArc(mob, BONK_PET_CONE_ARC);
+            return mob != coneTarget && !allAround && !pet->HasInArc(mob, BONK_PET_CONE_ARC);
         }), mobs.end());
         ShowStrike(pet, spellInfo, coneTarget);
     }
@@ -8261,6 +8264,9 @@ void BonkRun::UpdatePetTargets(uint32 diff)
         if (beast.kind != BEAST_SPECTRAL && !beast.charging)
             if (OwnedWeapon* owned = FindOwned(beast.weaponId))
                 consider(*owned, beast.guid);
+    for (ObjectGuid const& guid : GetWarlockMinionGuids())
+        if (OwnedWeapon* owned = FindOwned(GetWarlockMinionWeapon(guid)))
+            consider(*owned, guid);
     if (seeking.empty())
         return;
 
@@ -8319,6 +8325,7 @@ void BonkRun::UpdatePetTargets(uint32 diff)
 void BonkRun::DespawnPets()
 {
     ReleaseDrainBeams();
+    DespawnWarlockMinions();
     Map* map = m_player->FindMap();
     for (OwnedWeapon& owned : m_weapons)
     {

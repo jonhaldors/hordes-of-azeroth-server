@@ -583,6 +583,7 @@ float BonkRun::GetKeywordDamageMultiplier(SpellEntry const* spell, Unit const* v
     if (GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK))
         multiplier *= 1.0f + GetHuntersMarkBonus() / 100.0f;
     multiplier *= 1.0f + GetSlowedBonus(victim) / 100.0f;
+    multiplier *= GetWarlockDamageTakenScale(victim);
 
     if (spell)
         if (OwnedWeapon const* owned = FindOwnedBySpell(spell->Id))
