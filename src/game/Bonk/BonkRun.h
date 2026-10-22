@@ -625,6 +625,7 @@ class BonkRun
         void UpdatePetTargets(uint32 diff);
         uint32 GetPetPreyRank(Creature const* mob) const;
         float GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& family) const;
+        void StartPetAttack(OwnedWeapon const& owned, Creature* pet, Creature* target);
         void UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey);
         bool Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey);
         void PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkPetAbility const& ability);
@@ -1712,6 +1713,8 @@ class BonkRun
         float GetPriestDamageMultiplier(Unit const* victim) const;
         float GetPriestMoveSpeed() const;
         uint32 GetPriestPetFamily(OwnedWeapon const& owned) const;
+        uint32 GetWarlockPetFamily(OwnedWeapon const& owned) const;
+        bool IsCasterPetFamily(BonkPetFamily const& family) const;
         bool ApplyWeaponKeyword(OwnedWeapon const& owned, Creature* mob, BonkKeyword keyword, uint32 stacks);
         bool FirePriestSpell(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void OnPriestCast(OwnedWeapon const& owned);

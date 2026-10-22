@@ -391,6 +391,7 @@ namespace
     uint32 const BONK_DETERRENCE_MS        = 8000;
     int32 const BONK_DETERRENCE_COOLDOWN_MS = 60000;
     float const BONK_PET_HUNT_RANGE        = 35.0f;
+    float const BONK_CASTER_PET_DISTANCE   = 18.0f;
     float const BONK_PET_LEASH_RANGE       = 50.0f;
     uint32 const BONK_PET_CHECK_MS         = 250;
     float const BONK_PET_SPEED             = 1.8f;
@@ -619,7 +620,7 @@ namespace
             void UpdateAI(uint32 const ) override
             {
                 Unit* victim = m_creature->GetVictim();
-                if (!victim || !victim->IsAlive())
+                if (!victim || !victim->IsAlive() || !m_creature->HasUnitState(UNIT_STATE_MELEE_ATTACKING))
                     return;
 
                 if (m_creature->IsAttackReady(BASE_ATTACK) && m_creature->IsMovingButNotWalking() && victim->IsMovingButNotWalking() &&
@@ -7981,6 +7982,8 @@ float BonkRun::GetSummonLookScale(OwnedWeapon const& owned, float base) const
 
 BonkPetFamily const* BonkRun::GetPetFamily(OwnedWeapon const& owned) const
 {
+    if (uint32 const warlockFamily = GetWarlockPetFamily(owned))
+        return sBonkMgr.GetPetFamily(warlockFamily);
     if (m_player->GetClass() == CLASS_SHAMAN)
         return sBonkMgr.GetPetFamily(GetShamanPetFamily(owned));
     if (m_player->GetClass() == CLASS_PRIEST)
@@ -7996,6 +7999,20 @@ float BonkRun::GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& f
             rate += ability.damage * IN_MILLISECONDS / float(ability.cooldownMs);
     uint32 const spellMs = std::max(500u, owned.weapon.tickMs);
     return GetWeaponDamage(owned) * IN_MILLISECONDS / float(spellMs) / rate;
+}
+
+void BonkRun::StartPetAttack(OwnedWeapon const& owned, Creature* pet, Creature* target)
+{
+    BonkPetFamily const* family = GetPetFamily(owned);
+    if (!family || !IsCasterPetFamily(*family))
+    {
+        pet->AI()->AttackStart(target);
+        return;
+    }
+    if (!pet->Attack(target, false))
+        return;
+    pet->SetInCombatWith(target);
+    pet->GetMotionMaster()->MoveChase(target, BONK_CASTER_PET_DISTANCE);
 }
 
 void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
@@ -8269,7 +8286,7 @@ void BonkRun::UpdatePetTargets(uint32 diff)
             hunted.push_back(target->GetObjectGuid());
             if (pet->GetVictim() != target &&
                 !(seeker.first->weapon.behavior == BONK_BEHAVIOR_PET && Pounce(*seeker.first, pet, target)))
-                pet->AI()->AttackStart(target);
+                StartPetAttack(*seeker.first, pet, target);
             continue;
         }
         if (pet->GetVictim() || pet->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
