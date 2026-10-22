@@ -28,7 +28,7 @@ namespace
     uint32 const BONK_CONSUME_STACKS          = 5;
     float const BONK_CONSUME_GROWTH           = 0.08f;
     float const BONK_CONSUME_BURST_RADIUS     = 10.0f;
-    float const BONK_CONSUME_BURST_BITES      = 4.0f;
+    float const BONK_CONSUME_BURST_BITES      = 2.0f;
     uint32 const BONK_DEVOUR_EVERY_MS         = 10000;
     uint32 const BONK_SPELL_LOCK_EVERY_MS     = 6000;
     int32 const BONK_WARLOCK_POLL_MS          = 250;
