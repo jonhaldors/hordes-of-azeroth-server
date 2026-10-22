@@ -182,6 +182,7 @@ namespace
     uint32 const BONK_ORB_MERGE_SLIDE_MS   = 400;
     float const BONK_ORB_MERGE_SLIDE_SPEED = 12.0f;
     float const BONK_ORB_LIFT              = 0.5f;
+    float const BONK_ORB_CHEST_SHARE       = 0.6f;
     float const BONK_ORB_GROUND_SEARCH     = 6.0f;
     float const BONK_ORB_RISE_SPEED        = 2.0f;
 
@@ -826,19 +827,47 @@ namespace
             }
     }
 
+    bool ExtrapolateHeroNow(Player const* hero, float& x, float& y, float& z)
+    {
+        if (!hero->IsMoving())
+            return false;
+        uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(hero->m_movementInfo.stime), BONK_HERO_MAX_AGE_MS);
+        float o;
+        return hero->ExtrapolateMovement(hero->m_movementInfo, age, x, y, z, o) && hero->IsWithinLOS(x, y, z);
+    }
+
     void GetHeroPositionNow(Player const* hero, float& x, float& y, float& z)
     {
         hero->GetPosition(x, y, z);
-        if (!hero->IsMoving())
-            return;
-        uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(hero->m_movementInfo.stime), BONK_HERO_MAX_AGE_MS);
-        float px, py, pz, o;
-        if (!hero->ExtrapolateMovement(hero->m_movementInfo, age, px, py, pz, o) || !hero->IsWithinLOS(px, py, pz))
+        float px, py, pz;
+        if (!ExtrapolateHeroNow(hero, px, py, pz))
             return;
         hero->UpdateAllowedPositionZ(px, py, pz);
         x = px;
         y = py;
         z = pz;
+    }
+
+    void GetHeroBodyPositionNow(Player const* hero, float& x, float& y, float& z)
+    {
+        hero->GetPosition(x, y, z);
+        float px, py, pz;
+        if (!ExtrapolateHeroNow(hero, px, py, pz))
+            return;
+        float ground = pz;
+        hero->UpdateAllowedPositionZ(px, py, ground);
+        x = px;
+        y = py;
+        z = hero->m_movementInfo.HasMovementFlag(MOVEFLAG_JUMPING) ? std::max(pz, ground) : ground;
+    }
+
+    void GetHeroChestPositionNow(Player const* hero, bool predict, float& x, float& y, float& z)
+    {
+        if (predict)
+            GetHeroBodyPositionNow(hero, x, y, z);
+        else
+            hero->GetPosition(x, y, z);
+        z += std::max(BONK_ORB_LIFT, hero->GetCollisionHeight() * BONK_ORB_CHEST_SHARE);
     }
 
     float GetHeroDistance(Player const* hero, float x, float y, float z, WorldObject const* object)
@@ -9211,7 +9240,9 @@ void BonkRun::UpdateOrbs(uint32 diff)
     float const magnet = GetMagnetRange();
     Map* map = m_player->GetMap();
     float heroX, heroY, heroZ;
-    GetHeroPositionNow(m_player, heroX, heroY, heroZ);
+    BonkPlayer const* bonk = m_player->GetBonkPlayer();
+    GetHeroChestPositionNow(m_player, !bonk->IsDashSettling(), heroX, heroY, heroZ);
+    bool const holdAim = bonk->IsDashMoving();
     uint32 collected = 0;
     for (auto itr = m_orbs.begin(); itr != m_orbs.end();)
     {
@@ -9228,9 +9259,14 @@ void BonkRun::UpdateOrbs(uint32 diff)
             continue;
         }
 
+        if (holdAim)
+        {
+            ++itr;
+            continue;
+        }
         float const x = heroX;
         float const y = heroY;
-        float const z = heroZ + 0.5f;
+        float const z = heroZ;
         if (!itr->pulled ? distance <= magnet :
             (x - itr->aimX) * (x - itr->aimX) + (y - itr->aimY) * (y - itr->aimY) + (z - itr->aimZ) * (z - itr->aimZ) >
                 BONK_ORB_REAIM_DISTANCE * BONK_ORB_REAIM_DISTANCE)
@@ -9252,7 +9288,7 @@ void BonkRun::PullAllOrbs()
 {
     Map* map = m_player->GetMap();
     float heroX, heroY, heroZ;
-    GetHeroPositionNow(m_player, heroX, heroY, heroZ);
+    GetHeroChestPositionNow(m_player, !m_player->GetBonkPlayer()->IsDashSettling(), heroX, heroY, heroZ);
     for (Orb& orb : m_orbs)
     {
         if (orb.pulled)
@@ -9262,7 +9298,7 @@ void BonkRun::PullAllOrbs()
             orb.pulled = true;
             orb.aimX = heroX;
             orb.aimY = heroY;
-            orb.aimZ = heroZ + 0.5f;
+            orb.aimZ = heroZ;
             creature->MonsterMoveWithSpeed(orb.aimX, orb.aimY, orb.aimZ, -10.0f, BONK_ORB_FLY_SPEED, MOVE_FLY_MODE);
         }
     }

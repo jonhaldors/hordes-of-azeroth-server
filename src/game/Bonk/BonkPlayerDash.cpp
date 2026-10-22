@@ -13,6 +13,7 @@ namespace
 {
     float const BONK_DASH_DISTANCE          = 8.0f;
     uint32 const BONK_DASH_MS               = 200;
+    uint32 const BONK_DASH_SETTLE_MS        = 800;
     uint32 const BONK_DASH_INVULNERABLE_MS  = 250;
     uint32 const BONK_DASH_COOLDOWN_MS      = 10000;
     uint32 const BONK_DASH_MIN_COOLDOWN_MS  = 3000;
@@ -87,6 +88,8 @@ bool BonkPlayer::Dash()
         SetDashBurst(true);
     }
 
+    m_dashMoveUntilMs = m_dashClockMs + BONK_DASH_MS;
+    m_dashSettleUntilMs = m_dashMoveUntilMs + BONK_DASH_SETTLE_MS;
     if (!m_dashSpent++)
         m_dashRechargeMs = GetDashCooldownMs();
     m_dashInvulnerableUntilMs = m_dashClockMs + std::max(BONK_DASH_INVULNERABLE_MS, blink ? m_run->GetBlinkInvulnerableMs() : 0u);

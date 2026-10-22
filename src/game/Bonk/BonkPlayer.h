@@ -210,6 +210,8 @@ class BonkPlayer
         bool Dash();
         bool IsDashInvulnerable() const { return m_dashClockMs < m_dashInvulnerableUntilMs; }
         float GetDashBurstSpeed() const { return m_dashBursting ? GetDashSpeed() : 0.0f; }
+        bool IsDashMoving() const { return m_dashClockMs < m_dashMoveUntilMs; }
+        bool IsDashSettling() const { return m_dashClockMs < m_dashSettleUntilMs; }
         void SendDash() const;
         uint32 GetDashCooldownMs() const;
         void SendTierList() const;
@@ -335,6 +337,8 @@ class BonkPlayer
         uint32 m_dashRechargeMs = 0;
         uint32 m_dashInvulnerableUntilMs = 0;
         uint32 m_dashBurstUntilMs = 0;
+        uint32 m_dashMoveUntilMs = 0;
+        uint32 m_dashSettleUntilMs = 0;
         bool m_dashBursting = false;
 };
 
