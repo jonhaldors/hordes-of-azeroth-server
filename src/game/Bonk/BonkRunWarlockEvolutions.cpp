@@ -127,6 +127,9 @@ void BonkRun::DressWarlockMinions()
         if (!minion || !minion->IsAlive())
             continue;
         float const damage = std::max(1.0f, GetWeaponDamage(*owned)) * held.bite * GetDarkPactScale();
+        float const speed = GetPetRunSpeed();
+        if (minion->GetBaseRunSpeedRate() != speed)
+            minion->SetBaseSpeedRate(MOVE_RUN, speed);
         minion->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, damage * 0.9f);
         minion->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, damage * 1.1f);
         minion->UpdateDamagePhysical(BASE_ATTACK);

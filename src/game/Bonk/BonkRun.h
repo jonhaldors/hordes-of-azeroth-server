@@ -637,6 +637,7 @@ class BonkRun
         bool IsSummon(Unit const* unit) const;
         uint32 GetSummonRoom(OwnedWeapon const& owned);
         uint32 GetWantedSummons(OwnedWeapon const& owned);
+        float GetPetRunSpeed() const;
         float GetSummonGrowth(OwnedWeapon const& owned) const;
         float GetSummonReach(OwnedWeapon const& owned) const;
         float GetSummonLookScale(OwnedWeapon const& owned, float base) const;

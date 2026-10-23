@@ -611,6 +611,12 @@ namespace
         orb->DespawnOrUnsummon(BONK_ORB_FADE_MS);
     }
 
+    bool IsPetInRunningReach(Creature const* pet, Unit const* victim)
+    {
+        return pet->IsMovingButNotWalking() && victim->IsMovingButNotWalking() && pet->CanReachWithMeleeAutoAttack(victim, LEEWAY_BONUS_RANGE) &&
+            pet->HasInArc(victim, 2 * M_PI_F / 3);
+    }
+
     class BonkPetAI : public CreatureAI
     {
         public:
@@ -625,9 +631,7 @@ namespace
                 if (!victim || !victim->IsAlive() || !m_creature->HasUnitState(UNIT_STATE_MELEE_ATTACKING))
                     return;
 
-                if (m_creature->IsAttackReady(BASE_ATTACK) && m_creature->IsMovingButNotWalking() && victim->IsMovingButNotWalking() &&
-                    !m_creature->CanReachWithMeleeAutoAttack(victim) && m_creature->CanReachWithMeleeAutoAttack(victim, LEEWAY_BONUS_RANGE) &&
-                    m_creature->HasInArc(victim, 2 * M_PI_F / 3))
+                if (m_creature->IsAttackReady(BASE_ATTACK) && !m_creature->CanReachWithMeleeAutoAttack(victim) && IsPetInRunningReach(m_creature, victim))
                 {
                     m_creature->AttackerStateUpdate(victim, BASE_ATTACK);
                     m_creature->ResetAttackTimer(BASE_ATTACK);
@@ -7983,6 +7987,11 @@ Creature* BonkRun::SummonPet(OwnedWeapon const& owned, uint32 entry, float x, fl
     return pet;
 }
 
+float BonkRun::GetPetRunSpeed() const
+{
+    return GetSummonSpeedRate(GetStat(BONK_PASSIVE_MOVE_SPEED));
+}
+
 uint32 BonkRun::GetWantedSummons(OwnedWeapon const& owned)
 {
     if (owned.weapon.behavior == BONK_BEHAVIOR_WRATH)
@@ -8092,7 +8101,7 @@ void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
     if (!prey->IsAlive())
         return;
 
-    bool const inReach = pet->CanReachWithMeleeAutoAttack(prey);
+    bool const inReach = pet->CanReachWithMeleeAutoAttack(prey) || IsPetInRunningReach(pet, prey);
     for (size_t i = 0; i < family->abilities.size(); ++i)
     {
         BonkPetAbility const& ability = family->abilities[i];
