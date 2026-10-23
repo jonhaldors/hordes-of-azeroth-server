@@ -1440,8 +1440,31 @@ void BonkRun::UpdateRunning(uint32 diff)
     }
 }
 
+void BonkRun::DropOffers()
+{
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    if (!m_offer.empty())
+        bonk->SendAddon("picked");
+    if (!m_glyphOffer.empty())
+        bonk->SendAddon("glyphclose");
+    if (!m_leyOffer.empty())
+        bonk->SendAddon("leyofferclose");
+    CloseGearOffer();
+    m_offer.clear();
+    m_glyphOffer.clear();
+    m_leyOffer.clear();
+    m_pendingLevels = 0;
+    m_pendingGlyphPicks = 0;
+    m_pendingLeyOffers = 0;
+    m_pendingGear.clear();
+    m_pendingChestChoices.clear();
+}
+
 void BonkRun::UpdateOffers()
 {
+    if (m_state != STATE_RUNNING && m_state != STATE_PORTAL)
+        return;
+
     uint32 const level = m_player->GetLevel();
     if (level > m_lastLevel)
     {
@@ -4509,7 +4532,7 @@ uint32 BonkRun::GetWeaponTargets(OwnedWeapon const& owned) const
     auto itr = m_mastery.spellTargets.find(GetRootWeapon(owned.weapon));
     if (itr != m_mastery.spellTargets.end())
         mastery = itr->second;
-    return owned.weapon.baseTargets + GetSpellCount(owned) + mastery;
+    return owned.weapon.baseTargets + GetSpellCount(owned) + mastery + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_TARGETS));
 }
 
 void BonkRun::GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInfo, float damageShare, optional<int32>* basePoints) const
@@ -10054,7 +10077,8 @@ std::vector<BonkWeaponUpgrade const*> BonkRun::GetUpgradeOptions(OwnedWeapon con
     std::vector<BonkWeaponUpgrade const*> options;
     for (BonkWeaponUpgrade const& upgrade : owned.weapon.upgrades)
     {
-        if ((upgrade.upgrade == BONK_SPELL_UPGRADE_HIT_TWICE || upgrade.upgrade == BONK_SPELL_UPGRADE_ECHO) && rarity != BONK_RARITY_EPIC)
+        if ((upgrade.upgrade == BONK_SPELL_UPGRADE_HIT_TWICE || upgrade.upgrade == BONK_SPELL_UPGRADE_ECHO || upgrade.upgrade == BONK_SPELL_UPGRADE_TARGETS) &&
+            rarity != BONK_RARITY_EPIC)
             continue;
         float const cap = BONK_SPELL_UPGRADE_CAP[upgrade.upgrade];
         if (cap > 0.0f && owned.upgrades[upgrade.upgrade] + rolled[upgrade.upgrade] + upgrade.step > cap + 0.001f)
@@ -11188,15 +11212,11 @@ void BonkRun::Finish(bool wentHome)
     if (wentHome)
         CollectAllShards();
 
-    CloseGearOffer();
-    m_pendingGear.clear();
+    DropOffers();
     ResolveRunGear(wentHome);
 
     m_player->GetBonkPlayer()->RecordRun(m_stage, m_totalMs / IN_MILLISECONDS, m_kills, m_goldEarned);
     AwardMastery();
-    m_offer.clear();
-    m_pendingLevels = 0;
-    m_pendingChestChoices.clear();
     m_endTimer = BONK_END_DELAY_MS;
 
     if (m_player->IsAlive())
@@ -11363,6 +11383,7 @@ void BonkRun::CleanUp()
     SetPaused(false);
     m_player->SetTimeFrozen(false);
     m_player->GetBonkPlayer()->ClearSpellTweaks();
+    DropOffers();
     ResolveRunGear(false);
     DespawnMiniEvent();
     DespawnMobs();

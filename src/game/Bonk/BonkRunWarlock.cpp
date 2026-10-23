@@ -89,7 +89,7 @@ void BonkRun::DressWarlockPet(OwnedWeapon const& owned, Creature* pet) const
 
 void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword)
 {
-    uint32 const wanted = owned.weapon.baseTargets + GetSpellCount(owned);
+    uint32 const wanted = GetWeaponTargets(owned);
     if (mobs.size() > wanted)
         mobs.resize(wanted);
     BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);

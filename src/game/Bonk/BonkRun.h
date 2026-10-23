@@ -339,6 +339,7 @@ class BonkRun
         void StartStage();
         void UpdateRunning(uint32 diff);
         void UpdateOffers();
+        void DropOffers();
         void OfferLevelsBeforeDing();
         void UpdateEvents();
         void UpdateMiniEvents(uint32 diff);

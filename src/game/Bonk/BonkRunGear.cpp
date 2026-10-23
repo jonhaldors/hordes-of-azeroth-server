@@ -432,6 +432,7 @@ void BonkRun::SnapshotBroughtGear()
 void BonkRun::RestoreBroughtGear()
 {
     EquippingGear const equipping(m_player->GetBonkPlayer());
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "RESTOREPROBE start %u slots", uint32(m_broughtGear.size()));
     for (auto const& itr : m_broughtGear)
     {
         if (m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, itr.first))
@@ -440,7 +441,9 @@ void BonkRun::RestoreBroughtGear()
         if (!item || item->IsEquipped())
             continue;
         uint16 dest;
-        if (m_player->CanEquipItem(itr.first, dest, item, false) == EQUIP_ERR_OK)
+        InventoryResult const restoreProbe = m_player->CanEquipItem(itr.first, dest, item, false);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "RESTOREPROBE slot %u item %u result %u alive %u combat %u", uint32(itr.first), item->GetEntry(), uint32(restoreProbe), uint32(m_player->IsAlive()), uint32(m_player->IsInCombat()));
+        if (restoreProbe == EQUIP_ERR_OK)
             m_player->SwapItem(item->GetPos(), dest);
     }
 }

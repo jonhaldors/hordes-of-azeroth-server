@@ -379,6 +379,10 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
             case BONK_SPELL_UPGRADE_ECHO:
                 stats.push_back({ "Extra casts", FormatNumber(now[upgrade], "%g"), FormatNumber(after[upgrade], "%g") });
                 break;
+            case BONK_SPELL_UPGRADE_TARGETS:
+                stats.push_back({ "Enemies affected", std::to_string(weapon.baseTargets + uint32(now[upgrade])),
+                    std::to_string(weapon.baseTargets + uint32(after[upgrade])) });
+                break;
             case BONK_SPELL_UPGRADE_REACH:
                 stats.push_back({ "Reach", FormatNumber(weapon.range * GetWeaponArea(owned), "%.1f") + " yd",
                     FormatNumber(weapon.range * GetWeaponArea(next), "%.1f") + " yd" });

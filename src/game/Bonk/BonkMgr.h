@@ -371,15 +371,19 @@ enum BonkSpellUpgrade : uint8
     BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN = 15,
     BONK_SPELL_UPGRADE_ECHO         = 16,
     BONK_SPELL_UPGRADE_REACH        = 17,
+    BONK_SPELL_UPGRADE_TARGETS      = 18,
     MAX_BONK_SPELL_UPGRADE
 };
 
-float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f, 15.0f, 0.0f, 20.0f, 60.0f, 0.0f, 40.0f, 1.0f, 50.0f };
+float const BONK_SPELL_UPGRADE_CAP[MAX_BONK_SPELL_UPGRADE] = { 0.0f, 50.0f, 50.0f, 40.0f, 0.0f, 0.0f, 15.0f, 0.0f, 0.0f, 0.0f, 15.0f, 0.0f, 20.0f, 60.0f, 0.0f, 40.0f, 1.0f, 50.0f, 3.0f };
 float const BONK_MELEE_MAX_RANGE = 12.0f;
 float const BONK_REACH_ROLL_WEIGHT = 0.5f;
+float const BONK_TARGETS_ROLL_WEIGHT = 0.6f;
 
 inline float GetUpgradeRollWeight(BonkSpellUpgrade upgrade)
 {
+    if (upgrade == BONK_SPELL_UPGRADE_TARGETS)
+        return BONK_TARGETS_ROLL_WEIGHT;
     return upgrade == BONK_SPELL_UPGRADE_REACH ? BONK_REACH_ROLL_WEIGHT : 1.0f;
 }
 uint32 const BONK_SPELL_CLEAVE_TARGETS = 2;
