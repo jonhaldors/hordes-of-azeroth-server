@@ -997,41 +997,48 @@ void BonkRun::LaunchShield(OwnedWeapon const& owned, SpellEntry const* spellInfo
     std::vector<ObjectGuid> struck, uint32 hops)
 {
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_AVENGERS_SHIELD_LOOK);
+    float const speed = look ? look->speed : 0.0f;
+    uint32 const flightMs = from == m_player || speed <= 0.0f ? GetMissileDelay(from, target, speed) :
+        uint32(target->GetDistance3dToCenter(from->GetPositionX(), from->GetPositionY(), from->GetPositionZ()) / speed * IN_MILLISECONDS);
+    float x, y, z, o;
+    if (!target->ExtrapolateMovement(target->m_movementInfo, flightMs, x, y, z, o))
+        target->GetPosition(x, y, z);
     if (look)
-        ShowThrowAtSpot(from, look, target);
+        ShowMissileFrom(from, look, x, y, z + target->GetCollisionHeight() / 2.0f);
 
     struck.push_back(target->GetObjectGuid());
     PendingCast flight;
     flight.weaponId = owned.weapon.id;
     flight.spellId = spellInfo->Id;
-    flight.leftMs = int32(GetMissileDelay(from, target, look ? look->speed : 0.0f)) + BONK_AVENGERS_SHIELD_GAP_MS;
+    flight.leftMs = int32(flightMs) + BONK_AVENGERS_SHIELD_GAP_MS;
     flight.shieldThrow = true;
     flight.hops = hops;
     flight.share = share;
     flight.target = target->GetObjectGuid();
-    target->GetPosition(flight.x, flight.y, flight.z);
+    flight.x = x;
+    flight.y = y;
+    flight.z = z;
     flight.struck = std::move(struck);
     m_pendingCasts.push_back(std::move(flight));
 }
 
 void BonkRun::LandShield(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)
 {
-    float x = cast.x, y = cast.y, z = cast.z;
     Creature* target = m_player->GetMap()->GetCreature(cast.target);
-    if (target && target->IsAlive())
+    bool const alive = target && target->IsInWorld() && target->IsAlive();
+    if (cast.hops)
     {
-        target->GetPosition(x, y, z);
+        Creature* source = alive ? target : TakeShotSource(cast.x, cast.y, cast.z);
+        Creature* next = source ? PickShieldBounce(source, source->GetPositionX(), source->GetPositionY(), cast.struck) : nullptr;
+        if (next)
+            LaunchShield(owned, spellInfo, source, next, cast.share, cast.struck, cast.hops - 1);
+    }
+    if (alive)
+    {
         FiringWeapon firing(m_player->GetBonkPlayer());
         StrikeWith(owned, spellInfo, target, cast.share, true);
         ShowStrikeImpact(spellInfo, target);
     }
-    if (!cast.hops)
-        return;
-
-    Creature* source = TakeShotSource(x, y, z);
-    Creature* next = source ? PickShieldBounce(source, x, y, cast.struck) : nullptr;
-    if (next)
-        LaunchShield(owned, spellInfo, source, next, cast.share, cast.struck, cast.hops - 1);
 }
 
 Creature* BonkRun::PickShieldBounce(WorldObject const* from, float x, float y, std::vector<ObjectGuid> const& struck) const

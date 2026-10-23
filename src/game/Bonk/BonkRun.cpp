@@ -250,7 +250,7 @@ namespace
     float const BONK_MARK_JUMP_RANGE       = 15.0f;
     float const BONK_RICOCHET_RANGE        = 10.0f;
     float const BONK_RICOCHET_GROWTH       = 1.25f;
-    uint32 const BONK_RICOCHET_GAP_MS      = 120;
+    int32 const BONK_RICOCHET_LEAD_MS      = 50;
     float const BONK_TRICK_SHOT_RANGE      = 15.0f;
     int32 const BONK_TRICK_SHOT_DELAY_MS   = 100;
     size_t const BONK_MAX_TRICK_SHOTS      = 12;
@@ -284,7 +284,6 @@ namespace
     uint32 const BONK_KIT_GRAVITY_PULL     = 1364;
     size_t const BONK_MAX_FLARES           = 12;
     size_t const BONK_MAX_FLARE_SPLITS     = 10;
-    uint32 const BONK_FLARE_SPLIT_GAP_MS   = 80;
     size_t const BONK_MAX_SHARD_BURSTS     = 10;
     int32 const BONK_SHARD_BURST_DELAY_MS  = 100;
     uint32 const BONK_KIT_SHARD_BURST      = 988;
@@ -560,6 +559,7 @@ namespace
     }
 
     thread_local uint32 s_nextHelperLevel = 0;
+    thread_local ObjectGuid t_missileLookSource;
 
     void ApplyHelperLevel(Creature* creature)
     {
@@ -4865,18 +4865,15 @@ void BonkRun::QueueRicochet(OwnedWeapon const& owned, SpellEntry const* spellInf
     PendingCast hop;
     hop.weaponId = owned.weapon.id;
     hop.spellId = spellInfo->Id;
-    hop.leftMs = int32(GetMissileDelay(from, target, spellInfo->speed) + BONK_RICOCHET_GAP_MS);
+    hop.leftMs = GetBounceDelay(from, target, spellInfo->speed);
     hop.ricochet = true;
     hop.hops = hops;
     hop.share = share;
     hop.target = target->GetObjectGuid();
-    target->GetPosition(hop.x, hop.y, hop.z);
-    if (m_heldShotSources.size() < BONK_SHOT_SOURCES_HELD_MAX)
-        if (Creature* source = TakeShotSource(hop.x, hop.y, hop.z))
-        {
-            hop.source = source->GetObjectGuid();
-            m_heldShotSources.insert(hop.source);
-        }
+    float o;
+    if (!target->ExtrapolateMovement(target->m_movementInfo, uint32(hop.leftMs), hop.x, hop.y, hop.z, o))
+        target->GetPosition(hop.x, hop.y, hop.z);
+    hop.source = HoldShotSource(hop.x, hop.y, hop.z);
     hop.struck = std::move(struck);
     m_pendingCasts.push_back(std::move(hop));
 }
@@ -4884,23 +4881,57 @@ void BonkRun::QueueRicochet(OwnedWeapon const& owned, SpellEntry const* spellInf
 void BonkRun::Ricochet(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)
 {
     float x = cast.x, y = cast.y, z = cast.z;
-    if (Creature* last = m_player->GetMap()->GetCreature(cast.target))
+    Creature* last = m_player->GetMap()->GetCreature(cast.target);
+    if (last)
         last->GetPosition(x, y, z);
 
-    m_heldShotSources.erase(cast.source);
-    Creature* source = cast.source.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(cast.source);
-    if (!source || !source->IsAlive())
-        source = TakeShotSource(x, y, z);
+    Creature* source = ReleaseShotSource(cast.source, x, y, z);
+    if (source && last && source->GetObjectGuid() == cast.source)
+        source->NearTeleportTo(x, y, z + BONK_PROJECTILE_HEIGHT, source->GetOrientation());
     Creature* next = source ? PickRicochetTarget(source, cast.struck) : nullptr;
     if (!next)
         return;
 
     float const share = cast.share * BONK_RICOCHET_GROWTH;
-    {
-        FiringWeapon firing(m_player->GetBonkPlayer());
-        StrikeWith(owned, spellInfo, next, share, true, source);
-    }
+    StrikeFromMob(owned, spellInfo, next, share, source, last);
     QueueRicochet(owned, spellInfo, next, source, share, cast.struck, cast.hops - 1);
+}
+
+ObjectGuid BonkRun::GetMissileLookSource()
+{
+    return t_missileLookSource;
+}
+
+int32 BonkRun::GetBounceDelay(SpellCaster const* from, Unit const* target, float speed)
+{
+    return std::max(0, int32(GetMissileDelay(from, target, speed)) - BONK_RICOCHET_LEAD_MS);
+}
+
+void BonkRun::StrikeFromMob(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share, Creature* source,
+    Creature const* lookFrom)
+{
+    FiringWeapon firing(m_player->GetBonkPlayer());
+    t_missileLookSource = lookFrom && lookFrom->IsInWorld() && lookFrom->IsAlive() ? lookFrom->GetObjectGuid() : ObjectGuid();
+    StrikeWith(owned, spellInfo, target, share, true, source);
+    t_missileLookSource = ObjectGuid();
+}
+
+ObjectGuid BonkRun::HoldShotSource(float x, float y, float z)
+{
+    if (m_heldShotSources.size() >= BONK_SHOT_SOURCES_HELD_MAX)
+        return ObjectGuid();
+    Creature* source = TakeShotSource(x, y, z);
+    if (!source)
+        return ObjectGuid();
+    m_heldShotSources.insert(source->GetObjectGuid());
+    return source->GetObjectGuid();
+}
+
+Creature* BonkRun::ReleaseShotSource(ObjectGuid guid, float x, float y, float z)
+{
+    m_heldShotSources.erase(guid);
+    Creature* source = guid.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(guid);
+    return source && source->IsAlive() ? source : TakeShotSource(x, y, z);
 }
 
 Creature* BonkRun::PickRicochetTarget(WorldObject const* from, std::vector<ObjectGuid> const& struck) const
@@ -4931,12 +4962,13 @@ void BonkRun::QueueTrickShot(Creature const* dead, uint32 killingSpell)
     volley.leftMs = BONK_TRICK_SHOT_DELAY_MS;
     volley.trickShot = true;
     dead->GetPosition(volley.x, volley.y, volley.z);
+    volley.source = HoldShotSource(volley.x, volley.y, volley.z);
     m_pendingCasts.push_back(std::move(volley));
 }
 
 void BonkRun::FireTrickShot(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)
 {
-    Creature* source = TakeShotSource(cast.x, cast.y, cast.z);
+    Creature* source = ReleaseShotSource(cast.source, cast.x, cast.y, cast.z);
     if (!source)
         return;
 
@@ -5380,38 +5412,35 @@ void BonkRun::QueueFlareSplit(OwnedWeapon const& owned, SpellEntry const* spellI
     PendingCast split;
     split.weaponId = weapon.id;
     split.spellId = spellInfo->Id;
-    split.leftMs = int32(GetMissileDelay(from, target, spellInfo->speed) + BONK_FLARE_SPLIT_GAP_MS);
+    split.leftMs = GetBounceDelay(from, target, spellInfo->speed);
     split.flareSplit = true;
     split.share = share;
     split.target = target->GetObjectGuid();
     target->GetPosition(split.x, split.y, split.z);
+    split.source = HoldShotSource(split.x, split.y, split.z);
     m_pendingCasts.push_back(std::move(split));
 }
 
 void BonkRun::FireFlareSplit(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)
 {
+    float x = cast.x, y = cast.y, z = cast.z;
+    Creature* struck = m_player->GetMap()->GetCreature(cast.target);
+    if (struck)
+        struck->GetPosition(x, y, z);
+    Creature* source = ReleaseShotSource(cast.source, x, y, z);
+
     Flare const* flare = FindFlareAt(cast.x, cast.y);
-    if (!flare)
+    if (!flare || !source)
         return;
     float const flareX = flare->x, flareY = flare->y, flareRadius = flare->radius;
 
-    float x = cast.x, y = cast.y, z = cast.z;
-    if (Creature* struck = m_player->GetMap()->GetCreature(cast.target))
-        struck->GetPosition(x, y, z);
-
-    Creature* source = nullptr;
     for (Creature* mob : GetMobsNear(x, y, 2.0f * flareRadius))
     {
         if (mob->GetObjectGuid() == cast.target || mob->GetDistance2d(flareX, flareY) > flareRadius)
             continue;
-        if (!source)
-            source = TakeShotSource(x, y, z);
-        if (!source)
-            return;
         if (!source->IsWithinLOSInMap(mob))
             continue;
-        FiringWeapon firing(m_player->GetBonkPlayer());
-        StrikeWith(owned, spellInfo, mob, cast.share, true, source);
+        StrikeFromMob(owned, spellInfo, mob, cast.share, source, struck);
         return;
     }
 }
@@ -5467,6 +5496,8 @@ void BonkRun::QueueVenom(OwnedWeapon const& owned, Creature const* dead)
     venom.keywordCloud = cloud;
     venom.venomBolts = !cloud;
     dead->GetPosition(venom.x, venom.y, venom.z);
+    if (!cloud)
+        venom.source = HoldShotSource(venom.x, venom.y, venom.z);
     m_pendingCasts.push_back(std::move(venom));
 }
 
@@ -5478,15 +5509,13 @@ void BonkRun::FireVenomBolts(OwnedWeapon& owned, SpellEntry const* spellInfo, Pe
     uint32 const stacks = BONK_VENOM_BOLT_STACKS + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS));
     uint32 const arrows = std::max(1u, uint32(owned.weapon.behaviorValue));
 
-    Creature* source = nullptr;
+    Creature* source = ReleaseShotSource(cast.source, cast.x, cast.y, cast.z);
     uint32 fired = 0;
     FiringWeapon firing(m_player->GetBonkPlayer());
     for (Creature* mob : GetMobsNear(cast.x, cast.y, BONK_VENOM_BOLT_RANGE))
     {
         if (fired >= arrows)
             break;
-        if (!source)
-            source = TakeShotSource(cast.x, cast.y, cast.z);
         if (!source)
             return;
         if (!source->IsWithinLOSInMap(mob))
@@ -6566,6 +6595,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
         {
             if (cast.springTrap)
                 m_telegraphs.Release(m_player, cast.target);
+            m_heldShotSources.erase(cast.source);
             continue;
         }
 

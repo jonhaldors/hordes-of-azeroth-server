@@ -178,6 +178,7 @@ class BonkRun
         void OnCriticalStrike(SpellCaster const* caster, SpellEntry const* spell, Unit const* victim);
         void CountThunderHit(SpellEntry const* spell);
         static void SetPeriodicHit(bool periodic);
+        static ObjectGuid GetMissileLookSource();
         float GetDotGrowth(Unit const* victim, uint32 spellId) const;
 
         void OnHeroHitBy(Creature* attacker, uint32 damage);
@@ -1299,6 +1300,11 @@ class BonkRun
             std::vector<ObjectGuid> struck, uint32 hops);
         void Ricochet(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         Creature* PickRicochetTarget(WorldObject const* from, std::vector<ObjectGuid> const& struck) const;
+        static int32 GetBounceDelay(SpellCaster const* from, Unit const* target, float speed);
+        void StrikeFromMob(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share, Creature* source,
+            Creature const* lookFrom);
+        ObjectGuid HoldShotSource(float x, float y, float z);
+        Creature* ReleaseShotSource(ObjectGuid guid, float x, float y, float z);
         void QueueTrickShot(Creature const* dead, uint32 killingSpell);
         void FireTrickShot(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         std::vector<uint32> m_trickShotTimes;

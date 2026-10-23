@@ -29,7 +29,6 @@ namespace
 
     uint32 const BONK_ICE_SHARD_HOPS          = 6;
     float const BONK_ICE_SHARD_RANGE          = 12.0f;
-    int32 const BONK_ICE_SHARD_GAP_MS         = 60;
     float const BONK_FROST_SHATTER_RADIUS     = 5.0f;
     uint32 const BONK_KIT_FROST_NOVA          = 160;
     size_t const BONK_MAX_FROSTBOLT_TARGETS   = 8;
@@ -609,12 +608,13 @@ void BonkRun::QueueIceShard(OwnedWeapon const& owned, SpellEntry const* spellInf
     PendingCast hop;
     hop.weaponId = owned.weapon.id;
     hop.spellId = spellInfo->Id;
-    hop.leftMs = int32(GetMissileDelay(from, target, spellInfo->speed)) + BONK_ICE_SHARD_GAP_MS;
+    hop.leftMs = GetBounceDelay(from, target, spellInfo->speed);
     hop.iceShard = true;
     hop.hops = hops;
     hop.share = share;
     hop.target = target->GetObjectGuid();
     target->GetPosition(hop.x, hop.y, hop.z);
+    hop.source = HoldShotSource(hop.x, hop.y, hop.z);
     hop.struck = std::move(struck);
     m_pendingCasts.push_back(std::move(hop));
 }
@@ -622,18 +622,16 @@ void BonkRun::QueueIceShard(OwnedWeapon const& owned, SpellEntry const* spellInf
 void BonkRun::BounceIceShard(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)
 {
     float x = cast.x, y = cast.y, z = cast.z;
-    if (Creature* last = m_player->GetMap()->GetCreature(cast.target))
+    Creature* last = m_player->GetMap()->GetCreature(cast.target);
+    if (last)
         last->GetPosition(x, y, z);
 
-    Creature* source = TakeShotSource(x, y, z);
+    Creature* source = ReleaseShotSource(cast.source, x, y, z);
     Creature* next = source ? PickFrozenBounce(source, cast.struck) : nullptr;
     if (!next)
         return;
 
-    {
-        FiringWeapon firing(m_player->GetBonkPlayer());
-        StrikeWith(owned, spellInfo, next, cast.share, true, source);
-    }
+    StrikeFromMob(owned, spellInfo, next, cast.share, source, last);
     NoteFrostboltTarget(next);
     QueueIceShard(owned, spellInfo, next, source, cast.share, cast.struck, cast.hops - 1);
 }

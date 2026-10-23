@@ -4629,6 +4629,9 @@ void Spell::SendSpellGo()
     if (m_casterUnit)
         packet->unitCasterGuid = m_casterUnit->GetObjectGuid();
 
+    if (IsBonkProjectile(m_caster) && !BonkRun::GetMissileLookSource().IsEmpty())
+        packet->casterGuid = packet->unitCasterGuid = BonkRun::GetMissileLookSource();
+
     packet->spellId = m_spellInfo->Id;
     packet->castFlags = castFlags;
     WriteSpellGoTargets(*packet);

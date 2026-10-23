@@ -791,12 +791,12 @@ void BonkRun::TossShurikens(OwnedWeapon& owned, SpellEntry const* spellInfo)
     {
         Creature* target = mobs[i];
         float const x = target->GetPositionX(), y = target->GetPositionY(), z = target->GetPositionZ();
-        StabRogue(owned, spellInfo, target, 1.0f, true);
-        QueueShurikenImpact(m_player, target);
         struck.push_back(target);
         if (owned.weapon.id == BONK_WEAPON_SHURIKEN_STORM)
             BounceShuriken(owned, spellInfo, target, struck);
-        else if (owned.weapon.id == BONK_WEAPON_SHADOWY_SHURIKEN)
+        StabRogue(owned, spellInfo, target, 1.0f, true);
+        QueueShurikenImpact(m_player, target);
+        if (owned.weapon.id == BONK_WEAPON_SHADOWY_SHURIKEN)
             QueueShadowyShuriken(owned, x, y, z);
     }
 }
@@ -804,6 +804,7 @@ void BonkRun::TossShurikens(OwnedWeapon& owned, SpellEntry const* spellInfo)
 void BonkRun::BounceShuriken(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* from, std::vector<Creature*>& struck)
 {
     float const damage = GetWeaponDamage(owned);
+    std::vector<Creature*> chain;
     for (uint32 jump = 0; jump < BONK_SHURIKEN_STORM_JUMPS; ++jump)
     {
         std::vector<Creature*> nearby = GetMobsInRange(BONK_SHURIKEN_STORM_REACH, from);
@@ -819,13 +820,17 @@ void BonkRun::BounceShuriken(OwnedWeapon& owned, SpellEntry const* spellInfo, Cr
                 break;
             }
         if (!next)
-            return;
+            break;
         ShowStrike(from, spellInfo, next);
         QueueShurikenImpact(from, next);
-        DealRogueDamage(owned.weapon.spellId, spellInfo, next, damage);
-        OnRogueHit(next, damage, false);
         struck.push_back(next);
+        chain.push_back(next);
         from = next;
+    }
+    for (Creature* mob : chain)
+    {
+        DealRogueDamage(owned.weapon.spellId, spellInfo, mob, damage);
+        OnRogueHit(mob, damage, false);
     }
 }
 
