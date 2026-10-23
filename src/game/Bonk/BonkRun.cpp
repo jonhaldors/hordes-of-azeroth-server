@@ -1578,22 +1578,28 @@ void BonkRun::UpdateRecovery(uint32 diff)
     ReportQuestCounts();
     SamplePerfSecond();
 
-    uint32 heal = uint32(m_leechCarry);
+    uint32 const leech = uint32(m_leechCarry);
     m_leechCarry = 0.0f;
-    m_leechUnreported += heal;
+    m_leechUnreported += leech;
+    if (leech && m_player->IsAlive())
+    {
+        SupportScope scope(*this, PassiveSupport(BONK_PASSIVE_LEECH));
+        HealHero(ReduceHealing(leech));
+    }
 
     float const percent = GetPassiveTotal(BONK_PASSIVE_RECOVERY);
-    if (percent > 0.0f)
-        heal += std::max(1u, uint32(m_player->GetMaxHealth() * percent / 100.0f));
-
-    if (heal && m_player->IsAlive())
-        HealHero(ReduceHealing(heal));
+    if (percent > 0.0f && m_player->IsAlive())
+    {
+        SupportScope scope(*this, PassiveSupport(BONK_PASSIVE_RECOVERY));
+        HealHero(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * percent / 100.0f))));
+    }
 
     uint32 const bleedHeal = uint32(m_bleedHeal);
     m_bleedHeal = 0.0f;
     if (bleedHeal && m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth())
     {
         uint32 const amount = ReduceHealing(bleedHeal);
+        SupportScope scope(*this, m_bleedHealSource);
         if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_BLEED_HEAL))
             m_player->DealHeal(m_player, amount, spellInfo);
         else
@@ -3184,8 +3190,7 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
 
     if (m_spellShield)
     {
-        uint32 const absorbed = std::min(m_spellShield, damage);
-        m_spellShield -= absorbed;
+        uint32 const absorbed = AbsorbSpellShield(damage);
         damage -= absorbed;
         OnPriestShieldAbsorbed(absorbed);
         if (!m_spellShield && HasBehavior(BONK_BEHAVIOR_WARD))
@@ -3199,6 +3204,8 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
         uint32 const absorbed = std::min(m_shield, damage);
         m_shield -= absorbed;
         damage -= absorbed;
+        BonkSupportSource const passive = PassiveSupport(BONK_PASSIVE_SHIELD);
+        CreditAbsorb(passive.name.empty() ? CapstoneSupport(BONK_CAPSTONE_JUGGERNAUT) : passive, absorbed);
         if (!m_shield)
             OnShieldBroken();
     }
@@ -3614,6 +3621,7 @@ void BonkRun::SoulSiphon(uint32 killingSpell)
     if (percent <= 0.0f)
         return;
     m_siphonHealed += percent;
+    SupportScope scope(*this, TalentSupport(BONK_MASTERY_SOUL_SIPHON));
     m_player->ModifyHealth(int32(ReduceHealing(uint32(std::max(1.0f, m_player->GetMaxHealth() * percent / 100.0f)))));
 }
 
@@ -4543,6 +4551,7 @@ void BonkRun::UpdateWeapons(uint32 diff)
         owned.timer -= int32(diff);
         if (owned.timer <= 0)
         {
+            SupportScope scope(*this, WeaponSupport(owned));
             FireWeapon(owned);
             if (m_state == STATE_RUNNING && HasCard(BONK_CARD_ECHO) && roll_chance_f(GetCardChance(BONK_CARD_ECHO)))
             {
@@ -6502,12 +6511,6 @@ void BonkRun::ShowStrike(Unit* caster, SpellEntry const* spellInfo, Unit* target
     ShowStrikeOn(caster, spellInfo, target);
 }
 
-void BonkRun::AddSpellShield(uint32 amount)
-{
-    uint32 const cap = GetSpellShieldCap();
-    m_spellShield = std::min(m_spellShield + amount, cap);
-}
-
 void BonkRun::ScaleRadius(SpellEntry const* spellInfo, float radius)
 {
     float const own = GetSpellRadiusOf(spellInfo);
@@ -7517,7 +7520,10 @@ void BonkRun::OnPeriodicDamage(uint32 spellId, uint32 damage)
         return;
     for (OwnedWeapon const& owned : m_weapons)
         if (owned.weapon.behavior == BONK_BEHAVIOR_LEECH && owned.weapon.spellId == spellId)
+        {
             m_bleedHeal += damage * owned.weapon.behaviorValue / 100.0f;
+            m_bleedHealSource = WeaponSupport(owned);
+        }
     OnPriestPeriodic(spellId, damage);
 }
 
@@ -9758,6 +9764,7 @@ void BonkRun::UpdateHeals(uint32 diff)
         if (distance <= BONK_ORB_PICKUP_RANGE)
         {
             float const amount = BONK_HEAL_AMOUNT * (1.0f + GetCardTotal(BONK_CARD_JERKY, 1) / 100.0f);
+            SupportScope scope(*this, { "Spell_Holy_Heal", "Healing Orbs" });
             HealHero(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * amount))), BONK_SPELL_HEAL_TEXT);
             RemoveHealDrop(*itr, leg, true);
             itr = m_healDrops.erase(itr);
@@ -11089,6 +11096,7 @@ void BonkRun::SendState() const
         std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0") + "~" +
         std::to_string(m_coins) + "~" + std::to_string(GetChestPrice()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0") + "~" +
         std::to_string(m_shardsEarned) + "~" + DescribeWeaponStats() + "~" + std::to_string(m_totalMs / IN_MILLISECONDS) + "~" + damageTypes);
+    m_player->GetBonkPlayer()->SendAddon("support~" + DescribeSupport());
 }
 
 std::string BonkRun::DescribeWeaponStats() const
@@ -11335,6 +11343,7 @@ void BonkRun::Finish(bool wentHome)
             weapon.evolved = owned.weapon.evolvesFrom != 0;
             weapons.push_back(weapon);
         }
+        bonk->SendAddon("support~" + DescribeSupport());
         BonkStats::SendSummary(m_player, weapons);
     }
 
@@ -11513,6 +11522,7 @@ void BonkRun::CleanUp()
     ResetPaladinState();
     m_bleedHeal = 0.0f;
     m_spellShield = 0;
+    m_spellShieldParts.clear();
     m_chestChoices.clear();
     m_player->GetBonkPlayer()->SendAddon("mobclear");
     SetMovementImmunity(m_player, false);

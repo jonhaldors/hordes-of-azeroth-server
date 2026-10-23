@@ -88,9 +88,30 @@ class SpellAuraHolder;
 class SpellCaster;
 class Unit;
 
+struct BonkSupportSource
+{
+    std::string icon;
+    std::string name;
+};
+
 class BonkRun
 {
     public:
+        class SupportScope
+        {
+            public:
+                SupportScope(BonkRun& run, BonkSupportSource const& source) : m_run(run), m_previous(run.m_supportSource)
+                {
+                    if (!source.name.empty())
+                        run.m_supportSource = source;
+                }
+                ~SupportScope() { m_run.m_supportSource = m_previous; }
+
+            private:
+                BonkRun& m_run;
+                BonkSupportSource m_previous;
+        };
+
         BonkRun(Player* player, BonkTier const& tier, BonkRunChoice const& choice = BonkRunChoice());
         bool IsDungeon() const { return m_dungeonId != 0; }
         bool IsChallenge() const { return m_dungeonId != 0 || m_invaderId != 0; }
@@ -134,7 +155,7 @@ class BonkRun
         void OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer = nullptr);
         void OnMobStuck(Creature* mob);
         void OnWeaponDamage(uint32 damage);
-        void OnHeroHealed(uint32 amount) { m_healedUnreported += amount; m_minuteHealed += amount; }
+        void OnHeroHealed(uint32 amount) { m_healedUnreported += amount; m_minuteHealed += amount; CreditHealing(amount); }
         uint32 MitigateDamage(uint32 damage);
         void HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, SpellEffectIndex effectIndex, WeaponAttackType attackType);
         void AddNecroticStack();
@@ -664,6 +685,29 @@ class BonkRun
         void DespawnProjectiles();
         float GetLeadAngle(WorldObject const* from, Unit const* target, float speed) const;
         void AddSpellShield(uint32 amount);
+        uint32 AbsorbSpellShield(uint32 damage);
+        void CreditHealing(uint32 amount);
+        void CreditAbsorb(BonkSupportSource const& source, uint32 amount);
+        std::string DescribeSupport() const;
+        BonkSupportSource WeaponSupport(OwnedWeapon const& owned) const;
+        BonkSupportSource SpellSupport(uint32 spellId) const;
+        BonkSupportSource PassiveSupport(BonkPassiveEffect effect) const;
+        BonkSupportSource CardSupport(BonkCardEffect effect) const;
+        BonkSupportSource GlyphSupport(BonkGlyphEffect effect) const;
+        BonkSupportSource TalentSupport(BonkMasteryEffect effect) const;
+        BonkSupportSource CapstoneSupport(BonkCapstone capstone) const;
+        struct SupportCredit
+        {
+            std::string icon;
+            uint64 healed = 0;
+            uint64 absorbed = 0;
+            uint32 order = 0;
+        };
+        BonkSupportSource m_supportSource;
+        std::map<std::string, SupportCredit> m_supportCredits;
+        std::deque<std::pair<BonkSupportSource, uint32>> m_spellShieldParts;
+        BonkSupportSource m_bleedHealSource;
+        SupportCredit& GetSupportCredit(BonkSupportSource const& source);
         void CastSelfArea(OwnedWeapon& owned, SpellEntry const* spellInfo, float areaScale);
         void AddWeapon(BonkWeapon const& weapon);
         void ApplyPassives();

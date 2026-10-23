@@ -299,6 +299,7 @@ void BonkRun::HealFromSealOfLight(bool crit)
     if (!light || m_player->GetHealth() >= m_player->GetMaxHealth() || !TakeRateSlot(m_sealOfLightTimes, BONK_LIGHT_HEALS_PER_SEC))
         return;
     float const scale = crit && light->weapon.id == BONK_WEAPON_ILLUMINATION ? BONK_ILLUMINATION_CRIT_HEAL : 1.0f;
+    SupportScope scope(*this, WeaponSupport(*light));
     HealPaladin(GetSealOfLightHeal(light->damageBonus) * scale, BONK_SPELL_SEAL_OF_LIGHT);
 }
 
@@ -401,7 +402,11 @@ void BonkRun::PassJudgement(OwnedWeapon& owned, SpellEntry const* spellInfo)
         ++struck;
     }
     if (FindOwnedSeal(BONK_WEAPON_SEAL_OF_LIGHT) || owned.weapon.id == BONK_WEAPON_JUDGEMENT_OF_LIGHT)
+    {
+        OwnedWeapon const* seal = FindOwnedSeal(BONK_WEAPON_SEAL_OF_LIGHT);
+        SupportScope scope(*this, WeaponSupport(seal ? *seal : owned));
         HealPaladin(std::min(BONK_JUDGEMENT_LIGHT_HEAL * struck, BONK_JUDGEMENT_LIGHT_CAP), BONK_SPELL_SEAL_OF_LIGHT);
+    }
 }
 
 void BonkRun::ThrowHammerOfWrath(OwnedWeapon& owned, SpellEntry const* spellInfo)
@@ -707,6 +712,7 @@ void BonkRun::TryPaladinLastStands()
         m_layOnHandsReadyMs = m_totalMs + BONK_LAY_ON_HANDS_EVERY_MS;
         if (SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_LAY_ON_HANDS))
             ShowStrike(m_player, look, m_player);
+        SupportScope scope(*this, WeaponSupport(*FindOwned(BONK_WEAPON_LAY_ON_HANDS)));
         HealHero(m_player->GetMaxHealth(), BONK_SPELL_LAY_ON_HANDS);
     }
 }

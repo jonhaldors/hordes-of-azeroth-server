@@ -162,6 +162,7 @@ void BonkRun::ReleaseDrainBeams()
 
 void BonkRun::DrainLife(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     Map* map = m_player->GetMap();
     uint32 const wanted = owned.weapon.baseTargets + GetSpellCount(owned);
     std::vector<ObjectGuid> closest;

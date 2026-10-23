@@ -50,6 +50,7 @@ set (game_SRCS
     Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp
     Bonk/BonkRunStress.cpp
+    Bonk/BonkRunSupport.cpp
     Bonk/BonkRunTalents.cpp
     Bonk/BonkRunWarrior.cpp
     Bonk/BonkSandbox.cpp

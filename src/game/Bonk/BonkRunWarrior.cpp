@@ -381,6 +381,7 @@ void BonkRun::ShowWhirlwindSpin()
 
 void BonkRun::HealFromStrikes(OwnedWeapon const& owned, SpellEntry const* spellInfo, uint32 hits)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     if (!hits || owned.weapon.healPct <= 0.0f || !m_player->IsAlive())
         return;
     float const cap = owned.weapon.HasFlag(BONK_WEAPON_FLAG_BLOODBATH) ? BONK_BLOODBATH_MAX_HEAL : BONK_BLOODTHIRST_MAX_HEAL;
@@ -935,6 +936,7 @@ std::string BonkRun::DescribeThunderCount(OwnedWeapon const& owned) const
 
 void BonkRun::DemoralizingShout(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> const& hit)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     m_player->SendPlaySpellVisualKit(BONK_KIT_DEMORALIZING_SHOUT);
     size_t shown = 0;
     for (Creature* mob : hit)
@@ -1042,6 +1044,7 @@ Creature* BonkRun::PickShieldBounce(WorldObject const* from, float x, float y, s
 
 void BonkRun::GainBulwark(OwnedWeapon const& owned, uint32 struck)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     if (owned.weapon.behavior != BONK_BEHAVIOR_BULWARK || !struck || !m_player->IsAlive())
         return;
     float const size = 1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_SHIELD_SIZE) / 100.0f;

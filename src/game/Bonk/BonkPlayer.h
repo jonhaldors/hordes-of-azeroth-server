@@ -116,6 +116,7 @@ class BonkPlayer
         void FlushMasteryNotice();
         bool RefundMastery(uint32 nodeId, std::string& message);
         BonkMasteryBonuses GetMasteryBonuses() const;
+        std::map<uint32, uint8> const& GetMasteryRanks() const { return m_masteryRanks; }
         void SendMasteryState() const;
         void SendWallet() const;
 

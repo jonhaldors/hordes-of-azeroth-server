@@ -240,10 +240,9 @@ uint32 BonkRun::GuardLowHealth(uint32 damage)
         return 0;
     }
 
+    SupportScope scope(*this, TalentSupport(BONK_MASTERY_LAST_STAND));
     AddSpellShield(uint32(m_player->GetMaxHealth() * m_mastery.lastStand / 100.0f));
-    uint32 const absorbed = std::min(m_spellShield, damage);
-    m_spellShield -= absorbed;
-    return damage - absorbed;
+    return damage - AbsorbSpellShield(damage);
 }
 
 void BonkRun::BurstIceBlock()
@@ -314,7 +313,10 @@ void BonkRun::OnTalentDash()
 void BonkRun::OnTalentBlink()
 {
     if (m_mastery.blinkShield > 0.0f)
+    {
+        SupportScope scope(*this, TalentSupport(BONK_MASTERY_BLINK_SHIELD));
         AddSpellShield(uint32(m_player->GetMaxHealth() * m_mastery.blinkShield / 100.0f));
+    }
 
     if (m_mastery.Has(BONK_CAPSTONE_ARCANE_SURGE))
     {

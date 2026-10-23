@@ -633,7 +633,10 @@ void BonkRun::UpdateMoonwell(size_t index, uint32 diff)
     {
         shrine.tickMs -= IN_MILLISECONDS;
         if (m_player->IsAlive() && m_player->GetHealth() < m_player->GetMaxHealth())
+        {
+            SupportScope scope(*this, { "Spell_Nature_Rejuvenation", "Moonwell" });
             m_player->ModifyHealth(int32(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * BONK_MOONWELL_HEAL)))));
+        }
     }
     bonk->SendAddon("moonwell~" + std::to_string((shrine.leftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS) + "~1~" +
         std::to_string(GetMoonwellSeconds()));

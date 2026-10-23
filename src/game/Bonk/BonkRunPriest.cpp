@@ -343,6 +343,7 @@ void BonkRun::HealPriest(float percent, uint32 textSpellId, bool atonement)
 {
     if (!m_player->IsAlive() || percent <= 0.0f)
         return;
+    SupportScope scope(*this, m_supportSource.name.empty() ? SpellSupport(textSpellId) : m_supportSource);
     uint32 const maxHealth = m_player->GetMaxHealth();
     uint32 const amount = ReduceHealing(std::max(1u, uint32(maxHealth * percent / 100.0f)));
     uint32 const missing = maxHealth - std::min(maxHealth, m_player->GetHealth());
@@ -356,6 +357,7 @@ void BonkRun::HealPriest(float percent, uint32 textSpellId, bool atonement)
 
 void BonkRun::PulseRenew(OwnedWeapon& owned)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     owned.timer = GetWeaponCooldown(owned);
     if (!m_player->IsAlive())
         return;
@@ -458,6 +460,7 @@ void BonkRun::ResolvePriestCast(OwnedWeapon& owned, SpellEntry const* spellInfo,
 
 void BonkRun::RaisePowerWordShield(OwnedWeapon& owned)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     owned.timer = GetWeaponCooldown(owned);
     if (!m_player->IsAlive())
         return;
@@ -834,7 +837,11 @@ void BonkRun::DrainVampiricTouch()
     uint32 const heal = uint32(std::min(m_vampiricHeal, cap));
     m_vampiricHeal = 0.0f;
     if (heal && m_player->IsAlive())
+    {
+        OwnedWeapon const* vampiric = FindOwned(BONK_WEAPON_VAMPIRIC_TOUCH);
+        SupportScope scope(*this, vampiric ? WeaponSupport(*vampiric) : BonkSupportSource());
         HealHero(ReduceHealing(heal), BONK_SPELL_DECAY_CARRIER);
+    }
 }
 
 void BonkRun::GraspWithVoidTendrils()

@@ -517,6 +517,7 @@ void BonkRun::OnShamanStruck(Creature* attacker)
 
     if (shield->weapon.id != BONK_WEAPON_EARTH_SHIELD || !m_player->IsAlive())
         return;
+    SupportScope scope(*this, WeaponSupport(*shield));
     uint32 const cap = uint32(m_player->GetMaxHealth() * BONK_EARTH_SHIELD_CAP / 100.0f);
     uint32 const step = std::max(1u, uint32(m_player->GetMaxHealth() * BONK_EARTH_SHIELD_STEP / 100.0f));
     if (m_spellShield < cap)
@@ -819,16 +820,18 @@ void BonkRun::FlowHealingStreams()
     if (!m_player->IsAlive() || m_player->GetHealth() >= m_player->GetMaxHealth())
         return;
     Map* map = m_player->GetMap();
-    float percent = 0.0f;
     for (OwnedWeapon const& owned : m_weapons)
     {
         if (GetShamanPetFamily(owned) != BONK_PET_FAMILY_HEALING_STREAM_TOTEM)
             continue;
+        float percent = 0.0f;
         for (ObjectGuid const& guid : owned.pets)
             if (Creature* totem = map->GetCreature(guid))
                 if (totem->IsAlive() && totem->IsWithinDistInMap(m_player, BONK_HEALING_STREAM_RANGE))
                     percent += GetHealPercent(owned.weapon, owned.damageBonus);
-    }
-    if (percent > 0.0f)
+        if (percent <= 0.0f)
+            continue;
+        SupportScope scope(*this, WeaponSupport(owned));
         HealHero(std::max(1u, uint32(m_player->GetMaxHealth() * percent / 100.0f)), BONK_SPELL_HEALING_STREAM);
+    }
 }

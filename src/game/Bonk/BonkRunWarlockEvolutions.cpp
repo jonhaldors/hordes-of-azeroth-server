@@ -607,6 +607,7 @@ void BonkRun::SeduceStrongest()
 
 void BonkRun::OnConsumedBurst(OwnedWeapon const& owned)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     if (owned.weapon.id == BONK_WEAPON_SACRIFICE && m_player->IsAlive())
         AddSpellShield(uint32(m_player->GetMaxHealth() * BONK_SACRIFICE_SHIELD_PCT / 100.0f));
 }

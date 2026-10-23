@@ -735,6 +735,7 @@ void BonkRun::Frostbite(Creature* mob, OwnedWeapon const& owned)
 
 void BonkRun::GainIceBarrier(OwnedWeapon const& owned)
 {
+    SupportScope scope(*this, WeaponSupport(owned));
     if (!m_player->IsAlive())
         return;
     if (m_iceBarrierCast != owned.casts)

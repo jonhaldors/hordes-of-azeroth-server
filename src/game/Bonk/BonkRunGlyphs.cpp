@@ -306,7 +306,10 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
 
     if (BonkGlyph const* wind = GetGlyph(BONK_GLYPH_SECOND_WIND))
         if (kind != BONK_SPAWN_NORMAL && m_player->IsWithinDistInMap(mob, wind->values[1]))
+        {
+            SupportScope scope(*this, { wind->icon, wind->name });
             HealHero(ReduceHealing(uint32(std::max(1.0f, m_player->GetMaxHealth() * wind->values[0] / 100.0f))));
+        }
 
     ++m_glyphKills;
 

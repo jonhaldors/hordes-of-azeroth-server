@@ -359,6 +359,7 @@ void BonkRun::UpdateCards(uint32 diff)
     if (BonkCard const* stone = m_cardByEffect[BONK_CARD_HEALTHSTONE])
         if (m_cardCooldowns[BONK_CARD_HEALTHSTONE] <= 0 && health < stone->values[0])
         {
+            SupportScope scope(*this, CardSupport(BONK_CARD_HEALTHSTONE));
             HealHero(ReduceHealing(uint32(maxHealth * stone->values[1] / 100.0f)), BONK_SPELL_HEALTHSTONE);
             StartCardCooldown(BONK_CARD_HEALTHSTONE, GetCardCooldown(BONK_CARD_HEALTHSTONE));
         }
@@ -405,21 +406,25 @@ void BonkRun::UpdateCards(uint32 diff)
         return;
     m_cardTickMs -= IN_MILLISECONDS;
 
-    float percent = 0.0f;
+    auto healFromCard = [&](BonkCardEffect effect, float percent)
+    {
+        if (percent <= 0.0f)
+            return;
+        SupportScope scope(*this, CardSupport(effect));
+        HealHero(ReduceHealing(std::max(1u, uint32(maxHealth * percent / 100.0f))));
+    };
     if (BonkCard const* bandage = m_cardByEffect[BONK_CARD_BANDAGE])
         if (!m_hurt || m_totalMs - m_lastHurtMs >= uint32(bandage->values[1] * IN_MILLISECONDS))
-            percent += GetCardTotal(BONK_CARD_BANDAGE, 0);
+            healFromCard(BONK_CARD_BANDAGE, GetCardTotal(BONK_CARD_BANDAGE, 0));
     if (BonkCard const* campfire = m_cardByEffect[BONK_CARD_CAMPFIRE])
         if (m_totalMs - m_stillSinceMs >= uint32(campfire->values[1] * IN_MILLISECONDS))
-            percent += GetCardTotal(BONK_CARD_CAMPFIRE, 0);
+            healFromCard(BONK_CARD_CAMPFIRE, GetCardTotal(BONK_CARD_CAMPFIRE, 0));
     if (BonkCard const* heroism = m_cardByEffect[BONK_CARD_CRIT_HEAL])
     {
         uint32 const crits = m_crits - m_cardCritsSeen;
         m_cardCritsSeen = m_crits;
-        percent += std::min(crits * GetCardChance(BONK_CARD_CRIT_HEAL) / 100.0f * heroism->values[1], heroism->values[2]);
+        healFromCard(BONK_CARD_CRIT_HEAL, std::min(crits * GetCardChance(BONK_CARD_CRIT_HEAL) / 100.0f * heroism->values[1], heroism->values[2]));
     }
-    if (percent > 0.0f)
-        HealHero(ReduceHealing(std::max(1u, uint32(maxHealth * percent / 100.0f))));
 
     SendCardStatus(false);
 }
@@ -483,6 +488,7 @@ void BonkRun::HealHero(uint32 amount, uint32 textSpellId)
     if (!amount || !m_player->IsAlive())
         return;
 
+    SupportScope scope(*this, m_supportSource.name.empty() ? SpellSupport(textSpellId) : m_supportSource);
     uint32 const maxHealth = m_player->GetMaxHealth();
     uint32 const healed = std::min(amount, maxHealth - std::min(maxHealth, m_player->GetHealth()));
     if (healed)
@@ -496,6 +502,7 @@ void BonkRun::HealHero(uint32 amount, uint32 textSpellId)
     if (amount > healed && HasCard(BONK_CARD_OVERHEAL))
     {
         uint32 const cap = uint32(maxHealth * GetCardTotal(BONK_CARD_OVERHEAL, 0) / 100.0f);
+        SupportScope overheal(*this, CardSupport(BONK_CARD_OVERHEAL));
         if (m_spellShield < cap)
             AddSpellShield(std::min(amount - healed, cap - m_spellShield));
     }
@@ -599,7 +606,10 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
                 }
                 m_cardProc = false;
                 if (struck)
+                {
+                    SupportScope scope(*this, { blade->icon, blade->name });
                     HealHero(ReduceHealing(uint32(burst * multiplier * struck * BONK_SHADOW_BURST_HEAL)));
+                }
             }
 
     if (BonkCard const* maelstrom = m_cardByEffect[BONK_CARD_CHAIN])
