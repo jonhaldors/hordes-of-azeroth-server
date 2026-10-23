@@ -66,7 +66,7 @@ namespace
     uint32 const BONK_DEVOUR_AFFIX_MS            = 6000;
     uint32 const BONK_DEVOUR_AFFIX_EVERY_MS      = 10000;
     float const BONK_SEED_RADIUS                 = 6.0f;
-    float const BONK_SEED_SHARE                  = 0.2f;
+    float const BONK_SEED_SHARE                  = 0.15f;
     uint32 const BONK_SEED_MAX_DEPTH             = 2;
     uint32 const BONK_SEED_HIT_GAP_MS            = 1000;
     uint32 const BONK_DARK_HARVEST_EVERY_MS      = 6000;
