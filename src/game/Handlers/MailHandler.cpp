@@ -31,6 +31,7 @@
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
 #include "Item.h"
+#include "GameObject.h"
 #include "Player.h"
 #include "World.h"
 #include "WorldPacket.h"
@@ -717,10 +718,25 @@ void WorldSession::HandleMailTakeMoney(WorldPackets::Mail::MailTakeMoney const& 
  * Handles the packet sent by the client when requesting the current mail list.
  * It will send a list of all available mails in the players mailbox to the client.
  */
+GameObject const* WorldSession::FindMailBoxOnMap(ObjectGuid guid)
+{
+    Player* player = GetPlayer();
+    if (!guid || !player || !player->IsInWorld())
+        return nullptr;
+    GameObject const* mailbox = player->GetMap()->GetGameObject(guid);
+    return mailbox && mailbox->GetGoType() == GAMEOBJECT_TYPE_MAILBOX ? mailbox : nullptr;
+}
+
 void WorldSession::HandleGetMailList(WorldPackets::Mail::GetMailList const& packet)
 {
     if (!CheckMailBox(packet.mailboxGuid))
-        return;
+    {
+        GameObject const* mailbox = FindMailBoxOnMap(packet.mailboxGuid);
+        if (!mailbox)
+            return;
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Mail list for %s sent past the mailbox check: alive %u, state 0x%X, %.1f yd from the mailbox.",
+            GetPlayer()->GetName(), uint32(GetPlayer()->IsAlive()), GetPlayer()->GetUnitState(), mailbox->GetDistance(GetPlayer()));
+    }
 
     MasterPlayer* pl = GetMasterPlayer();
     ASSERT(pl);

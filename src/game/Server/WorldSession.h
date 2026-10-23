@@ -72,6 +72,7 @@ struct AuctionHouseEntry;
 
 class ObjectGuid;
 class Creature;
+class GameObject;
 class Item;
 class Object;
 class Player;
@@ -401,6 +402,7 @@ class WorldSession
 
         // Mail
         bool CheckMailBox(ObjectGuid guid);
+        GameObject const* FindMailBoxOnMap(ObjectGuid guid);
         void SendMailResult(uint32 mailId, MailResponseType mailAction, MailResponseResult mailError, uint32 equipError = 0, uint32 item_guid = 0, uint32 item_count = 0);
         void SendNewMail();
 
