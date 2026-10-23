@@ -802,6 +802,11 @@ uint32 Creature::ChooseDisplayId(CreatureInfo const* cinfo, CreatureData const* 
     return displayId;
 }
 
+bool Creature::IsBonkCrowdDriven() const
+{
+    return m_bonkCrowdDrivenUntil && int32(m_bonkCrowdDrivenUntil - WorldTimer::getMSTime()) > 0;
+}
+
 void Creature::Update(uint32 update_diff, uint32 diff)
 {
     update_diff *= sWorld.GetTimeRate();

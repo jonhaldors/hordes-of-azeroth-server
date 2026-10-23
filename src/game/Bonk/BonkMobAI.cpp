@@ -33,6 +33,7 @@ namespace
     uint32 const BONK_STUCK_CHECK_MS = 3000;
     float const BONK_STUCK_MIN_MOVE  = 1.5f;
     float const BONK_STUCK_SLACK     = 6.0f;
+    float const BONK_TOUCH_ABILITY_RANGE = 8.0f;
     float const BONK_CAST_NEAR_DISTANCE  = 5.5f;
     uint32 const BONK_CAST_NEAR_LIFETIME_MS = 3000;
 
@@ -805,8 +806,20 @@ void BonkMobAI::UpdateAI(uint32 const diff)
     UpdateAffixes(diff, owner);
     if (!m_movesOff)
         UpdateAbilities(diff, owner);
-    if (DoMeleeAttackIfReady())
+    if (m_creature->IsBonkCrowdTouching() && DoMeleeAttackIfReady())
         run->ReportSandboxSwing(m_creature);
+}
+
+bool BonkMobAI::CanCrowdWalk() const
+{
+    return m_kind != BONK_SPAWN_BOSS && m_kind != BONK_SPAWN_MINIBOSS && !IsFlyer() && !m_flyingIn && !m_frozen && !m_fleeing &&
+        !m_stationary && !m_passive && !m_stampede && !m_movesOff && m_raidTarget.IsEmpty() && m_arriveTimer <= 0 &&
+        m_chargeState == CHARGE_NONE && !m_areaWinding && m_landingTimer <= 0 && m_boltTarget.IsEmpty();
+}
+
+float BonkMobAI::GetHoldRange() const
+{
+    return m_mob && m_mob->role == BONK_ROLE_RANGED ? m_mob->range : 0.0f;
 }
 
 void BonkMobAI::ResetProgressWatch()
@@ -829,7 +842,8 @@ void BonkMobAI::UpdatePerchChase(BonkRun const* run)
 
 void BonkMobAI::UpdateProgressWatch(uint32 diff, Player* owner, BonkRun* run)
 {
-    if (m_creature->IsNonMeleeSpellCasted(false) || m_creature->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED))
+    if (m_creature->IsBonkCrowdDriven() || m_creature->IsNonMeleeSpellCasted(false) ||
+        m_creature->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED))
     {
         ResetProgressWatch();
         return;
@@ -1121,6 +1135,8 @@ void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
         if (m_abilityTimers[i] > 0 || distance < ability.minRange || distance > ability.maxRange)
             continue;
         if (m_creature->GetHealthPercent() > ability.belowHealth)
+            continue;
+        if (ability.maxRange < BONK_TOUCH_ABILITY_RANGE && !m_creature->IsBonkCrowdTouching())
             continue;
         if (ability.target == BONK_ABILITY_PLAYER && !m_creature->IsWithinLOSInMap(owner))
             continue;

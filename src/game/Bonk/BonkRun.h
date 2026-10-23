@@ -1,6 +1,7 @@
 #ifndef MANGOS_BONKRUN_H
 #define MANGOS_BONKRUN_H
 
+#include "BonkCrowd.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkObjectives.h"
@@ -154,6 +155,7 @@ class BonkRun
 
         void OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer = nullptr);
         void OnMobStuck(Creature* mob);
+        bool IsWaitingInCrowd(Creature const* mob) const;
         void OnWeaponDamage(uint32 damage);
         void OnHeroHealed(uint32 amount) { m_healedUnreported += amount; m_minuteHealed += amount; CreditHealing(amount); }
         uint32 MitigateDamage(uint32 damage);
@@ -280,6 +282,7 @@ class BonkRun
 
         void MakeSandbox(bool godBefore) { m_sandbox = true; m_sandboxGodBefore = godBefore; }
         bool IsSandbox() const { return m_sandbox; }
+        BonkCrowd const& GetCrowd() const { return m_crowd; }
         void ShowSandboxMenu(Creature* keeper, uint32 menu);
         void SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action);
         bool RunSandboxVerb(std::string const& verb, uint32 first, uint32 second, std::string& error);
@@ -527,6 +530,7 @@ class BonkRun
         bool FindSectorPosition(uint32 sector, float minDistance, float maxDistance, float& x, float& y, float& z) const;
         void SpawnTrashPacks(uint32 count);
         void UpdateStragglers(uint32 diff);
+        void UpdateCrowd(uint32 diff);
         bool PlacePack(std::vector<Creature*> const& pack, float heading);
         bool PlaceAside(Creature* mob, float heading);
         void MoveMob(Creature* mob, float x, float y, float z);
@@ -1163,6 +1167,7 @@ class BonkRun
         float m_lastX = 0.0f, m_lastY = 0.0f;
         uint32 m_headingTimer = 0;
         std::map<ObjectGuid, uint32> m_farSince;
+        BonkCrowd m_crowd;
         uint32 m_stragglerTimer = 0;
         struct PackSpot
         {

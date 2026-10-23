@@ -39,6 +39,12 @@ namespace
     uint32 const BONK_CHASE_RECHECK_MS = 200;
     float const BONK_CHASE_NEAR        = 40.0f;
 
+    bool IsBonkCrowdDriven(Unit const& owner)
+    {
+        Creature const* creature = owner.ToCreature();
+        return creature && creature->IsBonkCrowdDriven();
+    }
+
     bool IsBonkChase(Unit const& owner, Unit const* target)
     {
         Creature const* creature = owner.ToCreature();
@@ -203,6 +209,13 @@ void ChaseMovementGenerator<T>::_setTargetLocation(T &owner)
 
     if (owner.HasUnitState(UNIT_STATE_CAN_NOT_MOVE | UNIT_STATE_POSSESSED))
         return;
+
+    if (IsBonkCrowdDriven(owner))
+    {
+        m_bReachable = true;
+        m_bRecalculateTravel = false;
+        return;
+    }
 
     float x, y, z, preyO;
     bool losChecked = false;
@@ -444,6 +457,13 @@ bool ChaseMovementGenerator<T>::Update(T &owner, uint32 const&  time_diff)
     if (_lostTarget(owner))
     {
         _clearUnitStateMove(owner);
+        return true;
+    }
+
+    if (IsBonkCrowdDriven(owner))
+    {
+        m_bReachable = true;
+        m_bRecalculateTravel = false;
         return true;
     }
 

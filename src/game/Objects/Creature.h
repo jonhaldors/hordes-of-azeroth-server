@@ -330,6 +330,10 @@ class Creature : public Unit
         bool IsBonkFlyer() const { return m_bonkFlyer; }
         void SetBonkNormal(bool normal) { m_bonkNormal = normal; }
         bool IsBonkNormal() const { return m_bonkNormal; }
+        void SetBonkCrowdDriven(uint32 untilMs) { m_bonkCrowdDrivenUntil = untilMs; }
+        bool IsBonkCrowdDriven() const;
+        void SetBonkCrowdTouching(bool touching) { m_bonkCrowdTouching = touching; }
+        bool IsBonkCrowdTouching() const { return m_bonkCrowdTouching; }
         void SetClientUnselectable(bool enabled) { m_clientUnselectable = enabled; }
         bool IsClientUnselectable() const { return m_clientUnselectable; }
         void MoveAwayFromTarget(Unit const* pTarget, float distance);
@@ -698,6 +702,8 @@ class Creature : public Unit
         bool m_bonkEnemy = false;
         bool m_bonkFlyer = false;
         bool m_bonkNormal = false;
+        uint32 m_bonkCrowdDrivenUntil = 0;
+        bool m_bonkCrowdTouching = true;
         bool m_clientUnselectable = false;
 
     private:

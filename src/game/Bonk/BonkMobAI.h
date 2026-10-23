@@ -32,6 +32,8 @@ class BonkMobAI : public CreatureAI
         void SetFrozen(bool frozen);
         void Arrive();
         bool CanBePulled() const { return !m_stampede && !m_stationary && !m_fleeing; }
+        bool CanCrowdWalk() const;
+        float GetHoldRange() const;
         void Pull(float x, float y, float z, float speed, uint32 settleMs);
         BonkSpawnKind GetKind() const { return m_kind; }
         bool IsFlyer() const { return m_creature->IsBonkFlyer(); }

@@ -215,6 +215,9 @@ namespace
     float const BONK_START_EDGE         = 60.0f;
     float const BONK_START_EDGE_ENCLOSED = 25.0f;
     float const BONK_START_SPREAD       = 80.0f;
+    float const BONK_CROWD_WAIT_RANGE   = 30.0f;
+    float const BONK_CROWD_TOUCH_SLACK  = 1.0f;
+    float const BONK_CROWD_MAX_BODY     = 3.0f;
     size_t const BONK_OFFER_SIZE   = 3;
     uint32 const BONK_RUN_XP_SEND_MS = 200;
     uint32 const BONK_PAUSE_AURA_MS  = 200;
@@ -1211,6 +1214,7 @@ void BonkRun::StartStage()
     m_moveX = m_moveY = 0.0f;
     m_headingTimer = 0;
     m_farSince.clear();
+    m_crowd.Clear();
     m_packSpots.clear();
     m_sectorBlockedUntil.assign(BONK_SPAWN_SECTORS, 0);
     m_lanes[0] = m_lanes[1] = -1;
@@ -1421,6 +1425,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     if (m_state != STATE_RUNNING)
         return;
 
+    UpdateCrowd(diff);
     UpdateSteadyAim();
     UpdateWeapons(diff);
     if (m_state != STATE_RUNNING)
@@ -2912,6 +2917,14 @@ void BonkRun::SpawnTrashPacks(uint32 count)
     }
 }
 
+void BonkRun::UpdateCrowd(uint32 diff)
+{
+    std::vector<Creature*> stuck;
+    m_crowd.Update(diff, m_player, m_mobs, m_perched, stuck);
+    for (Creature* mob : stuck)
+        OnMobStuck(mob);
+}
+
 void BonkRun::UpdateStragglers(uint32 diff)
 {
     m_stragglerTimer += diff;
@@ -3862,6 +3875,7 @@ void BonkRun::DespawnMobs()
             }
     m_mobs.clear();
     m_farSince.clear();
+    m_crowd.Clear();
     m_packSpots.clear();
 }
 
@@ -11496,12 +11510,22 @@ void BonkRun::OnMobStuck(Creature* mob)
             ai->FlyIn(m_player);
             return;
         }
-    if (m_perched)
+    if (m_perched || IsWaitingInCrowd(mob))
         return;
 
     float x, y, z;
     if (FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
         MoveMob(mob, x, y, z);
+}
+
+bool BonkRun::IsWaitingInCrowd(Creature const* mob) const
+{
+    if (!mob->IsWithinDistInMap(m_player, BONK_CROWD_WAIT_RANGE))
+        return false;
+    for (Creature const* other : GetMobsInRange(mob->GetObjectBoundingRadius() + BONK_CROWD_TOUCH_SLACK + BONK_CROWD_MAX_BODY, mob))
+        if (mob->GetDistance2dToCenter(other) <= mob->GetObjectBoundingRadius() + other->GetObjectBoundingRadius() + BONK_CROWD_TOUCH_SLACK)
+            return true;
+    return false;
 }
 
 void BonkRun::CleanUp()

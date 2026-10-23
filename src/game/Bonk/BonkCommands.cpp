@@ -999,6 +999,33 @@ bool ChatHandler::HandleBonkStressCommand(char*)
     return true;
 }
 
+bool ChatHandler::HandleBonkCrowdCommand(char* args)
+{
+    std::vector<std::pair<char const*, float*>> const tunables = BonkCrowd::GetTunables();
+    char* name = ExtractArg(&args);
+    if (name)
+    {
+        float value;
+        auto const tunable = std::find_if(tunables.begin(), tunables.end(),
+            [name](std::pair<char const*, float*> const& entry) { return strcmp(entry.first, name) == 0; });
+        if (tunable == tunables.end() || !ExtractFloat(&args, value) || value < 0.0f)
+        {
+            SendSysMessage("Usage: .bonk crowd [name value]. Names are listed by .bonk crowd.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        *tunable->second = value;
+    }
+
+    std::string line;
+    for (auto const& entry : tunables)
+        line += std::string(line.empty() ? "" : ", ") + entry.first + " " + std::to_string(*entry.second).substr(0, 4);
+    SendSysMessage(line.c_str());
+    if (BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun())
+        SendSysMessage(run->GetCrowd().Describe().c_str());
+    return true;
+}
+
 bool ChatHandler::HandleBonkDashCommand(char*)
 {
     m_session->GetPlayer()->GetBonkPlayer()->Dash();
