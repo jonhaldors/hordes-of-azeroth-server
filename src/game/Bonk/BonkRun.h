@@ -727,6 +727,8 @@ class BonkRun
 
         BonkRarity RollRarity(BonkRarity minimum) const;
         void RollUpgrades(OwnedWeapon const& owned, Offer& offer) const;
+        std::vector<BonkWeaponUpgrade const*> GetUpgradeOptions(OwnedWeapon const& owned, BonkRarity rarity, float const* rolled) const;
+        void PickUpgradesInTurn(OwnedWeapon const& owned, Offer& offer, size_t& nextUpgrade) const;
         bool HasteShortensCooldown(OwnedWeapon const& owned, float alreadyRolled, float step) const;
         bool OfferGainsAnything(OwnedWeapon const& owned, Offer const& offer) const;
         float GetRawWeaponHaste(OwnedWeapon const& owned) const;
@@ -2270,7 +2272,8 @@ class BonkRun
         void SpawnSandboxCrystals(Creature const* keeper);
         OwnedWeapon* FindSandboxSpell(uint32 baseId);
         bool AddSandboxSpell(uint32 baseId, std::string& error);
-        void SetSandboxRank(uint32 baseId, uint32 rank);
+        void SetSandboxRank(uint32 baseId, uint32 rank, bool epicRoundRobin);
+        void SetSandboxPassiveRank(uint32 passiveId, uint32 rank);
         void RemoveSandboxSpells(uint32 baseId);
         void ResetSandbox(uint32 reset);
         void EnterSandboxBench();

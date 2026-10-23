@@ -56,11 +56,12 @@ namespace
     float const BONK_MIN_DOT_TICK_MS          = 100.0f;
 
     uint32 const BONK_BLOODLUST_CUT_MS        = 500;
-    int32 const BONK_BLOODLUST_FLOOR_MS       = 1000;
+    uint32 const BONK_BLOODLUST_MAX_CUT_MS    = 1000;
+    int32 const BONK_BLOODLUST_FLOOR_MS       = 3000;
 
     int32 const BONK_AFTERSHOCK_DELAY_MS      = 1500;
-    float const BONK_AFTERSHOCK_SHARE         = 0.5f;
-    uint32 const BONK_AFTERSHOCK_STACKS       = 2;
+    float const BONK_AFTERSHOCK_SHARE         = 0.3f;
+    uint32 const BONK_AFTERSHOCK_STACKS       = 1;
     uint32 const BONK_KIT_AFTERSHOCK          = 7400;
     uint32 const BONK_KIT_AFTERSHOCK_QUAKE    = 7401;
 
@@ -472,7 +473,7 @@ uint32 BonkRun::GetSwingEmote() const
 void BonkRun::OnAroundStrike(OwnedWeapon const& owned, Creature* mob)
 {
     if (owned.weapon.behavior == BONK_BEHAVIOR_BLOODLUST && GetKeywordStacks(mob, BONK_KEYWORD_BLEED))
-        m_bloodlustCutMs += BONK_BLOODLUST_CUT_MS;
+        m_bloodlustCutMs = std::min(m_bloodlustCutMs + BONK_BLOODLUST_CUT_MS, BONK_BLOODLUST_MAX_CUT_MS);
     if (m_swingKnocksBack)
         KnockBack(mob);
 }

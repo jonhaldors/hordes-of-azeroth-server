@@ -7989,11 +7989,12 @@ BonkPetFamily const* BonkRun::GetPetFamily(OwnedWeapon const& owned) const
 {
     if (uint32 const warlockFamily = GetWarlockPetFamily(owned))
         return sBonkMgr.GetPetFamily(warlockFamily);
-    if (m_player->GetClass() == CLASS_SHAMAN)
+    uint32 const classMask = owned.weapon.classMask;
+    if (classMask & (1 << (CLASS_SHAMAN - 1)))
         return sBonkMgr.GetPetFamily(GetShamanPetFamily(owned));
-    if (m_player->GetClass() == CLASS_PRIEST)
+    if (classMask & (1 << (CLASS_PRIEST - 1)))
         return sBonkMgr.GetPetFamily(GetPriestPetFamily(owned));
-    return sBonkMgr.GetPetFamily(m_player->GetClass() == CLASS_MAGE ? GetElementalFamily() : BONK_PET_FAMILY_CAT);
+    return sBonkMgr.GetPetFamily(classMask & (1 << (CLASS_MAGE - 1)) ? GetElementalFamily() : BONK_PET_FAMILY_CAT);
 }
 
 float BonkRun::GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& family) const
@@ -9996,20 +9997,7 @@ void BonkRun::RollUpgrades(OwnedWeapon const& owned, Offer& offer) const
     uint8 const count = GetRankUpgradeCount(&owned, offer.rarity);
     for (uint8 i = 0; i < count; ++i)
     {
-        std::vector<BonkWeaponUpgrade const*> options;
-        for (BonkWeaponUpgrade const& upgrade : owned.weapon.upgrades)
-        {
-            if ((upgrade.upgrade == BONK_SPELL_UPGRADE_HIT_TWICE || upgrade.upgrade == BONK_SPELL_UPGRADE_ECHO) && offer.rarity != BONK_RARITY_EPIC)
-                continue;
-            float const cap = BONK_SPELL_UPGRADE_CAP[upgrade.upgrade];
-            if (cap > 0.0f && owned.upgrades[upgrade.upgrade] + rolled[upgrade.upgrade] + upgrade.step > cap + 0.001f)
-                continue;
-            if (upgrade.upgrade == BONK_SPELL_UPGRADE_HASTE && !HasteShortensCooldown(owned, rolled[upgrade.upgrade], upgrade.step))
-                continue;
-            if (!KeepsWindowUptime(owned, rolled, upgrade.upgrade, upgrade.step))
-                continue;
-            options.push_back(&upgrade);
-        }
+        std::vector<BonkWeaponUpgrade const*> const options = GetUpgradeOptions(owned, offer.rarity, rolled);
         if (options.empty())
             break;
         float totalWeight = 0.0f;
@@ -10029,6 +10017,25 @@ void BonkRun::RollUpgrades(OwnedWeapon const& owned, Offer& offer) const
         offer.upgrades[i] = pick->upgrade;
         rolled[pick->upgrade] += pick->step;
     }
+}
+
+std::vector<BonkWeaponUpgrade const*> BonkRun::GetUpgradeOptions(OwnedWeapon const& owned, BonkRarity rarity, float const* rolled) const
+{
+    std::vector<BonkWeaponUpgrade const*> options;
+    for (BonkWeaponUpgrade const& upgrade : owned.weapon.upgrades)
+    {
+        if ((upgrade.upgrade == BONK_SPELL_UPGRADE_HIT_TWICE || upgrade.upgrade == BONK_SPELL_UPGRADE_ECHO) && rarity != BONK_RARITY_EPIC)
+            continue;
+        float const cap = BONK_SPELL_UPGRADE_CAP[upgrade.upgrade];
+        if (cap > 0.0f && owned.upgrades[upgrade.upgrade] + rolled[upgrade.upgrade] + upgrade.step > cap + 0.001f)
+            continue;
+        if (upgrade.upgrade == BONK_SPELL_UPGRADE_HASTE && !HasteShortensCooldown(owned, rolled[upgrade.upgrade], upgrade.step))
+            continue;
+        if (!KeepsWindowUptime(owned, rolled, upgrade.upgrade, upgrade.step))
+            continue;
+        options.push_back(&upgrade);
+    }
+    return options;
 }
 
 bool BonkRun::OfferGainsAnything(OwnedWeapon const& owned, Offer const& offer) const

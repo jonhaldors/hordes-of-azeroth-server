@@ -889,7 +889,7 @@ bool BonkRun::AddSandboxSpell(uint32 baseId, std::string& error)
     return true;
 }
 
-void BonkRun::SetSandboxRank(uint32 baseId, uint32 rank)
+void BonkRun::SetSandboxRank(uint32 baseId, uint32 rank, bool epicRoundRobin)
 {
     OwnedWeapon* owned = FindSandboxSpell(baseId);
     if (!owned || !rank)
@@ -899,18 +899,66 @@ void BonkRun::SetSandboxRank(uint32 baseId, uint32 rank)
     owned->damageBonus = 0.0f;
     std::fill(std::begin(owned->upgrades), std::end(owned->upgrades), 0.0f);
     owned->rarities.clear();
+    size_t nextUpgrade = 0;
     while (owned->rank < rank)
     {
         Offer step;
         step.id = owned->weapon.id;
         step.newLevel = owned->rank + 1;
-        step.rarity = RollRarity(BONK_RARITY_COMMON);
+        step.rarity = epicRoundRobin ? BONK_RARITY_EPIC : RollRarity(BONK_RARITY_COMMON);
         step.step = BONK_STEP_RANK;
-        RollUpgrades(*owned, step);
+        if (epicRoundRobin)
+            PickUpgradesInTurn(*owned, step, nextUpgrade);
+        else
+            RollUpgrades(*owned, step);
         ApplyStep(*owned, step);
     }
     SendLoadout();
     m_player->GetBonkPlayer()->Notify(owned->weapon.name + " is now rank " + std::to_string(owned->rank) + ".");
+}
+
+void BonkRun::PickUpgradesInTurn(OwnedWeapon const& owned, Offer& offer, size_t& nextUpgrade) const
+{
+    for (BonkSpellUpgrade& upgrade : offer.upgrades)
+        upgrade = BONK_SPELL_UPGRADE_NONE;
+    std::vector<BonkWeaponUpgrade> const& all = owned.weapon.upgrades;
+    if (all.empty())
+        return;
+
+    float rolled[MAX_BONK_SPELL_UPGRADE] = {};
+    uint8 const count = GetRankUpgradeCount(&owned, offer.rarity);
+    for (uint8 i = 0; i < count; ++i)
+    {
+        std::vector<BonkWeaponUpgrade const*> const options = GetUpgradeOptions(owned, offer.rarity, rolled);
+        BonkWeaponUpgrade const* pick = nullptr;
+        for (size_t tried = 0; tried < all.size() && !pick; ++tried)
+        {
+            BonkWeaponUpgrade const* candidate = &all[(nextUpgrade + tried) % all.size()];
+            if (std::find(options.begin(), options.end(), candidate) != options.end())
+            {
+                pick = candidate;
+                nextUpgrade = (nextUpgrade + tried + 1) % all.size();
+            }
+        }
+        if (!pick)
+            break;
+        offer.upgrades[i] = pick->upgrade;
+        rolled[pick->upgrade] += pick->step;
+    }
+}
+
+void BonkRun::SetSandboxPassiveRank(uint32 passiveId, uint32 rank)
+{
+    std::string error;
+    auto current = [this, passiveId]()
+    {
+        auto itr = m_passiveRanks.find(passiveId);
+        return itr != m_passiveRanks.end() ? uint32(itr->second) : 0u;
+    };
+    while (current() < rank && GivePassive(passiveId, error))
+        ;
+    if (!error.empty())
+        m_player->GetBonkPlayer()->Notify(error);
 }
 
 void BonkRun::RemoveSandboxSpells(uint32 baseId)
@@ -1219,7 +1267,7 @@ void BonkRun::SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action
             next = MenuAction(MENU_SPELL, 0, action >> 16);
             break;
         case SENDER_SPELL_RANK:
-            SetSandboxRank(action & 0xFFFF, action >> 16);
+            SetSandboxRank(action & 0xFFFF, action >> 16, false);
             break;
         case SENDER_SPELL_REMOVE:
             if (OwnedWeapon const* owned = FindSandboxSpell(action))
@@ -1331,7 +1379,11 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
     else if (verb == "evolve")
         return ForceEvolve(first, error);
     else if (verb == "rank")
-        SetSandboxRank(first, second);
+        SetSandboxRank(first, second, false);
+    else if (verb == "maxrank")
+        SetSandboxRank(first, second, true);
+    else if (verb == "passive")
+        SetSandboxPassiveRank(first, second);
     else if (verb == "forget")
         RemoveSandboxSpells(first);
     else if (verb == "level")
@@ -1377,7 +1429,7 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         EnterSandboxBench();
     else
     {
-        error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|forget|level|clear|heal|cooldowns|god|passive|unkillable|moves|reach|deep|quiet|minute|"
+        error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|maxrank|passive|forget|level|clear|heal|cooldowns|god|passive|unkillable|moves|reach|deep|quiet|minute|"
             "boss|miniboss|bosshealth|ability|bench.";
         return false;
     }
