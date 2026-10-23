@@ -23,8 +23,6 @@ namespace
     uint32 const BONK_SPELL_SPELL_LOCK        = 19244;
     uint32 const BONK_SPELL_DEVOUR_MAGIC      = 17012;
 
-    float const BONK_HELLFIRE_BURN_PCT        = 1.0f;
-    float const BONK_HELLFIRE_HEALTH_FLOOR    = 0.35f;
     uint32 const BONK_NIGHTFALL_PER_SEC       = 1;
     uint32 const BONK_WARLOCK_OPENING_STACKS  = 1;
     uint32 const BONK_NIGHTFALL_WINDOW_MS     = 1000;
@@ -90,6 +88,7 @@ void BonkRun::DressWarlockPet(OwnedWeapon const& owned, Creature* pet) const
 void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword)
 {
     uint32 const wanted = GetWeaponTargets(owned);
+    std::stable_partition(mobs.begin(), mobs.end(), [this, keyword](Creature* mob) { return !GetKeywordStacks(mob, keyword); });
     if (mobs.size() > wanted)
         mobs.resize(wanted);
     BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
@@ -221,16 +220,6 @@ void BonkRun::BurnHellfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
         if (mob->IsAlive() && owned.weapon.applyStacks)
             ApplyWeaponKeyword(owned, mob, BonkKeyword(owned.weapon.applies), owned.weapon.applyStacks);
     }
-
-    uint32 const health = m_player->GetHealth(), maxHealth = m_player->GetMaxHealth();
-    uint32 const floor = uint32(maxHealth * BONK_HELLFIRE_HEALTH_FLOOR);
-    uint32 const burn = std::min(uint32(maxHealth * BONK_HELLFIRE_BURN_PCT / 100.0f), health > floor ? health - floor : 0u);
-    if (!burn || !m_player->IsAlive())
-        return;
-    SpellNonMeleeDamage hit(m_player, m_player, owned.weapon.spellId, SpellSchools(spellInfo->School));
-    hit.damage = burn;
-    m_player->SendSpellNonMeleeDamageLog(&hit);
-    m_player->SetHealth(health - burn);
 }
 
 void BonkRun::OnWarlockKill(Unit* victim)
