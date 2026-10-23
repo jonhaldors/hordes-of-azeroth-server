@@ -2069,7 +2069,7 @@ class BonkRun
         void ReplantHydras();
         float GetMageDamageMultiplier(Unit const* victim) const;
         OwnedWeapon const* FindOwnedWhere(bool (BonkWeapon::*test)() const) const;
-        void ShowElementalShift(Creature* pet);
+        void ShiftElemental(Creature* pet, uint32 entry);
         void UpdateElementalShift();
         uint32 m_shiftFamily = 0;
         bool GetMageCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind) const;

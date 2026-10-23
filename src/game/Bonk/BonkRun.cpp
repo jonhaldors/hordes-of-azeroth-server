@@ -7802,6 +7802,8 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
     BonkPetFamily const* family = wolf ? nullptr : GetPetFamily(owned);
     uint32 const entry = wolf ? uint32(weapon.behaviorValue) : !family ? 0 : plague ? BONK_PLAGUE_BEAST : family->entry;
     uint32 const attackMs = wolf ? BONK_WOLF_ATTACK_MS : family ? family->attackMs : 0;
+    bool const shifting = entry && weapon.HasFlag(BONK_WEAPON_FLAG_ELEMENTAL_SHIFT);
+    uint32 const summonEntry = shifting ? BONK_HYBRID_ELEMENTAL : entry;
     Map* map = m_player->GetMap();
     owned.pets.erase(std::remove_if(owned.pets.begin(), owned.pets.end(), [this, map](ObjectGuid const& guid)
     {
@@ -7819,14 +7821,16 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
         for (ObjectGuid& guid : owned.pets)
         {
             Creature* old = map->GetCreature(guid);
-            if (!old || old->GetEntry() == entry)
+            if (old && shifting && old->GetEntry() == summonEntry)
+                ShiftElemental(old, entry);
+            if (!old || old->GetEntry() == summonEntry)
                 continue;
             float x, y, z;
             old->GetPosition(x, y, z);
             m_petStates.erase(guid);
-            Creature* risen = SummonPet(owned, entry, x, y, z, old->GetOrientation());
-            if (weapon.HasFlag(BONK_WEAPON_FLAG_ELEMENTAL_SHIFT))
-                ShowElementalShift(old);
+            Creature* risen = SummonPet(owned, summonEntry, x, y, z, old->GetOrientation());
+            if (risen && shifting)
+                ShiftElemental(risen, entry);
             old->DespawnOrUnsummon();
             guid = risen ? risen->GetObjectGuid() : ObjectGuid();
             if (!risen || !plague)
@@ -7851,8 +7855,10 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
         float y = m_player->GetPositionY() + 2.0f * std::sin(angle);
         float z = m_player->GetPositionZ();
         m_player->GetMap()->GetWalkHitPosition(nullptr, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), x, y, z);
-        if (Creature* pet = SummonPet(owned, entry, x, y, z, m_player->GetOrientation()))
+        if (Creature* pet = SummonPet(owned, summonEntry, x, y, z, m_player->GetOrientation()))
         {
+            if (shifting)
+                ShiftElemental(pet, entry);
             if (!weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM))
                 pet->GetMotionMaster()->MoveFollow(m_player, 2.0f, angle);
             owned.pets.push_back(pet->GetObjectGuid());
@@ -11030,7 +11036,8 @@ void BonkRun::SendCooldownPie(uint32 index, OwnedWeapon const& owned) const
 {
     uint32 const interval = GetWeaponCooldown(owned);
     owned.shownIntervalMs = interval;
-    m_player->GetBonkPlayer()->SendAddon("pcd~" + std::to_string(index) + "~" + std::to_string(interval) + "~" +
+    uint32 const pieMs = owned.weapon.IsBlink() ? 0u : interval;
+    m_player->GetBonkPlayer()->SendAddon("pcd~" + std::to_string(index) + "~" + std::to_string(pieMs) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + (owned.held ? "1" : "0"));
 }
 
@@ -11065,7 +11072,7 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
         if (BonkPetFamily const* family = GetPetFamily(owned))
             if (!family->description.empty())
                 description += " " + family->description;
-    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() ? 0u : interval) + "~" +
+    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() ? 0u : interval) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)));
 }
 

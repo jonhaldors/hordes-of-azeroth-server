@@ -99,9 +99,7 @@ namespace
     uint32 const BONK_KIT_PHASE_RUSH_HIT      = 1005;
 
     uint32 const BONK_SPELL_TIME_SLOW         = 246;
-    uint32 const BONK_TIME_BUBBLE_MS          = 4000;
-    size_t const BONK_MAX_TIME_BUBBLES        = 4;
-    float const BONK_TIME_BUBBLE_MERGE        = 0.5f;
+    uint32 const BONK_TIME_BUBBLE_MS          = 10000;
     int32 const BONK_TIME_BUBBLE_PULSE_MS     = 500;
     int32 const BONK_TIME_BUBBLE_SLOW         = -60;
     int32 const BONK_TIME_BUBBLE_SLOW_MS      = 1000;
@@ -1039,26 +1037,13 @@ void BonkRun::RushThrough(OwnedWeapon& owned, SpellEntry const* spellInfo, Pendi
 
 void BonkRun::LeaveTimeBubble(OwnedWeapon const& owned)
 {
+    if (!m_timeBubbles.empty())
+        return;
+
     float x, y, z;
     m_player->GetPosition(x, y, z);
     float const radius = owned.weapon.range * GetWeaponArea(owned);
     uint32 const untilMs = m_totalMs + uint32(BONK_TIME_BUBBLE_MS * GetWeaponDurationScale(owned));
-
-    for (TimeBubble& bubble : m_timeBubbles)
-    {
-        float const dx = bubble.x - x, dy = bubble.y - y;
-        if (dx * dx + dy * dy <= BONK_TIME_BUBBLE_MERGE * BONK_TIME_BUBBLE_MERGE * radius * radius)
-        {
-            bubble.untilMs = std::max(bubble.untilMs, untilMs);
-            return;
-        }
-    }
-
-    if (m_timeBubbles.size() >= BONK_MAX_TIME_BUBBLES)
-    {
-        EndTimeBubble(m_timeBubbles.front());
-        m_timeBubbles.erase(m_timeBubbles.begin());
-    }
 
     TimeBubble bubble;
     bubble.x = x;
@@ -1211,8 +1196,14 @@ void BonkRun::PlantHydra(Creature* pet)
     pet->SetRooted(true);
 }
 
-void BonkRun::ShowElementalShift(Creature* pet)
+void BonkRun::ShiftElemental(Creature* pet, uint32 entry)
 {
+    CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(entry);
+    uint32 const display = info ? info->display_id[0] : 0;
+    if (!display || pet->GetDisplayId() == display)
+        return;
+    pet->SetDisplayId(display);
+    pet->SetNativeDisplayId(display);
     pet->SendPlaySpellVisualKit(BONK_KIT_ELEMENTAL_SHIFT);
 }
 
