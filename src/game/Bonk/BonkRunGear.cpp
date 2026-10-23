@@ -84,7 +84,9 @@ namespace
     float const BONK_GEAR_CHANCE_ELITE     = 20.0f;
     float const BONK_GEAR_CHANCE_PER_AFFIX = 5.0f;
     float const BONK_GEAR_STAGE_UPGRADE    = 25.0f;
-    float const BONK_GEAR_LEGENDARY_CHANCE = 25.0f;
+    float const BONK_GEAR_LEGENDARY_CHANCE = 10.0f;
+    float const BONK_GEAR_LEGENDARY_PER_STAGE = 5.0f;
+    float const BONK_GEAR_LEGENDARY_MAX    = 40.0f;
     float const BONK_INVASION_UPGRADE_CHANCE = 50.0f;
 
     struct GearOdds
@@ -96,6 +98,11 @@ namespace
     GearOdds const BONK_GEAR_ODDS_EASY[3]   = { { 85, 15, 0 },  { 60, 40, 0 },  { 0, 70, 30 } };
     GearOdds const BONK_GEAR_ODDS_MEDIUM[3] = { { 50, 45, 5 },  { 0, 70, 30 },  { 0, 30, 70 } };
     GearOdds const BONK_GEAR_ODDS_HARD[3]   = { { 0, 70, 30 },  { 0, 30, 70 },  { 0, 10, 90 } };
+
+    float GetLegendaryDropChance(uint32 stage)
+    {
+        return std::min(BONK_GEAR_LEGENDARY_MAX, BONK_GEAR_LEGENDARY_CHANCE + BONK_GEAR_LEGENDARY_PER_STAGE * float(stage - 2));
+    }
 
     float GetSalvageShare(uint8 quality)
     {
@@ -164,7 +171,7 @@ uint8 BonkRun::RollGearQuality(BonkSpawnKind kind) const
         ++quality;
     if (IsChallenge() && quality < ITEM_QUALITY_EPIC && (!IsInvasion() || roll_chance_f(BONK_INVASION_UPGRADE_CHANCE)))
         ++quality;
-    if (kind == BONK_SPAWN_BOSS && m_tier.key == "mythic" && m_stage >= 2 && roll_chance_f(BONK_GEAR_LEGENDARY_CHANCE))
+    if (kind == BONK_SPAWN_BOSS && m_tier.key == "mythic" && m_stage >= 2 && roll_chance_f(GetLegendaryDropChance(m_stage)))
         quality = ITEM_QUALITY_LEGENDARY;
     return quality;
 }
