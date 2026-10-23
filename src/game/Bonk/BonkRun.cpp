@@ -825,6 +825,8 @@ namespace
     {
         public:
             void ApplyNothing() { m_radius = 0.0f; }
+        if (weapon.IsSeal())
+            return std::string();
     };
 
     ObjectGuid PlaceAreaVisual(Player* player, uint32 spellId, float x, float y, float z, float radius, uint32 durationMs)
@@ -11249,7 +11251,7 @@ void BonkRun::SendCooldownPie(uint32 index, OwnedWeapon const& owned) const
 {
     uint32 const interval = GetWeaponCooldown(owned);
     owned.shownIntervalMs = interval;
-    uint32 const pieMs = owned.weapon.IsBlink() ? 0u : interval;
+    uint32 const pieMs = owned.weapon.IsBlink() || owned.weapon.IsSeal() ? 0u : interval;
     m_player->GetBonkPlayer()->SendAddon("pcd~" + std::to_string(index) + "~" + std::to_string(pieMs) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + (owned.held ? "1" : "0"));
 }
@@ -11285,7 +11287,7 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
         if (BonkPetFamily const* family = GetPetFamily(owned))
             if (!family->description.empty())
                 description += " " + family->description;
-    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() ? 0u : interval) + "~" +
+    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() ? 0u : interval) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)));
 }
 
@@ -11445,6 +11447,8 @@ void BonkRun::SetPaused(bool paused)
         m_pausedAtMs = WorldTimer::getMSTime();
     else
         ShiftDotStacks(WorldTimer::getMSTime() - m_pausedAtMs);
+    if (!stats.empty() && stats[0] == ' ')
+        stats.erase(0, 1);
 
     m_player->SetTimeFrozen(paused);
     if (m_player->IsInWorld())

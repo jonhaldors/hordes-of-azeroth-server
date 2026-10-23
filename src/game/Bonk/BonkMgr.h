@@ -659,6 +659,10 @@ struct BonkWeapon
     {
         return behavior == BONK_BEHAVIOR_BLINK || behavior == BONK_BEHAVIOR_PHASE_RUSH || behavior == BONK_BEHAVIOR_SHIMMER;
     }
+    bool IsSeal() const
+    {
+        return behavior == BONK_BEHAVIOR_SEAL;
+    }
     bool IsPyroblast() const
     {
         return behavior == BONK_BEHAVIOR_PYROBLAST || behavior == BONK_BEHAVIOR_METEOR || behavior == BONK_BEHAVIOR_METEOR_SHOWER;
