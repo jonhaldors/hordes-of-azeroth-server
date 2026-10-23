@@ -9709,7 +9709,7 @@ InventoryResult Player::CanEquipItem(uint8 slot, uint16& dest, ItemPrototype con
             }
 
             // prevent equip item in process logout
-            if (GetSession()->IsLogingOut())
+            if (GetSession()->IsLogingOut() && !(m_bonkPlayer && m_bonkPlayer->IsEquippingGear()))
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
                 return EQUIP_ERR_YOU_ARE_STUNNED;
 #else
