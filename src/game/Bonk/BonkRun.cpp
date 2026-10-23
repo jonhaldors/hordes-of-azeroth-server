@@ -782,6 +782,17 @@ namespace
         caster->SendObjectMessageToSet(std::move(packet), true);
     }
 
+    void ShowSwingOn(Unit* caster, SpellEntry const* spellInfo, Unit* target)
+    {
+        auto packet = std::make_unique<WorldPackets::Spell::SpellGo>();
+        packet->casterGuid = caster->GetObjectGuid();
+        packet->unitCasterGuid = caster->GetObjectGuid();
+        packet->spellId = GetQuietStrikeLook(spellInfo->Id);
+        packet->castFlags = CAST_FLAG_UNKNOWN9;
+        packet->targets.setUnitTarget(target);
+        caster->SendObjectMessageToSet(std::move(packet), true);
+    }
+
     void ShowStrikeOn(Unit* caster, SpellEntry const* spellInfo, Unit* target)
     {
         auto packet = std::make_unique<WorldPackets::Spell::SpellGo>();
@@ -6554,6 +6565,11 @@ void BonkRun::ShowStrike(Unit* caster, SpellEntry const* spellInfo, Unit* target
     ShowStrikeOn(caster, spellInfo, target);
 }
 
+void BonkRun::ShowSwing(SpellEntry const* look, Unit* target) const
+{
+    ShowSwingOn(m_player, look, target);
+}
+
 void BonkRun::ScaleRadius(SpellEntry const* spellInfo, float radius)
 {
     float const own = GetSpellRadiusOf(spellInfo);
@@ -6778,6 +6794,12 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
         if (cast.killingSpree || cast.fanOfKnives || cast.shadowyShuriken)
         {
             ResolveRogueCast(*owned, info, cast);
+            continue;
+        }
+
+        if (cast.crusaderStrike)
+        {
+            LandCrusaderStrike(*owned, info, cast);
             continue;
         }
 

@@ -1289,12 +1289,15 @@ class BonkRun
             bool lightsHammer = false;
             bool lightsHammerLaunch = false;
             bool justiceHammer = false;
+            bool crusaderStrike = false;
             int32 stunMs = 0;
             float incoming = 0.0f;
             float radius = 0.0f;
             uint32 kit = 0;
             uint32 hops = 0;
             float share = 1.0f;
+            float damage = 0.0f;
+            float splash = 0.0f;
             ObjectGuid target;
             ObjectGuid source;
             float x = 0.0f, y = 0.0f, z = 0.0f;
@@ -1763,6 +1766,7 @@ class BonkRun
         void ShowStrikeImpact(SpellEntry const* spellInfo, Creature* target);
         void ShowAreaImpact(SpellEntry const* spellInfo, float radius);
         void ShowStrike(Unit* caster, SpellEntry const* spellInfo, Unit* target) const;
+        void ShowSwing(SpellEntry const* look, Unit* target) const;
         void ResolveMageCast(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         bool HurlPyroblasts(OwnedWeapon& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs);
         void SplashPyroblast(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
@@ -1988,6 +1992,7 @@ class BonkRun
         void HealPaladin(float percent, uint32 textSpellId);
         std::vector<Creature*> GetPaladinTargets(float range) const;
         void StrikeAsCrusader(OwnedWeapon& owned, SpellEntry const* spellInfo);
+        void LandCrusaderStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         void PassJudgement(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void ThrowHammerOfWrath(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void LandHammerOfWrath(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);

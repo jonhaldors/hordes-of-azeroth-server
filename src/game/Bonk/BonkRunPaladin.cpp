@@ -54,6 +54,8 @@ namespace
     uint32 const BONK_KIT_JUDGEMENT_CAST      = 119;
     uint32 const BONK_SOUND_THROWN_IMPACT     = 3642;
     uint32 const BONK_KIT_HOLY_BURST          = 7455;
+    uint32 const BONK_KIT_CRUSADER_IMPACT     = 437;
+    int32 const BONK_CRUSADER_LAND_MS         = 300;
 
     float const BONK_CRUSADER_SPLASH_RADIUS   = 5.0f;
     float const BONK_CRUSADER_SPLASH_SHARE    = 0.3f;
@@ -325,19 +327,39 @@ void BonkRun::StrikeAsCrusader(OwnedWeapon& owned, SpellEntry const* spellInfo)
     bool const verdict = m_mastery.Has(BONK_CAPSTONE_TEMPLARS_VERDICT) && ++m_crusaderStrikes % BONK_VERDICT_EVERY == 0;
     float const damage = GetWeaponDamage(owned) * (verdict ? BONK_VERDICT_DAMAGE : 1.0f);
     float const splash = verdict ? 1.0f : owned.weapon.id == BONK_WEAPON_CRUSADERS_ZEAL ? BONK_ZEAL_SPLASH_SHARE : BONK_CRUSADER_SPLASH_SHARE;
-    float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
-    std::set<ObjectGuid> splashed;
+    PendingCast land;
+    land.weaponId = owned.weapon.id;
+    land.spellId = spellInfo->Id;
+    land.leftMs = BONK_CRUSADER_LAND_MS;
+    land.crusaderStrike = true;
+    land.damage = damage;
+    land.splash = splash;
     for (Creature* target : mobs)
     {
-        ShowStrike(m_player, spellInfo, target);
+        ShowSwing(spellInfo, target);
+        land.struck.push_back(target->GetObjectGuid());
+    }
+    m_pendingCasts.push_back(land);
+    SwingRogueBlades();
+}
+
+void BonkRun::LandCrusaderStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)
+{
+    float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
+    std::set<ObjectGuid> splashed;
+    for (ObjectGuid const& guid : cast.struck)
+    {
+        Creature* target = m_player->GetMap()->GetCreature(guid);
+        if (!target || !target->IsAlive())
+            continue;
+        target->SendPlaySpellVisualKit(BONK_KIT_CRUSADER_IMPACT);
         for (Creature* mob : GetMobsInRange(BONK_CRUSADER_SPLASH_RADIUS * GetWeaponArea(owned), target))
             if (splashed.insert(mob->GetObjectGuid()).second)
-                HitAsPaladin(spellInfo, owned.weapon.spellId, mob, damage * splash);
-        StrikeAsPaladin(spellInfo, owned.weapon.spellId, target, damage, twice);
+                HitAsPaladin(spellInfo, owned.weapon.spellId, mob, cast.damage * cast.splash);
+        StrikeAsPaladin(spellInfo, owned.weapon.spellId, target, cast.damage, twice);
         if (owned.weapon.id == BONK_WEAPON_AVENGING_CRUSADER && target->IsAlive() && roll_chance_f(BONK_AVENGING_HAMMER_CHANCE))
             CallAvengingHammer(owned, target);
     }
-    SwingRogueBlades();
 }
 
 void BonkRun::CallAvengingHammer(OwnedWeapon const& owned, Creature* target)
