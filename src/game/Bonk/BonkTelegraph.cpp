@@ -28,7 +28,7 @@ namespace
     uint32 const BONK_STANDIN_INVISIBLE   = 11686;
     uint32 const BONK_STANDIN_READY_MS    = 2500;
     uint32 const BONK_STANDIN_UNDRESS_MS  = 500;
-    uint32 const BONK_STANDIN_MIN_IDLE    = 16;
+    uint32 const BONK_STANDIN_MIN_IDLE    = 32;
     uint32 const BONK_STANDIN_BATCH       = 8;
     uint32 const BONK_STANDIN_MAX         = 160;
     uint32 const BONK_STANDIN_GATHER_MS   = 1000;
@@ -207,8 +207,10 @@ BonkTelegraphs::Telegraph BonkTelegraphs::Lay(Map* map, BonkTelegraphShape shape
         piece.z = shape == BONK_TELEGRAPH_CONE ?
             GetGroundTop(map, x + size / 2.0f * std::cos(orientation), y + size / 2.0f * std::sin(orientation), z, size / 2.0f) :
             GetGroundTop(map, x, y, z, size * 0.8f);
+        float const largest = BONK_STANDIN_SIZES[BONK_STANDIN_SIZE_COUNT - 1];
         piece.outlineDisplay = GetSizedDisplay(shape, 0, size);
         piece.fillDisplay = GetSizedDisplay(shape, 1 + fill, size);
+        piece.stretch = size > largest ? size / largest : 1.0f;
         telegraph.pieces.push_back(piece);
     }
 
@@ -217,7 +219,7 @@ BonkTelegraphs::Telegraph BonkTelegraphs::Lay(Map* map, BonkTelegraphShape shape
 }
 
 void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-    std::function<void()> onFire, bool lingers, ObjectGuid const& caster)
+    std::function<void()> onFire, bool lingers, ObjectGuid const& caster, uint32 windId)
 {
     if (shape >= MAX_BONK_TELEGRAPH_SHAPE || size <= 0.0f || !owner->IsInWorld())
         return;
@@ -236,6 +238,7 @@ void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float
         request.onFire = std::move(onFire);
         request.lingers = lingers;
         request.caster = caster;
+        request.windId = windId;
         m_requests.push_back(std::move(request));
         m_warm = true;
         return;
@@ -245,6 +248,7 @@ void BonkTelegraphs::Add(Player* owner, BonkTelegraphShape shape, float x, float
     telegraph.onFire = std::move(onFire);
     telegraph.filled = lingers;
     telegraph.caster = caster;
+    telegraph.windId = windId;
     Reserve(owner, telegraph);
     if (telegraph.showInMs <= 0)
     {
@@ -273,7 +277,7 @@ void BonkTelegraphs::Update(Player* owner, uint32 diff)
         m_requests.erase(m_requests.begin());
         bool const patient = m_patient;
         m_patient = false;
-        Add(owner, ready.shape, ready.x, ready.y, ready.z, ready.orientation, ready.size, ready.durationMs, std::move(ready.onFire), ready.lingers, ready.caster);
+        Add(owner, ready.shape, ready.x, ready.y, ready.z, ready.orientation, ready.size, ready.durationMs, std::move(ready.onFire), ready.lingers, ready.caster, ready.windId);
         m_patient = patient;
     }
 
@@ -319,22 +323,26 @@ void BonkTelegraphs::Clear(Player* owner)
     m_requests.clear();
 }
 
-void BonkTelegraphs::CancelFrom(Player* owner, ObjectGuid const& caster)
+void BonkTelegraphs::CancelFrom(Player* owner, ObjectGuid const& caster, uint32 windId)
 {
     if (caster.IsEmpty())
         return;
 
+    auto const matches = [&caster, windId](ObjectGuid const& from, uint32 fromWind)
+    {
+        return from == caster && (!windId || fromWind == windId);
+    };
     bool const onMap = owner->FindMap() != nullptr;
     m_telegraphs.erase(std::remove_if(m_telegraphs.begin(), m_telegraphs.end(), [&](Telegraph const& telegraph)
     {
-        if (telegraph.caster != caster)
+        if (!matches(telegraph.caster, telegraph.windId))
             return false;
         if (onMap)
             TakeOff(owner, telegraph);
         return true;
     }), m_telegraphs.end());
     m_requests.erase(std::remove_if(m_requests.begin(), m_requests.end(),
-        [&](Request const& request) { return request.caster == caster; }), m_requests.end());
+        [&](Request const& request) { return matches(request.caster, request.windId); }), m_requests.end());
 }
 
 void BonkTelegraphs::Dismiss(Player* owner)
@@ -363,9 +371,9 @@ void BonkTelegraphs::Show(Player* owner, Telegraph& telegraph, bool fill)
     for (size_t i = 0; i < telegraph.pieces.size(); ++i)
     {
         if (fill)
-            Wear(owner, telegraph.fills[i], telegraph.pieces[i].fillDisplay);
+            Wear(owner, telegraph.fills[i], telegraph.pieces[i].fillDisplay, telegraph.pieces[i].stretch);
         else
-            Wear(owner, telegraph.outlines[i], telegraph.pieces[i].outlineDisplay);
+            Wear(owner, telegraph.outlines[i], telegraph.pieces[i].outlineDisplay, telegraph.pieces[i].stretch);
     }
     if (fill)
         telegraph.filled = true;
@@ -415,6 +423,7 @@ ObjectGuid BonkTelegraphs::Move(Player* owner, float x, float y, float z, float 
         return ObjectGuid();
     StandIn standIn;
     standIn.guid = creature->GetObjectGuid();
+    standIn.baseScale = creature->GetObjectScale();
     standIn.readyAtMs = m_clockMs + BONK_STANDIN_READY_MS;
     standIn.busy = true;
     m_standIns.push_back(standIn);
@@ -435,11 +444,27 @@ ObjectGuid BonkTelegraphs::BorrowInvisible(Player* owner, float x, float y, floa
     return Borrow(owner, x, y, z, BONK_STANDIN_INVISIBLE);
 }
 
-void BonkTelegraphs::Wear(Player* owner, ObjectGuid const& guid, uint32 display)
+void BonkTelegraphs::Wear(Player* owner, ObjectGuid const& guid, uint32 display, float stretch)
 {
-    if (!guid.IsEmpty())
-        if (Creature* creature = owner->GetMap()->GetCreature(guid))
-            creature->SetDisplayId(display);
+    if (guid.IsEmpty())
+        return;
+    Creature* creature = owner->GetMap()->GetCreature(guid);
+    if (!creature)
+        return;
+    for (StandIn const& standIn : m_standIns)
+        if (standIn.guid == guid && creature->GetObjectScale() != standIn.baseScale * stretch)
+            creature->SetObjectScale(standIn.baseScale * stretch);
+    creature->SetDisplayId(display);
+}
+
+void BonkTelegraphs::Resize(Player* owner, ObjectGuid const& guid, float stretch)
+{
+    Creature* creature = guid.IsEmpty() ? nullptr : owner->GetMap()->GetCreature(guid);
+    if (!creature)
+        return;
+    for (StandIn const& standIn : m_standIns)
+        if (standIn.guid == guid)
+            creature->SetObjectScale(standIn.baseScale * stretch);
 }
 
 void BonkTelegraphs::Undress(Player* owner, ObjectGuid const& guid)
@@ -449,7 +474,11 @@ void BonkTelegraphs::Undress(Player* owner, ObjectGuid const& guid)
         {
             if (Map* map = owner->FindMap())
                 if (Creature* creature = map->GetCreature(guid))
+                {
                     creature->SetDisplayId(BONK_STANDIN_INVISIBLE);
+                    if (creature->GetObjectScale() != standIn.baseScale)
+                        creature->SetObjectScale(standIn.baseScale);
+                }
             standIn.busy = false;
             standIn.readyAtMs = m_clockMs + BONK_STANDIN_UNDRESS_MS;
             return;
@@ -464,6 +493,7 @@ void BonkTelegraphs::Summon(Player* owner, uint32 count)
         {
             StandIn standIn;
             standIn.guid = creature->GetObjectGuid();
+            standIn.baseScale = creature->GetObjectScale();
             standIn.readyAtMs = m_clockMs + BONK_STANDIN_READY_MS;
             m_standIns.push_back(standIn);
         }

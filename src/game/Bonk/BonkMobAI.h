@@ -78,6 +78,7 @@ class BonkMobAI : public CreatureAI
         void DamageDeal(Unit* victim, uint32& damage) override;
         void DamageTaken(Unit* attacker, uint32& damage) override;
         void JustDied(Unit* killer) override;
+        void OnRemoveFromWorld() override;
 
     private:
         enum Affix : uint8
@@ -100,6 +101,10 @@ class BonkMobAI : public CreatureAI
         void Halt();
         void HoldStill();
         void KeepHolding();
+        bool IsHeldByControl() const;
+        void AbandonWindups();
+        bool ResumeWindup();
+        bool UpdateLanding(uint32 diff, Player* owner);
         bool HasAffix(Affix affix) const { return !AreAffixesQuiet() && (m_affixes & (1u << affix)) != 0; }
         void RollAffixes(uint32 count);
         void ScaleHealth(float factor);
@@ -126,6 +131,7 @@ class BonkMobAI : public CreatureAI
         void StartFrontAndBack(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
         void StartWalls(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
         void StartWreath(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
+        void StartStrike(int32 abilityIndex, Player* owner, BonkRun* run, SpellEntry const* spellInfo);
         std::vector<float> GetLineAngles() const;
         bool IsInLines(float x, float y) const;
         void LaunchLeap();
@@ -175,12 +181,15 @@ class BonkMobAI : public CreatureAI
         int32 m_areaTimer = 0;
         float m_areaX = 0.0f, m_areaY = 0.0f;
         float m_areaOrientation = 0.0f;
+        float m_areaSize = 0.0f;
+        bool m_areaStrike = false;
         uint32 m_lineCount = 0;
         float m_lineSpread = 0.0f;
         float m_lineLength = 0.0f;
         float m_leapX = 0.0f, m_leapY = 0.0f, m_leapZ = 0.0f;
         int32 m_leapTravelMs = 0;
         bool m_leapLaunched = false;
+        int32 m_landingTimer = 0;
         int32 m_abilityGapTimer = 0;
         int32 m_forcedAbility = -1;
         bool m_areaSelfTimed = false;

@@ -80,6 +80,7 @@ enum class BonkHeroRing : uint8
     BloodAura,
     IcePath,
     TimeBubble,
+    Hazard,
     Count
 };
 
@@ -206,7 +207,9 @@ class BonkRun
         void AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
             std::function<void()> onFire = nullptr, bool lingers = false);
         void AddEnemyTelegraph(Creature const* caster, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
-            uint32 durationMs, std::function<void()> onFire);
+            uint32 durationMs, std::function<void()> onFire, uint32 windId = 0);
+        void CancelEnemyWindup(Creature const* caster, uint32 windId);
+        void ForgetEnemyAttacks(Creature const* caster);
         uint32 AddObjective(BonkObjectiveKind kind, float x, float y, float z, std::string const& label, uint32 seconds);
         void RemoveObjective(uint32 id);
         BonkObjectives const& GetObjectives() const { return m_objectives; }
@@ -215,8 +218,9 @@ class BonkRun
         uint32 GetDifficultyStep() const { return std::min(2u, m_tier.eliteAffixes ? m_tier.eliteAffixes - 1 : 0u); }
         void SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites);
         void StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, float radius, uint32 durationMs);
-        void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius);
-        void ShowKitAt(uint32 kit, float x, float y, float z);
+        void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst = true);
+        void ShowKitAt(uint32 kit, float x, float y, float z, float stretch = 1.0f);
+        void ShowAreaImpact(uint32 kit, float x, float y, float z, float radius);
         void ShowLineImpacts(uint32 kit, float x, float y, float z, float orientation, float length);
         ObjectGuid PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs);
         void LaunchEnemyMissile(ObjectGuid caster, ObjectGuid target, uint32 spellId, uint32 delayMs, uint32 flightMs, float x, float y, float z);
@@ -422,8 +426,11 @@ class BonkRun
             float radius = 0.0f;
             uint32 leftMs = 0;
             uint32 tickMs = 0;
+            ObjectGuid look;
+            uint32 lookAura = 0;
         };
         std::vector<VoidZone> m_voidZones;
+        void EndVoidZone(VoidZone const& zone);
         std::vector<uint32> m_boltLandings;
         struct ImpactLook
         {
@@ -434,7 +441,7 @@ class BonkRun
         std::vector<ImpactLook> m_impactLooks;
         void UpdateVoidZones(uint32 diff);
         void UpdateImpactLooks(uint32 diff);
-        void ShowImpact(BonkEnemyHit const& hit, float x, float y, float z);
+        void ShowImpact(BonkEnemyHit const& hit, float x, float y, float z, float radius = 0.0f);
         void ShowAttackLook(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
         Creature* SummonHazard(float x, float y, float z);
         void StrikeHero(BonkEnemyHit const& hit, uint32 spellId, Unit* source);

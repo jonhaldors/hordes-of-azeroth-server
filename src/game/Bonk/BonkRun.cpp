@@ -439,6 +439,13 @@ namespace
     uint32 const BONK_KIT_FIRE_BURST       = 286;
     float const BONK_LINE_IMPACT_SPACING   = 6.0f;
     uint32 const BONK_ERUPTION_LOOK_MS     = 3000;
+    float const BONK_IMPACT_KIT_RADIUS     = 2.0f;
+    float const BONK_IMPACT_MAX_STRETCH    = 6.0f;
+    float const BONK_IMPACT_RING_FROM      = 5.0f;
+    float const BONK_IMPACT_RING_SHARE     = 0.65f;
+    float const BONK_IMPACT_RING_SPACING   = 4.5f;
+    uint32 const BONK_IMPACT_RING_MIN      = 4;
+    uint32 const BONK_IMPACT_RING_MAX      = 8;
     uint32 const BONK_HAZARD_MS            = 1000;
     float const BONK_MOBINFO_STRIKE_RANGE  = 10.0f;
 
@@ -853,6 +860,14 @@ namespace
         x = px;
         y = py;
         z = pz;
+    }
+
+    bool IsHeroWithin(Player const* hero, float x, float y, float radius)
+    {
+        float heroX, heroY, heroZ;
+        GetHeroPositionNow(hero, heroX, heroY, heroZ);
+        float const dx = heroX - x, dy = heroY - y;
+        return dx * dx + dy * dy <= radius * radius;
     }
 
     void GetHeroBodyPositionNow(Player const* hero, float& x, float& y, float& z)
@@ -3325,8 +3340,28 @@ void BonkRun::StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, 
     zone.radius = radius;
     zone.leftMs = durationMs;
     zone.tickMs = 0;
+    uint32 const ringSpell = GetRingSpell(BonkHeroRing::Hazard, radius);
+    if (sSpellMgr.GetSpellEntry(ringSpell))
+    {
+        zone.look = m_telegraphs.BorrowInvisible(m_player, x, y, z);
+        Creature* standIn = zone.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(zone.look);
+        if (standIn && standIn->AddAura(ringSpell, ADD_AURA_PERMANENT))
+            zone.lookAura = ringSpell;
+    }
+    if (!zone.lookAura)
+        AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, durationMs, nullptr, true);
     m_voidZones.push_back(zone);
-    AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, durationMs, nullptr, true);
+}
+
+void BonkRun::EndVoidZone(VoidZone const& zone)
+{
+    if (zone.look.IsEmpty())
+        return;
+    if (Map* map = m_player->FindMap())
+        if (Creature* standIn = map->GetCreature(zone.look))
+            if (zone.lookAura)
+                standIn->RemoveAurasDueToSpell(zone.lookAura);
+    m_telegraphs.Release(m_player, zone.look);
 }
 
 void BonkRun::UpdateVoidZones(uint32 diff)
@@ -3337,13 +3372,16 @@ void BonkRun::UpdateVoidZones(uint32 diff)
         if (itr->tickMs >= IN_MILLISECONDS)
         {
             itr->tickMs -= IN_MILLISECONDS;
-            Erupt(itr->hit, itr->x, itr->y, itr->z, itr->radius);
+            Erupt(itr->hit, itr->x, itr->y, itr->z, itr->radius, false);
         }
         itr->leftMs = itr->leftMs > diff ? itr->leftMs - diff : 0;
         if (itr->leftMs)
+        {
             ++itr;
-        else
-            itr = m_voidZones.erase(itr);
+            continue;
+        }
+        EndVoidZone(*itr);
+        itr = m_voidZones.erase(itr);
     }
 }
 
@@ -4118,6 +4156,8 @@ void BonkRun::DespawnObjects()
     m_chestObjectives.clear();
     m_powerups.clear();
     m_powerupObjectives.clear();
+    for (VoidZone const& zone : m_voidZones)
+        EndVoidZone(zone);
     m_voidZones.clear();
     ClearHidden();
     m_shardDrops.clear();
@@ -7157,23 +7197,62 @@ void BonkRun::AddTelegraph(BonkTelegraphShape shape, float x, float y, float z, 
 }
 
 void BonkRun::AddEnemyTelegraph(Creature const* caster, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
-    uint32 durationMs, std::function<void()> onFire)
+    uint32 durationMs, std::function<void()> onFire, uint32 windId)
 {
     if (m_state != STATE_RUNNING || m_paused)
         return;
-    m_telegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs, std::move(onFire), false, caster->GetObjectGuid());
+    m_telegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs, std::move(onFire), false, caster->GetObjectGuid(), windId);
 }
 
-void BonkRun::ShowImpact(BonkEnemyHit const& hit, float x, float y, float z)
+void BonkRun::CancelEnemyWindup(Creature const* caster, uint32 windId)
 {
-    ShowKitAt(hit.impactKit ? hit.impactKit : BONK_KIT_FIRE_BURST, x, y, z);
+    if (windId)
+        m_telegraphs.CancelFrom(m_player, caster->GetObjectGuid(), windId);
 }
 
-void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z)
+void BonkRun::ForgetEnemyAttacks(Creature const* caster)
+{
+    m_telegraphs.CancelFrom(m_player, caster->GetObjectGuid());
+    DropEnemyMissilesFrom(caster->GetObjectGuid());
+}
+
+void BonkRun::ShowImpact(BonkEnemyHit const& hit, float x, float y, float z, float radius)
+{
+    uint32 const kit = hit.impactKit ? hit.impactKit : BONK_KIT_FIRE_BURST;
+    if (radius > 0.0f)
+        ShowAreaImpact(kit, x, y, z, radius);
+    else
+        ShowKitAt(kit, x, y, z);
+}
+
+void BonkRun::ShowAreaImpact(uint32 kit, float x, float y, float z, float radius)
+{
+    ShowKitAt(kit, x, y, z, std::min(BONK_IMPACT_MAX_STRETCH, std::max(1.0f, radius / BONK_IMPACT_KIT_RADIUS)));
+    if (radius < BONK_IMPACT_RING_FROM)
+        return;
+
+    Map* map = m_player->GetMap();
+    float const ring = radius * BONK_IMPACT_RING_SHARE;
+    uint32 const count = std::max(BONK_IMPACT_RING_MIN, std::min(BONK_IMPACT_RING_MAX, uint32(2.0f * M_PI_F * ring / BONK_IMPACT_RING_SPACING)));
+    float const turn = frand(0.0f, 2.0f * M_PI_F);
+    for (uint32 i = 0; i < count; ++i)
+    {
+        float const angle = turn + 2.0f * M_PI_F * float(i) / float(count);
+        float const px = x + ring * std::cos(angle), py = y + ring * std::sin(angle);
+        float pz = map->GetHeight(px, py, z + 5.0f, true, 15.0f);
+        if (pz <= INVALID_HEIGHT)
+            pz = z;
+        ShowKitAt(kit, px, py, pz);
+    }
+}
+
+void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z, float stretch)
 {
     ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
     if (!guid.IsEmpty() && m_player->GetMap()->GetCreature(guid))
     {
+        if (stretch != 1.0f)
+            m_telegraphs.Resize(m_player, guid, stretch);
         ImpactLook look;
         look.guid = guid;
         look.kit = kit;
@@ -7240,13 +7319,13 @@ Creature* BonkRun::SummonHazard(float x, float y, float z)
     return m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_HAZARD_MS, false, 0, &InstallOrbAI);
 }
 
-void BonkRun::Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius)
+void BonkRun::Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst)
 {
     if (m_state != STATE_RUNNING)
         return;
-    ShowImpact(hit, x, y, z);
+    ShowImpact(hit, x, y, z, burst ? radius : 0.0f);
 
-    if (!hit.damage || !m_player->IsAlive() || m_player->GetDistance2d(x, y) > radius)
+    if (!hit.damage || !m_player->IsAlive() || !IsHeroWithin(m_player, x, y, radius))
         return;
     uint32 const hitSpell = hit.impactKit ? BONK_SPELL_PLAIN_HIT : BONK_SPELL_ERUPTION_HIT;
     Creature* mob = m_player->GetMap()->GetCreature(hit.caster);
@@ -7301,7 +7380,7 @@ void BonkRun::LandWarning(BonkEnemyHit const& hit, BonkTelegraphShape shape, flo
     if (shape != BONK_TELEGRAPH_CIRCLE && hit.impactKit)
         ShowKitAt(hit.impactKit, heroX, heroY, heroZ);
     if (shape == BONK_TELEGRAPH_CIRCLE)
-        ShowImpact(hit, x, y, z);
+        ShowImpact(hit, x, y, z, size);
     StrikeHero(hit, hit.spellId, SummonHazard(x, y, z));
     if (shape == BONK_TELEGRAPH_LINE && m_player->IsAlive())
         BonkMobAI::KnockBackHero(m_player, orientation);
@@ -7352,7 +7431,7 @@ void BonkRun::LandBolt(BonkEnemyHit const& hit, ObjectGuid targetGuid, float x, 
         target->DespawnOrUnsummon(500);
 
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(hit.spellId);
-    if (m_state != STATE_RUNNING || !spellInfo || !m_player->IsAlive() || m_player->GetDistance2d(x, y) > radius)
+    if (m_state != STATE_RUNNING || !spellInfo || !m_player->IsAlive() || !IsHeroWithin(m_player, x, y, radius))
         return;
 
     Creature* mob = map->GetCreature(hit.caster);
@@ -9761,8 +9840,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
     if (m_state != STATE_RUNNING)
         return;
 
-    m_telegraphs.CancelFrom(m_player, mob->GetObjectGuid());
-    DropEnemyMissilesFrom(mob->GetObjectGuid());
+    ForgetEnemyAttacks(mob);
 
     bool const eventGroup = m_miniEventActive &&
         std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), mob->GetObjectGuid()) != m_miniEvent.targets.end();
