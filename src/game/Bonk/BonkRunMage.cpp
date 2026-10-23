@@ -99,9 +99,9 @@ namespace
     uint32 const BONK_KIT_PHASE_RUSH_HIT      = 1005;
 
     uint32 const BONK_SPELL_TIME_SLOW         = 246;
-    uint32 const BONK_SPELL_TIME_BUBBLE_LOOK  = 10388;
     uint32 const BONK_TIME_BUBBLE_MS          = 4000;
     size_t const BONK_MAX_TIME_BUBBLES        = 4;
+    float const BONK_TIME_BUBBLE_MERGE        = 0.5f;
     int32 const BONK_TIME_BUBBLE_PULSE_MS     = 500;
     int32 const BONK_TIME_BUBBLE_SLOW         = -60;
     int32 const BONK_TIME_BUBBLE_SLOW_MS      = 1000;
@@ -229,8 +229,7 @@ uint32 BonkRun::GetBlinkInvulnerableMs() const
 
 bool BonkRun::IsBlinkDash() const
 {
-    return m_blinkDash || FindOwnedWhere(&BonkWeapon::IsBlink) || HasBehavior(BONK_BEHAVIOR_ARCANE_BARRAGE) ||
-        HasBehavior(BONK_BEHAVIOR_ARCANE_POWER) || IsTalentBlinkDash();
+    return FindOwnedWhere(&BonkWeapon::IsBlink) || IsTalentBlinkDash();
 }
 
 void BonkRun::OnDash()
@@ -484,7 +483,7 @@ void BonkRun::ResetMageState()
     m_wildfires.clear();
     m_wildfireMs = 0;
     m_hotStreakCast = 0;
-    m_timeBubbles.clear();
+    ClearTimeBubbles();
     m_timeBubbleSlowMs = 0;
     m_presenceOfMindMs = 0;
     m_bankedMissiles = 0;
@@ -1040,17 +1039,58 @@ void BonkRun::RushThrough(OwnedWeapon& owned, SpellEntry const* spellInfo, Pendi
 
 void BonkRun::LeaveTimeBubble(OwnedWeapon const& owned)
 {
-    if (m_timeBubbles.size() >= BONK_MAX_TIME_BUBBLES)
-        m_timeBubbles.erase(m_timeBubbles.begin());
+    float x, y, z;
+    m_player->GetPosition(x, y, z);
+    float const radius = owned.weapon.range * GetWeaponArea(owned);
+    uint32 const untilMs = m_totalMs + uint32(BONK_TIME_BUBBLE_MS * GetWeaponDurationScale(owned));
 
-    float z;
+    for (TimeBubble& bubble : m_timeBubbles)
+    {
+        float const dx = bubble.x - x, dy = bubble.y - y;
+        if (dx * dx + dy * dy <= BONK_TIME_BUBBLE_MERGE * BONK_TIME_BUBBLE_MERGE * radius * radius)
+        {
+            bubble.untilMs = std::max(bubble.untilMs, untilMs);
+            return;
+        }
+    }
+
+    if (m_timeBubbles.size() >= BONK_MAX_TIME_BUBBLES)
+    {
+        EndTimeBubble(m_timeBubbles.front());
+        m_timeBubbles.erase(m_timeBubbles.begin());
+    }
+
     TimeBubble bubble;
-    m_player->GetPosition(bubble.x, bubble.y, z);
-    bubble.radius = owned.weapon.range * GetWeaponArea(owned);
-    uint32 const lasts = uint32(BONK_TIME_BUBBLE_MS * GetWeaponDurationScale(owned));
-    bubble.untilMs = m_totalMs + lasts;
+    bubble.x = x;
+    bubble.y = y;
+    bubble.radius = radius;
+    bubble.untilMs = untilMs;
+    uint32 const ringSpell = GetRingSpell(BonkHeroRing::TimeBubble, radius);
+    if (sSpellMgr.GetSpellEntry(ringSpell))
+    {
+        bubble.look = m_telegraphs.BorrowInvisible(m_player, x, y, z);
+        Creature* standIn = bubble.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(bubble.look);
+        if (standIn && standIn->AddAura(ringSpell, ADD_AURA_PERMANENT))
+            bubble.lookAura = ringSpell;
+    }
     m_timeBubbles.push_back(bubble);
-    PlaceAreaLook(BONK_SPELL_TIME_BUBBLE_LOOK, bubble.x, bubble.y, z, bubble.radius, lasts);
+}
+
+void BonkRun::EndTimeBubble(TimeBubble const& bubble)
+{
+    if (bubble.look.IsEmpty())
+        return;
+    if (Creature* standIn = m_player->GetMap()->GetCreature(bubble.look))
+        if (bubble.lookAura)
+            standIn->RemoveAurasDueToSpell(bubble.lookAura);
+    m_telegraphs.Release(m_player, bubble.look);
+}
+
+void BonkRun::ClearTimeBubbles()
+{
+    for (TimeBubble const& bubble : m_timeBubbles)
+        EndTimeBubble(bubble);
+    m_timeBubbles.clear();
 }
 
 void BonkRun::UpdateTimeBubbles(uint32 diff)
@@ -1059,7 +1099,10 @@ void BonkRun::UpdateTimeBubbles(uint32 diff)
         return;
     m_timeBubbles.erase(std::remove_if(m_timeBubbles.begin(), m_timeBubbles.end(), [this](TimeBubble const& bubble)
     {
-        return int32(bubble.untilMs - m_totalMs) <= 0;
+        if (int32(bubble.untilMs - m_totalMs) > 0)
+            return false;
+        EndTimeBubble(bubble);
+        return true;
     }), m_timeBubbles.end());
 
     m_timeBubbleSlowMs -= int32(diff);
@@ -1168,14 +1211,8 @@ void BonkRun::PlantHydra(Creature* pet)
     pet->SetRooted(true);
 }
 
-void BonkRun::ShiftElemental(Creature* pet, uint32 entry)
+void BonkRun::ShowElementalShift(Creature* pet)
 {
-    CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(entry);
-    uint32 const display = info ? info->display_id[0] : 0;
-    if (!display || pet->GetDisplayId() == display)
-        return;
-    pet->SetDisplayId(display);
-    pet->SetNativeDisplayId(display);
     pet->SendPlaySpellVisualKit(BONK_KIT_ELEMENTAL_SHIFT);
 }
 

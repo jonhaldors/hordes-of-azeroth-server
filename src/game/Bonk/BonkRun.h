@@ -79,6 +79,7 @@ enum class BonkHeroRing : uint8
 {
     BloodAura,
     IcePath,
+    TimeBubble,
     Count
 };
 
@@ -1704,7 +1705,6 @@ class BonkRun
         void FireMissileVolley(OwnedWeapon& owned, uint32 extraMissiles);
         void LandBlink(OwnedWeapon& owned);
         uint32 GetElementalFamily() const;
-        bool m_blinkDash = false;
         std::vector<Creature*> PickGroupCenters(std::vector<Creature*> const& mobs, float radius, uint32 count) const;
         bool IsFrostSpellOnFrozen(SpellEntry const* spell, Unit const* victim) const;
         void ResetMageState();
@@ -2046,8 +2046,12 @@ class BonkRun
             float x = 0.0f, y = 0.0f;
             float radius = 0.0f;
             uint32 untilMs = 0;
+            ObjectGuid look;
+            uint32 lookAura = 0;
         };
         std::vector<TimeBubble> m_timeBubbles;
+        void EndTimeBubble(TimeBubble const& bubble);
+        void ClearTimeBubbles();
         int32 m_timeBubbleSlowMs = 0;
         void LeaveTimeBubble(OwnedWeapon const& owned);
         void UpdateTimeBubbles(uint32 diff);
@@ -2065,7 +2069,7 @@ class BonkRun
         void ReplantHydras();
         float GetMageDamageMultiplier(Unit const* victim) const;
         OwnedWeapon const* FindOwnedWhere(bool (BonkWeapon::*test)() const) const;
-        void ShiftElemental(Creature* pet, uint32 entry);
+        void ShowElementalShift(Creature* pet);
         void UpdateElementalShift();
         uint32 m_shiftFamily = 0;
         bool GetMageCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind) const;

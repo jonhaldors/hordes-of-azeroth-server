@@ -1214,7 +1214,6 @@ void BonkRun::StartStage()
         if (BonkWeapon const* starter = m_player->GetBonkPlayer()->GetStarterWeapon())
         {
             AddWeapon(*starter);
-            m_blinkDash = starter->HasFlag(BONK_WEAPON_FLAG_BLINK_DASH);
             m_runSpec = starter->spec;
         }
 
@@ -5967,7 +5966,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     }
 
-    if (weapon.behavior == BONK_BEHAVIOR_ARCANE_BARRAGE && m_player->IsMoving())
+    if (weapon.behavior == BONK_BEHAVIOR_ARCANE_BARRAGE && m_player->IsMoving() && IsBlinkDash())
     {
         BankMissiles(owned);
         owned.timer = GetWeaponCooldown(owned);
@@ -7822,15 +7821,12 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
             Creature* old = map->GetCreature(guid);
             if (!old || old->GetEntry() == entry)
                 continue;
-            if (weapon.HasFlag(BONK_WEAPON_FLAG_ELEMENTAL_SHIFT) && old->GetEntry() != BONK_PLAGUE_BEAST)
-            {
-                ShiftElemental(old, entry);
-                continue;
-            }
             float x, y, z;
             old->GetPosition(x, y, z);
             m_petStates.erase(guid);
             Creature* risen = SummonPet(owned, entry, x, y, z, old->GetOrientation());
+            if (weapon.HasFlag(BONK_WEAPON_FLAG_ELEMENTAL_SHIFT))
+                ShowElementalShift(old);
             old->DespawnOrUnsummon();
             guid = risen ? risen->GetObjectGuid() : ObjectGuid();
             if (!risen || !plague)
