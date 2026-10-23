@@ -156,7 +156,7 @@ namespace
     thread_local bool t_periodicHit = false;
 
     float const BONK_AGONY_GROWTH             = 0.25f;
-    float const BONK_AGONY_MAX_GROWTH         = 3.0f;
+    float const BONK_AGONY_MAX_GROWTH         = 2.0f;
 
     float GetStackGrowth(uint32 elapsedMs, float tickMs, bool agony)
     {

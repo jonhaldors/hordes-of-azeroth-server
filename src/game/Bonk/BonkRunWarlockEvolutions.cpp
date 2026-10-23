@@ -284,8 +284,7 @@ void BonkRun::CrashInfernals()
         if (!owned || !look)
             continue;
         SummonWarlockMinion(*owned, BONK_INFERNAL, crash.x, crash.y, crash.z, BONK_INFERNAL_LIFE_MS, BONK_INFERNAL_BITE, 1.0f);
-        if (Creature* infernal = m_player->GetMap()->GetCreature(m_warlockMinions.empty() ? ObjectGuid() : m_warlockMinions.back().guid))
-            ShowStrike(infernal, look, infernal);
+        ShowMissileFrom(m_player, look, crash.x, crash.y, crash.z);
         for (Creature* mob : GetMobsNear(crash.x, crash.y, BONK_INFERNAL_RADIUS * GetWeaponArea(*owned)))
         {
             DealShamanHit(look, owned->weapon.spellId, mob, GetWeaponDamage(*owned) * BONK_INFERNAL_SHARE);

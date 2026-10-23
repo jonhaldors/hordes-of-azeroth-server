@@ -25,13 +25,14 @@ namespace
 
     float const BONK_HELLFIRE_BURN_PCT        = 1.0f;
     float const BONK_HELLFIRE_HEALTH_FLOOR    = 0.35f;
-    uint32 const BONK_NIGHTFALL_PER_SEC       = 3;
+    uint32 const BONK_NIGHTFALL_PER_SEC       = 1;
+    uint32 const BONK_WARLOCK_OPENING_STACKS  = 1;
     uint32 const BONK_NIGHTFALL_WINDOW_MS     = 1000;
     float const BONK_CONSUME_RADIUS           = 10.0f;
-    uint32 const BONK_CONSUME_STACKS          = 5;
-    float const BONK_CONSUME_GROWTH           = 0.08f;
+    uint32 const BONK_CONSUME_STACKS          = 8;
+    float const BONK_CONSUME_GROWTH           = 0.05f;
     float const BONK_CONSUME_BURST_RADIUS     = 10.0f;
-    float const BONK_CONSUME_BURST_BITES      = 1.5f;
+    float const BONK_CONSUME_BURST_BITES      = 1.2f;
     uint32 const BONK_DEVOUR_EVERY_MS         = 10000;
     uint32 const BONK_SPELL_LOCK_EVERY_MS     = 6000;
     uint32 const BONK_IMP_VOLLEY_BOLTS        = 2;
@@ -100,7 +101,8 @@ void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spell
     for (Creature* mob : mobs)
     {
         ShowStrike(m_player, spellInfo, mob);
-        ApplyKeyword(mob, keyword, stacks, durationMs, strength, owned.weapon.spellId);
+        uint32 const opening = GetKeywordStacks(mob, keyword) ? 0 : BONK_WARLOCK_OPENING_STACKS;
+        ApplyKeyword(mob, keyword, stacks + opening, durationMs, strength, owned.weapon.spellId);
         if (keyword == BONK_KEYWORD_AGONY)
             OnAgonyCurse(owned, mob);
     }
@@ -159,30 +161,27 @@ void BonkRun::ReleaseDrainBeams()
 
 void BonkRun::DrainLife(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    float const range = owned.weapon.range;
     Map* map = m_player->GetMap();
-    m_drainBeams.erase(std::remove_if(m_drainBeams.begin(), m_drainBeams.end(), [this, map, range](ObjectGuid const& guid)
+    uint32 const wanted = owned.weapon.baseTargets + GetSpellCount(owned);
+    std::vector<ObjectGuid> closest;
+    for (Creature* mob : GetMobsInRange(owned.weapon.range))
     {
-        Creature* mob = map->GetCreature(guid);
-        if (mob && mob->IsAlive() && m_player->IsWithinDistInMap(mob, range))
+        if (closest.size() >= wanted)
+            break;
+        if (m_player->IsWithinLOSInMap(mob))
+            closest.push_back(mob->GetObjectGuid());
+    }
+    m_drainBeams.erase(std::remove_if(m_drainBeams.begin(), m_drainBeams.end(), [this, &closest](ObjectGuid const& guid)
+    {
+        if (std::find(closest.begin(), closest.end(), guid) != closest.end())
             return false;
         ReleaseDrainBeam(guid);
         return true;
     }), m_drainBeams.end());
-
-    uint32 const wanted = owned.weapon.baseTargets + GetSpellCount(owned);
-    while (m_drainBeams.size() > wanted)
-    {
-        ReleaseDrainBeam(m_drainBeams.back());
-        m_drainBeams.pop_back();
-    }
-    for (Creature* mob : GetMobsInRange(range))
-    {
-        if (m_drainBeams.size() >= wanted)
-            break;
-        if (std::find(m_drainBeams.begin(), m_drainBeams.end(), mob->GetObjectGuid()) == m_drainBeams.end() && m_player->IsWithinLOSInMap(mob))
-            LatchDrainBeam(mob);
-    }
+    for (ObjectGuid const& guid : closest)
+        if (std::find(m_drainBeams.begin(), m_drainBeams.end(), guid) == m_drainBeams.end())
+            if (Creature* mob = map->GetCreature(guid))
+                LatchDrainBeam(mob);
     if (m_drainBeams.empty())
     {
         owned.timer = BONK_WARLOCK_POLL_MS;
