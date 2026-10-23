@@ -80,6 +80,7 @@ namespace
     float const BONK_SOUL_DAMAGE                 = 0.05f;
     uint32 const BONK_DARK_PACT_MS               = 4000;
     float const BONK_DARK_PACT_DAMAGE            = 1.3f;
+    float const BONK_DEMONOLOGIST_PER_DEMON      = 0.1f;
     uint32 const BONK_CHAOS_BOLT_EVERY           = 4;
     float const BONK_CHAOS_BOLT_RADIUS           = 8.0f;
     float const BONK_CHAOS_BOLT_SHARE            = 1.5f;
@@ -126,7 +127,7 @@ void BonkRun::DressWarlockMinions()
         Creature* minion = owned ? map->GetCreature(held.guid) : nullptr;
         if (!minion || !minion->IsAlive())
             continue;
-        float const damage = std::max(1.0f, GetWeaponDamage(*owned)) * held.bite * GetDarkPactScale();
+        float const damage = std::max(1.0f, GetWeaponDamage(*owned)) * held.bite * GetDemonDamageScale();
         float const speed = GetPetRunSpeed();
         if (minion->GetBaseRunSpeedRate() != speed)
             minion->SetBaseSpeedRate(MOVE_RUN, speed);
@@ -196,9 +197,21 @@ bool BonkRun::HasWarlockSpell(uint32 weaponId) const
     return std::any_of(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned) { return owned.weapon.id == weaponId; });
 }
 
-float BonkRun::GetDarkPactScale() const
+float BonkRun::GetDemonDamageScale() const
 {
-    return int32(m_darkPactUntilMs - m_totalMs) > 0 ? BONK_DARK_PACT_DAMAGE : 1.0f;
+    float const pact = int32(m_darkPactUntilMs - m_totalMs) > 0 ? BONK_DARK_PACT_DAMAGE : 1.0f;
+    return pact * (1.0f + BONK_DEMONOLOGIST_PER_DEMON * CountDemonTypes());
+}
+
+uint32 BonkRun::CountDemonTypes() const
+{
+    if (!m_mastery.Has(BONK_CAPSTONE_MASTER_DEMONOLOGIST))
+        return 0;
+    std::set<uint32> families;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (uint32 const family = GetWarlockPetFamily(owned))
+            families.insert(family);
+    return uint32(families.size());
 }
 
 float BonkRun::GetWarlockDamageTakenScale(Unit const* victim) const
@@ -375,8 +388,11 @@ void BonkRun::OnWarlockEvolvedKill(Unit* victim)
             m_pendingSeeds.push_back({ guid, victim->GetPositionX(), victim->GetPositionY(), victim->GetPositionZ(), depth + 1, seed->weapon.id });
     }
 
-    if (FindOwned(BONK_WEAPON_AGONYS_ECHO) && GetKeywordStacks(victim, BONK_KEYWORD_AGONY))
-        PassAgony(dead);
+    bool const pandemic = m_mastery.Has(BONK_CAPSTONE_PANDEMIC);
+    if ((pandemic || FindOwned(BONK_WEAPON_AGONYS_ECHO)) && GetKeywordStacks(victim, BONK_KEYWORD_AGONY))
+        PassAffliction(dead, BONK_KEYWORD_AGONY);
+    if (pandemic && GetKeywordStacks(victim, BONK_KEYWORD_DECAY))
+        PassAffliction(dead, BONK_KEYWORD_DECAY);
 
     if (FindOwned(BONK_WEAPON_DRAIN_SOUL) && std::find(m_drainBeams.begin(), m_drainBeams.end(), guid) != m_drainBeams.end())
         AddSoul();
@@ -385,21 +401,21 @@ void BonkRun::OnWarlockEvolvedKill(Unit* victim)
     m_seducedUntil.erase(guid);
 }
 
-void BonkRun::PassAgony(Creature* dead)
+void BonkRun::PassAffliction(Creature* dead, BonkKeyword keyword)
 {
-    BonkKeywordInfo const* info = sBonkMgr.GetKeyword(BONK_KEYWORD_AGONY);
+    BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
     auto mob = m_dotStacks.find(dead->GetObjectGuid());
     if (!info || mob == m_dotStacks.end())
         return;
-    auto stacks = mob->second.find(BONK_KEYWORD_AGONY);
+    auto stacks = mob->second.find(keyword);
     if (stacks == mob->second.end() || stacks->second.empty())
         return;
     std::vector<DotStack> const carried = stacks->second;
     for (Creature* next : GetMobsInRange(BONK_SPREAD_RADIUS, dead))
     {
-        if (GetKeywordStacks(next, BONK_KEYWORD_AGONY))
+        if (GetKeywordStacks(next, keyword))
             continue;
-        std::vector<DotStack>& list = m_dotStacks[next->GetObjectGuid()][BONK_KEYWORD_AGONY];
+        std::vector<DotStack>& list = m_dotStacks[next->GetObjectGuid()][keyword];
         list = carried;
         SyncDotAura(next, *info, list);
         if (SpellEntry const* look = sSpellMgr.GetSpellEntry(info->spellId))

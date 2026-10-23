@@ -1787,7 +1787,8 @@ class BonkRun
         std::vector<ObjectGuid> GetWarlockMinionGuids() const;
         uint32 GetWarlockMinionWeapon(ObjectGuid const& guid) const;
         bool HasWarlockSpell(uint32 weaponId) const;
-        float GetDarkPactScale() const;
+        float GetDemonDamageScale() const;
+        uint32 CountDemonTypes() const;
         float GetWarlockDamageTakenScale(Unit const* victim) const;
         bool IsWarlockFullLash(OwnedWeapon const& owned) const;
         uint32 GetWarlockExtraDrops(OwnedWeapon const& owned) const;
@@ -1798,7 +1799,7 @@ class BonkRun
         void CrashInfernals();
         void OnWarlockEvolvedPetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey);
         void OnWarlockEvolvedKill(Unit* victim);
-        void PassAgony(Creature* dead);
+        void PassAffliction(Creature* dead, BonkKeyword keyword);
         void AddSoul();
         void ShowSouls();
         void ExpireSouls();

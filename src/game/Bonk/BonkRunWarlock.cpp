@@ -24,6 +24,8 @@ namespace
     uint32 const BONK_SPELL_DEVOUR_MAGIC      = 17012;
 
     uint32 const BONK_NIGHTFALL_PER_SEC       = 1;
+    uint32 const BONK_RUIN_NIGHTFALL_PER_SEC  = 3;
+    float const BONK_RUIN_NIGHTFALL_DAMAGE    = 1.5f;
     uint32 const BONK_WARLOCK_OPENING_STACKS  = 1;
     uint32 const BONK_NIGHTFALL_WINDOW_MS     = 1000;
     float const BONK_CONSUME_RADIUS           = 10.0f;
@@ -275,13 +277,16 @@ void BonkRun::FireNightfall()
 
     OwnedWeapon* owned = FindOwnedByRoot(BONK_WEAPON_SHADOW_BOLT);
     SpellEntry const* spellInfo = owned ? sSpellMgr.GetSpellEntry(owned->weapon.spellId) : nullptr;
-    while (!m_nightfallQueue.empty() && spellInfo && m_nightfallMs.size() < BONK_NIGHTFALL_PER_SEC)
+    bool const ruin = m_mastery.Has(BONK_CAPSTONE_RUIN);
+    size_t const perSec = ruin ? BONK_RUIN_NIGHTFALL_PER_SEC : BONK_NIGHTFALL_PER_SEC;
+    float const share = ruin ? BONK_RUIN_NIGHTFALL_DAMAGE : 1.0f;
+    while (!m_nightfallQueue.empty() && spellInfo && m_nightfallMs.size() < perSec)
     {
         m_nightfallQueue.pop_front();
         std::vector<Creature*> const mobs = GetMobsInRange(owned->weapon.range);
         if (mobs.empty())
             break;
-        StrikeWith(*owned, spellInfo, mobs.front(), 1.0f, true);
+        StrikeWith(*owned, spellInfo, mobs.front(), share, true);
         OnNightfallBolt(*owned, spellInfo, mobs.front());
         m_nightfallMs.push_back(now);
     }
