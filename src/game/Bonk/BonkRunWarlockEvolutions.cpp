@@ -43,7 +43,7 @@ namespace
     uint32 const BONK_SPELL_SOUL_LOOK            = 17941;
     uint32 const BONK_SPELL_VOID_SLAM_LOOK       = 1112;
     uint32 const BONK_SPELL_SEDUCTION_LOOK       = 6358;
-    uint32 const BONK_SPELL_CHAOS_LOOK           = 348;
+    uint32 const BONK_SPELL_CHAOS_LOOK           = 33502;
     uint32 const BONK_SPELL_DEVOUR_LOOK          = 17012;
 
     float const BONK_FEL_IMPS_RADIUS             = 8.0f;
@@ -57,7 +57,7 @@ namespace
     float const BONK_SACRIFICE_SHIELD_PCT        = 5.0f;
     uint32 const BONK_VOID_SLAM_EVERY_MS         = 6000;
     float const BONK_VOID_SLAM_RADIUS            = 8.0f;
-    float const BONK_VOID_SLAM_BITES             = 1.5f;
+    float const BONK_VOID_SLAM_BITES             = 1.2f;
     uint32 const BONK_SEDUCTION_EVERY_MS         = 8000;
     float const BONK_SEDUCTION_RANGE             = 20.0f;
     uint32 const BONK_SEDUCED_MS                 = 2000;
@@ -66,8 +66,9 @@ namespace
     uint32 const BONK_DEVOUR_AFFIX_MS            = 6000;
     uint32 const BONK_DEVOUR_AFFIX_EVERY_MS      = 10000;
     float const BONK_SEED_RADIUS                 = 6.0f;
-    float const BONK_SEED_SHARE                  = 0.5f;
+    float const BONK_SEED_SHARE                  = 0.2f;
     uint32 const BONK_SEED_MAX_DEPTH             = 2;
+    uint32 const BONK_SEED_HIT_GAP_MS            = 1000;
     uint32 const BONK_DARK_HARVEST_EVERY_MS      = 6000;
     float const BONK_DARK_HARVEST_TICKS          = 3.0f;
     uint32 const BONK_DOOM_DELAY_MS              = 10000;
@@ -160,6 +161,7 @@ void BonkRun::DespawnWarlockMinions()
     m_pendingInfernals.clear();
     m_pendingSeeds.clear();
     m_seedDepth.clear();
+    m_seedHitReadyMs.clear();
     m_impPrey.clear();
     m_doomAt.clear();
     m_seducedUntil.clear();
@@ -300,7 +302,8 @@ void BonkRun::OnWarlockEvolvedPetStrike(OwnedWeapon& owned, Creature* pet, Creat
     if (id == BONK_WEAPON_FEL_IMPS)
     {
         BonkPetFamily const* family = GetPetFamily(owned);
-        SpellEntry const* bolt = family && !family->abilities.empty() ? sSpellMgr.GetSpellEntry(family->abilities.front().spellId) : nullptr;
+        SpellEntry const* bolt = family && !family->abilities.empty() ?
+            sSpellMgr.GetSpellEntry(GetWarlockAbilitySpell(owned, family->abilities.front().spellId)) : nullptr;
         if (bolt)
         {
             float const hit = GetPetBiteDamage(owned, *family) * family->abilities.front().damage * BONK_FEL_IMPS_SHARE;
@@ -358,6 +361,7 @@ void BonkRun::OnWarlockEvolvedKill(Unit* victim)
 
     if (OwnedWeapon* seed = FindOwned(BONK_WEAPON_SEED_OF_CORRUPTION))
     {
+        m_seedHitReadyMs.erase(guid);
         uint32 depth = 0;
         auto seeded = m_seedDepth.find(guid);
         if (seeded != m_seedDepth.end())
@@ -452,6 +456,10 @@ void BonkRun::BurstSeeds()
             continue;
         for (Creature* mob : GetMobsNear(seed.x, seed.y, BONK_SEED_RADIUS * GetWeaponArea(*owned)))
         {
+            uint32& readyMs = m_seedHitReadyMs[mob->GetObjectGuid()];
+            if (int32(readyMs - m_totalMs) > 0)
+                continue;
+            readyMs = m_totalMs + BONK_SEED_HIT_GAP_MS;
             ShowStrike(m_player, look, mob);
             m_seedDepth[mob->GetObjectGuid()] = seed.depth;
             DealShamanHit(look, owned->weapon.spellId, mob, std::max(1.0f, GetWeaponDamage(*owned)) * BONK_SEED_SHARE);

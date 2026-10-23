@@ -420,6 +420,7 @@ namespace
         { 16075, 1184 },
         { 403, 72 },
         { 686, 118 },
+        { 33504, 38 },
         { 5176, 3291 },
         { 24239, 6409 },
         { 24099, 181 },
@@ -7953,21 +7954,45 @@ Creature* BonkRun::SummonPet(OwnedWeapon const& owned, uint32 entry, float x, fl
     pet->SetUInt32Value(UNIT_CREATED_BY_SPELL, owned.weapon.spellId);
     pet->SetFactionTemplateId(m_player->GetFactionTemplateId());
     pet->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+    DressWarlockPet(owned, pet);
     if (m_paused)
         HoldPet(pet, true, IsPlanted(owned.weapon));
     return pet;
 }
 
-uint32 BonkRun::GetSummonRoom(OwnedWeapon const& owned) const
+uint32 BonkRun::GetWantedSummons(OwnedWeapon const& owned)
 {
-    uint32 taken = 0;
+    if (owned.weapon.behavior == BONK_BEHAVIOR_WRATH)
+        return 1;
+    if (owned.weapon.behavior != BONK_BEHAVIOR_PET)
+        return 0;
+    return GetWeaponTargets(owned) + GetShamanExtraPets(owned);
+}
+
+uint32 BonkRun::GetSummonRoom(OwnedWeapon const& owned)
+{
+    std::vector<std::pair<OwnedWeapon const*, uint32>> wants;
     for (OwnedWeapon const& other : m_weapons)
+        if (uint32 const wanted = GetWantedSummons(other))
+            wants.emplace_back(&other, wanted);
+
+    std::vector<uint32> given(wants.size(), 0);
+    uint32 left = BONK_MAX_SUMMONS;
+    for (bool handedOut = true; left && handedOut;)
     {
-        if (&other == &owned)
-            break;
-        taken += uint32(other.pets.size());
+        handedOut = false;
+        for (size_t i = 0; i < wants.size() && left; ++i)
+            if (given[i] < wants[i].second)
+            {
+                ++given[i];
+                --left;
+                handedOut = true;
+            }
     }
-    return taken < BONK_MAX_SUMMONS ? BONK_MAX_SUMMONS - taken : 0;
+    for (size_t i = 0; i < wants.size(); ++i)
+        if (wants[i].first == &owned)
+            return given[i];
+    return 0;
 }
 
 float BonkRun::GetSummonGrowth(OwnedWeapon const& owned) const
@@ -7992,6 +8017,8 @@ BonkPetFamily const* BonkRun::GetPetFamily(OwnedWeapon const& owned) const
     if (uint32 const warlockFamily = GetWarlockPetFamily(owned))
         return sBonkMgr.GetPetFamily(warlockFamily);
     uint32 const classMask = owned.weapon.classMask;
+    if (classMask & (1 << (CLASS_WARLOCK - 1)))
+        return nullptr;
     if (classMask & (1 << (CLASS_SHAMAN - 1)))
         return sBonkMgr.GetPetFamily(GetShamanPetFamily(owned));
     if (classMask & (1 << (CLASS_PRIEST - 1)))
@@ -8084,14 +8111,15 @@ void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkP
     float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
     int32 const damage = std::max(1, int32(GetPetBiteDamage(owned, *family) * ability.damage * frenzy * GetWarlockPetStrikeScale(owned, prey)));
     pet->SetFacingToObject(prey);
-    SpellEntry const* abilityInfo = sSpellMgr.GetSpellEntry(ability.spellId);
+    uint32 const abilitySpell = GetWarlockAbilitySpell(owned, ability.spellId);
+    SpellEntry const* abilityInfo = sSpellMgr.GetSpellEntry(abilitySpell);
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM) && abilityInfo)
     {
         ShowStrike(pet, abilityInfo, prey);
         DealTotemHit(owned, abilityInfo, prey, uint32(std::max(1.0f, damage * GetDamageMultiplier(abilityInfo, prey, GetPowerShare(pet)))));
     }
     else
-        pet->CastCustomSpell(prey, ability.spellId, damage, {}, {}, true);
+        pet->CastCustomSpell(prey, abilitySpell, damage, {}, {}, true);
 
     PendingKeyword keyword;
     uint32 const stacks = owned.weapon.HasFlag(BONK_WEAPON_FLAG_PLAGUE) ? BONK_PLAGUE_CLAW_STACKS : ability.stacks;
@@ -8231,10 +8259,10 @@ void BonkRun::UpdatePetTargets(uint32 diff)
     uint32 const now = WorldTimer::getMSTime();
     std::vector<ObjectGuid> hunted;
     std::vector<std::pair<OwnedWeapon*, Creature*>> seeking;
-    auto consider = [&](OwnedWeapon& owned, ObjectGuid const& guid)
+    auto consider = [&](OwnedWeapon& owned, ObjectGuid const& guid, bool minion)
     {
         Creature* pet = map->GetCreature(guid);
-        if (!pet || !pet->IsAlive() || owned.weapon.damageFraction <= 0.0f)
+        if (!pet || !pet->IsAlive() || (owned.weapon.damageFraction <= 0.0f && !minion))
             return;
         auto state = m_petStates.find(guid);
         if (state != m_petStates.end() && int32(state->second.busyUntilMs - now) > 0)
@@ -8259,17 +8287,17 @@ void BonkRun::UpdatePetTargets(uint32 diff)
     };
     for (OwnedWeapon& owned : m_weapons)
         for (ObjectGuid const& guid : owned.pets)
-            consider(owned, guid);
+            consider(owned, guid, false);
     for (Snake const& released : m_snakes)
         if (OwnedWeapon* owned = FindOwned(released.weaponId))
-            consider(*owned, released.guid);
+            consider(*owned, released.guid, false);
     for (Beast const& beast : m_beasts)
         if (beast.kind != BEAST_SPECTRAL && !beast.charging)
             if (OwnedWeapon* owned = FindOwned(beast.weaponId))
-                consider(*owned, beast.guid);
+                consider(*owned, beast.guid, false);
     for (ObjectGuid const& guid : GetWarlockMinionGuids())
         if (OwnedWeapon* owned = FindOwned(GetWarlockMinionWeapon(guid)))
-            consider(*owned, guid);
+            consider(*owned, guid, true);
     if (seeking.empty())
         return;
 

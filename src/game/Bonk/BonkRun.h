@@ -634,7 +634,8 @@ class BonkRun
         bool PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability, Creature* coneTarget = nullptr);
         void DespawnPets();
         bool IsSummon(Unit const* unit) const;
-        uint32 GetSummonRoom(OwnedWeapon const& owned) const;
+        uint32 GetSummonRoom(OwnedWeapon const& owned);
+        uint32 GetWantedSummons(OwnedWeapon const& owned);
         float GetSummonGrowth(OwnedWeapon const& owned) const;
         float GetSummonReach(OwnedWeapon const& owned) const;
         float GetSummonLookScale(OwnedWeapon const& owned, float base) const;
@@ -1594,6 +1595,7 @@ class BonkRun
         };
         std::vector<PendingSeed> m_pendingSeeds;
         std::map<ObjectGuid, uint32> m_seedDepth;
+        std::map<ObjectGuid, uint32> m_seedHitReadyMs;
         std::map<ObjectGuid, uint32> m_impPrey;
         std::map<ObjectGuid, uint32> m_doomAt;
         std::map<ObjectGuid, uint32> m_seducedUntil;
@@ -1774,6 +1776,8 @@ class BonkRun
         void QueueImpVolley(OwnedWeapon const& owned, Creature* pet, Creature* prey, uint32 abilityIndex);
         void FireImpVolleys();
         void AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword);
+        uint32 GetWarlockAbilitySpell(OwnedWeapon const& owned, uint32 spellId) const;
+        void DressWarlockPet(OwnedWeapon const& owned, Creature* pet) const;
         void SummonWarlockMinion(OwnedWeapon const& owned, uint32 entry, float x, float y, float z, uint32 lifeMs, float bite, float scale);
         void DressWarlockMinions();
         void UpdateWarlockMinions();

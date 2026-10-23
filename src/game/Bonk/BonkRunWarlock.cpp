@@ -16,6 +16,9 @@ namespace
     uint32 const BONK_WEAPON_SHADOW_BOLT      = 907;
 
     uint32 const BONK_SPELL_DRAIN_BEAM        = 755;
+    uint32 const BONK_SPELL_IMP_FIREBOLT      = 11763;
+    uint32 const BONK_SPELL_FEL_FIREBOLT      = 33500;
+    uint32 const BONK_FEL_IMP_DISPLAY         = 18900;
     uint32 const BONK_SPELL_CONSUME_SHADOWS   = 1112;
     uint32 const BONK_SPELL_SPELL_LOCK        = 19244;
     uint32 const BONK_SPELL_DEVOUR_MAGIC      = 17012;
@@ -28,10 +31,10 @@ namespace
     uint32 const BONK_CONSUME_STACKS          = 5;
     float const BONK_CONSUME_GROWTH           = 0.08f;
     float const BONK_CONSUME_BURST_RADIUS     = 10.0f;
-    float const BONK_CONSUME_BURST_BITES      = 2.0f;
+    float const BONK_CONSUME_BURST_BITES      = 1.5f;
     uint32 const BONK_DEVOUR_EVERY_MS         = 10000;
     uint32 const BONK_SPELL_LOCK_EVERY_MS     = 6000;
-    uint32 const BONK_IMP_VOLLEY_BOLTS        = 3;
+    uint32 const BONK_IMP_VOLLEY_BOLTS        = 2;
     uint32 const BONK_IMP_VOLLEY_GAP_MS       = 300;
     float const BONK_SHADOW_BITE_PER_AFFLICTION = 0.1f;
     int32 const BONK_WARLOCK_POLL_MS          = 250;
@@ -67,6 +70,20 @@ bool BonkRun::FireWarlockSpell(OwnedWeapon& owned, SpellEntry const* spellInfo)
         default:                           return false;
     }
     return true;
+}
+
+uint32 BonkRun::GetWarlockAbilitySpell(OwnedWeapon const& owned, uint32 spellId) const
+{
+    bool const felImp = spellId == BONK_SPELL_IMP_FIREBOLT && owned.weapon.evolvesFrom && GetWarlockPetFamily(owned) == BONK_PET_FAMILY_IMP;
+    return felImp ? BONK_SPELL_FEL_FIREBOLT : spellId;
+}
+
+void BonkRun::DressWarlockPet(OwnedWeapon const& owned, Creature* pet) const
+{
+    if (!owned.weapon.evolvesFrom || GetWarlockPetFamily(owned) != BONK_PET_FAMILY_IMP)
+        return;
+    pet->SetDisplayId(BONK_FEL_IMP_DISPLAY);
+    pet->SetNativeDisplayId(BONK_FEL_IMP_DISPLAY);
 }
 
 void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword)
@@ -197,7 +214,7 @@ void BonkRun::BurnHellfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
-    ShowStrike(m_player, spellInfo, m_player);
+    ShowMissileFrom(m_player, spellInfo, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
     ImmolateDemons(owned, spellInfo);
     for (Creature* mob : mobs)
     {
@@ -225,6 +242,7 @@ void BonkRun::OnWarlockKill(Unit* victim)
     if (afflicted && FindOwnedByRoot(BONK_WEAPON_SHADOW_BOLT))
         m_nightfallQueue.push_back(victim->GetObjectGuid());
 
+    Creature* nearest = nullptr;
     for (OwnedWeapon& owned : m_weapons)
     {
         if (GetWarlockPetFamily(owned) != BONK_PET_FAMILY_VOIDWALKER)
@@ -234,9 +252,14 @@ void BonkRun::OnWarlockKill(Unit* victim)
             Creature* pet = m_player->GetMap()->GetCreature(guid);
             if (!pet || !pet->IsAlive() || !pet->IsWithinDistInMap(victim, BONK_CONSUME_RADIUS * GetSummonReach(owned)))
                 continue;
-            uint32& stacks = m_consumedShadows[guid];
-            stacks = std::min(stacks + 1, BONK_CONSUME_STACKS);
+            if (!nearest || pet->GetDistance(victim) < nearest->GetDistance(victim))
+                nearest = pet;
         }
+    }
+    if (nearest)
+    {
+        uint32& stacks = m_consumedShadows[nearest->GetObjectGuid()];
+        stacks = std::min(stacks + 1, BONK_CONSUME_STACKS);
     }
 }
 
@@ -316,9 +339,18 @@ float BonkRun::GetWarlockPetStrikeScale(OwnedWeapon const& owned, Creature const
 
 void BonkRun::QueueImpVolley(OwnedWeapon const& owned, Creature* pet, Creature* prey, uint32 abilityIndex)
 {
+    BonkPetFamily const* family = GetPetFamily(owned);
+    if (!family || abilityIndex >= family->abilities.size())
+        return;
+    std::vector<Creature*> others = GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), family->abilities[abilityIndex].value);
+    others.erase(std::remove(others.begin(), others.end(), prey), others.end());
+
     uint32 const now = WorldTimer::getMSTime();
     for (uint32 bolt = 1; bolt < BONK_IMP_VOLLEY_BOLTS; ++bolt)
-        m_impVolleys.push_back({ pet->GetObjectGuid(), prey->GetObjectGuid(), owned.weapon.id, abilityIndex, now + bolt * BONK_IMP_VOLLEY_GAP_MS });
+    {
+        Creature* target = bolt - 1 < others.size() ? others[bolt - 1] : prey;
+        m_impVolleys.push_back({ pet->GetObjectGuid(), target->GetObjectGuid(), owned.weapon.id, abilityIndex, now + bolt * BONK_IMP_VOLLEY_GAP_MS });
+    }
 }
 
 void BonkRun::FireImpVolleys()

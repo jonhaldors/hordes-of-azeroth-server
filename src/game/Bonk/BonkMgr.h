@@ -734,7 +734,7 @@ struct BonkStatChange
 };
 std::string TagBonkWeaponDescription(BonkWeapon const& weapon, std::string const& description);
 
-uint32 const BONK_MAX_SUMMONS        = 8;
+uint32 const BONK_MAX_SUMMONS        = 12;
 float const BONK_SUMMON_POWER_SHARE  = 0.6f;
 
 uint32 const BONK_PET_FAMILY_CAT = 1;
