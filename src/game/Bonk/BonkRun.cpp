@@ -107,11 +107,11 @@ namespace
     float const BONK_FRONT_RANGE           = 95.0f;
     float const BONK_FRONT_SHARE           = 0.45f;
     uint32 const BONK_FRONT_MIN            = 5;
-    float const BONK_FAR_MIN_DISTANCE      = 50.0f;
-    float const BONK_FAR_MAX_DISTANCE      = 65.0f;
+    float const BONK_FAR_MIN_DISTANCE      = 62.0f;
+    float const BONK_FAR_MAX_DISTANCE      = 78.0f;
     uint32 const BONK_FAR_TRIES            = 6;
     uint32 const BONK_STRAGGLER_TICK_MS    = 500;
-    float const BONK_STRAY_DISTANCE        = 55.0f;
+    float const BONK_STRAY_DISTANCE        = 68.0f;
     uint32 const BONK_STRAY_MS             = 3000;
     uint32 const BONK_PACK_MIN             = 3;
     uint32 const BONK_PACK_MAX             = 5;
@@ -132,9 +132,27 @@ namespace
     float const BONK_LANE_EDGE_WEIGHT      = 0.4f;
     float const BONK_FORWARD_WEIGHT        = 1.6f;
     float const BONK_BEHIND_WEIGHT         = 0.6f;
-    uint32 const BONK_SPAWN_PACK_MIN       = 3;
-    uint32 const BONK_SPAWN_PACK_MAX       = 6;
-    float const BONK_SPAWN_PACK_RADIUS     = 3.5f;
+    uint32 const BONK_SPAWN_SINGLE_CHANCE  = 35;
+    uint32 const BONK_SPAWN_PAIR_CHANCE    = 30;
+    uint32 const BONK_SPAWN_GROUP_MIN      = 3;
+    uint32 const BONK_SPAWN_GROUP_MAX      = 5;
+    float const BONK_SPAWN_GROUP_MIN_GAP   = 2.0f;
+    float const BONK_SPAWN_GROUP_RADIUS    = 7.0f;
+    uint32 const BONK_EMERGE_HIDDEN_MS     = 2000;
+    uint32 const BONK_EMERGE_MEMBER_STAGGER_MS = 600;
+    uint32 const BONK_EMERGE_SETTLE_MS     = 400;
+    uint32 const BONK_EMERGE_DISPLAY       = 11686;
+    uint32 const BONK_EMERGE_FACTION       = 35;
+    uint32 const BONK_EMERGE_NAME_DELAY_MS = 400;
+    uint32 const BONK_SPELL_BOSS_ADD_SMOKE = 10389;
+    float const BONK_EMERGE_CLOSE_SHARE    = 0.8f;
+    uint32 const BONK_EMERGE_REPLACE_MS    = 1000;
+    uint32 s_spawnKit                      = 92;
+    uint32 s_spawnKitsOnMob                = 0;
+    uint32 s_spawnsReplaced                = 0;
+    uint32 s_spawnLookLeadMs               = 300;
+    uint32 const BONK_SPAWN_LOOK_HOLD_MS   = 1600;
+    float const BONK_SPAWN_LOOK_PREVIEW_DISTANCE = 8.0f;
     uint32 const BONK_PERCH_CHECK_MS       = 1000;
     uint32 const BONK_PERCH_CONFIRM_CHECKS = 2;
     uint32 const BONK_PERCH_CLEAR_CHECKS   = 3;
@@ -1430,6 +1448,7 @@ void BonkRun::UpdateRunning(uint32 diff)
         if (m_state != STATE_RUNNING)
             return;
 
+        UpdateEmerging(diff);
         UpdateSpawns(diff);
         if (m_state != STATE_RUNNING)
             return;
@@ -1905,8 +1924,10 @@ void BonkRun::UpdateSpawns(uint32 diff)
         else
         {
             m_eliteTimer += int32(interval);
+            float x, y, z;
             if (BonkMapCreature const* elite = PickCreature(BONK_SPAWN_ELITE))
-                SpawnMob(*elite);
+                if (FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
+                    EmergeMobAt(*elite, x, y, z, false, urand(0, BONK_SPAWN_TICK_MS));
         }
     }
 
@@ -1915,8 +1936,8 @@ void BonkRun::UpdateSpawns(uint32 diff)
         m_spawnTimer += int32(BONK_SPAWN_TICK_MS);
 
         uint32 const target = GetSpawnTarget();
-        uint32 const trash = m_stress.on ? CountTrash() : CountRoster();
-        uint32 const alive = m_mobs.size();
+        uint32 const trash = (m_stress.on ? CountTrash() : CountRoster()) + m_emerging.size();
+        uint32 const alive = m_mobs.size() + m_emerging.size();
         uint32 const fullPerTick = GetWave().spawnPerTick ? GetWave().spawnPerTick : BONK_SPAWN_PER_TICK;
         uint32 const perTick = fullPerTick > BONK_OPENING_REFILL_MIN ?
             BONK_OPENING_REFILL_MIN + uint32((fullPerTick - BONK_OPENING_REFILL_MIN) * GetOpeningProgress() + 0.5f) : fullPerTick;
@@ -2814,10 +2835,16 @@ std::vector<float> BonkRun::CountSectorCrowd() const
 {
     std::vector<float> crowd(BONK_SPAWN_SECTORS, 0.0f);
     Map* map = m_player->GetMap();
-    for (ObjectGuid const& guid : m_mobs)
+    auto const countIn = [&](ObjectGuid const& guid)
+    {
         if (Creature const* mob = map->GetCreature(guid))
             if (mob->IsAlive() && mob->IsWithinDistInMap(m_player, BONK_SECTOR_RANGE))
                 crowd[GetSectorOf(mob->GetPositionX(), mob->GetPositionY())] += 1.0f;
+    };
+    for (ObjectGuid const& guid : m_mobs)
+        countIn(guid);
+    for (TimedMob const& emerging : m_emerging)
+        countIn(emerging.guid);
     return crowd;
 }
 
@@ -2887,8 +2914,9 @@ void BonkRun::SpawnTrashPacks(uint32 count)
     float const playerX = m_player->GetPositionX(), playerY = m_player->GetPositionY();
     while (count > 0)
     {
-        uint32 const size = std::min(count, urand(BONK_SPAWN_PACK_MIN, BONK_SPAWN_PACK_MAX));
+        uint32 const size = std::min(count, RollSpawnGroupSize());
         count -= size;
+        uint32 const groupDelayMs = urand(0, BONK_SPAWN_TICK_MS);
 
         int32 sector = -1;
         float centreX = 0.0f, centreY = 0.0f, centreZ = 0.0f;
@@ -2912,7 +2940,7 @@ void BonkRun::SpawnTrashPacks(uint32 count)
             if (i)
             {
                 float const offsetAngle = frand(0.0f, 2.0f * M_PI_F);
-                float const offset = frand(1.0f, BONK_SPAWN_PACK_RADIUS);
+                float const offset = frand(BONK_SPAWN_GROUP_MIN_GAP, BONK_SPAWN_GROUP_RADIUS);
                 float const memberX = centreX + offset * std::cos(offsetAngle);
                 float const memberY = centreY + offset * std::sin(offsetAngle);
                 float const angle = std::atan2(memberY - playerY, memberX - playerX);
@@ -2924,10 +2952,162 @@ void BonkRun::SpawnTrashPacks(uint32 count)
                     z = centreZ;
                 }
             }
-            if (SpawnMobAt(*creature, x, y, z, RollVeteran(*creature)) && found)
+            bool const veteran = RollVeteran(*creature);
+            Creature* const mob = m_stress.on ? SpawnMobAt(*creature, x, y, z, veteran) :
+                EmergeMobAt(*creature, x, y, z, veteran, groupDelayMs + urand(0, BONK_EMERGE_MEMBER_STAGGER_MS));
+            if (mob && found)
                 crowd[uint32(sector)] += 1.0f;
         }
     }
+}
+
+uint32 BonkRun::GetSpawnKit()
+{
+    return s_spawnKit;
+}
+
+void BonkRun::SetSpawnKit(uint32 kit)
+{
+    s_spawnKit = kit;
+}
+
+uint32 BonkRun::GetSpawnLookLeadMs()
+{
+    return s_spawnLookLeadMs;
+}
+
+void BonkRun::SetSpawnLookLeadMs(uint32 leadMs)
+{
+    s_spawnLookLeadMs = std::min(leadMs, BONK_EMERGE_HIDDEN_MS);
+}
+
+std::string BonkRun::DescribeSpawnLook() const
+{
+    return "Spawn looks lead " + std::to_string(s_spawnLookLeadMs) + " ms; played on the enemy (no free stand-in) " + std::to_string(s_spawnKitsOnMob) +
+        ", hidden enemies moved back out " + std::to_string(s_spawnsReplaced) +
+        ", hidden now " + std::to_string(m_emerging.size()) + ".";
+}
+
+void BonkRun::PreviewSpawnLook()
+{
+    float const angle = m_player->GetOrientation();
+    float x = m_player->GetPositionX() + BONK_SPAWN_LOOK_PREVIEW_DISTANCE * std::cos(angle);
+    float y = m_player->GetPositionY() + BONK_SPAWN_LOOK_PREVIEW_DISTANCE * std::sin(angle);
+    float z = m_player->GetMap()->GetHeight(x, y, m_player->GetPositionZ() + 5.0f, true, 15.0f);
+    if (z <= INVALID_HEIGHT)
+        z = m_player->GetPositionZ();
+    ShowKitAt(s_spawnKit, x, y, z);
+}
+
+uint32 BonkRun::RollSpawnGroupSize() const
+{
+    uint32 const roll = urand(0, 99);
+    if (roll < BONK_SPAWN_SINGLE_CHANCE)
+        return 1;
+    if (roll < BONK_SPAWN_SINGLE_CHANCE + BONK_SPAWN_PAIR_CHANCE)
+        return 2;
+    return urand(BONK_SPAWN_GROUP_MIN, BONK_SPAWN_GROUP_MAX);
+}
+
+Creature* BonkRun::EmergeMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran, uint32 delayMs)
+{
+    Creature* mob = SpawnMobAt(creature, x, y, z, veteran);
+    if (!mob || m_sandbox)
+        return mob;
+    ObjectGuid const guid = mob->GetObjectGuid();
+    m_mobs.erase(std::remove(m_mobs.begin(), m_mobs.end(), guid), m_mobs.end());
+
+    int32 const hiddenMs = int32(BONK_EMERGE_HIDDEN_MS + delayMs);
+    mob->SetDisplayId(BONK_EMERGE_DISPLAY);
+    mob->SetFactionTemplateId(BONK_EMERGE_FACTION);
+    mob->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+        ai->Hold(uint32(hiddenMs) + BONK_EMERGE_SETTLE_MS);
+    m_emerging.push_back({ guid, hiddenMs });
+    return mob;
+}
+
+void BonkRun::UpdateEmerging(uint32 diff)
+{
+    Map* map = m_player->GetMap();
+    for (auto itr = m_emerging.begin(); itr != m_emerging.end();)
+    {
+        Creature* mob = map->GetCreature(itr->guid);
+        if (!mob || !mob->IsAlive() || mob->HasCreatureState(CSTATE_DESPAWNING))
+        {
+            itr = m_emerging.erase(itr);
+            continue;
+        }
+        itr->leftMs -= int32(diff);
+        if (!itr->flashed && itr->leftMs <= int32(s_spawnLookLeadMs))
+        {
+            if (ReplaceIfClose(mob))
+            {
+                itr->leftMs = int32(BONK_EMERGE_REPLACE_MS);
+                ++itr;
+                continue;
+            }
+            itr->flashed = true;
+            itr->flashedAhead = s_spawnKit && ShowKitOnStandIn(s_spawnKit, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), BONK_SPAWN_LOOK_HOLD_MS);
+        }
+        if (itr->leftMs > 0)
+        {
+            ++itr;
+            continue;
+        }
+        if (!itr->shown)
+        {
+            ShowEmergingBody(mob);
+            itr->shown = true;
+            itr->leftMs = int32(BONK_EMERGE_NAME_DELAY_MS);
+            ++itr;
+            continue;
+        }
+        ActivateEmerged(mob, !itr->flashedAhead);
+        itr = m_emerging.erase(itr);
+    }
+}
+
+void BonkRun::ShowEmergingBody(Creature* mob)
+{
+    mob->SetDisplayId(mob->GetNativeDisplayId());
+    mob->SetFacingTo(std::atan2(m_player->GetPositionY() - mob->GetPositionY(), m_player->GetPositionX() - mob->GetPositionX()));
+}
+
+void BonkRun::ActivateEmerged(Creature* mob, bool flashOnMob)
+{
+    mob->SetFactionTemplateId(BONK_ENEMY_FACTION);
+    mob->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+    if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+        ai->Hold(BONK_EMERGE_SETTLE_MS);
+    m_mobs.push_back(mob->GetObjectGuid());
+    if (flashOnMob && s_spawnKit)
+    {
+        ++s_spawnKitsOnMob;
+        mob->SendPlaySpellVisualKit(s_spawnKit);
+    }
+}
+
+bool BonkRun::ReplaceIfClose(Creature* mob)
+{
+    if (!mob->IsWithinDistInMap(m_player, m_map.spawnMinDistance * BONK_EMERGE_CLOSE_SHARE))
+        return false;
+    float x, y, z;
+    if (!FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
+        return false;
+    ++s_spawnsReplaced;
+    mob->NearTeleportTo(x, y, z, std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x));
+    return true;
+}
+
+void BonkRun::ShowTeleportFlash(Creature* mob, float x, float y, float z)
+{
+    if (!s_spawnKit)
+        return;
+    bool const departed = ShowKitOnStandIn(s_spawnKit, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), BONK_SPAWN_LOOK_HOLD_MS);
+    bool const arrived = ShowKitOnStandIn(s_spawnKit, x, y, z, BONK_SPAWN_LOOK_HOLD_MS);
+    if (!departed || !arrived)
+        mob->SendPlaySpellVisualKit(s_spawnKit);
 }
 
 void BonkRun::UpdateCrowd(uint32 diff)
@@ -3111,9 +3291,10 @@ bool BonkRun::PlaceAside(Creature* mob, float heading)
 void BonkRun::MoveMob(Creature* mob, float x, float y, float z)
 {
     float const facing = std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x);
+    ShowTeleportFlash(mob, x, y, z);
     mob->NearTeleportTo(x, y, z, facing);
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
-        ai->Arrive();
+        ai->Arrive(false);
 }
 
 uint32 BonkRun::GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const
@@ -3356,8 +3537,11 @@ void BonkRun::SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites)
         if (z <= INVALID_HEIGHT || !boss->IsWithinLOS(x, y, z + 2.0f))
             continue;
         if (Creature* mob = SpawnMobAt(*pick, x, y, z))
+        {
             if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
-                ai->Arrive();
+                ai->Arrive(false);
+            mob->CastSpell(mob, BONK_SPELL_BOSS_ADD_SMOKE, true);
+        }
     }
 }
 
@@ -3886,6 +4070,11 @@ void BonkRun::DespawnMobs()
                 mob->SetTimeFrozen(false);
                 mob->DespawnOrUnsummon();
             }
+    if (map)
+        for (TimedMob const& emerging : m_emerging)
+            if (Creature* mob = map->GetCreature(emerging.guid))
+                mob->DespawnOrUnsummon();
+    m_emerging.clear();
     m_mobs.clear();
     m_farSince.clear();
     m_crowd.Clear();
@@ -7319,6 +7508,19 @@ void BonkRun::ShowAreaImpact(uint32 kit, float x, float y, float z, float radius
 
 void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z, float stretch)
 {
+bool BonkRun::ShowKitOnStandIn(uint32 kit, float x, float y, float z, uint32 holdMs)
+{
+    ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
+    if (guid.IsEmpty() || !m_player->GetMap()->GetCreature(guid))
+        return false;
+    ImpactLook look;
+    look.guid = guid;
+    look.kit = kit;
+    look.leftMs = holdMs;
+    m_impactLooks.push_back(look);
+    return true;
+}
+
     ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
     if (!guid.IsEmpty() && m_player->GetMap()->GetCreature(guid))
     {

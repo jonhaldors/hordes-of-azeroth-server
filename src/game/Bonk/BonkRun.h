@@ -180,6 +180,12 @@ class BonkRun
         void OnCriticalStrike(SpellCaster const* caster, SpellEntry const* spell, Unit const* victim);
         void CountThunderHit(SpellEntry const* spell);
         static void SetPeriodicHit(bool periodic);
+        static uint32 GetSpawnKit();
+        static void SetSpawnKit(uint32 kit);
+        static uint32 GetSpawnLookLeadMs();
+        static void SetSpawnLookLeadMs(uint32 leadMs);
+        std::string DescribeSpawnLook() const;
+        void PreviewSpawnLook();
         static ObjectGuid GetMissileLookSource();
         float GetDotGrowth(Unit const* victim, uint32 spellId) const;
 
@@ -244,6 +250,7 @@ class BonkRun
         void StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, float radius, uint32 durationMs);
         void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst = true);
         void ShowKitAt(uint32 kit, float x, float y, float z, float stretch = 1.0f);
+        bool ShowKitOnStandIn(uint32 kit, float x, float y, float z, uint32 holdMs);
         void ShowAreaImpact(uint32 kit, float x, float y, float z, float radius);
         void ShowLineImpacts(uint32 kit, float x, float y, float z, float orientation, float length);
         ObjectGuid PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs);
@@ -529,6 +536,22 @@ class BonkRun
         int32 PickSector(std::vector<float> const& crowd, bool frontOnly) const;
         bool FindSectorPosition(uint32 sector, float minDistance, float maxDistance, float& x, float& y, float& z) const;
         void SpawnTrashPacks(uint32 count);
+        uint32 RollSpawnGroupSize() const;
+        struct TimedMob
+        {
+            ObjectGuid guid;
+            int32 leftMs = 0;
+            bool flashed = false;
+            bool flashedAhead = false;
+            bool shown = false;
+        };
+        std::vector<TimedMob> m_emerging;
+        Creature* EmergeMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran, uint32 delayMs);
+        void UpdateEmerging(uint32 diff);
+        void ShowEmergingBody(Creature* mob);
+        void ActivateEmerged(Creature* mob, bool flashOnMob);
+        bool ReplaceIfClose(Creature* mob);
+        void ShowTeleportFlash(Creature* mob, float x, float y, float z);
         void UpdateStragglers(uint32 diff);
         void UpdateCrowd(uint32 diff);
         bool PlacePack(std::vector<Creature*> const& pack, float heading);

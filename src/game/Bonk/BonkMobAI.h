@@ -30,7 +30,10 @@ class BonkMobAI : public CreatureAI
 
         void Setup(BonkSpawnKind kind);
         void SetFrozen(bool frozen);
-        void Arrive();
+        void Arrive(bool flash = true);
+        void ShowArrivalFlash();
+        bool IsBusyWindingUp() const;
+        void Hold(uint32 ms);
         bool CanBePulled() const { return !m_stampede && !m_stationary && !m_fleeing; }
         bool CanCrowdWalk() const;
         float GetHoldRange() const;
@@ -170,6 +173,7 @@ class BonkMobAI : public CreatureAI
         int32 m_shieldTimer = 0;
         int32 m_burnTimer = 0;
         int32 m_eruptionTimer = 3000;
+        int32 m_affixWarnTimer = 0;
         uint32 m_bolsterStacks = 0;
         bool m_enraged = false;
         uint8 m_phase = 0;

@@ -18,7 +18,6 @@
 namespace
 {
     uint32 const BONK_ARRIVE_MS = 750;
-    uint32 const BONK_SPELL_ARRIVE = 10389;
     uint32 const BONK_AGGRO_CRY_MS = 250;
 
     float const BONK_FLEE_STEP          = 12.0f;
@@ -194,6 +193,7 @@ namespace
     float const BONK_SHAPE_DAMAGE       = 1.5f;
     uint32 const BONK_SHAPE_RETRY_MS    = 1000;
     uint32 const BONK_ABILITY_GAP_MS    = 1500;
+    uint32 const BONK_MECHANIC_REST_MS  = 750;
     float const BONK_LEAP_SPEED         = 35.0f;
     uint32 const BONK_LEAP_WINDUP_MS    = 1000;
     int32 const BONK_LEAP_MIN_TRAVEL_MS = 300;
@@ -651,12 +651,26 @@ uint32 BonkMobAI::GetShapeDamage(BonkMobAbility const& ability) const
     return uint32(std::max(1.0f, GetMeleeHit() * (ability.damage > 0.0f ? ability.damage : BONK_SHAPE_DAMAGE)));
 }
 
-void BonkMobAI::Arrive()
+void BonkMobAI::Arrive(bool flash)
 {
     m_arriveTimer = BONK_ARRIVE_MS;
     Halt();
     m_creature->GetMotionMaster()->MoveIdle();
-    m_creature->CastSpell(m_creature, BONK_SPELL_ARRIVE, true);
+    if (flash)
+        ShowArrivalFlash();
+}
+
+void BonkMobAI::ShowArrivalFlash()
+{
+    if (uint32 const kit = BonkRun::GetSpawnKit())
+        m_creature->SendPlaySpellVisualKit(kit);
+}
+
+void BonkMobAI::Hold(uint32 ms)
+{
+    m_arriveTimer = int32(ms);
+    Halt();
+    m_creature->GetMotionMaster()->MoveIdle();
 }
 
 void BonkMobAI::Pull(float x, float y, float z, float speed, uint32 settleMs)
@@ -1125,6 +1139,11 @@ void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
         UseAbility(forced, owner);
         return;
     }
+    if (m_affixWarnTimer > 0)
+    {
+        m_abilityGapTimer = std::max(m_abilityGapTimer, int32(BONK_MECHANIC_REST_MS));
+        return;
+    }
     if (m_abilityGapTimer > 0)
         return;
 
@@ -1166,6 +1185,11 @@ void BonkMobAI::UseAbility(size_t index, Player* owner)
         Cast(ability, owner, false);
 }
 
+bool BonkMobAI::IsBusyWindingUp() const
+{
+    return m_areaWinding || m_chargeState == CHARGE_WINDUP;
+}
+
 bool BonkMobAI::ForceAbility(uint32 number)
 {
     if (!m_mob || !number || number > m_mob->abilities.size())
@@ -1187,6 +1211,8 @@ void BonkMobAI::ReportTest(std::string const& text) const
 
 void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
 {
+    m_affixWarnTimer -= int32(diff);
+
     if (HasAffix(AFFIX_BULWARK))
     {
         if (m_creature->HasAura(BONK_SPELL_SHIELD))
@@ -1206,9 +1232,12 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
     if (HasAffix(AFFIX_EXPLOSIVE))
     {
         m_burnTimer -= int32(diff);
-        if (m_burnTimer <= 0 && m_creature->IsWithinDistInMap(owner, BONK_BURN_RANGE))
+        if (m_burnTimer <= 0 && IsBusyWindingUp())
+            m_burnTimer = int32(BONK_MECHANIC_REST_MS);
+        else if (m_burnTimer <= 0 && m_creature->IsWithinDistInMap(owner, BONK_BURN_RANGE))
         {
             m_burnTimer = BONK_BURN_INTERVAL;
+            m_affixWarnTimer = std::max(m_affixWarnTimer, int32(BONK_BURN_WARN_MS));
             if (BonkRun* run = owner->GetBonkPlayer()->GetRun())
             {
                 float const x = m_creature->GetPositionX(), y = m_creature->GetPositionY(), z = m_creature->GetPositionZ();
@@ -1222,9 +1251,12 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
     if (HasAffix(AFFIX_VOLCANIC))
     {
         m_eruptionTimer -= int32(diff);
-        if (m_eruptionTimer <= 0 && m_creature->IsWithinDistInMap(owner, BONK_ERUPTION_RANGE))
+        if (m_eruptionTimer <= 0 && IsBusyWindingUp())
+            m_eruptionTimer = int32(BONK_MECHANIC_REST_MS);
+        else if (m_eruptionTimer <= 0 && m_creature->IsWithinDistInMap(owner, BONK_ERUPTION_RANGE))
         {
             m_eruptionTimer = BONK_ERUPTION_INTERVAL;
+            m_affixWarnTimer = std::max(m_affixWarnTimer, int32(BONK_ERUPTION_WARN_MS));
             if (BonkRun* run = owner->GetBonkPlayer()->GetRun())
             {
                 float const x = owner->GetPositionX(), y = owner->GetPositionY(), z = owner->GetPositionZ();
@@ -2077,7 +2109,7 @@ void BonkMobAI::UpdateFlee(uint32 diff, Player* owner)
         {
             m_creature->GetMotionMaster()->Clear(false);
             m_creature->NearTeleportTo(x, y, z, owner->GetAngle(x, y));
-            m_creature->CastSpell(m_creature, BONK_SPELL_ARRIVE, true);
+            ShowArrivalFlash();
             m_blinkTimer = BONK_FLEE_BLINK_MS;
             m_fleeTimer = 0;
         }

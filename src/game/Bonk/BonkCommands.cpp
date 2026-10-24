@@ -1026,6 +1026,27 @@ bool ChatHandler::HandleBonkCrowdCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkSpawnLookCommand(char* args)
+{
+    uint32 kit, leadMs;
+    if (ExtractUInt32(&args, kit))
+        BonkRun::SetSpawnKit(kit);
+    if (ExtractUInt32(&args, leadMs))
+        BonkRun::SetSpawnLookLeadMs(leadMs);
+    PSendSysMessage("Spawn look kit %u, shown %u ms before the enemy appears. Usage: .bonk spawnlook [kit] [lead ms].",
+        BonkRun::GetSpawnKit(), BonkRun::GetSpawnLookLeadMs());
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+    {
+        SendSysMessage("Start a run to preview it.");
+        return true;
+    }
+    SendSysMessage(run->DescribeSpawnLook().c_str());
+    if (BonkRun::GetSpawnKit())
+        run->PreviewSpawnLook();
+    return true;
+}
+
 bool ChatHandler::HandleBonkDashCommand(char*)
 {
     m_session->GetPlayer()->GetBonkPlayer()->Dash();
