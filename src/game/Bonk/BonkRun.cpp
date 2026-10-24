@@ -221,6 +221,10 @@ namespace
 
     float const BONK_PHASE_ADD_MIN  = 8.0f;
     float const BONK_PHASE_ADD_MAX  = 12.0f;
+    uint32 const BONK_WARD_ENTRY    = 3560;
+    float const BONK_WARD_SCALE     = 1.6f;
+    float const BONK_WARD_MIN_DISTANCE = 10.0f;
+    float const BONK_WARD_MAX_DISTANCE = 14.0f;
 
     uint32 const BONK_KIT_CHEST_TRAP = 286;
     uint32 const BONK_POWERUP_RESTORATION = 900004;
@@ -828,6 +832,8 @@ namespace
         uint32 const tenths = (intervalMs + 50) / 100;
         std::string const seconds = std::to_string(tenths / 10) + (tenths % 10 ? "." + std::to_string(tenths % 10) : std::string()) +
             (tenths == 10 ? " second" : " seconds");
+        if (weapon.IsSeal())
+            return std::string();
         if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS)
             return "Can occur once every " + seconds + " on each enemy.";
         if (weapon.IsRevenge())
@@ -843,8 +849,6 @@ namespace
     {
         public:
             void ApplyNothing() { m_radius = 0.0f; }
-        if (weapon.IsSeal())
-            return std::string();
     };
 
     ObjectGuid PlaceAreaVisual(Player* player, uint32 spellId, float x, float y, float z, float radius, uint32 durationMs)
@@ -1303,6 +1307,7 @@ void BonkRun::StartStage()
     m_shield = GetMaxShield();
     m_shieldIdleMs = 0;
     SetNecroticStacks(0);
+    ClearBossPressure();
     DespawnPools();
     DespawnWeaponOrbs();
     DespawnProjectiles();
@@ -1424,6 +1429,8 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateNecrotic(diff);
     UpdatePools(diff);
     UpdateVoidZones(diff);
+    UpdateHeroMark(diff);
+    UpdateBossWounds(diff);
     UpdateImpactLooks(diff);
     UpdatePowerups(diff, !m_sandbox);
     UpdateObjectives(diff);
@@ -3140,6 +3147,9 @@ void BonkRun::UpdateStragglers(uint32 diff)
             continue;
         if (IsMiniEventTarget(guid))
             continue;
+        if (BonkMobAI const* ward = dynamic_cast<BonkMobAI const*>(mob->AI()))
+            if (ward->IsWard())
+                continue;
         auto const itr = m_farSince.find(guid);
         uint32 const since = itr != m_farSince.end() ? itr->second : now;
         farSince[guid] = since;
@@ -3473,7 +3483,7 @@ void BonkRun::UpdateNecrotic(uint32 diff)
 
 uint32 BonkRun::ReduceHealing(uint32 heal) const
 {
-    float const cut = m_necroticStacks * BONK_NECROTIC_PER_STACK + m_bonuses.healingCut;
+    float const cut = m_necroticStacks * BONK_NECROTIC_PER_STACK + m_bossWoundStacks * m_bossWoundCut + m_bonuses.healingCut;
     if (cut <= 0.0f)
         return heal;
     float const kept = 1.0f - std::min(100.0f, cut) / 100.0f;
@@ -3545,6 +3555,34 @@ void BonkRun::SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites)
     }
 }
 
+void BonkRun::SpawnWards(Creature const* boss, uint32 count, float healthShare, float healPercent)
+{
+    BonkMapCreature ward;
+    ward.entry = BONK_WARD_ENTRY;
+    ward.scale = BONK_WARD_SCALE;
+    float const turn = frand(0.0f, 2.0f * M_PI_F);
+    for (uint32 i = 0; i < count; ++i)
+    {
+        float const angle = turn + 2.0f * M_PI_F * i / float(count);
+        float const distance = frand(BONK_WARD_MIN_DISTANCE, BONK_WARD_MAX_DISTANCE);
+        float const x = boss->GetPositionX() + distance * std::cos(angle);
+        float const y = boss->GetPositionY() + distance * std::sin(angle);
+        float const z = m_player->GetMap()->GetHeight(x, y, boss->GetPositionZ() + 5.0f, true, 15.0f);
+        if (z <= INVALID_HEIGHT || !boss->IsWithinLOS(x, y, z + 2.0f))
+            continue;
+        Creature* mob = SpawnMobAt(ward, x, y, z);
+        if (!mob)
+            continue;
+        uint32 const health = std::max(1u, uint32(boss->GetMaxHealth() * healthShare));
+        mob->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, float(health));
+        mob->SetMaxHealth(health);
+        mob->SetHealth(health);
+        if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+            ai->SetWard(boss->GetObjectGuid(), healPercent);
+        mob->CastSpell(mob, BONK_SPELL_BOSS_ADD_SMOKE, true);
+    }
+}
+
 void BonkRun::StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, float radius, uint32 durationMs)
 {
     if (m_state != STATE_RUNNING || m_paused)
@@ -3579,6 +3617,89 @@ void BonkRun::EndVoidZone(VoidZone const& zone)
             if (zone.lookAura)
                 standIn->RemoveAurasDueToSpell(zone.lookAura);
     m_telegraphs.Release(m_player, zone.look);
+}
+
+void BonkRun::MarkHero(BonkEnemyHit const& burst, BonkEnemyHit const& pool, float radius, uint32 followMs, uint32 warnMs, uint32 poolMs)
+{
+    if (m_state != STATE_RUNNING || m_paused || IsHeroMarked() || !m_player->IsAlive())
+        return;
+    m_heroMark.burst = burst;
+    m_heroMark.pool = pool;
+    m_heroMark.radius = radius;
+    m_heroMark.leftMs = std::max(1u, followMs);
+    m_heroMark.warnMs = warnMs;
+    m_heroMark.poolMs = poolMs;
+    ShowHeroRing(BonkHeroRing::MarkOutline, radius);
+    ShowHeroRing(BonkHeroRing::MarkFill, radius);
+}
+
+void BonkRun::UpdateHeroMark(uint32 diff)
+{
+    if (!IsHeroMarked())
+        return;
+    if (m_heroMark.leftMs > diff)
+    {
+        m_heroMark.leftMs -= diff;
+        return;
+    }
+    m_heroMark.leftMs = 0;
+    HideHeroMarkRings();
+    if (!m_player->IsAlive())
+        return;
+
+    float x, y, z;
+    GetHeroPositionNow(m_player, x, y, z);
+    HeroMark const mark = m_heroMark;
+    AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, mark.radius, mark.warnMs, [this, mark, x, y, z]()
+    {
+        Erupt(mark.burst, x, y, z, mark.radius);
+        if (mark.poolMs)
+            StartVoidZone(mark.pool, x, y, z, mark.radius, mark.poolMs);
+    });
+}
+
+void BonkRun::HideHeroMarkRings()
+{
+    HideHeroRing(BonkHeroRing::MarkOutline);
+    HideHeroRing(BonkHeroRing::MarkFill);
+}
+
+void BonkRun::AddBossWound(uint32 maxStacks, float cutPercent, uint32 durationMs)
+{
+    if (!maxStacks || cutPercent <= 0.0f || !m_player->IsAlive())
+        return;
+    m_bossWoundCut = cutPercent;
+    m_bossWoundLeftMs = durationMs;
+    SetBossWoundStacks(std::min(maxStacks, m_bossWoundStacks + 1));
+}
+
+void BonkRun::SetBossWoundStacks(uint32 stacks)
+{
+    if (stacks == m_bossWoundStacks)
+        return;
+    m_bossWoundStacks = stacks;
+    m_player->GetBonkPlayer()->SendAddon("wounds~" + std::to_string(stacks) + "~" + Percent(stacks * m_bossWoundCut));
+}
+
+void BonkRun::UpdateBossWounds(uint32 diff)
+{
+    if (!m_bossWoundStacks)
+        return;
+    if (m_bossWoundLeftMs > diff)
+    {
+        m_bossWoundLeftMs -= diff;
+        return;
+    }
+    m_bossWoundLeftMs = 0;
+    SetBossWoundStacks(0);
+}
+
+void BonkRun::ClearBossPressure()
+{
+    m_heroMark.leftMs = 0;
+    HideHeroMarkRings();
+    m_bossWoundLeftMs = 0;
+    SetBossWoundStacks(0);
 }
 
 void BonkRun::UpdateVoidZones(uint32 diff)
@@ -6767,6 +6888,7 @@ void BonkRun::ShowStrike(Unit* caster, SpellEntry const* spellInfo, Unit* target
     ShowStrikeOn(caster, spellInfo, target);
 }
 
+
 void BonkRun::ShowSwing(SpellEntry const* look, Unit* target) const
 {
     ShowSwingOn(m_player, look, target);
@@ -7517,8 +7639,6 @@ void BonkRun::ShowAreaImpact(uint32 kit, float x, float y, float z, float radius
     }
 }
 
-void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z, float stretch)
-{
 bool BonkRun::ShowKitOnStandIn(uint32 kit, float x, float y, float z, uint32 holdMs)
 {
     ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
@@ -7532,6 +7652,8 @@ bool BonkRun::ShowKitOnStandIn(uint32 kit, float x, float y, float z, uint32 hol
     return true;
 }
 
+void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z, float stretch)
+{
     ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
     if (!guid.IsEmpty() && m_player->GetMap()->GetCreature(guid))
     {
@@ -7634,6 +7756,9 @@ void BonkRun::StrikeHero(BonkEnemyHit const& hit, uint32 spellId, Unit* source)
     source->DealDamageMods(m_player, strike.damage, &strike.absorb);
     source->SendSpellNonMeleeDamageLog(&strike);
     source->DealSpellDamage(&strike, false);
+    if (Creature* striker = m_player->GetMap()->GetCreature(hit.looker))
+        if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(striker->AI()))
+            ai->OnHitHero(this);
 }
 
 void BonkRun::LandWarning(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size)
@@ -11500,6 +11625,8 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
             added[0] = char(toupper(added[0]));
             stats += " " + added + ".";
         }
+    if (!stats.empty() && stats[0] == ' ')
+        stats.erase(0, 1);
     std::string description = TagBonkWeaponDescription(weapon, weapon.description);
     if (weapon.behavior == BONK_BEHAVIOR_PET && !weapon.HasFlag(BONK_WEAPON_FLAG_HYDRA) && !weapon.HasFlag(BONK_WEAPON_FLAG_ELEMENTAL_SHIFT))
         if (BonkPetFamily const* family = GetPetFamily(owned))
@@ -11665,8 +11792,6 @@ void BonkRun::SetPaused(bool paused)
         m_pausedAtMs = WorldTimer::getMSTime();
     else
         ShiftDotStacks(WorldTimer::getMSTime() - m_pausedAtMs);
-    if (!stats.empty() && stats[0] == ' ')
-        stats.erase(0, 1);
 
     m_player->SetTimeFrozen(paused);
     if (m_player->IsInWorld())
@@ -11794,6 +11919,7 @@ void BonkRun::CleanUp()
     m_shield = 0;
     m_player->GetBonkPlayer()->SendAddon("shield~0~0");
     SetNecroticStacks(0);
+    ClearBossPressure();
     DespawnPools();
     DespawnWeaponOrbs();
     DespawnProjectiles();

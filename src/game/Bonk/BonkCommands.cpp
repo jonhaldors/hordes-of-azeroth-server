@@ -1047,6 +1047,26 @@ bool ChatHandler::HandleBonkSpawnLookCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkBossTuneCommand(char* args)
+{
+    char* key = ExtractArg(&args);
+    if (key)
+    {
+        float value;
+        if (!ExtractFloat(&args, value) || !BonkMobAI::SetBossTune(key, value))
+        {
+            SendSysMessage("Usage: .bonk bosstune [key value]. Keys are listed below; values last until the server restarts.");
+            key = nullptr;
+        }
+        else
+            PSendSysMessage("Boss tune %s is now %g.", key, value);
+    }
+    if (!key)
+        for (std::string const& line : BonkMobAI::DescribeBossTune())
+            SendSysMessage(line.c_str());
+    return true;
+}
+
 bool ChatHandler::HandleBonkDashCommand(char*)
 {
     m_session->GetPlayer()->GetBonkPlayer()->Dash();

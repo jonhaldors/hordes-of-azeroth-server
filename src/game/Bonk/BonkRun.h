@@ -82,6 +82,8 @@ enum class BonkHeroRing : uint8
     IcePath,
     TimeBubble,
     Hazard,
+    MarkOutline,
+    MarkFill,
     Count
 };
 
@@ -247,8 +249,12 @@ class BonkRun
         BonkSpawnPoints const& GetSpawnPoints() const { return m_spawnPoints; }
         uint32 GetDifficultyStep() const { return std::min(2u, m_tier.eliteAffixes ? m_tier.eliteAffixes - 1 : 0u); }
         void SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites);
+        void SpawnWards(Creature const* boss, uint32 count, float healthShare, float healPercent);
         void StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, float radius, uint32 durationMs);
         void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst = true);
+        void MarkHero(BonkEnemyHit const& burst, BonkEnemyHit const& pool, float radius, uint32 followMs, uint32 warnMs, uint32 poolMs);
+        bool IsHeroMarked() const { return m_heroMark.leftMs > 0; }
+        void AddBossWound(uint32 maxStacks, float cutPercent, uint32 durationMs);
         void ShowKitAt(uint32 kit, float x, float y, float z, float stretch = 1.0f);
         bool ShowKitOnStandIn(uint32 kit, float x, float y, float z, uint32 holdMs);
         void ShowAreaImpact(uint32 kit, float x, float y, float z, float radius);
@@ -472,6 +478,11 @@ class BonkRun
         };
         std::vector<ImpactLook> m_impactLooks;
         void UpdateVoidZones(uint32 diff);
+        void UpdateHeroMark(uint32 diff);
+        void HideHeroMarkRings();
+        void UpdateBossWounds(uint32 diff);
+        void SetBossWoundStacks(uint32 stacks);
+        void ClearBossPressure();
         void UpdateImpactLooks(uint32 diff);
         void ShowImpact(BonkEnemyHit const& hit, float x, float y, float z, float radius = 0.0f);
         void ShowAttackLook(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
@@ -1254,6 +1265,19 @@ class BonkRun
         float m_leechCarry = 0.0f;
         uint32 m_necroticStacks = 0;
         uint32 m_necroticCheckMs = 0;
+        struct HeroMark
+        {
+            BonkEnemyHit burst;
+            BonkEnemyHit pool;
+            float radius = 0.0f;
+            uint32 leftMs = 0;
+            uint32 warnMs = 0;
+            uint32 poolMs = 0;
+        };
+        HeroMark m_heroMark;
+        uint32 m_bossWoundStacks = 0;
+        float m_bossWoundCut = 0.0f;
+        uint32 m_bossWoundLeftMs = 0;
         struct Pool
         {
             ObjectGuid marker;

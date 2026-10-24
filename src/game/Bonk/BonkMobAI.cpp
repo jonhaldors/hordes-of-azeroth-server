@@ -291,6 +291,114 @@ namespace
     uint32 const BONK_VOID_WARN_MS      = 1500;
     uint32 const BONK_VOID_DURATION_MS  = 8000;
     float const BONK_VOID_DAMAGE        = 0.4f;
+    float const BONK_MARK_RANGE         = 60.0f;
+    uint32 const BONK_MARK_FILL_MS      = 4000;
+    uint32 const BONK_SPELL_WARD_BEAM   = 755;
+    float const BONK_WARD_REACH         = 40.0f;
+    uint32 const BONK_LANE_COUNT        = 3;
+    uint32 const BONK_LANE_CIRCLES      = 4;
+    float const BONK_LANE_OVERLAP       = 0.55f;
+    int32 const BONK_LANE_FIRST_MS      = 4000;
+    float const BONK_BLINK_LANDING      = 6.0f;
+    int32 const BONK_BLINK_RETRY_MS     = 1000;
+
+    enum BossTune : uint8
+    {
+        TUNE_GAP_HEROIC,
+        TUNE_GAP_MYTHIC,
+        TUNE_WARN_MYTHIC,
+        TUNE_MARK_HEROIC,
+        TUNE_MARK_MYTHIC,
+        TUNE_MARK_WARN,
+        TUNE_MARK_RADIUS,
+        TUNE_MARK_POOL,
+        TUNE_MARK_DAMAGE,
+        TUNE_FAR_RANGE,
+        TUNE_FAR_DELAY,
+        TUNE_FAR_INTERVAL,
+        TUNE_FAR_COUNT,
+        TUNE_FAR_RADIUS,
+        TUNE_FAR_DAMAGE,
+        TUNE_WOUND_CUT,
+        TUNE_WOUND_MAX,
+        TUNE_WOUND_SECONDS,
+        TUNE_LEASH_RANGE,
+        TUNE_LEASH_DELAY,
+        TUNE_LEASH_HEAL,
+        TUNE_WARDS_HEROIC,
+        TUNE_WARDS_MYTHIC,
+        TUNE_WARD_HEALTH,
+        TUNE_WARD_HEAL,
+        TUNE_LANES_HEROIC,
+        TUNE_LANES_MYTHIC,
+        TUNE_LANE_WAVES,
+        TUNE_LANE_GAP,
+        TUNE_LANE_WARN,
+        TUNE_LANE_WIDTH,
+        TUNE_LANE_DAMAGE,
+        TUNE_BLINK_DELAY,
+        TUNE_BLINK_RADIUS,
+        TUNE_BLINK_WARN,
+        TUNE_BLINK_DAMAGE,
+        MAX_BOSS_TUNE
+    };
+
+    struct BossTuneEntry
+    {
+        char const* key;
+        char const* meaning;
+        float value;
+    };
+
+    BossTuneEntry s_bossTune[MAX_BOSS_TUNE] =
+    {
+        { "gapheroic",    "seconds between Heroic boss and mini-boss moves",              0.8f },
+        { "gapmythic",    "seconds between Mythic boss and mini-boss moves",              0.5f },
+        { "warnmythic",   "share of the usual warning time on Mythic boss moves",         0.75f },
+        { "markheroic",   "seconds between Heroic boss marks (0 = off)",                  11.0f },
+        { "markmythic",   "seconds between Mythic boss marks (0 = off)",                  9.0f },
+        { "markwarn",     "seconds a dropped mark warns before it bursts",                1.0f },
+        { "markradius",   "mark radius in yards",                                         6.0f },
+        { "markpool",     "seconds of burning ground a mark leaves (0 = none)",           8.0f },
+        { "markdamage",   "mark burst damage in boss melee hits",                         1.5f },
+        { "farrange",     "yards from the boss before it bombards the hero (0 = off)",    25.0f },
+        { "fardelay",     "seconds out of range before the bombardment starts",           3.0f },
+        { "farinterval",  "seconds between bombardments",                                 2.0f },
+        { "farcount",     "circles per Heroic bombardment (Mythic +1)",                   2.0f },
+        { "farradius",    "bombardment circle radius in yards",                           4.0f },
+        { "fardamage",    "bombardment damage in boss melee hits",                        1.0f },
+        { "woundcut",     "Mythic healing cut per wound stack, percent (0 = off)",        15.0f },
+        { "woundmax",     "most wound stacks",                                            4.0f },
+        { "woundseconds", "seconds wounds last after the last boss hit",                  6.0f },
+        { "leashrange",   "yards from the Mythic boss before it recovers (0 = off)",      35.0f },
+        { "leashdelay",   "seconds out of range before it recovers",                      2.0f },
+        { "leashheal",    "percent of its health the boss recovers each second",          1.0f },
+        { "wardsheroic",  "healing wards a Heroic boss raises at 66% and 33%",            1.0f },
+        { "wardsmythic",  "healing wards a Mythic boss raises at 66% and 33%",            2.0f },
+        { "wardhealth",   "ward health, percent of the boss's health",                    3.0f },
+        { "wardheal",     "percent of the boss's health each ward heals a second",        1.0f },
+        { "laneheroic",   "seconds between Heroic eruption lanes below 66% (0 = off)",    0.0f },
+        { "lanemythic",   "seconds between Mythic eruption lanes below 66% (0 = off)",    24.0f },
+        { "lanewaves",    "eruption waves in one set of lanes",                           4.0f },
+        { "lanegap",      "seconds between eruption waves",                               1.6f },
+        { "lanewarn",     "seconds each eruption wave warns",                             1.4f },
+        { "lanewidth",    "lane width in yards",                                          8.0f },
+        { "lanedamage",   "eruption damage in boss melee hits",                           1.0f },
+        { "blinkdelay",   "seconds out of range before a Mythic boss blinks to you (0 = off)", 7.0f },
+        { "blinkradius",  "radius of the nova after a blink, in yards",                   8.0f },
+        { "blinkwarn",    "seconds the nova warns after a blink",                         1.4f },
+        { "blinkdamage",  "nova damage in boss melee hits",                               2.0f },
+    };
+
+    float Tune(BossTune tune)
+    {
+        return s_bossTune[tune].value;
+    }
+
+    uint32 TuneMs(BossTune tune)
+    {
+        return uint32(std::max(0.0f, s_bossTune[tune].value) * IN_MILLISECONDS);
+    }
 
     float const BONK_RAGING_HEALTH      = 30.0f;
     float const BONK_RAGING_DAMAGE      = 1.5f;
@@ -772,6 +880,11 @@ void BonkMobAI::UpdateAI(uint32 const diff)
     }
     if (m_creature->HasUnitState(UNIT_STATE_FLEEING))
         return;
+    if (IsWard())
+    {
+        UpdateWard(diff);
+        return;
+    }
     if (m_stationary || m_passive)
         return;
 
@@ -788,6 +901,7 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         AttackStart(owner);
     }
 
+    UpdateBossPressure(diff, owner, run);
     if (!m_movesOff && (UpdateCharge(diff, owner) || UpdateLanding(diff, owner) || UpdateArea(diff, owner)))
     {
         ResetProgressWatch();
@@ -1122,6 +1236,8 @@ void BonkMobAI::UpdateAbilities(uint32 diff, Player* owner)
     for (int32& timer : m_abilityTimers)
         timer -= int32(diff);
     m_abilityGapTimer -= int32(diff);
+    if (IsDancing())
+        return;
 
     if (!m_boltTarget.IsEmpty())
     {
@@ -1169,8 +1285,8 @@ void BonkMobAI::UseAbility(size_t index, Player* owner)
 {
     BonkMobAbility const& ability = m_mob->abilities[index];
     m_abilityTimers[index] = int32(ability.cooldownMs * frand(0.85f, 1.15f));
-    if (m_kind == BONK_SPAWN_BOSS || m_kind == BONK_SPAWN_MINIBOSS)
-        m_abilityGapTimer = int32(BONK_ABILITY_GAP_MS);
+    if (IsBossOrMini())
+        m_abilityGapTimer = int32(GetMoveGapMs(owner->GetBonkPlayer()->GetRun()));
     m_chargesLeft = ability.shape == BONK_SHAPE_SPELL && ability.count > 1 ? ability.count - 1 : 0;
     ReportTest("uses " + (ability.label.empty() ? "spell " + std::to_string(ability.spellId) : ability.label) + ".");
     if (ability.shape != BONK_SHAPE_SPELL)
@@ -1302,7 +1418,8 @@ void BonkMobAI::StartArea(int32 abilityIndex, Player* owner)
     m_areaWinding = true;
     m_areaWindId = ++m_windCount;
     m_areaAbility = abilityIndex;
-    m_areaTimer = BONK_AREA_WARN_MS;
+    uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS);
+    m_areaTimer = int32(warnMs);
     m_areaSize = size;
     m_areaStrike = false;
     m_areaX = m_creature->GetPositionX();
@@ -1311,7 +1428,7 @@ void BonkMobAI::StartArea(int32 abilityIndex, Player* owner)
     m_creature->SetFacingToObject(owner);
     float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ();
     BonkEnemyHit const hit = MakeHit(run, spellId, damage, m_areaWindId);
-    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, BONK_AREA_WARN_MS,
+    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
         [run, hit, x, y, z, size]() { run->LandWarning(hit, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size); }, m_areaWindId);
 }
 
@@ -1327,33 +1444,9 @@ void BonkMobAI::StartShape(int32 abilityIndex, Player* owner)
     switch (ability.shape)
     {
         case BONK_SHAPE_BARRAGE:
-        {
-            BonkEnemyHit const hit = MakeAbilityHit(run, ability, 0, damage);
-            for (uint32 i = 0; i < std::max(1u, ability.count); ++i)
-            {
-                uint32 const warnMs = BONK_AREA_WARN_MS + i * BONK_BARRAGE_STAGGER_MS;
-                float x, y, z;
-                if (i)
-                    AimAhead(owner, run, warnMs, x, y, z);
-                else
-                    PredictPlayer(owner, warnMs, x, y, z);
-                if (i)
-                {
-                    float const angle = frand(0.0f, 2.0f * M_PI_F);
-                    float const distance = frand(size, BONK_BARRAGE_SPREAD);
-                    float const ax = x + distance * std::cos(angle), ay = y + distance * std::sin(angle);
-                    float const az = m_creature->GetMap()->GetHeight(ax, ay, z + 5.0f, true, 15.0f);
-                    if (az <= INVALID_HEIGHT)
-                        continue;
-                    x = ax;
-                    y = ay;
-                    z = az;
-                }
-                run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
-                    [run, hit, x, y, z, size]() { run->Erupt(hit, x, y, z, size); });
-            }
+            LaunchBarrage(owner, run, MakeAbilityHit(run, ability, 0, damage), std::max(1u, ability.count), size,
+                GetWarnMs(run, BONK_AREA_WARN_MS));
             return;
-        }
         case BONK_SHAPE_TRAIL:
             run->SpawnPhaseAdds(m_creature, std::max(1u, ability.count), 0);
             return;
@@ -1385,13 +1478,40 @@ void BonkMobAI::StartShape(int32 abilityIndex, Player* owner)
     }
 
     BonkTelegraphShape const shape = GetHeldShape(ability.shape);
-    uint32 const warnMs = BONK_AREA_WARN_MS + GetBonkTelegraphLeadMs(shape);
+    uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS) + GetBonkTelegraphLeadMs(shape);
     WindUp(abilityIndex, AimAngle(m_creature, owner, run, warnMs), warnMs);
     m_areaSize = shape == BONK_TELEGRAPH_CONE ? GetConeSize(size, run, owner, warnMs) : size;
     float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ(), o = m_areaOrientation, heldSize = m_areaSize;
     BonkEnemyHit const hit = MakeAbilityHit(run, ability, BONK_SPELL_CHARGE_HIT, damage, m_areaWindId);
     run->AddEnemyTelegraph(m_creature, shape, x, y, z, o, heldSize, warnMs,
         [run, hit, shape, x, y, z, o, heldSize]() { run->LandWarning(hit, shape, x, y, z, o, heldSize); }, m_areaWindId);
+}
+
+void BonkMobAI::LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& hit, uint32 count, float size, uint32 warnMs)
+{
+    for (uint32 i = 0; i < count; ++i)
+    {
+        uint32 const landsInMs = warnMs + i * BONK_BARRAGE_STAGGER_MS;
+        float x, y, z;
+        if (i)
+            AimAhead(owner, run, landsInMs, x, y, z);
+        else
+            PredictPlayer(owner, landsInMs, x, y, z);
+        if (i)
+        {
+            float const angle = frand(0.0f, 2.0f * M_PI_F);
+            float const distance = frand(size, BONK_BARRAGE_SPREAD);
+            float const ax = x + distance * std::cos(angle), ay = y + distance * std::sin(angle);
+            float const az = m_creature->GetMap()->GetHeight(ax, ay, z + 5.0f, true, 15.0f);
+            if (az <= INVALID_HEIGHT)
+                continue;
+            x = ax;
+            y = ay;
+            z = az;
+        }
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, landsInMs,
+            [run, hit, x, y, z, size]() { run->Erupt(hit, x, y, z, size); });
+    }
 }
 
 void BonkMobAI::WindUp(int32 abilityIndex, float orientation, uint32 durationMs)
@@ -1415,7 +1535,7 @@ bool BonkMobAI::StartLeap(int32 abilityIndex, Player* owner, BonkRun* run, uint3
     if (m_creature->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED))
         return false;
     float x, y, z;
-    AimAhead(owner, run, BONK_LEAP_WINDUP_MS + uint32(m_creature->GetDistance2d(owner) / BONK_LEAP_SPEED * IN_MILLISECONDS), x, y, z);
+    AimAhead(owner, run, GetWarnMs(run, BONK_LEAP_WINDUP_MS) + uint32(m_creature->GetDistance2d(owner) / BONK_LEAP_SPEED * IN_MILLISECONDS), x, y, z);
     if (!m_creature->IsWithinLOS(x, y, z + 2.0f))
         return false;
 
@@ -1425,7 +1545,7 @@ bool BonkMobAI::StartLeap(int32 abilityIndex, Player* owner, BonkRun* run, uint3
     m_leapY = y;
     m_leapZ = z;
     m_leapTravelMs = std::max(BONK_LEAP_MIN_TRAVEL_MS, int32(m_creature->GetDistance2d(x, y) / BONK_LEAP_SPEED * IN_MILLISECONDS));
-    uint32 const warnMs = BONK_LEAP_WINDUP_MS + uint32(m_leapTravelMs);
+    uint32 const warnMs = GetWarnMs(run, BONK_LEAP_WINDUP_MS) + uint32(m_leapTravelMs);
     WindUp(abilityIndex, m_creature->GetAngle(x, y), warnMs);
     m_creature->HandleEmote(EMOTE_ONESHOT_BATTLEROAR);
     BonkEnemyHit const hit = MakeAbilityHit(run, ability, 0, damage, m_areaWindId);
@@ -1448,7 +1568,7 @@ void BonkMobAI::StartLines(int32 abilityIndex, Player* owner, BonkRun* run, uint
 {
     BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
     bool const spokes = ability.shape == BONK_SHAPE_SPOKES;
-    uint32 const durationMs = BONK_LINE_WARN_MS + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_LINE);
+    uint32 const durationMs = GetWarnMs(run, BONK_LINE_WARN_MS) + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_LINE);
     WindUp(abilityIndex, AimAngle(m_creature, owner, run, durationMs), durationMs);
     m_lineCount = spokes ? (ability.count ? ability.count : BONK_SPOKES_COUNT) + run->GetDifficultyStep() : std::max(1u, ability.count);
     m_lineSpread = spokes ? 2.0f * M_PI_F / float(m_lineCount) : BONK_SHOCKWAVE_SPREAD;
@@ -1486,7 +1606,8 @@ void BonkMobAI::StartPools(BonkMobAbility const& ability, Player* owner, BonkRun
     float const damage = GetMeleeHit() * (ability.damage > 0.0f ? ability.damage : BONK_POOL_DAMAGE);
     BonkEnemyHit const hit = MakeAbilityHit(run, ability, 0, uint32(std::max(1.0f, damage)));
     float heroX, heroY, heroZ;
-    AimAhead(owner, run, BONK_AREA_WARN_MS, heroX, heroY, heroZ);
+    uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS);
+    AimAhead(owner, run, warnMs, heroX, heroY, heroZ);
     for (uint32 i = 0; i < count; ++i)
     {
         float x = heroX, y = heroY, z = heroZ;
@@ -1500,7 +1621,7 @@ void BonkMobAI::StartPools(BonkMobAbility const& ability, Player* owner, BonkRun
             if (z <= INVALID_HEIGHT)
                 continue;
         }
-        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, BONK_AREA_WARN_MS,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
             [run, hit, x, y, z, size]() { run->StartVoidZone(hit, x, y, z, size, BONK_POOL_DURATION_MS); });
     }
 }
@@ -1523,7 +1644,7 @@ void BonkMobAI::StartBreaths(int32 abilityIndex, Player* owner, BonkRun* run, ui
 {
     BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
     uint32 const count = (ability.count ? ability.count : BONK_BREATH_COUNT) + run->GetDifficultyStep();
-    uint32 const firstMs = BONK_AREA_WARN_MS + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_CONE);
+    uint32 const firstMs = GetWarnMs(run, BONK_AREA_WARN_MS) + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_CONE);
     float const size = GetConeSize(std::max(1.0f, ability.size), run, owner, firstMs);
     WindUp(abilityIndex, AimAngle(m_creature, owner, run, firstMs), firstMs + (count - 1) * BONK_BREATH_STAGGER_MS);
     m_areaSelfTimed = true;
@@ -1542,7 +1663,7 @@ void BonkMobAI::StartBreaths(int32 abilityIndex, Player* owner, BonkRun* run, ui
 void BonkMobAI::StartFrontAndBack(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage)
 {
     BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
-    uint32 const warnMs = BONK_AREA_WARN_MS + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_CONE);
+    uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS) + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_CONE);
     float const size = GetConeSize(std::max(1.0f, ability.size), run, owner, warnMs);
     WindUp(abilityIndex, AimAngle(m_creature, owner, run, warnMs), warnMs);
     m_areaSelfTimed = true;
@@ -1557,7 +1678,7 @@ void BonkMobAI::StartWalls(int32 abilityIndex, Player* owner, BonkRun* run, uint
 {
     BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
     uint32 const count = (ability.count ? ability.count : BONK_WALL_COUNT) + run->GetDifficultyStep();
-    uint32 const durationMs = BONK_LINE_WARN_MS + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_LINE);
+    uint32 const durationMs = GetWarnMs(run, BONK_LINE_WARN_MS) + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_LINE);
     float const length = std::min(ability.size > 0.0f ? ability.size : BONK_LINE_MAX_LENGTH, BONK_LINE_MAX_LENGTH);
     WindUp(abilityIndex, AimAngle(m_creature, owner, run, durationMs), durationMs);
     m_areaSelfTimed = true;
@@ -1578,7 +1699,7 @@ void BonkMobAI::StartStrike(int32 abilityIndex, Player* owner, BonkRun* run, Spe
     float const coneReach = GetConeReach(spellInfo);
     float const size = std::min(BONK_AREA_MAX_SIZE,
         GetAreaSize(coneReach > 0.0f ? coneReach : BONK_STRIKE_REACH, owner->GetObjectBoundingRadius()));
-    uint32 const warnMs = BONK_AREA_WARN_MS + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_CONE);
+    uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS) + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_CONE);
     WindUp(abilityIndex, AimAngle(m_creature, owner, run, warnMs), warnMs);
     m_areaStrike = true;
     m_areaSize = size;
@@ -1593,7 +1714,8 @@ void BonkMobAI::StartWreath(int32 abilityIndex, Player* owner, BonkRun* run, uin
     BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
     uint32 const count = (ability.count ? ability.count : BONK_WREATH_COUNT) + 2 * run->GetDifficultyStep();
     float const distance = ability.size > 0.0f ? ability.size : BONK_WREATH_DISTANCE;
-    WindUp(abilityIndex, m_creature->GetAngle(owner), BONK_AREA_WARN_MS);
+    uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS);
+    WindUp(abilityIndex, m_creature->GetAngle(owner), warnMs);
     m_areaSelfTimed = true;
     BonkEnemyHit const hit = MakeAbilityHit(run, ability, 0, damage);
     float const turn = frand(0.0f, 2.0f * M_PI_F);
@@ -1604,7 +1726,7 @@ void BonkMobAI::StartWreath(int32 abilityIndex, Player* owner, BonkRun* run, uin
         float const z = m_creature->GetMap()->GetHeight(x, y, m_creature->GetPositionZ() + 5.0f, true, 15.0f);
         if (z <= INVALID_HEIGHT)
             continue;
-        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_WREATH_RADIUS, BONK_AREA_WARN_MS,
+        run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_WREATH_RADIUS, warnMs,
             [run, hit, x, y, z]() { run->Erupt(hit, x, y, z, BONK_WREATH_RADIUS); }, m_areaWindId);
     }
 }
@@ -1930,6 +2052,8 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
                 run->AddNecroticStack();
             damage = run->MitigateDamage(damage);
             run->OnHeroHitBy(m_creature, damage);
+            if (damage)
+                OnHitHero(run);
         }
 
     if (HasAffix(AFFIX_VAMPIRIC))
@@ -1969,6 +2093,8 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
         ++m_phase;
         run->SpawnPhaseAdds(m_creature, boss ? BONK_PHASE_ADDS + 2 * step : BONK_PHASE_MINI_ADDS + step, boss ? step : 0);
         bonk->Notify(name + " calls for aid!");
+        if (boss)
+            RaiseWards(run, step);
 
         if (boss && m_phase == 1 && step >= 2)
         {
@@ -2000,6 +2126,317 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
     BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * BONK_VOID_DAMAGE)));
     run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_VOID_RADIUS, BONK_VOID_WARN_MS,
         [run, hit, x, y, z]() { run->StartVoidZone(hit, x, y, z, BONK_VOID_RADIUS, BONK_VOID_DURATION_MS); });
+}
+
+uint32 BonkMobAI::GetWarnMs(BonkRun const* run, uint32 baseMs) const
+{
+    if (!run || !IsBossOrMini() || run->GetDifficultyStep() < 2)
+        return baseMs;
+    return uint32(baseMs * std::max(0.1f, Tune(TUNE_WARN_MYTHIC)));
+}
+
+uint32 BonkMobAI::GetMoveGapMs(BonkRun const* run) const
+{
+    uint32 const step = run ? run->GetDifficultyStep() : 0;
+    if (step >= 2)
+        return TuneMs(TUNE_GAP_MYTHIC);
+    if (step == 1)
+        return TuneMs(TUNE_GAP_HEROIC);
+    return BONK_ABILITY_GAP_MS;
+}
+
+void BonkMobAI::OnHitHero(BonkRun* run)
+{
+    if (m_kind != BONK_SPAWN_BOSS || run->GetDifficultyStep() < 2)
+        return;
+    run->AddBossWound(uint32(std::max(0.0f, Tune(TUNE_WOUND_MAX))), Tune(TUNE_WOUND_CUT), TuneMs(TUNE_WOUND_SECONDS));
+}
+
+void BonkMobAI::UpdateBossPressure(uint32 diff, Player* owner, BonkRun* run)
+{
+    if (m_kind != BONK_SPAWN_BOSS || !run->GetDifficultyStep())
+        return;
+    UpdateLanes(diff, owner, run);
+    if (!IsDancing())
+    {
+        UpdateHeroMarks(diff, owner, run);
+        UpdateFarBlast(diff, owner, run);
+    }
+    if (run->GetDifficultyStep() < 2)
+        return;
+    UpdateLeash(diff, owner);
+    UpdateBossBlink(diff, owner, run);
+}
+
+void BonkMobAI::SetWard(ObjectGuid target, float healPercent)
+{
+    m_wardTarget = target;
+    m_wardHeal = healPercent;
+    m_wardTimer = int32(IN_MILLISECONDS);
+    SetStationary();
+}
+
+void BonkMobAI::UpdateWard(uint32 diff)
+{
+    Creature* target = m_creature->GetMap()->GetCreature(m_wardTarget);
+    if (!target || !target->IsAlive())
+    {
+        m_creature->DespawnOrUnsummon();
+        return;
+    }
+
+    bool const inReach = m_creature->IsWithinDistInMap(target, BONK_WARD_REACH);
+    if (inReach != m_wardBeaming)
+    {
+        m_wardBeaming = inReach;
+        if (inReach)
+        {
+            m_creature->SetChannelObjectGuid(m_wardTarget);
+            m_creature->SetUInt32Value(UNIT_CHANNEL_SPELL, BONK_SPELL_WARD_BEAM);
+        }
+        else
+            m_creature->CancelSpellChannelingAnimationInstantly();
+    }
+
+    m_wardTimer -= int32(diff);
+    if (m_wardTimer > 0)
+        return;
+    m_wardTimer = int32(IN_MILLISECONDS);
+    if (inReach && target->GetHealth() < target->GetMaxHealth())
+        target->ModifyHealth(int32(std::max(1.0f, target->GetMaxHealth() * m_wardHeal / 100.0f)));
+}
+
+void BonkMobAI::RaiseWards(BonkRun* run, uint32 step)
+{
+    if (!step)
+        return;
+    uint32 const count = uint32(std::max(0.0f, Tune(step >= 2 ? TUNE_WARDS_MYTHIC : TUNE_WARDS_HEROIC)));
+    if (!count)
+        return;
+    run->SpawnWards(m_creature, count, Tune(TUNE_WARD_HEALTH) / 100.0f, Tune(TUNE_WARD_HEAL));
+    if (!m_wardsAnnounced)
+    {
+        m_wardsAnnounced = true;
+        if (Player* owner = GetOwner())
+            owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " raises healing wards. Destroy them before they heal it.");
+    }
+}
+
+void BonkMobAI::UpdateLanes(uint32 diff, Player* owner, BonkRun* run)
+{
+    uint32 const intervalMs = TuneMs(run->GetDifficultyStep() >= 2 ? TUNE_LANES_MYTHIC : TUNE_LANES_HEROIC);
+    if (!intervalMs || !m_phase)
+        return;
+    if (m_laneTimer < 0)
+        m_laneTimer = BONK_LANE_FIRST_MS;
+    m_laneTimer -= int32(diff);
+    if (m_laneTimer > 0)
+        return;
+
+    if (!IsDancing())
+    {
+        if (!m_creature->IsWithinDistInMap(owner, BONK_MARK_RANGE))
+        {
+            m_laneTimer = BONK_BLINK_RETRY_MS;
+            return;
+        }
+        StartLanes(owner);
+    }
+    EruptLaneWave(run);
+    uint32 const waves = uint32(std::max(1.0f, Tune(TUNE_LANE_WAVES)));
+    if (++m_laneWave > waves)
+    {
+        m_laneWave = 0;
+        m_laneTimer = int32(intervalMs);
+        return;
+    }
+    m_laneTimer = int32(std::max(250u, TuneMs(TUNE_LANE_GAP)));
+}
+
+void BonkMobAI::StartLanes(Player* owner)
+{
+    owner->GetPosition(m_laneX, m_laneY, m_laneZ);
+    m_laneAngle = m_creature->GetAngle(owner);
+    m_laneSide = urand(0, 1) ? 0 : BONK_LANE_COUNT - 1;
+    m_laneWave = 1;
+    if (!m_lanesAnnounced)
+    {
+        m_lanesAnnounced = true;
+        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " makes the ground erupt in lanes. Step into the lane that stays clear.");
+    }
+}
+
+void BonkMobAI::EruptLaneWave(BonkRun* run)
+{
+    uint32 const otherSide = BONK_LANE_COUNT - 1 - m_laneSide;
+    uint32 const safe = m_laneWave % 2 == 0 ? BONK_LANE_COUNT / 2 : ((m_laneWave - 1) / 2 % 2 == 0 ? m_laneSide : otherSide);
+
+    float const width = std::max(3.0f, Tune(TUNE_LANE_WIDTH));
+    float const radius = width * BONK_LANE_OVERLAP;
+    float const alongX = std::cos(m_laneAngle), alongY = std::sin(m_laneAngle);
+    float const acrossX = -alongY, acrossY = alongX;
+    uint32 const warnMs = std::max(250u, TuneMs(TUNE_LANE_WARN));
+    BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * Tune(TUNE_LANE_DAMAGE))));
+    Map* map = m_creature->GetMap();
+    for (uint32 lane = 0; lane < BONK_LANE_COUNT; ++lane)
+    {
+        if (lane == safe)
+            continue;
+        float const across = (float(lane) - float(BONK_LANE_COUNT - 1) / 2.0f) * width;
+        for (uint32 i = 0; i < BONK_LANE_CIRCLES; ++i)
+        {
+            float const along = (float(i) - float(BONK_LANE_CIRCLES - 1) / 2.0f) * width;
+            float const x = m_laneX + along * alongX + across * acrossX;
+            float const y = m_laneY + along * alongY + across * acrossY;
+            float const z = map->GetHeight(x, y, m_laneZ + 5.0f, true, 15.0f);
+            if (z <= INVALID_HEIGHT)
+                continue;
+            run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, warnMs,
+                [run, hit, x, y, z, radius]() { run->Erupt(hit, x, y, z, radius); });
+        }
+    }
+}
+
+void BonkMobAI::UpdateBossBlink(uint32 diff, Player* owner, BonkRun* run)
+{
+    uint32 const delayMs = TuneMs(TUNE_BLINK_DELAY);
+    float const range = Tune(TUNE_FAR_RANGE);
+    if (!delayMs || range <= 0.0f || m_creature->IsWithinDistInMap(owner, range))
+    {
+        m_bossBlinkFarMs = 0;
+        return;
+    }
+    m_bossBlinkFarMs += diff;
+    if (m_bossBlinkFarMs < delayMs || IsBusyWindingUp() || IsDancing() || m_chargeState != CHARGE_NONE || m_landingTimer > 0 ||
+        m_creature->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED))
+        return;
+    if (!BlinkToHero(owner, run))
+    {
+        m_bossBlinkFarMs = delayMs - BONK_BLINK_RETRY_MS;
+        return;
+    }
+    m_bossBlinkFarMs = 0;
+    m_farMs = 0;
+    if (!m_bossBlinkAnnounced)
+    {
+        m_bossBlinkAnnounced = true;
+        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " blinks to you when you stay out of reach.");
+    }
+}
+
+bool BonkMobAI::BlinkToHero(Player* owner, BonkRun* run)
+{
+    float const angle = owner->GetAngle(m_creature);
+    float const x = owner->GetPositionX() + BONK_BLINK_LANDING * std::cos(angle);
+    float const y = owner->GetPositionY() + BONK_BLINK_LANDING * std::sin(angle);
+    float const z = m_creature->GetMap()->GetHeight(x, y, owner->GetPositionZ() + 5.0f, true, 15.0f);
+    if (z <= INVALID_HEIGHT || !owner->IsWithinLOS(x, y, z + 2.0f))
+        return false;
+
+    uint32 const warnMs = std::max(250u, TuneMs(TUNE_BLINK_WARN));
+    float const radius = std::max(1.0f, Tune(TUNE_BLINK_RADIUS));
+    ShowArrivalFlash();
+    m_creature->NearTeleportTo(x, y, z, m_creature->GetAngle(owner));
+    Hold(warnMs);
+    BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * Tune(TUNE_BLINK_DAMAGE))));
+    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, warnMs,
+        [run, hit, x, y, z, radius]() { run->Erupt(hit, x, y, z, radius); });
+    return true;
+}
+
+void BonkMobAI::UpdateHeroMarks(uint32 diff, Player* owner, BonkRun* run)
+{
+    uint32 const intervalMs = TuneMs(run->GetDifficultyStep() >= 2 ? TUNE_MARK_MYTHIC : TUNE_MARK_HEROIC);
+    if (!intervalMs)
+        return;
+    if (m_markTimer < 0)
+        m_markTimer = int32(intervalMs / 2);
+    m_markTimer -= int32(diff);
+    if (m_markTimer > 0 || run->IsHeroMarked() || !m_creature->IsWithinDistInMap(owner, BONK_MARK_RANGE))
+        return;
+    m_markTimer = int32(intervalMs);
+
+    float const melee = GetMeleeHit();
+    BonkEnemyHit const burst = MakeHit(run, 0, uint32(std::max(1.0f, melee * Tune(TUNE_MARK_DAMAGE))));
+    BonkEnemyHit const pool = MakeHit(run, 0, uint32(std::max(1.0f, melee * BONK_VOID_DAMAGE)));
+    run->MarkHero(burst, pool, std::max(1.0f, Tune(TUNE_MARK_RADIUS)), BONK_MARK_FILL_MS, GetWarnMs(run, TuneMs(TUNE_MARK_WARN)),
+        TuneMs(TUNE_MARK_POOL));
+    if (!m_markAnnounced)
+    {
+        m_markAnnounced = true;
+        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " marks you. The mark bursts where you stand when it fades.");
+    }
+}
+
+void BonkMobAI::UpdateFarBlast(uint32 diff, Player* owner, BonkRun* run)
+{
+    float const range = Tune(TUNE_FAR_RANGE);
+    if (range <= 0.0f || m_creature->IsWithinDistInMap(owner, range))
+    {
+        m_farMs = 0;
+        return;
+    }
+    m_farMs += diff;
+    m_farTimer -= int32(diff);
+    if (m_farMs < TuneMs(TUNE_FAR_DELAY) || m_farTimer > 0)
+        return;
+    m_farTimer = int32(std::max(250u, TuneMs(TUNE_FAR_INTERVAL)));
+
+    uint32 const count = uint32(std::max(1.0f, Tune(TUNE_FAR_COUNT))) + (run->GetDifficultyStep() >= 2 ? 1 : 0);
+    BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * Tune(TUNE_FAR_DAMAGE))));
+    LaunchBarrage(owner, run, hit, count, std::max(1.0f, Tune(TUNE_FAR_RADIUS)), GetWarnMs(run, BONK_AREA_WARN_MS));
+    if (!m_farAnnounced)
+    {
+        m_farAnnounced = true;
+        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " bombards you while you keep your distance.");
+    }
+}
+
+void BonkMobAI::UpdateLeash(uint32 diff, Player* owner)
+{
+    float const range = Tune(TUNE_LEASH_RANGE);
+    if (range <= 0.0f || m_creature->IsWithinDistInMap(owner, range))
+    {
+        m_leashMs = 0;
+        return;
+    }
+    m_leashMs += diff;
+    m_leashTimer -= int32(diff);
+    if (m_leashMs < TuneMs(TUNE_LEASH_DELAY) || m_leashTimer > 0)
+        return;
+    m_leashTimer = int32(IN_MILLISECONDS);
+    if (m_creature->GetHealth() >= m_creature->GetMaxHealth())
+        return;
+
+    m_creature->ModifyHealth(int32(std::max(1.0f, m_creature->GetMaxHealth() * Tune(TUNE_LEASH_HEAL) / 100.0f)));
+    if (!m_leashAnnounced)
+    {
+        m_leashAnnounced = true;
+        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " recovers while you stay away.");
+    }
+}
+
+bool BonkMobAI::SetBossTune(std::string const& key, float value)
+{
+    for (BossTuneEntry& entry : s_bossTune)
+        if (key == entry.key)
+        {
+            entry.value = value;
+            return true;
+        }
+    return false;
+}
+
+std::vector<std::string> BonkMobAI::DescribeBossTune()
+{
+    std::vector<std::string> lines;
+    for (BossTuneEntry const& entry : s_bossTune)
+    {
+        char value[32];
+        snprintf(value, sizeof(value), "%g", entry.value);
+        lines.push_back(std::string(entry.key) + " " + value + ": " + entry.meaning);
+    }
+    return lines;
 }
 
 void BonkMobAI::SetRaidTarget(ObjectGuid target)

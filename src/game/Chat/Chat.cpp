@@ -301,6 +301,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "stress",         SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkStressCommand,          "", nullptr },
         { "crowd",          SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkCrowdCommand,           "", nullptr },
         { "spawnlook",      SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSpawnLookCommand,       "", nullptr },
+        { "bosstune",       SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkBossTuneCommand,        "", nullptr },
         { "dash",           SEC_PLAYER,         false, &ChatHandler::HandleBonkDashCommand,            "", nullptr },
         { "sandbox",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSandboxCommand,         "", nullptr },
         { "mobinfo",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkMobInfoCommand,         "", nullptr },

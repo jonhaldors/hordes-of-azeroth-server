@@ -28,6 +28,7 @@ namespace
     uint32 const BONK_STANDIN_INVISIBLE   = 11686;
     uint32 const BONK_STANDIN_READY_MS    = 2500;
     uint32 const BONK_STANDIN_UNDRESS_MS  = 500;
+    uint32 const BONK_STANDIN_RESCALE_MS  = 2500;
     uint32 const BONK_STANDIN_MIN_IDLE    = 32;
     uint32 const BONK_STANDIN_BATCH       = 8;
     uint32 const BONK_STANDIN_MAX         = 160;
@@ -472,15 +473,17 @@ void BonkTelegraphs::Undress(Player* owner, ObjectGuid const& guid)
     for (StandIn& standIn : m_standIns)
         if (standIn.guid == guid)
         {
+            bool rescaled = false;
             if (Map* map = owner->FindMap())
                 if (Creature* creature = map->GetCreature(guid))
                 {
                     creature->SetDisplayId(BONK_STANDIN_INVISIBLE);
-                    if (creature->GetObjectScale() != standIn.baseScale)
+                    rescaled = creature->GetObjectScale() != standIn.baseScale;
+                    if (rescaled)
                         creature->SetObjectScale(standIn.baseScale);
                 }
             standIn.busy = false;
-            standIn.readyAtMs = m_clockMs + BONK_STANDIN_UNDRESS_MS;
+            standIn.readyAtMs = m_clockMs + (rescaled ? BONK_STANDIN_RESCALE_MS : BONK_STANDIN_UNDRESS_MS);
             return;
         }
 }

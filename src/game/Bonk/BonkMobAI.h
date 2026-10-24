@@ -72,6 +72,11 @@ class BonkMobAI : public CreatureAI
         bool IsWindingUp(uint32 windId) const;
         bool ForceAbility(uint32 number);
         static void KnockBackHero(Player* hero, float angle);
+        static bool SetBossTune(std::string const& key, float value);
+        static std::vector<std::string> DescribeBossTune();
+        void OnHitHero(BonkRun* run);
+        void SetWard(ObjectGuid target, float healPercent);
+        bool IsWard() const { return !m_wardTarget.IsEmpty(); }
         std::string Describe() const;
 
         using CreatureAI::JustSummoned;
@@ -126,6 +131,22 @@ class BonkMobAI : public CreatureAI
         void UpdateAbilities(uint32 diff, Player* owner);
         void UpdateAffixes(uint32 diff, Player* owner);
         void UpdatePhases(uint32 diff, Player* owner);
+        bool IsBossOrMini() const { return m_kind == BONK_SPAWN_BOSS || m_kind == BONK_SPAWN_MINIBOSS; }
+        uint32 GetWarnMs(BonkRun const* run, uint32 baseMs) const;
+        uint32 GetMoveGapMs(BonkRun const* run) const;
+        void UpdateBossPressure(uint32 diff, Player* owner, BonkRun* run);
+        void UpdateHeroMarks(uint32 diff, Player* owner, BonkRun* run);
+        void UpdateFarBlast(uint32 diff, Player* owner, BonkRun* run);
+        void UpdateLeash(uint32 diff, Player* owner);
+        void UpdateWard(uint32 diff);
+        void RaiseWards(BonkRun* run, uint32 step);
+        bool IsDancing() const { return m_laneWave > 0; }
+        void UpdateLanes(uint32 diff, Player* owner, BonkRun* run);
+        void StartLanes(Player* owner);
+        void EruptLaneWave(BonkRun* run);
+        void UpdateBossBlink(uint32 diff, Player* owner, BonkRun* run);
+        bool BlinkToHero(Player* owner, BonkRun* run);
+        void LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& hit, uint32 count, float size, uint32 warnMs);
         void StartArea(int32 abilityIndex, Player* owner);
         void StartShape(int32 abilityIndex, Player* owner);
         void WindUp(int32 abilityIndex, float orientation, uint32 durationMs);
@@ -180,6 +201,27 @@ class BonkMobAI : public CreatureAI
         bool m_phaseEnraged = false;
         bool m_voidZones = false;
         int32 m_voidTimer = 0;
+        int32 m_markTimer = -1;
+        bool m_markAnnounced = false;
+        uint32 m_farMs = 0;
+        int32 m_farTimer = 0;
+        bool m_farAnnounced = false;
+        uint32 m_leashMs = 0;
+        int32 m_leashTimer = 0;
+        bool m_leashAnnounced = false;
+        ObjectGuid m_wardTarget;
+        float m_wardHeal = 0.0f;
+        int32 m_wardTimer = 0;
+        bool m_wardBeaming = false;
+        bool m_wardsAnnounced = false;
+        int32 m_laneTimer = -1;
+        uint32 m_laneWave = 0;
+        uint32 m_laneSide = 0;
+        float m_laneX = 0.0f, m_laneY = 0.0f, m_laneZ = 0.0f;
+        float m_laneAngle = 0.0f;
+        bool m_lanesAnnounced = false;
+        uint32 m_bossBlinkFarMs = 0;
+        bool m_bossBlinkAnnounced = false;
         bool m_frozen = false;
         bool m_cried = false;
         bool m_areaWinding = false;
