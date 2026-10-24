@@ -45,6 +45,7 @@ set (game_SRCS
     Bonk/BonkRunPriest.cpp
     Bonk/BonkRunWarlock.cpp
     Bonk/BonkRunWarlockEvolutions.cpp
+    Bonk/BonkRunDruid.cpp
     Bonk/BonkRunRogue.cpp
     Bonk/BonkRunPaladin.cpp
     Bonk/BonkRunShrines.cpp

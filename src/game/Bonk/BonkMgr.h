@@ -534,6 +534,16 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_CURSE_OF_AGONY = 118,
     BONK_BEHAVIOR_DRAIN_LIFE    = 119,
     BONK_BEHAVIOR_HELLFIRE      = 120,
+    BONK_BEHAVIOR_MOONFIRE      = 121,
+    BONK_BEHAVIOR_RAKE          = 122,
+    BONK_BEHAVIOR_SHRED         = 123,
+    BONK_BEHAVIOR_SWIPE         = 124,
+    BONK_BEHAVIOR_FRENZIED_REGENERATION = 125,
+    BONK_BEHAVIOR_REJUVENATION  = 126,
+    BONK_BEHAVIOR_ENTANGLING_ROOTS = 127,
+    BONK_BEHAVIOR_TRANQUILITY   = 128,
+    BONK_BEHAVIOR_THORNS        = 129,
+    BONK_BEHAVIOR_HURRICANE     = 130,
     MAX_BONK_BEHAVIOR
 };
 
@@ -554,6 +564,7 @@ enum BonkKeyword : uint8
     BONK_KEYWORD_NATURE_VULNERABILITY = 12,
     BONK_KEYWORD_DECAY                = 13,
     BONK_KEYWORD_AGONY                = 14,
+    BONK_KEYWORD_MOONFIRE             = 15,
     MAX_BONK_KEYWORD,
     BONK_KEYWORD_VARIETY              = 255
 };
@@ -574,7 +585,7 @@ struct BonkKeywordInfo
     bool IsDamageOverTime() const
     {
         return id == BONK_KEYWORD_BURNING || id == BONK_KEYWORD_BLEED || id == BONK_KEYWORD_POISON || id == BONK_KEYWORD_DECAY ||
-            id == BONK_KEYWORD_AGONY;
+            id == BONK_KEYWORD_AGONY || id == BONK_KEYWORD_MOONFIRE;
     }
 };
 
@@ -760,6 +771,7 @@ uint32 const BONK_PET_FAMILY_IMP = 12;
 uint32 const BONK_PET_FAMILY_VOIDWALKER = 13;
 uint32 const BONK_PET_FAMILY_SUCCUBUS = 14;
 uint32 const BONK_PET_FAMILY_FELHUNTER = 15;
+uint32 const BONK_PET_FAMILY_TREANT = 16;
 
 enum BonkPetAbilityKind : uint8
 {

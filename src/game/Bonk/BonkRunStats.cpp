@@ -71,6 +71,7 @@ namespace
                 case BONK_KEYWORD_BURNING: return "burn";
                 case BONK_KEYWORD_DECAY:   return "decay";
                 case BONK_KEYWORD_AGONY:   return "agony";
+                case BONK_KEYWORD_MOONFIRE: return "moonfire";
                 default:                   break;
             }
         }

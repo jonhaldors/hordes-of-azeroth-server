@@ -704,7 +704,7 @@ bool BonkPlayer::IsWipeName(std::string const& name)
 bool BonkPlayer::IsPlayableClass(uint8 classId)
 {
     return classId == CLASS_WARRIOR || classId == CLASS_HUNTER || classId == CLASS_MAGE || classId == CLASS_SHAMAN || classId == CLASS_PRIEST || classId == CLASS_ROGUE || classId == CLASS_PALADIN ||
-        classId == CLASS_WARLOCK;
+        classId == CLASS_WARLOCK || classId == CLASS_DRUID;
 }
 
 void BonkPlayer::WipeAccount(uint32 accountId)

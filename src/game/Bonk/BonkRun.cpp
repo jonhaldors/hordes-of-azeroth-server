@@ -1343,6 +1343,7 @@ void BonkRun::StartStage()
     ResetPriestState();
     ResetRogueState();
     ResetPaladinState();
+    ResetDruidState();
     m_bleedHeal = 0.0f;
     m_player->GetBonkPlayer()->SendAddon("mobclear");
 
@@ -1483,6 +1484,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdatePriest(diff);
     UpdateRogue(diff);
     UpdateWarlock(diff);
+    UpdateDruid(diff);
     UpdateTalents();
     UpdateIcePath(diff);
     UpdateWeaponOrbs(diff);
@@ -3396,7 +3398,7 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     if (IsCardImmune() || IsIceBlocked() || IsHiddenInSmoke() || IsDivinelyShielded() || BlockWithDivineShield(damage))
         return 0;
 
-    damage = ApplyPaladinDamageTaken(ApplyPriestDamageTaken(ApplyTalentDamageTaken(damage)));
+    damage = ApplyDruidDamageTaken(ApplyPaladinDamageTaken(ApplyPriestDamageTaken(ApplyTalentDamageTaken(damage))));
     m_hurt = true;
     m_lastHurtMs = m_totalMs;
 
@@ -3857,7 +3859,7 @@ float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit c
         for (OwnedWeapon const& owned : m_weapons)
             if (owned.weapon.spellId == spell->Id && owned.weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT))
                 return std::max(100.0f, chance);
-    return GetPaladinCritChance(spell, GetRogueCritChance(spell, chance));
+    return GetDruidCritChance(spell, GetPaladinCritChance(spell, GetRogueCritChance(spell, chance)));
 }
 
 float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
@@ -3884,7 +3886,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
     float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower) * powerShare;
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
-        GetPaladinDamageMultiplier(victim);
+        GetPaladinDamageMultiplier(victim) * GetDruidDamageMultiplier(spell);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim);
 
@@ -5086,6 +5088,7 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
     OnShamanStrike(owned, shotInfo, target, shotShare);
     OnPriestStrike(owned, shotInfo, target, shotShare);
     OnWarlockStrike(owned, shotInfo, target, shotShare);
+    OnDruidStrike(owned, target);
 
     if (weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
         KnockBack(target);
@@ -5898,6 +5901,9 @@ BonkRun::KeywordCloudKind BonkRun::GetCloudKind(OwnedWeapon const& owned) const
     KeywordCloudKind paladin;
     if (GetPaladinCloudKind(owned, paladin))
         return paladin;
+    KeywordCloudKind druid;
+    if (GetDruidCloudKind(owned, druid))
+        return druid;
 
     KeywordCloudKind venom;
     venom.lifeMs = BONK_VENOM_CLOUD_MS;
@@ -5994,6 +6000,7 @@ void BonkRun::UpdateKeywordClouds(uint32 diff)
 void BonkRun::PulseKeywordCloud(OwnedWeapon const& owned, KeywordCloud const& cloud)
 {
     OnPaladinCloudPulse(owned, cloud);
+    OnDruidCloudPulse(owned, cloud);
     PendingKeyword keyword;
     if (!GetWeaponKeyword(owned, keyword))
         return;
@@ -6358,7 +6365,8 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     owned.killed = false;
 
-    if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo) || FireWarlockSpell(owned, spellInfo))
+    if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo) || FireWarlockSpell(owned, spellInfo) ||
+        FireDruidSpell(owned, spellInfo))
         return;
 
     if (weapon.IsShieldBlock() || weapon.behavior == BONK_BEHAVIOR_WARD)
@@ -7904,6 +7912,7 @@ void BonkRun::OnHeroStruck(Creature* attacker)
     OnShamanStruck(attacker);
     OnPriestStruck(attacker);
     OnPaladinStruck(attacker);
+    OnDruidStruck(attacker);
 }
 
 std::string BonkRun::DescribeStriker(Creature const* attacker)
@@ -8544,6 +8553,8 @@ BonkPetFamily const* BonkRun::GetPetFamily(OwnedWeapon const& owned) const
 {
     if (uint32 const warlockFamily = GetWarlockPetFamily(owned))
         return sBonkMgr.GetPetFamily(warlockFamily);
+    if (uint32 const druidFamily = GetDruidPetFamily(owned))
+        return sBonkMgr.GetPetFamily(druidFamily);
     uint32 const classMask = owned.weapon.classMask;
     if (classMask & (1 << (CLASS_WARLOCK - 1)))
         return nullptr;
@@ -11965,6 +11976,7 @@ void BonkRun::CleanUp()
     ResetPriestState();
     ResetRogueState();
     ResetPaladinState();
+    ResetDruidState();
     m_bleedHeal = 0.0f;
     m_spellShield = 0;
     m_spellShieldParts.clear();
