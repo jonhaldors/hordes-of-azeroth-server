@@ -82,7 +82,6 @@ namespace
         return hitReach >= 8.0f ? std::ceil(hitReach) : std::ceil(hitReach * 2.0f) / 2.0f;
     }
 
-    float const BONK_STRIKE_REACH       = 7.0f;
     float const BONK_CONE_GROWTH_PER_STEP = 0.2f;
     float const BONK_CONE_WORST_ESCAPE  = 0.4142f;
     uint32 const BONK_REACTION_MS       = 400;
@@ -92,30 +91,6 @@ namespace
         float const grown = normalSize * (1.0f + BONK_CONE_GROWTH_PER_STEP * float(run->GetDifficultyStep()));
         float const runway = hero->GetSpeed(MOVE_RUN) * float(warnMs > BONK_REACTION_MS ? warnMs - BONK_REACTION_MS : 0) / IN_MILLISECONDS;
         return std::max(1.0f, std::min(grown, runway / BONK_CONE_WORST_ESCAPE));
-    }
-
-    bool IsWeaponStrike(SpellEntry const* spellInfo)
-    {
-        for (SpellEffects effect : { SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL, SPELL_EFFECT_WEAPON_PERCENT_DAMAGE, SPELL_EFFECT_WEAPON_DAMAGE,
-            SPELL_EFFECT_NORMALIZED_WEAPON_DMG })
-            if (spellInfo->HasEffect(effect))
-                return true;
-        return false;
-    }
-
-    float GetConeReach(SpellEntry const* spellInfo)
-    {
-        float reach = 0.0f;
-        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
-        {
-            uint32 const a = spellInfo->EffectImplicitTargetA[i];
-            uint32 const b = spellInfo->EffectImplicitTargetB[i];
-            bool const cone = a == TARGET_ENUM_UNITS_ENEMY_IN_CONE_24 || a == TARGET_ENUM_UNITS_ENEMY_IN_CONE_54 ||
-                b == TARGET_ENUM_UNITS_ENEMY_IN_CONE_24 || b == TARGET_ENUM_UNITS_ENEMY_IN_CONE_54;
-            if (spellInfo->Effect[i] && cone)
-                reach = std::max(reach, Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i])));
-        }
-        return reach;
     }
 
     bool DealsDamage(SpellEntry const* spellInfo)
@@ -1107,15 +1082,6 @@ void BonkMobAI::Cast(BonkMobAbility const& ability, Player* owner, bool triggere
         return;
     }
 
-    bool const ownAbility = m_mob && !m_mob->abilities.empty() && &ability >= m_mob->abilities.data() &&
-        &ability < m_mob->abilities.data() + m_mob->abilities.size();
-    if (ability.target == BONK_ABILITY_PLAYER && ownAbility && IsWeaponStrike(spellInfo))
-        if (BonkRun* run = owner->GetBonkPlayer()->GetRun())
-        {
-            StartStrike(int32(&ability - m_mob->abilities.data()), owner, run, spellInfo);
-            return;
-        }
-
     if (ability.target == BONK_ABILITY_PLAYER && ability.damageEffectIndex >= 0 &&
         spellInfo->Effect[ability.damageEffectIndex] == SPELL_EFFECT_SCHOOL_DAMAGE)
         if (BonkRun* run = owner->GetBonkPlayer()->GetRun())
@@ -1421,7 +1387,6 @@ void BonkMobAI::StartArea(int32 abilityIndex, Player* owner)
     uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS);
     m_areaTimer = int32(warnMs);
     m_areaSize = size;
-    m_areaStrike = false;
     m_areaX = m_creature->GetPositionX();
     m_areaY = m_creature->GetPositionY();
     HoldStill();
@@ -1525,7 +1490,6 @@ void BonkMobAI::WindUp(int32 abilityIndex, float orientation, uint32 durationMs)
     m_areaOrientation = orientation;
     m_leapLaunched = false;
     m_areaSelfTimed = false;
-    m_areaStrike = false;
     HoldStill();
     m_creature->SetFacingTo(orientation);
 }
@@ -1693,22 +1657,6 @@ void BonkMobAI::StartWalls(int32 abilityIndex, Player* owner, BonkRun* run, uint
     }
 }
 
-void BonkMobAI::StartStrike(int32 abilityIndex, Player* owner, BonkRun* run, SpellEntry const* spellInfo)
-{
-    BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
-    float const coneReach = GetConeReach(spellInfo);
-    float const size = std::min(BONK_AREA_MAX_SIZE,
-        GetAreaSize(coneReach > 0.0f ? coneReach : BONK_STRIKE_REACH, owner->GetObjectBoundingRadius()));
-    uint32 const warnMs = GetWarnMs(run, BONK_AREA_WARN_MS) + GetBonkTelegraphLeadMs(BONK_TELEGRAPH_CONE);
-    WindUp(abilityIndex, AimAngle(m_creature, owner, run, warnMs), warnMs);
-    m_areaStrike = true;
-    m_areaSize = size;
-    float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ(), o = m_areaOrientation;
-    BonkEnemyHit const hit = MakeAbilityHit(run, ability, BONK_SPELL_CHARGE_HIT, GetShapeDamage(ability), m_areaWindId);
-    run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CONE, x, y, z, o, size, warnMs,
-        [run, hit, x, y, z, o, size]() { run->LandWarning(hit, BONK_TELEGRAPH_CONE, x, y, z, o, size); }, m_areaWindId);
-}
-
 void BonkMobAI::StartWreath(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage)
 {
     BonkMobAbility const& ability = m_mob->abilities[abilityIndex];
@@ -1792,8 +1740,6 @@ void BonkMobAI::ResumeChase(Player* owner)
 void BonkMobAI::ResolveArea(Player* owner)
 {
     m_areaWinding = false;
-    bool const strike = m_areaStrike;
-    m_areaStrike = false;
 
     BonkMobAbility const* ability = m_mob && m_areaAbility >= 0 ? &m_mob->abilities[m_areaAbility] : nullptr;
     if (m_areaSelfTimed)
@@ -1824,18 +1770,7 @@ void BonkMobAI::ResolveArea(Player* owner)
         uint32 const castKit = GetCastKit(*ability);
         if (castKit && ability->shape != BONK_SHAPE_SPELL)
             m_creature->SendPlaySpellVisualKit(castKit);
-        if (strike)
-        {
-            m_creature->HandleEmote(EMOTE_ONESHOT_ATTACK1H);
-            if (reachable && IsInBonkTelegraph(BONK_TELEGRAPH_CONE, m_areaX, m_areaY, m_areaOrientation, m_areaSize, x, y))
-            {
-                StrikeOwner(owner, *ability, x, y, z);
-                SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(ability->spellId);
-                if (spellInfo && spellInfo->HasEffect(SPELL_EFFECT_KNOCK_BACK) && owner->IsAlive())
-                    KnockBackHero(owner, std::atan2(y - m_areaY, x - m_areaX));
-            }
-        }
-        else if (ability->shape == BONK_SHAPE_CONE || ability->shape == BONK_SHAPE_NOVA)
+        if (ability->shape == BONK_SHAPE_CONE || ability->shape == BONK_SHAPE_NOVA)
         {
             BonkTelegraphShape const shape = GetHeldShape(ability->shape);
             m_creature->HandleEmote(shape == BONK_TELEGRAPH_CONE ? EMOTE_ONESHOT_ATTACK1H : EMOTE_ONESHOT_BATTLEROAR);

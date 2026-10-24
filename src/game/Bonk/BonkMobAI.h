@@ -157,7 +157,6 @@ class BonkMobAI : public CreatureAI
         void StartFrontAndBack(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
         void StartWalls(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
         void StartWreath(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage);
-        void StartStrike(int32 abilityIndex, Player* owner, BonkRun* run, SpellEntry const* spellInfo);
         std::vector<float> GetLineAngles() const;
         bool IsInLines(float x, float y) const;
         void LaunchLeap();
@@ -230,7 +229,6 @@ class BonkMobAI : public CreatureAI
         float m_areaX = 0.0f, m_areaY = 0.0f;
         float m_areaOrientation = 0.0f;
         float m_areaSize = 0.0f;
-        bool m_areaStrike = false;
         uint32 m_lineCount = 0;
         float m_lineSpread = 0.0f;
         float m_lineLength = 0.0f;
