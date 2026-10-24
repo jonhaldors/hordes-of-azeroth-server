@@ -11808,6 +11808,7 @@ void BonkRun::SetPaused(bool paused)
         ShiftDotStacks(WorldTimer::getMSTime() - m_pausedAtMs);
 
     m_player->SetTimeFrozen(paused);
+    PauseHearth(paused);
     if (m_player->IsInWorld())
     {
         for (UnitMoveType type : { MOVE_WALK, MOVE_RUN, MOVE_RUN_BACK, MOVE_SWIM })

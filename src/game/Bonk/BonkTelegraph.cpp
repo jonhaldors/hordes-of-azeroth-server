@@ -95,6 +95,11 @@ namespace
     }
 }
 
+float GetBonkTelegraphGround(Map* map, float x, float y, float z, float reach)
+{
+    return GetGroundTop(map, x, y, z, reach);
+}
+
 char const* GetBonkTelegraphShapeName(BonkTelegraphShape shape)
 {
     return shape < MAX_BONK_TELEGRAPH_SHAPE ? BONK_TELEGRAPH_SHAPE_NAMES[shape] : "";
@@ -466,6 +471,11 @@ void BonkTelegraphs::Resize(Player* owner, ObjectGuid const& guid, float stretch
     for (StandIn const& standIn : m_standIns)
         if (standIn.guid == guid)
             creature->SetObjectScale(standIn.baseScale * stretch);
+}
+
+void BonkTelegraphs::Hide(Player* owner, ObjectGuid const& guid)
+{
+    Wear(owner, guid, BONK_STANDIN_INVISIBLE);
 }
 
 void BonkTelegraphs::Undress(Player* owner, ObjectGuid const& guid)

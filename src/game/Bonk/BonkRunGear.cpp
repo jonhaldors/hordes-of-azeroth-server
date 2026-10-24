@@ -29,7 +29,6 @@ namespace
     uint32 const BONK_BANKER_ENTRY       = 900009;
     size_t const BONK_MAX_GEAR_DROPS     = 10;
     uint32 const BONK_ITEM_HEARTHSTONE   = 900230;
-    uint32 const BONK_GO_HEARTH_RING     = 900023;
     float const BONK_HEARTH_CHANCE_MINIBOSS = 30.0f;
     float const BONK_HEARTH_CHANCE_ELITE    = 3.0f;
     float const BONK_HEARTH_RADIUS       = 5.0f;
@@ -37,9 +36,23 @@ namespace
     float const BONK_HEARTH_LORE_STEP    = 20.0f;
     uint32 const BONK_HEARTH_MIN_MS      = 8000;
     uint32 const BONK_HEARTH_SEND_MS     = 250;
-    char const* const BONK_HEARTH_LABEL  = "Hearthstone";
+    uint32 const BONK_HEARTH_RING_DISPLAY       = 18400;
+    uint32 const BONK_HEARTH_FIRST_FILL_DISPLAY = 18401;
+    uint32 const BONK_HEARTH_FILL_STEP_MS       = 1000;
+    uint32 const BONK_HEARTH_RESUME_STEP_MS     = 500;
+    uint32 const BONK_HEARTH_VANISH_MS          = 300;
+    uint32 const BONK_HEARTH_SWIRL_DISPLAY      = 18585;
+    uint32 const BONK_KIT_ASTRAL_RECALL         = 365;
     float const BONK_VAULT_REACH         = 8.0f;
     float const BONK_VAULT_RING_OFFSET   = 2.5f;
+
+    uint32 GetHearthFillDisplay(uint32 durationMs, uint32 doneMs)
+    {
+        uint32 display = BONK_HEARTH_FIRST_FILL_DISPLAY;
+        for (uint32 shorter = BONK_HEARTH_MIN_MS; shorter < durationMs; shorter += BONK_HEARTH_FILL_STEP_MS)
+            display += shorter / BONK_HEARTH_RESUME_STEP_MS;
+        return display + std::min(doneMs, durationMs - 1) / BONK_HEARTH_RESUME_STEP_MS;
+    }
 
     std::vector<uint8> GetEquipSlotsFor(uint32 inventoryType)
     {
@@ -541,17 +554,20 @@ bool BonkRun::UseItem(Item* item)
     m_player->DestroyItemCount(BONK_ITEM_HEARTHSTONE, 1, true);
     m_hearthX = m_player->GetPositionX();
     m_hearthY = m_player->GetPositionY();
-    m_hearthZ = m_player->GetPositionZ();
-    if (GameObject* ring = PlaceObject(BONK_GO_HEARTH_RING, m_hearthX, m_hearthY, m_hearthZ, BONK_LOOT_LIFETIME_SEC))
-        m_hearthRing = ring->GetObjectGuid();
+    m_hearthZ = GetBonkTelegraphGround(m_player->GetMap(), m_hearthX, m_hearthY, m_player->GetPositionZ(), BONK_HEARTH_RADIUS);
     float const facing = m_player->GetOrientation();
-    PlaceVault(m_hearthX + BONK_VAULT_RING_OFFSET * std::cos(facing), m_hearthY + BONK_VAULT_RING_OFFSET * std::sin(facing), m_hearthZ);
+    PlaceVault(m_hearthX + BONK_VAULT_RING_OFFSET * std::cos(facing), m_hearthY + BONK_VAULT_RING_OFFSET * std::sin(facing), m_player->GetPositionZ());
     m_hearthActive = true;
     FitVaultToSlots();
     m_hearthMs = 0;
     m_hearthSendMs = 0;
+    m_hearthLeavingMs = 0;
     m_hearthShown = false;
-    bonk->Notify("Stand in the ring for " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds to return to the Inn" +
+    m_hearthOutline = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_RING_DISPLAY);
+    m_hearthSwirl = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_SWIRL_DISPLAY);
+    DressHearthFill();
+    SendHearthBar(true);
+    bonk->Notify("The ring fills in " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds. Be inside it when it does to return to the Inn" +
         (IsVaultEmptyWithFinds() ? ". Put your best find in the Extraction Vault first!" : " with your loot!"));
     return true;
 }
@@ -561,35 +577,94 @@ void BonkRun::UpdateHearth(uint32 diff)
     if (!m_hearthActive)
         return;
 
-    BonkPlayer* bonk = m_player->GetBonkPlayer();
-    float const dx = m_player->GetPositionX() - m_hearthX, dy = m_player->GetPositionY() - m_hearthY;
-    if (dx * dx + dy * dy > BONK_HEARTH_RADIUS * BONK_HEARTH_RADIUS)
+    if (m_hearthLeavingMs)
     {
-        if (m_hearthShown)
-        {
-            bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~-1");
-            m_hearthShown = false;
-        }
+        if (m_hearthLeavingMs > diff)
+            m_hearthLeavingMs -= diff;
+        else
+            EndHearth();
         return;
     }
 
+    if (m_hearthOutline.IsEmpty())
+        m_hearthOutline = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_RING_DISPLAY);
+    if (m_hearthSwirl.IsEmpty())
+        m_hearthSwirl = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_SWIRL_DISPLAY);
+    if (m_hearthFill.IsEmpty())
+        DressHearthFill();
+
     m_hearthMs += diff;
     m_hearthSendMs += diff;
-    uint32 const needed = GetHearthMs();
-    if (m_hearthMs >= needed)
+    bool const inside = IsHeroInHearthRing();
+    if (m_hearthMs >= GetHearthMs())
     {
-        bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~100");
+        if (!inside)
+        {
+            LeaveHeroBehind();
+            return;
+        }
+        BonkPlayer* bonk = m_player->GetBonkPlayer();
+        bonk->SendAddon("hearth~100~1~0");
         EndHearth();
         bonk->Notify("Returning to the Inn!");
         Finish(true);
         return;
     }
-    if (!m_hearthShown || m_hearthSendMs >= BONK_HEARTH_SEND_MS)
-    {
-        m_hearthSendMs = 0;
-        m_hearthShown = true;
-        bonk->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~" + std::to_string(m_hearthMs * 100 / needed));
-    }
+    if (!m_hearthShown || inside != m_hearthInside || m_hearthSendMs >= BONK_HEARTH_SEND_MS)
+        SendHearthBar(inside);
+}
+
+void BonkRun::PauseHearth(bool paused)
+{
+    if (!m_hearthActive || m_hearthLeavingMs)
+        return;
+    if (paused)
+        m_telegraphs.Hide(m_player, m_hearthFill);
+    else
+        DressHearthFill();
+}
+
+void BonkRun::DressHearthFill()
+{
+    uint32 const done = m_hearthMs - m_hearthMs % BONK_HEARTH_RESUME_STEP_MS;
+    uint32 const display = GetHearthFillDisplay(GetHearthMs(), done);
+    if (m_hearthFill.IsEmpty())
+        m_hearthFill = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, display);
+    else
+        m_telegraphs.Dress(m_player, m_hearthFill, display);
+    if (!m_hearthFill.IsEmpty())
+        m_hearthMs = done;
+}
+
+void BonkRun::SendHearthBar(bool inside)
+{
+    uint32 const needed = GetHearthMs();
+    uint32 const left = needed > m_hearthMs ? needed - m_hearthMs : 0;
+    m_hearthSendMs = 0;
+    m_hearthShown = true;
+    m_hearthInside = inside;
+    m_player->GetBonkPlayer()->SendAddon("hearth~" + std::to_string(std::min(m_hearthMs, needed) * 100 / needed) + "~" + (inside ? "1" : "0") + "~" +
+        std::to_string((left + IN_MILLISECONDS - 1) / IN_MILLISECONDS));
+}
+
+void BonkRun::LeaveHeroBehind()
+{
+    ShowKitAt(BONK_KIT_ASTRAL_RECALL, m_hearthX, m_hearthY, m_hearthZ);
+    if (Map* map = m_player->FindMap())
+        if (GameObject* vault = map->GetGameObject(m_vaultGuid))
+            ShowKitAt(BONK_KIT_ASTRAL_RECALL, vault->GetPositionX(), vault->GetPositionY(), vault->GetPositionZ());
+    m_hearthLeavingMs = BONK_HEARTH_VANISH_MS;
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    if (m_hearthShown)
+        bonk->SendAddon("hearth~-1");
+    m_hearthShown = false;
+    bonk->Notify("You weren't in the ring when it filled, so the Hearthstone left without you.");
+}
+
+bool BonkRun::IsHeroInHearthRing() const
+{
+    float const dx = m_player->GetPositionX() - m_hearthX, dy = m_player->GetPositionY() - m_hearthY;
+    return dx * dx + dy * dy <= BONK_HEARTH_RADIUS * BONK_HEARTH_RADIUS;
 }
 
 uint32 BonkRun::GetHearthMs() const
@@ -601,13 +676,16 @@ uint32 BonkRun::GetHearthMs() const
 void BonkRun::EndHearth()
 {
     if (m_hearthShown)
-        m_player->GetBonkPlayer()->SendAddon(std::string("capture~") + BONK_HEARTH_LABEL + "~-1");
+        m_player->GetBonkPlayer()->SendAddon("hearth~-1");
     m_hearthShown = false;
     m_hearthActive = false;
-    if (Map* map = m_player->FindMap())
-        if (GameObject* ring = map->GetGameObject(m_hearthRing))
-            ring->Delete();
-    m_hearthRing.Clear();
+    m_hearthLeavingMs = 0;
+    m_telegraphs.Release(m_player, m_hearthOutline);
+    m_telegraphs.Release(m_player, m_hearthSwirl);
+    m_telegraphs.Release(m_player, m_hearthFill);
+    m_hearthOutline.Clear();
+    m_hearthSwirl.Clear();
+    m_hearthFill.Clear();
     if (m_state != STATE_PORTAL)
         DespawnVault();
 }

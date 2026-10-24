@@ -26,6 +26,8 @@ bool IsInBonkTelegraph(BonkTelegraphShape shape, float originX, float originY, f
 
 uint32 GetBonkTelegraphLeadMs(BonkTelegraphShape shape);
 
+float GetBonkTelegraphGround(Map* map, float x, float y, float z, float reach);
+
 uint32 GetBonkStandInSizeCount();
 uint32 GetBonkStandInSizeIndex(float size);
 
@@ -48,6 +50,7 @@ class BonkTelegraphs
         ObjectGuid BorrowInvisible(Player* owner, float x, float y, float z);
         void Dress(Player* owner, ObjectGuid const& guid, uint32 display) { Wear(owner, guid, display); }
         void Release(Player* owner, ObjectGuid const& guid) { Undress(owner, guid); }
+        void Hide(Player* owner, ObjectGuid const& guid);
         void Resize(Player* owner, ObjectGuid const& guid, float stretch);
 
     private:
