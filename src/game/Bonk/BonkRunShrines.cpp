@@ -270,9 +270,7 @@ void BonkRun::OfferLeyBuffs()
     std::vector<LeyStat const*> pool;
     for (LeyStat const& stat : LEY_STATS)
     {
-        if (stat.effect == BONK_PASSIVE_DODGE && GetPassiveTotal(stat.effect) >= BONK_MAX_DODGE)
-            continue;
-        if (stat.effect == BONK_PASSIVE_HIT && GetPassiveTotal(stat.effect) >= BONK_MAX_HIT)
+        if (IsStatCapped(stat.effect))
             continue;
         pool.push_back(&stat);
     }

@@ -4653,14 +4653,12 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     total += m_stress.bonuses[effect];
     total += m_cardStats[effect];
     total += m_shrineBonuses[effect];
-    if (effect == BONK_PASSIVE_MOVE_SPEED)
-        total += GetPriestMoveSpeed();
     if (effect == BONK_PASSIVE_HASTE && m_glyphHasteUntilMs > m_totalMs)
         total += GetGlyphValue(BONK_GLYPH_KILL_HASTE, 1);
     if (effect == BONK_PASSIVE_HASTE && IsLastStand())
         total += GetGlyphValue(BONK_GLYPH_LAST_STAND, 1);
     if (effect == BONK_PASSIVE_MOVE_SPEED)
-        total += (IsLastStand() ? GetGlyphValue(BONK_GLYPH_LAST_STAND, 2) : 0.0f) - GetGlyphValue(BONK_GLYPH_TURTLE, 2);
+        total -= GetGlyphValue(BONK_GLYPH_TURTLE, 2);
     if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && GetGlyph(BONK_GLYPH_HALF_ARMOR))
         total *= 0.5f;
     if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && IsGlyphStill())
@@ -4676,6 +4674,7 @@ float BonkRun::GetStatCap(BonkPassiveEffect effect)
         case BONK_PASSIVE_HIT:    return BONK_MAX_HIT;
         case BONK_PASSIVE_AMOUNT: return BONK_MAX_COUNT;
         case BONK_PASSIVE_AREA:   return BONK_MAX_AREA;
+        case BONK_PASSIVE_MOVE_SPEED: return BONK_MAX_MOVE_SPEED;
         default:                  return 0.0f;
     }
 }
@@ -4693,7 +4692,19 @@ float BonkRun::GetStat(BonkPassiveEffect effect) const
     if (effect == BONK_PASSIVE_HASTE)
         return CurveHaste(total);
     float const cap = GetStatCap(effect);
-    return cap > 0.0f ? std::min(total, cap) : total;
+    float const lasting = cap > 0.0f ? std::min(total, cap) : total;
+    return effect == BONK_PASSIVE_MOVE_SPEED ? lasting + GetBoostMoveSpeed() : lasting;
+}
+
+float BonkRun::GetBoostMoveSpeed() const
+{
+    float boost = GetPriestMoveSpeed();
+    if (IsLastStand())
+        boost += GetGlyphValue(BONK_GLYPH_LAST_STAND, 2);
+    if (BonkCard const* potion = m_cardByEffect[BONK_CARD_SWIFTNESS])
+        if (m_cardSwiftUntilMs)
+            boost += potion->values[1];
+    return boost;
 }
 
 float BonkRun::GetHasteRate() const
@@ -9388,7 +9399,7 @@ void BonkRun::AddWeapon(BonkWeapon const& weapon)
 void BonkRun::ApplyPassives()
 {
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MOVE_SPEED);
-    if (int32 const speed = int32(GetPassiveTotal(BONK_PASSIVE_MOVE_SPEED)))
+    if (int32 const speed = int32(GetStat(BONK_PASSIVE_MOVE_SPEED)))
         m_player->CastCustomSpell(m_player, BONK_SPELL_MOVE_SPEED, speed, {}, {}, true);
 
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
@@ -10668,10 +10679,15 @@ size_t BonkRun::GetPassiveSlots() const
     return std::min(BONK_MAX_PASSIVE_SLOTS, BONK_START_PASSIVE_SLOTS + m_bonuses.passiveSlots);
 }
 
+bool BonkRun::IsStatCapped(BonkPassiveEffect effect) const
+{
+    float const cap = GetStatCap(effect);
+    return cap > 0.0f && GetPassiveTotal(effect) >= cap;
+}
+
 bool BonkRun::IsPassiveCapped(BonkPassive const& passive) const
 {
-    float const cap = GetStatCap(passive.effect);
-    return cap > 0.0f && GetPassiveTotal(passive.effect) >= cap;
+    return IsStatCapped(passive.effect);
 }
 
 bool BonkRun::RefreshKeptOffer(Offer& offer) const
@@ -10679,7 +10695,7 @@ bool BonkRun::RefreshKeptOffer(Offer& offer) const
     if (offer.isCard)
     {
         BonkCard const* card = sBonkMgr.GetCard(offer.id);
-        if (!card || m_banished.count(GetBanishKey(offer)) || (card->maxCopies && GetCardCopies(offer.id) >= card->maxCopies))
+        if (!card || m_banished.count(GetBanishKey(offer)) || (card->maxCopies && GetCardCopies(offer.id) >= card->maxCopies) || IsCardCapped(*card))
             return false;
         offer.newLevel = GetCardCopies(offer.id) + 1;
         return true;

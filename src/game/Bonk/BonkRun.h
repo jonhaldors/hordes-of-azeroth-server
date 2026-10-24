@@ -641,6 +641,7 @@ class BonkRun
         float GetRunMinutes() const { return m_totalMs / float(MINUTE * IN_MILLISECONDS); }
         float GetPassiveTotal(BonkPassiveEffect effect) const;
         float GetStat(BonkPassiveEffect effect) const;
+        float GetBoostMoveSpeed() const;
         static float GetStatCap(BonkPassiveEffect effect);
         float GetMagnetRange() const;
         float GetGearTotal(BonkPassiveEffect effect) const;
@@ -832,6 +833,7 @@ class BonkRun
         void EvolveWeapon(OwnedWeapon& owned, BonkWeapon const& evolved);
         bool RefreshKeptOffer(Offer& offer) const;
         bool IsPassiveAllowed(BonkPassive const& passive) const;
+        bool IsStatCapped(BonkPassiveEffect effect) const;
         bool IsPassiveCapped(BonkPassive const& passive) const;
         size_t GetSpellSlots() const;
         size_t GetPassiveSlots() const;
@@ -845,6 +847,7 @@ class BonkRun
         };
         bool OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std::vector<Offer> const* kept, std::vector<Offer>* drawn);
         bool IsCardInPool(BonkCard const& card) const;
+        bool IsCardCapped(BonkCard const& card) const;
         void GiveStartCard();
         void GiveStartLevels();
         void AddCard(BonkCard const& card);

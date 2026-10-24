@@ -149,6 +149,22 @@ void BonkRun::GiveStartCard()
     m_player->GetBonkPlayer()->Notify("Lucky Draw gave you " + card.name + "!");
 }
 
+bool BonkRun::IsCardCapped(BonkCard const& card) const
+{
+    if (card.effect != BONK_CARD_NONE)
+        return false;
+    bool grantsStat = false;
+    for (BonkPassiveEffect stat : card.stats)
+    {
+        if (stat >= MAX_BONK_PASSIVE_EFFECT)
+            continue;
+        if (!IsStatCapped(stat))
+            return false;
+        grantsStat = true;
+    }
+    return grantsStat;
+}
+
 bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std::vector<Offer> const* kept, std::vector<Offer>* drawn)
 {
     std::vector<Offer> cards;
@@ -191,7 +207,8 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
         probe.isWeapon = false;
         probe.isCard = true;
         probe.id = card.id;
-        if (!IsCardInPool(card) || m_banished.count(GetBanishKey(probe)) || shown(card.id) || (card.maxCopies && GetCardCopies(card.id) >= card.maxCopies))
+        if (!IsCardInPool(card) || m_banished.count(GetBanishKey(probe)) || shown(card.id) || (card.maxCopies && GetCardCopies(card.id) >= card.maxCopies) ||
+            IsCardCapped(card))
             continue;
         bool const avoided = avoid && std::any_of(avoid->begin(), avoid->end(), [&](Offer const& offer) { return offer.isCard && offer.id == card.id; });
         (avoided ? repeats : fresh).push_back(&card);
@@ -370,13 +387,11 @@ void BonkRun::UpdateCards(uint32 diff)
         {
             m_cardSwiftUntilMs = m_totalMs + uint32(potion->values[2]);
             StartCardCooldown(BONK_CARD_SWIFTNESS, potion->cooldownMs);
-            m_cardStats[BONK_PASSIVE_MOVE_SPEED] += potion->values[1];
             ApplyPassives();
         }
         else if (m_cardSwiftUntilMs && m_totalMs >= m_cardSwiftUntilMs)
         {
             m_cardSwiftUntilMs = 0;
-            m_cardStats[BONK_PASSIVE_MOVE_SPEED] -= potion->values[1];
             ApplyPassives();
         }
     }

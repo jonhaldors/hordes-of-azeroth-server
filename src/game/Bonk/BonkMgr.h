@@ -833,6 +833,7 @@ float const BONK_MAX_DODGE          = 60.0f;
 float const BONK_MAX_HIT            = 100.0f;
 float const BONK_MAX_COUNT          = 5.0f;
 float const BONK_MAX_AREA           = 50.0f;
+float const BONK_MAX_MOVE_SPEED     = 50.0f;
 float const BONK_MAX_HASTE          = 75.0f;
 float CurveHaste(float raw);
 uint32 const BONK_MAX_COUNT_PULSES  = 2;
