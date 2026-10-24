@@ -502,7 +502,7 @@ namespace
     uint32 const BONK_SPELL_LOOT_SPARKLE = 33454;
     uint32 const BONK_HEAL_SPARKLE       = 900135;
     char const* const BONK_CHEST_PIN_ICON = "INV_Box_02";
-    char const* const BONK_MAGNET_PIN_ICON = "INV_Misc_Rune_01";
+    char const* const BONK_MAGNET_PIN_ICON = "INV_Stone_15";
     uint32 const BONK_SPELL_SHARD_BEAM   = 25824;
     float const BONK_SHARD_BEAM_SCALE    = 0.5f;
     uint32 const BONK_DISPLAY_INVISIBLE  = 11686;
