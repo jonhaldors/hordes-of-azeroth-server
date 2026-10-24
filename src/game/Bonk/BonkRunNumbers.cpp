@@ -13,6 +13,8 @@ namespace
 {
     float const BONK_DAMAGE_SPREAD = 0.07f;
     float const BONK_PET_SWING_SPREAD = 0.1f;
+    uint32 const BONK_PET_NO_SWING_MS = 60000;
+    uint32 const BONK_PET_MIN_ATTACK_MS = 300;
 
     char const* GetSchoolName(SpellEntry const* spellInfo)
     {
@@ -95,6 +97,42 @@ namespace
 float BonkRun::GetShownSpread(OwnedWeapon const& owned) const
 {
     return owned.weapon.behavior == BONK_BEHAVIOR_PET ? BONK_PET_SWING_SPREAD : BONK_DAMAGE_SPREAD;
+}
+
+uint32 BonkRun::GetPetAttackMs(OwnedWeapon const& owned, bool* pulses) const
+{
+    if (pulses)
+        *pulses = false;
+    BonkPetFamily const* family = owned.weapon.behavior == BONK_BEHAVIOR_PET ? GetPetFamily(owned) : nullptr;
+    if (!family)
+        return 0;
+
+    uint32 baseMs = family->attackMs < BONK_PET_NO_SWING_MS ? family->attackMs : 0;
+    if (!baseMs)
+        for (BonkPetAbility const& ability : family->abilities)
+        {
+            bool const pulse = ability.kind == BONK_PET_ABILITY_PULSE;
+            if (!pulse && ability.kind != BONK_PET_ABILITY_STRIKE && ability.kind != BONK_PET_ABILITY_CONE)
+                continue;
+            if (!baseMs || ability.cooldownMs < baseMs)
+            {
+                baseMs = ability.cooldownMs;
+                if (pulses)
+                    *pulses = pulse;
+            }
+        }
+    if (!baseMs)
+        return 0;
+
+    float const pace = GetWeaponCooldown(owned) / float(std::max(1u, owned.weapon.cooldownMs));
+    return std::max(BONK_PET_MIN_ATTACK_MS, uint32(baseMs * pace));
+}
+
+std::string BonkRun::GetPetAttackLabel(OwnedWeapon const& owned) const
+{
+    bool pulses = false;
+    GetPetAttackMs(owned, &pulses);
+    return pulses ? "Pulses every" : "Attacks every";
 }
 
 void BonkRun::FloatSummonDamage(Unit* victim, uint32 damage, SpellEntry const* spellInfo) const
@@ -356,7 +394,13 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
         switch (upgrade)
         {
             case BONK_SPELL_UPGRADE_HASTE:
-                stats.push_back({ GetIntervalLabel(weapon), ShownSeconds(float(GetWeaponCooldown(owned))), ShownSeconds(float(GetWeaponCooldown(next))) });
+                if (weapon.behavior == BONK_BEHAVIOR_PET)
+                {
+                    if (uint32 const attackMs = GetPetAttackMs(owned))
+                        stats.push_back({ GetPetAttackLabel(owned), ShownSeconds(float(attackMs)), ShownSeconds(float(GetPetAttackMs(next))) });
+                }
+                else
+                    stats.push_back({ GetIntervalLabel(weapon), ShownSeconds(float(GetWeaponCooldown(owned))), ShownSeconds(float(GetWeaponCooldown(next))) });
                 break;
             case BONK_SPELL_UPGRADE_DURATION:
                 if (weapon.durationMs > 0)

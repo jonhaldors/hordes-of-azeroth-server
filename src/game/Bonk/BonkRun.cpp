@@ -827,11 +827,16 @@ namespace
         caster->SendObjectMessageToSet(std::move(packet), true);
     }
 
+    std::string DescribeSeconds(uint32 ms)
+    {
+        uint32 const tenths = (ms + 50) / 100;
+        return std::to_string(tenths / 10) + (tenths % 10 ? "." + std::to_string(tenths % 10) : std::string()) +
+            (tenths == 10 ? " second" : " seconds");
+    }
+
     std::string DescribeInterval(BonkWeapon const& weapon, uint32 intervalMs)
     {
-        uint32 const tenths = (intervalMs + 50) / 100;
-        std::string const seconds = std::to_string(tenths / 10) + (tenths % 10 ? "." + std::to_string(tenths % 10) : std::string()) +
-            (tenths == 10 ? " second" : " seconds");
+        std::string const seconds = DescribeSeconds(intervalMs);
         if (weapon.IsSeal())
             return std::string();
         if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS)
@@ -11594,7 +11599,7 @@ void BonkRun::SendCooldownPie(uint32 index, OwnedWeapon const& owned) const
 {
     uint32 const interval = GetWeaponCooldown(owned);
     owned.shownIntervalMs = interval;
-    uint32 const pieMs = owned.weapon.IsBlink() || owned.weapon.IsSeal() ? 0u : interval;
+    uint32 const pieMs = owned.weapon.IsBlink() || owned.weapon.IsSeal() || owned.weapon.behavior == BONK_BEHAVIOR_PET ? 0u : interval;
     m_player->GetBonkPlayer()->SendAddon("pcd~" + std::to_string(index) + "~" + std::to_string(pieMs) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + (owned.held ? "1" : "0"));
 }
@@ -11604,7 +11609,16 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
     BonkWeapon const& weapon = owned.weapon;
     uint32 const interval = weapon.IsBlink() ? m_player->GetBonkPlayer()->GetDashCooldownMs() : GetWeaponCooldown(owned);
     owned.shownIntervalMs = interval;
-    std::string stats = weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER ? DescribeThunderCount(owned) : DescribeInterval(weapon, interval);
+    std::string stats;
+    if (weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER)
+        stats = DescribeThunderCount(owned);
+    else if (weapon.behavior == BONK_BEHAVIOR_PET)
+    {
+        if (uint32 const attackMs = GetPetAttackMs(owned))
+            stats = GetPetAttackLabel(owned) + " " + DescribeSeconds(attackMs) + ".";
+    }
+    else
+        stats = DescribeInterval(weapon, interval);
     uint32 const targets = GetWeaponTargets(owned);
     if (weapon.HasTargets() && targets > 1)
         stats += " " + weapon.DescribeTargets(targets);
@@ -11632,7 +11646,7 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
         if (BonkPetFamily const* family = GetPetFamily(owned))
             if (!family->description.empty())
                 description += " " + family->description;
-    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() ? 0u : interval) + "~" +
+    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() || weapon.behavior == BONK_BEHAVIOR_PET ? 0u : interval) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)));
 }
 

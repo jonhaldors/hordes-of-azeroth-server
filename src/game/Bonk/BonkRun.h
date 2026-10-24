@@ -813,6 +813,8 @@ class BonkRun
         std::string DescribeShownRange(OwnedWeapon const& owned, float extraPower = 0.0f) const;
         std::string DescribeShownDamage(OwnedWeapon const& owned) const;
         void DescribeOfferDamage(Offer const& offer, std::string& before, std::string& after, std::string& label) const;
+        uint32 GetPetAttackMs(OwnedWeapon const& owned, bool* pulses = nullptr) const;
+        std::string GetPetAttackLabel(OwnedWeapon const& owned) const;
         void DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const;
         void AddDamageStats(OwnedWeapon const& owned, OwnedWeapon const& next, std::vector<BonkStatChange>& stats) const;
         void AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next, bool hasDamage, std::vector<BonkStatChange>& stats) const;
