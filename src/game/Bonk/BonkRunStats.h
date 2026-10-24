@@ -5,6 +5,7 @@
 #include "BonkMgr.h"
 #include "ObjectGuid.h"
 
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -12,6 +13,18 @@
 class Player;
 class Unit;
 class SpellEntry;
+
+struct BonkRecentHit
+{
+    uint32 ms = 0;
+    uint32 amount = 0;
+    uint32 healthAfter = 0;
+    bool heal = false;
+    std::string source;
+    std::string spell;
+    std::string icon;
+    BonkSpawnKind kind = BONK_SPAWN_NORMAL;
+};
 
 struct BonkRunStats
 {
@@ -27,6 +40,7 @@ struct BonkRunStats
     uint32 kindKills[MAX_BONK_SPAWN_KIND] = {};
     std::map<ObjectGuid, uint32> killingSpells;
     std::map<ObjectGuid, uint32> killingDots;
+    std::deque<BonkRecentHit> recentHits;
 };
 
 struct BonkSummaryWeapon
@@ -50,6 +64,7 @@ namespace BonkStats
     void SendSummary(Player* player, std::vector<BonkSummaryWeapon> const& weapons);
 
     void UpdateBossBar(Player* player, uint32 diff);
+    void RecordHeroHeal(Player* player, uint32 amount);
 }
 
 void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const* spellProto);

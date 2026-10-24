@@ -4,12 +4,17 @@
 #include "BonkRun.h"
 #include "CellImpl.h"
 #include "Creature.h"
+#include "Database/DBCFileLoader.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Player.h"
 #include "SpellEntry.h"
 #include "SpellMgr.h"
 #include "TemporarySummon.h"
+#include "Timer.h"
+#include "World.h"
+
+#include <algorithm>
 
 #include <list>
 #include <mutex>
@@ -70,6 +75,230 @@ namespace
             }
         }
         return SchoolType(spellId);
+    }
+
+    uint32 const BONK_RECAP_WINDOW_MS   = 10000;
+    uint32 const BONK_RECAP_SLOT_MS     = 100;
+    uint32 const BONK_RECAP_MAX_SOURCES = 4;
+    uint32 const BONK_RECAP_MAX_EVENTS  = 150;
+    size_t const BONK_RECAP_LINE_CHARS  = 220;
+    char const* const BONK_ICON_PREFIX  = "Interface\\Icons\\";
+    char const* const BONK_MELEE_ICON   = "INV_Sword_04";
+    char const* const BONK_UNKNOWN_ICON = "INV_Misc_QuestionMark";
+
+    std::string SpellIconName(SpellEntry const* spellInfo)
+    {
+        static std::map<uint32, std::string> icons;
+        static std::once_flag loaded;
+        std::call_once(loaded, []()
+        {
+            DBCFileLoader file;
+            std::string const path = sWorld.GetDataPath() + std::to_string(uint32(SUPPORTED_CLIENT_BUILD)) + "/dbc/SpellIcon.dbc";
+            if (!file.Load(path.c_str(), "ns"))
+                return;
+            size_t const prefixLength = strlen(BONK_ICON_PREFIX);
+            for (uint32 i = 0; i < file.GetNumRows(); ++i)
+            {
+                DBCFileLoader::Record row = file.getRecord(i);
+                char const* texture = row.getString(1);
+                if (!texture || _strnicmp(texture, BONK_ICON_PREFIX, prefixLength) != 0)
+                    continue;
+                icons[row.getUInt(0)] = texture + prefixLength;
+            }
+        });
+        if (!spellInfo)
+            return BONK_MELEE_ICON;
+        auto itr = icons.find(spellInfo->SpellIconID);
+        return itr != icons.end() ? itr->second : BONK_UNKNOWN_ICON;
+    }
+
+    BonkSpawnKind SpawnKindOf(Creature* creature)
+    {
+        BonkMobAI const* ai = creature ? dynamic_cast<BonkMobAI const*>(creature->AI()) : nullptr;
+        return ai ? ai->GetKind() : BONK_SPAWN_NORMAL;
+    }
+
+    Creature* NamedSource(Unit* attacker)
+    {
+        Creature* creature = attacker->ToCreature();
+        if (!creature || *creature->GetName() || !creature->IsTemporarySummon())
+            return creature;
+        Creature* summoner = attacker->GetMap()->GetCreature(static_cast<TemporarySummon*>(creature)->GetSummonerGuid());
+        return summoner && *summoner->GetName() ? summoner : creature;
+    }
+
+    BonkRecentHit DescribeHit(Unit* attacker, SpellEntry const* spellProto)
+    {
+        BonkRecentHit hit;
+        Creature* source = NamedSource(attacker);
+        hit.source = source ? source->GetName() : attacker->GetName();
+        hit.kind = SpawnKindOf(source);
+        hit.spell = spellProto ? spellProto->SpellName[0] : "Melee";
+        hit.icon = SpellIconName(spellProto);
+        if (hit.source.empty())
+        {
+            hit.source = hit.spell;
+            hit.spell.clear();
+        }
+        return hit;
+    }
+
+    void TrimRecentHits(std::deque<BonkRecentHit>& hits, uint32 now)
+    {
+        while (!hits.empty() && WorldTimer::getMSTimeDiff(hits.front().ms, now) > BONK_RECAP_WINDOW_MS)
+            hits.pop_front();
+    }
+
+    void PushRecentHit(Player* player, BonkRecentHit hit)
+    {
+        hit.ms = WorldTimer::getMSTime();
+        std::lock_guard<std::mutex> guard(s_lock);
+        std::deque<BonkRecentHit>& hits = s_stats[player->GetObjectGuid()].recentHits;
+        hits.push_back(std::move(hit));
+        TrimRecentHits(hits, hits.back().ms);
+    }
+
+    char const* KindTag(BonkSpawnKind kind)
+    {
+        switch (kind)
+        {
+            case BONK_SPAWN_BOSS:     return "b";
+            case BONK_SPAWN_MINIBOSS: return "m";
+            case BONK_SPAWN_ELITE:    return "e";
+            default:                  return "";
+        }
+    }
+
+    struct RecapSource
+    {
+        BonkRecentHit const* sample = nullptr;
+        uint64 damage = 0;
+        uint32 index = 0;
+    };
+
+    std::string SourceKey(BonkRecentHit const& hit)
+    {
+        return hit.source + "~" + hit.spell;
+    }
+
+    void SendLines(BonkPlayer* bonk, std::string const& prefix, std::vector<std::string> const& items)
+    {
+        std::string line;
+        for (std::string const& item : items)
+        {
+            if (!line.empty() && line.size() + item.size() + 1 > BONK_RECAP_LINE_CHARS)
+            {
+                bonk->SendAddon(prefix + line);
+                line.clear();
+            }
+            line += (line.empty() ? "" : ",") + item;
+        }
+        if (!line.empty())
+            bonk->SendAddon(prefix + line);
+    }
+
+    std::vector<RecapSource*> RankSources(std::map<std::string, RecapSource>& byKey, RecapSource* killer)
+    {
+        std::vector<RecapSource*> ranked;
+        for (auto& itr : byKey)
+            ranked.push_back(&itr.second);
+        std::sort(ranked.begin(), ranked.end(), [](RecapSource const* a, RecapSource const* b) { return a->damage > b->damage; });
+
+        auto const shownEnd = ranked.begin() + std::min<size_t>(ranked.size(), BONK_RECAP_MAX_SOURCES);
+        if (std::find(ranked.begin(), shownEnd, killer) == shownEnd)
+            std::iter_swap(shownEnd - 1, std::find(ranked.begin(), ranked.end(), killer));
+
+        for (size_t i = 0; i < ranked.size(); ++i)
+            ranked[i]->index = uint32(std::min<size_t>(i, BONK_RECAP_MAX_SOURCES) + 1);
+        return ranked;
+    }
+
+    std::vector<std::string> RecapEvents(std::deque<BonkRecentHit> const& hits, std::map<std::string, RecapSource>& byKey, uint32 windowStart, uint32 maxHealth)
+    {
+        std::vector<std::string> events;
+        uint32 const lastSlot = BONK_RECAP_WINDOW_MS / BONK_RECAP_SLOT_MS;
+        uint32 slotKey = UINT32_MAX;
+        uint32 slotAmount = 0;
+        uint32 slotHealth = 0;
+        auto flush = [&]()
+        {
+            if (slotKey != UINT32_MAX)
+                events.push_back(std::to_string(slotKey >> 8) + ":" + std::to_string(slotKey & 0xFF) + ":" + std::to_string(slotAmount) + ":" +
+                    std::to_string(uint64(slotHealth) * 1000 / maxHealth));
+        };
+        for (BonkRecentHit const& hit : hits)
+        {
+            uint32 const elapsed = WorldTimer::getMSTimeDiff(windowStart, hit.ms);
+            uint32 const slot = elapsed > BONK_RECAP_WINDOW_MS ? 0 : std::min(lastSlot, elapsed / BONK_RECAP_SLOT_MS);
+            uint32 const key = (slot << 8) | (hit.heal ? 0 : byKey[SourceKey(hit)].index);
+            if (key != slotKey)
+            {
+                flush();
+                slotKey = key;
+                slotAmount = 0;
+            }
+            slotAmount += hit.amount;
+            slotHealth = hit.healthAfter;
+        }
+        flush();
+        if (events.size() > BONK_RECAP_MAX_EVENTS)
+            events.erase(events.begin(), events.end() - BONK_RECAP_MAX_EVENTS);
+        return events;
+    }
+
+    void SendDeathRecap(Player* player, uint32 overkill)
+    {
+        std::deque<BonkRecentHit> hits;
+        {
+            std::lock_guard<std::mutex> guard(s_lock);
+            hits = s_stats[player->GetObjectGuid()].recentHits;
+        }
+        if (hits.empty() || hits.back().heal)
+            return;
+
+        uint32 const maxHealth = std::max<uint32>(1, player->GetMaxHealth());
+        std::map<std::string, RecapSource> byKey;
+        uint64 taken = 0;
+        uint64 healed = 0;
+        for (BonkRecentHit const& hit : hits)
+        {
+            if (hit.heal)
+            {
+                healed += hit.amount;
+                continue;
+            }
+            taken += hit.amount;
+            RecapSource& source = byKey[SourceKey(hit)];
+            source.sample = &hit;
+            source.damage += hit.amount;
+        }
+
+        BonkRecentHit const& last = hits.back();
+        BonkRecentHit const& first = hits.front();
+        RecapSource* killer = &byKey[SourceKey(last)];
+        std::vector<RecapSource*> const ranked = RankSources(byKey, killer);
+        uint32 const startHealth = std::min(maxHealth, first.heal ? first.healthAfter - std::min(first.healthAfter, first.amount) : first.healthAfter + first.amount);
+
+        BonkPlayer* bonk = player->GetBonkPlayer();
+        bonk->SendAddon("dr~" + std::to_string(maxHealth) + "~" + std::to_string(startHealth * 1000 / maxHealth) + "~" + std::to_string(killer->index) + "~" +
+            std::to_string(last.amount) + "~" + std::to_string(overkill) + "~" + std::to_string(taken) + "~" + std::to_string(healed));
+
+        uint64 othersDamage = 0;
+        for (RecapSource const* source : ranked)
+        {
+            if (source->index > BONK_RECAP_MAX_SOURCES)
+            {
+                othersDamage += source->damage;
+                continue;
+            }
+            BonkRecentHit const& sample = *source->sample;
+            bonk->SendAddon("drs~" + std::to_string(source->index) + "~" + sample.icon + "~" + sample.source + "~" + sample.spell + "~" +
+                KindTag(sample.kind) + "~" + std::to_string(source->damage));
+        }
+        if (othersDamage)
+            bonk->SendAddon("drs~" + std::to_string(BONK_RECAP_MAX_SOURCES + 1) + "~" + BONK_UNKNOWN_ICON + "~Others~~~" + std::to_string(othersDamage));
+
+        SendLines(bonk, "dre~", RecapEvents(hits, byKey, last.ms - BONK_RECAP_WINDOW_MS, maxHealth));
     }
 }
 
@@ -345,7 +574,27 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (!InRun(player))
             return;
 
-        std::lock_guard<std::mutex> guard(s_lock);
-        s_stats[player->GetObjectGuid()].damageTaken += dealt;
+        {
+            std::lock_guard<std::mutex> guard(s_lock);
+            s_stats[player->GetObjectGuid()].damageTaken += dealt;
+        }
+
+        BonkRecentHit hit = DescribeHit(attacker, spellProto);
+        hit.amount = dealt;
+        hit.healthAfter = health - dealt;
+        PushRecentHit(player, std::move(hit));
+        if (damage >= health)
+            SendDeathRecap(player, damage - health);
     }
+}
+
+void BonkStats::RecordHeroHeal(Player* player, uint32 amount)
+{
+    if (!amount || !InRun(player))
+        return;
+    BonkRecentHit hit;
+    hit.heal = true;
+    hit.amount = amount;
+    hit.healthAfter = player->GetHealth();
+    PushRecentHit(player, std::move(hit));
 }
