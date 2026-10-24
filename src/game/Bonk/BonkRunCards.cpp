@@ -132,6 +132,38 @@ bool BonkRun::IsCardInPool(BonkCard const& card) const
     return card.inChests && sBonkQuests.IsInPool(m_player->GetBonkPlayer()->GetProgressAccount(), BONK_REWARD_CARD, card.id);
 }
 
+size_t BonkRun::PickWeightedCard(std::vector<BonkCard const*> const& pool) const
+{
+    uint32 printed[BONK_RARITY_LEGENDARY] = {};
+    for (auto const& itr : sBonkMgr.GetCards())
+        if (itr.second.inChests && itr.second.rarity < BONK_RARITY_LEGENDARY)
+            ++printed[itr.second.rarity];
+
+    std::vector<float> weights;
+    float total = 0.0f;
+    for (BonkCard const* card : pool)
+    {
+        float const weight = card->rarity < BONK_RARITY_LEGENDARY ? GetRarityWeight(card->rarity, BONK_RARITY_COMMON) / std::max(1u, printed[card->rarity]) : 0.0f;
+        weights.push_back(weight);
+        total += weight;
+    }
+
+    if (total <= 0.0f)
+    {
+        auto const best = std::max_element(pool.begin(), pool.end(), [](BonkCard const* a, BonkCard const* b) { return a->rarity < b->rarity; });
+        return size_t(best - pool.begin());
+    }
+
+    float roll = frand(0.0f, total);
+    for (size_t i = 0; i < weights.size(); ++i)
+    {
+        if (weights[i] > 0.0f && roll < weights[i])
+            return i;
+        roll -= weights[i];
+    }
+    return size_t(std::find_if(weights.rbegin(), weights.rend(), [](float weight) { return weight > 0.0f; }).base() - weights.begin()) - 1;
+}
+
 void BonkRun::GiveStartCard()
 {
     float const draw = GetUtility(BONK_UTILITY_START_CARD);
@@ -217,13 +249,7 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
     for (std::vector<BonkCard const*>* pool : { &fresh, &repeats })
         while (cards.size() < offerSize && !pool->empty())
         {
-            BonkRarity const rolled = RollRarity(BONK_RARITY_COMMON);
-            std::vector<size_t> picks;
-            for (int32 distance = 0; distance < MAX_BONK_RARITY && picks.empty(); ++distance)
-                for (size_t i = 0; i < pool->size(); ++i)
-                    if (std::abs(int32((*pool)[i]->rarity) - int32(rolled)) == distance)
-                        picks.push_back(i);
-            size_t const chosen = picks[urand(0, uint32(picks.size() - 1))];
+            size_t const chosen = PickWeightedCard(*pool);
             cards.push_back(makeOffer(*(*pool)[chosen]));
             pool->erase(pool->begin() + chosen);
         }
@@ -237,7 +263,7 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
                     better.push_back(card);
         auto replaced = std::find_if(cards.rbegin(), cards.rend(), [](Offer const& card) { return !card.locked; });
         if (!better.empty() && replaced != cards.rend())
-            *replaced = makeOffer(*better[urand(0, uint32(better.size() - 1))]);
+            *replaced = makeOffer(*better[PickWeightedCard(better)]);
     }
 
     if (drawn)

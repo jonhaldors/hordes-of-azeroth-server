@@ -10522,15 +10522,21 @@ void BonkRun::ShowAllEvolutions(std::vector<Offer>& cards) const
     cards = shown;
 }
 
+float BonkRun::GetRarityWeight(uint8 rarity, BonkRarity minimum) const
+{
+    if (rarity >= BONK_RARITY_LEGENDARY || rarity < std::max(minimum, m_rarityFloor))
+        return 0.0f;
+    float const luck = std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_LUCK));
+    return BONK_RARITY_WEIGHT[rarity] * (1.0f + BONK_RARITY_LUCK[rarity] * luck / 100.0f);
+}
+
 BonkRarity BonkRun::RollRarity(BonkRarity minimum) const
 {
-    minimum = std::max(minimum, m_rarityFloor);
-    float const luck = std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_LUCK));
     float weights[BONK_RARITY_LEGENDARY];
     float total = 0.0f;
     for (uint8 rarity = 0; rarity < BONK_RARITY_LEGENDARY; ++rarity)
     {
-        weights[rarity] = rarity < minimum ? 0.0f : BONK_RARITY_WEIGHT[rarity] * (1.0f + BONK_RARITY_LUCK[rarity] * luck / 100.0f);
+        weights[rarity] = GetRarityWeight(rarity, minimum);
         total += weights[rarity];
     }
 
