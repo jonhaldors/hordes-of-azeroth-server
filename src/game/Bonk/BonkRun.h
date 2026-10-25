@@ -2135,6 +2135,10 @@ class BonkRun
         void FireFormAttack(OwnedWeapon& owned);
         uint32 m_shapeshiftReadyMs = 0;
         uint32 m_shapeshiftSmokeAtMs = 0;
+        uint32 m_druidMotionMs = 0;
+        bool IsDruidAnimal() const;
+        void PlayDruidMotion(uint32 spellId);
+        void OnDruidStrike(OwnedWeapon const& owned);
         std::string m_sentDruidForm;
         void HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage);
         void CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo);

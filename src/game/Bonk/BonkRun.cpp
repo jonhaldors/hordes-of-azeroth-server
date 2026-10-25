@@ -5072,6 +5072,7 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
     OnShamanStrike(owned, shotInfo, target, shotShare);
     OnPriestStrike(owned, shotInfo, target, shotShare);
     OnWarlockStrike(owned, shotInfo, target, shotShare);
+    OnDruidStrike(owned);
 
     if (weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
         KnockBack(target);

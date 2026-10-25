@@ -27,6 +27,9 @@ namespace
 
     uint32 const BONK_SHAPESHIFT_COOLDOWN_MS  = 500;
     uint32 const BONK_KIT_SHAPESHIFT_SMOKE    = 3610;
+    uint32 const BONK_KIT_NATURE_CAST         = 3291;
+    uint32 const BONK_KIT_ARCANE_CAST         = 730;
+    uint32 const BONK_DRUID_MOTION_GAP_MS     = 500;
     uint32 const BONK_SHAPESHIFT_SMOKE_DELAY_MS = 100;
     float const BONK_RIGHT_FORM_BONUS         = 1.3f;
     float const BONK_BEAR_DAMAGE              = 0.8f;
@@ -93,6 +96,32 @@ namespace
     }
 }
 
+bool BonkRun::IsDruidAnimal() const
+{
+    return m_druidForm == BonkDruidForm::Cat || m_druidForm == BonkDruidForm::Bear;
+}
+
+void BonkRun::PlayDruidMotion(uint32 spellId)
+{
+    if (!IsDruidHero() || !m_player->IsAlive() || m_totalMs - m_druidMotionMs < BONK_DRUID_MOTION_GAP_MS)
+        return;
+    m_druidMotionMs = m_totalMs;
+    if (IsDruidAnimal())
+    {
+        m_player->HandleEmote(EMOTE_ONESHOT_ATTACKUNARMED);
+        return;
+    }
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
+    bool const arcane = spellInfo && spellInfo->School == SPELL_SCHOOL_ARCANE;
+    m_player->SendPlaySpellVisualKit(arcane ? BONK_KIT_ARCANE_CAST : BONK_KIT_NATURE_CAST);
+}
+
+void BonkRun::OnDruidStrike(OwnedWeapon const& owned)
+{
+    if (owned.weapon.classMask & (1 << (CLASS_DRUID - 1)))
+        PlayDruidMotion(owned.weapon.spellId);
+}
+
 bool BonkRun::IsDruidHero() const
 {
     return m_player->GetClass() == CLASS_DRUID;
@@ -108,6 +137,7 @@ void BonkRun::ResetDruidState()
     m_druidForm = BonkDruidForm::None;
     m_shapeshiftReadyMs = 0;
     m_shapeshiftSmokeAtMs = 0;
+    m_druidMotionMs = 0;
     m_sentDruidForm.clear();
     if (IsDruidHero())
         m_player->GetBonkPlayer()->SendAddon("druidform~caster");
@@ -224,6 +254,7 @@ void BonkRun::FireFormAttack(OwnedWeapon& owned)
         return;
     }
     owned.timer = int32(GetWeaponCooldown(owned) * attack.cooldownScale);
+    PlayDruidMotion(attack.spellId);
     mobs.resize(std::min<size_t>(mobs.size(), attack.targets + GetSpellCount(owned)));
     float const damage = GetWeaponDamage(owned) * attack.share;
     for (Creature* mob : mobs)
@@ -287,6 +318,7 @@ void BonkRun::CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    PlayDruidMotion(owned.weapon.spellId);
     AddWarlockStacks(ScaleForForm(owned), spellInfo, mobs, BONK_KEYWORD_MOONFIRE);
 }
 
@@ -299,6 +331,7 @@ void BonkRun::CallHurricane(OwnedWeapon& owned)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    PlayDruidMotion(owned.weapon.spellId);
     StartKeywordCloud(owned, x, y, z);
 }
 
@@ -333,6 +366,7 @@ void BonkRun::RakeEnemies(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    PlayDruidMotion(owned.weapon.spellId);
     mobs.resize(std::min<size_t>(mobs.size(), GetWeaponTargets(owned)));
     uint32 const stacks = owned.weapon.applyStacks + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS));
     float const damage = GetWeaponDamage(owned);
@@ -354,6 +388,7 @@ void BonkRun::ShredEnemy(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    PlayDruidMotion(owned.weapon.spellId);
     std::stable_sort(mobs.begin(), mobs.end(), [this](Creature* a, Creature* b)
     {
         return GetKeywordStacks(a, BONK_KEYWORD_BLEED) > GetKeywordStacks(b, BONK_KEYWORD_BLEED);
@@ -376,6 +411,7 @@ void BonkRun::SwipeAround(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    PlayDruidMotion(owned.weapon.spellId);
     float const damage = GetWeaponDamage(owned);
     size_t shown = 0;
     for (Creature* mob : mobs)
@@ -418,6 +454,8 @@ void BonkRun::BloomRejuvenation(OwnedWeapon& owned, SpellEntry const* spellInfo)
     std::vector<Creature*> mobs = GetDruidTargets(owned.weapon.range * GetWeaponArea(owned));
     mobs.resize(std::min<size_t>(mobs.size(), GetWeaponTargets(owned)));
     SpellEntry const* lash = sSpellMgr.GetSpellEntry(BONK_SPELL_BLOOM_LASH);
+    if (!mobs.empty())
+        PlayDruidMotion(owned.weapon.spellId);
     float const damage = GetWeaponDamage(owned);
     for (Creature* mob : mobs)
     {
@@ -435,6 +473,7 @@ void BonkRun::EntangleEnemies(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    PlayDruidMotion(owned.weapon.spellId);
     mobs.resize(std::min<size_t>(mobs.size(), GetWeaponTargets(owned)));
     float const damage = GetWeaponDamage(owned);
     for (Creature* mob : mobs)
@@ -455,6 +494,7 @@ void BonkRun::StartTranquility(OwnedWeapon& owned)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
+    PlayDruidMotion(owned.weapon.spellId);
     m_tranquilityWeapon = owned.weapon.id;
     m_tranquilityPulsesLeft = std::max(1u, uint32(BONK_TRANQUILITY_PULSES * GetWeaponDurationScale(owned) + 0.5f));
     m_tranquilityPulseMs = 0;
