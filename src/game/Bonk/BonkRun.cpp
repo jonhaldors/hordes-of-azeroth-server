@@ -10489,7 +10489,7 @@ bool BonkRun::IsEvolutionBanished(uint32 evolvedId) const
 std::vector<BonkWeapon const*> BonkRun::GetOpenEvolutions(OwnedWeapon const& owned) const
 {
     std::vector<BonkWeapon const*> open;
-    if (owned.weapon.evolvesFrom)
+    if (owned.weapon.evolvesFrom || IsWildShapeshift(owned))
         return open;
     uint32 const account = m_player->GetBonkPlayer()->GetProgressAccount();
     for (BonkWeapon const* evolved : sBonkMgr.GetEvolutions(owned.weapon.id))
@@ -10527,6 +10527,8 @@ float BonkRun::GetLegendaryChance(OwnedWeapon const& owned) const
 std::string BonkRun::DescribeEvolutionChance(OwnedWeapon const& owned, uint32& chance) const
 {
     chance = 0;
+    if (IsWildShapeshift(owned))
+        return "Heart of the Wild stops it from evolving.";
     uint32 const account = m_player->GetBonkPlayer()->GetProgressAccount();
     std::vector<BonkWeapon const*> const evolutions = sBonkMgr.GetEvolutions(owned.weapon.id);
     std::vector<std::string> sentences;

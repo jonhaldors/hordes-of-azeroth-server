@@ -389,6 +389,11 @@ bool BonkRun::IsHeartOfTheWild() const
     return m_mastery.Has(BONK_CAPSTONE_HEART_OF_THE_WILD);
 }
 
+bool BonkRun::IsWildShapeshift(OwnedWeapon const& owned) const
+{
+    return owned.weapon.id == BONK_WEAPON_SHAPESHIFT && IsHeartOfTheWild();
+}
+
 void BonkRun::FireFormAttack(OwnedWeapon& owned)
 {
     FormAttack const& attack = GetFormAttack(GetAttackForm());

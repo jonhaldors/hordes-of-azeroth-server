@@ -2151,6 +2151,7 @@ class BonkRun
         void FireFormAttack(OwnedWeapon& owned);
         BonkDruidForm GetAttackForm() const;
         bool IsHeartOfTheWild() const;
+        bool IsWildShapeshift(OwnedWeapon const& owned) const;
         float GetHeartOfTheWildScale() const;
         uint32 m_shapeshiftReadyMs = 0;
         uint32 m_shapeshiftSmokeAtMs = 0;
