@@ -30,6 +30,13 @@ namespace
     uint32 const BONK_MAX_LEY_LINES = 2;
 
     float const BONK_LEY_RADIUS            = 7.0f;
+    char const* const BONK_LEY_LINE_TEXTURE = "World\\Goober\\RuneGroundBlue01.blp";
+
+    std::string GetShrineMarkKey(uint32 markKey)
+    {
+        return "shrine" + std::to_string(markKey);
+    }
+
     uint32 const BONK_LEY_CAPTURE_MS       = 8000;
     uint32 const BONK_LEY_SEND_MS          = 250;
     uint32 const BONK_LEY_CHOICES          = 3;
@@ -200,7 +207,13 @@ bool BonkRun::PlaceShrine(BonkShrineType type)
         return false;
 
     BonkSpot const& spot = shrine.spot;
-    if (GameObject* model = m_player->SummonGameObject(BONK_GO_SHRINE + type, spot.x, spot.y, spot.z, frand(0.0f, 2.0f * M_PI_F),
+    if (type == BONK_SHRINE_LEY_LINE)
+    {
+        shrine.markKey = NextBonkAuraKey();
+        SendBonkMark(m_player, GetShrineMarkKey(shrine.markKey), BONK_TELEGRAPH_CIRCLE, spot.x, spot.y, spot.z, frand(0.0f, 2.0f * M_PI_F), BONK_LEY_RADIUS, 0,
+            true, BONK_TELEGRAPH_STYLE_ARCANE, ObjectGuid(), BONK_LEY_LINE_TEXTURE);
+    }
+    else if (GameObject* model = m_player->SummonGameObject(BONK_GO_SHRINE + type, spot.x, spot.y, spot.z, frand(0.0f, 2.0f * M_PI_F),
         0.0f, 0.0f, 0.0f, 0.0f, BONK_SHRINE_MODEL_SEC, false))
         shrine.model = model->GetObjectGuid();
     shrine.objectiveId = m_objectives.Add(m_player, BONK_OBJECTIVE_SHRINE, spot.x, spot.y, spot.z, SHRINE_LABELS[type], 0, SHRINE_ICONS[type],
@@ -218,6 +231,8 @@ bool BonkRun::PlaceShrine(BonkShrineType type)
 void BonkRun::RemoveShrine(size_t index)
 {
     Shrine const& shrine = m_shrines[index];
+    if (shrine.markKey)
+        SendBonkUnmark(m_player, GetShrineMarkKey(shrine.markKey));
     if (Map* map = m_player->FindMap())
         if (GameObject* model = map->GetGameObject(shrine.model))
             model->Delete();
@@ -670,8 +685,12 @@ void BonkRun::DespawnShrines()
 {
     if (Map* map = m_player->FindMap())
         for (Shrine const& shrine : m_shrines)
+        {
+            if (shrine.markKey)
+                SendBonkUnmark(m_player, GetShrineMarkKey(shrine.markKey));
             if (GameObject* model = map->GetGameObject(shrine.model))
                 model->Delete();
+        }
     m_shrines.clear();
     m_pendingSummons.clear();
     m_shrinesToPlace = 0;

@@ -1049,25 +1049,16 @@ void BonkRun::LeaveTimeBubble(OwnedWeapon const& owned)
     bubble.y = y;
     bubble.radius = radius;
     bubble.untilMs = untilMs;
-    uint32 const ringSpell = GetRingSpell(BonkHeroRing::TimeBubble, radius);
-    if (sSpellMgr.GetSpellEntry(ringSpell))
-    {
-        bubble.look = m_telegraphs.BorrowInvisible(m_player, x, y, z);
-        Creature* standIn = bubble.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(bubble.look);
-        if (standIn && standIn->AddAura(ringSpell, ADD_AURA_PERMANENT))
-            bubble.lookAura = ringSpell;
-    }
+    bubble.markKey = NextBonkAuraKey();
+    SendBonkMark(m_player, "bubble" + std::to_string(bubble.markKey), BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, 0, true,
+        GetRingStyle(BonkHeroRing::TimeBubble));
     m_timeBubbles.push_back(bubble);
 }
 
 void BonkRun::EndTimeBubble(TimeBubble const& bubble)
 {
-    if (bubble.look.IsEmpty())
-        return;
-    if (Creature* standIn = m_player->GetMap()->GetCreature(bubble.look))
-        if (bubble.lookAura)
-            standIn->RemoveAurasDueToSpell(bubble.lookAura);
-    m_telegraphs.Release(m_player, bubble.look);
+    if (bubble.markKey)
+        SendBonkUnmark(m_player, "bubble" + std::to_string(bubble.markKey));
 }
 
 void BonkRun::ClearTimeBubbles()

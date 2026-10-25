@@ -23,7 +23,9 @@ enum BonkTelegraphStyle : uint8
 {
     BONK_TELEGRAPH_STYLE_DANGER = 0,
     BONK_TELEGRAPH_STYLE_ARCANE = 1,
-    BONK_TELEGRAPH_STYLE_NATURE = 2
+    BONK_TELEGRAPH_STYLE_NATURE = 2,
+    BONK_TELEGRAPH_STYLE_FROST  = 3,
+    BONK_TELEGRAPH_STYLE_BLOOD  = 4
 };
 
 char const* GetBonkTelegraphShapeName(BonkTelegraphShape shape);
@@ -43,6 +45,12 @@ void SendBonkKitAt(Player* player, uint32 kit, float x, float y, float z, float 
 void SendBonkFlight(Player* player, uint32 id, float fromX, float fromY, float fromZ, float toX, float toY, float toZ, uint32 flightMs,
     uint32 display, float scale);
 void SendBonkLanding(Player* player, uint32 id);
+void SendBonkMark(Player* player, std::string const& key, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
+    uint32 durationMs, bool outlineOnly, uint8 style, ObjectGuid const& follow = ObjectGuid(), std::string const& texture = "");
+void SendBonkUnmark(Player* player, std::string const& key);
+void SendBonkAuraAt(Player* player, uint32 key, uint32 spellId, float x, float y, float z, float scale = 1.0f);
+void SendBonkAuraGone(Player* player, uint32 key);
+uint32 NextBonkAuraKey();
 uint32 NextBonkFlightId();
 
 class BonkTelegraphs

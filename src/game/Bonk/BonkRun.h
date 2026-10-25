@@ -380,7 +380,7 @@ class BonkRun
         {
             ObjectGuid guid;
             uint32 count = 0;
-            ObjectGuid marker;
+            uint32 marker = 0;
         };
 
         BonkMap const* ChooseNextMap();
@@ -475,9 +475,8 @@ class BonkRun
             uint32 leftMs = 0;
             uint32 tickMs = 0;
             int32 vortexMs = 0;
-            ObjectGuid look;
-            uint32 lookAura = 0;
-            uint32 vortexAura = 0;
+            uint32 markKey = 0;
+            uint32 vortexKey = 0;
         };
         std::vector<VoidZone> m_voidZones;
         void EndVoidZone(VoidZone const& zone);
@@ -794,8 +793,8 @@ class BonkRun
         void DropHeal(Creature const* mob, BonkSpawnKind kind);
         void UpdateHeals(uint32 diff);
         void GiveShards(uint32 count);
-        ObjectGuid PlaceMarker(GameObject const* go, uint32 spellId, float scale);
-        void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid);
+        uint32 PlaceMarker(GameObject const* go, uint32 spellId, float scale);
+        void RemovePickup(ObjectGuid const& goGuid, uint32 beamKey);
 
         bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr, std::vector<Offer> const* kept = nullptr,
             std::vector<Offer>* drawn = nullptr);
@@ -936,7 +935,7 @@ class BonkRun
         {
             ObjectGuid guid;
             uint32 entry = 0;
-            ObjectGuid marker;
+            uint32 marker = 0;
         };
         void DropGear(Creature const* mob, BonkSpawnKind kind);
         uint8 RollGearQuality(BonkSpawnKind kind) const;
@@ -1145,6 +1144,7 @@ class BonkRun
             BonkSpot spot;
             uint32 objectiveId = 0;
             ObjectGuid model;
+            uint32 markKey = 0;
             uint32 progressMs = 0;
             uint32 leftMs = 0;
             uint32 tickMs = 0;
@@ -1324,7 +1324,7 @@ class BonkRun
         uint32 m_bossWoundLeftMs = 0;
         struct Pool
         {
-            ObjectGuid marker;
+            uint32 marker = 0;
             float x = 0.0f, y = 0.0f, z = 0.0f;
             uint32 leftMs = 0;
         };
@@ -1479,8 +1479,7 @@ class BonkRun
             int32 pulseMs = 0;
             int32 pulseEveryMs = 0;
             uint32 stacks = 0;
-            ObjectGuid look;
-            uint32 lookAura = 0;
+            uint32 markKey = 0;
             ObjectGuid area;
         };
         struct KeywordCloudKind
@@ -1812,7 +1811,9 @@ class BonkRun
         float GetBloodAuraReach(OwnedWeapon const& owned) const;
         void UpdateBloodAuraRing();
         void ShowHeroLook(BonkHeroLook look, bool shown);
-        void ShowHeroRing(BonkHeroRing ring, float reach);
+        void ShowHeroRing(BonkHeroRing ring, float reach, uint32 fillMs = 0);
+        static BonkTelegraphStyle GetRingStyle(BonkHeroRing ring);
+        static std::string GetHeroRingKey(BonkHeroRing ring);
         uint32 GetRingSpell(BonkHeroRing ring, float reach) const;
         void HideHeroRing(BonkHeroRing ring);
         void RemoveHeroRingAuras(BonkHeroRing ring);
@@ -2345,8 +2346,7 @@ class BonkRun
             float x = 0.0f, y = 0.0f;
             float radius = 0.0f;
             uint32 untilMs = 0;
-            ObjectGuid look;
-            uint32 lookAura = 0;
+            uint32 markKey = 0;
         };
         std::vector<TimeBubble> m_timeBubbles;
         void EndTimeBubble(TimeBubble const& bubble);

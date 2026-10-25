@@ -3573,12 +3573,8 @@ void BonkRun::OnAffixedDeath(Creature* mob)
         pool.y = mob->GetPositionY();
         pool.z = mob->GetPositionZ();
         pool.leftMs = BONK_SANGUINE_DURATION_MS;
-        if (Creature* marker = m_player->SummonCreature(BONK_SANGUINE_POOL, pool.x, pool.y, pool.z, 0.0f,
-            TEMPSUMMON_TIMED_DESPAWN, BONK_SANGUINE_DURATION_MS * 2, false, 0, &InstallOrbAI))
-        {
-            marker->AddAura(BONK_SPELL_SANGUINE);
-            pool.marker = marker->GetObjectGuid();
-        }
+        pool.marker = NextBonkAuraKey();
+        SendBonkAuraAt(m_player, pool.marker, BONK_SPELL_SANGUINE, pool.x, pool.y, pool.z);
         m_pools.push_back(pool);
     }
 }
@@ -3651,40 +3647,23 @@ void BonkRun::StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, 
     zone.radius = radius;
     zone.leftMs = durationMs;
     zone.tickMs = 0;
-    uint32 const ringSpell = GetRingSpell(BonkHeroRing::Hazard, radius);
-    if (sSpellMgr.GetSpellEntry(ringSpell))
-    {
-        zone.look = m_telegraphs.BorrowInvisible(m_player, x, y, z);
-        Creature* standIn = zone.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(zone.look);
-        if (standIn && standIn->AddAura(ringSpell, ADD_AURA_PERMANENT))
-            zone.lookAura = ringSpell;
-    }
-    if (!zone.lookAura)
-        AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, durationMs, nullptr, true);
+    zone.markKey = NextBonkAuraKey();
+    SendBonkMark(m_player, "zone" + std::to_string(zone.markKey), BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, 0, true,
+        BONK_TELEGRAPH_STYLE_DANGER);
     if (vortex)
     {
-        if (zone.look.IsEmpty())
-            zone.look = m_telegraphs.BorrowInvisible(m_player, x, y, z);
-        Creature* standIn = zone.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(zone.look);
-        if (standIn && standIn->AddAura(BONK_SPELL_SAND_VORTEX_LOOK, ADD_AURA_PERMANENT))
-            zone.vortexAura = BONK_SPELL_SAND_VORTEX_LOOK;
+        zone.vortexKey = NextBonkAuraKey();
+        SendBonkAuraAt(m_player, zone.vortexKey, BONK_SPELL_SAND_VORTEX_LOOK, x, y, z);
     }
     m_voidZones.push_back(zone);
 }
 
 void BonkRun::EndVoidZone(VoidZone const& zone)
 {
-    if (zone.look.IsEmpty())
-        return;
-    if (Map* map = m_player->FindMap())
-        if (Creature* standIn = map->GetCreature(zone.look))
-        {
-            if (zone.lookAura)
-                standIn->RemoveAurasDueToSpell(zone.lookAura);
-            if (zone.vortexAura)
-                standIn->RemoveAurasDueToSpell(zone.vortexAura);
-        }
-    m_telegraphs.Release(m_player, zone.look);
+    if (zone.markKey)
+        SendBonkUnmark(m_player, "zone" + std::to_string(zone.markKey));
+    if (zone.vortexKey)
+        SendBonkAuraGone(m_player, zone.vortexKey);
 }
 
 void BonkRun::MarkHero(BonkEnemyHit const& burst, BonkEnemyHit const& pool, float radius, uint32 followMs, uint32 warnMs, uint32 poolMs)
@@ -3698,7 +3677,7 @@ void BonkRun::MarkHero(BonkEnemyHit const& burst, BonkEnemyHit const& pool, floa
     m_heroMark.warnMs = warnMs;
     m_heroMark.poolMs = poolMs;
     ShowHeroRing(BonkHeroRing::MarkOutline, radius);
-    ShowHeroRing(BonkHeroRing::MarkFill, radius);
+    ShowHeroRing(BonkHeroRing::MarkFill, radius, m_heroMark.leftMs);
 }
 
 void BonkRun::UpdateHeroMark(uint32 diff)
@@ -3783,7 +3762,7 @@ void BonkRun::UpdateVoidZones(uint32 diff)
         itr->vortexMs -= int32(diff);
         uint32 const burstKit = itr->hit.impactKit ? itr->hit.impactKit : BONK_KIT_FIRE_BURST;
         uint32 const burstMs = GetPoolBurstMs(burstKit);
-        if (!itr->vortexAura && itr->vortexMs <= 0 && itr->leftMs >= burstMs)
+        if (!itr->vortexKey && itr->vortexMs <= 0 && itr->leftMs >= burstMs)
         {
             itr->vortexMs += BONK_VOID_LOOK_EVERY_MS;
             ShowKitOnStandIn(burstKit, itr->x, itr->y, itr->z, burstMs);
@@ -3825,18 +3804,15 @@ void BonkRun::UpdatePools(uint32 diff)
             ++itr;
             continue;
         }
-        if (Creature* marker = map->GetCreature(itr->marker))
-            marker->DespawnOrUnsummon();
+        SendBonkAuraGone(m_player, itr->marker);
         itr = m_pools.erase(itr);
     }
 }
 
 void BonkRun::DespawnPools()
 {
-    if (Map* map = m_player->FindMap())
-        for (Pool const& pool : m_pools)
-            if (Creature* marker = map->GetCreature(pool.marker))
-                marker->DespawnOrUnsummon();
+    for (Pool const& pool : m_pools)
+        SendBonkAuraGone(m_player, pool.marker);
     m_pools.clear();
 }
 
@@ -6027,24 +6003,16 @@ void BonkRun::StartKeywordCloud(OwnedWeapon const& owned, float x, float y, floa
 
 void BonkRun::ShowRingAt(KeywordCloud& cloud, float z, BonkHeroRing ring)
 {
-    uint32 const ringSpell = GetRingSpell(ring, cloud.radius);
-    if (!sSpellMgr.GetSpellEntry(ringSpell))
-        return;
-    cloud.look = m_telegraphs.BorrowInvisible(m_player, cloud.x, cloud.y, z);
-    Creature* standIn = cloud.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(cloud.look);
-    if (standIn && standIn->AddAura(ringSpell, ADD_AURA_PERMANENT))
-        cloud.lookAura = ringSpell;
+    cloud.markKey = NextBonkAuraKey();
+    SendBonkMark(m_player, "cloud" + std::to_string(cloud.markKey), BONK_TELEGRAPH_CIRCLE, cloud.x, cloud.y, z, 0.0f, cloud.radius, 0, true,
+        GetRingStyle(ring));
 }
 
 void BonkRun::EndKeywordCloud(KeywordCloud const& cloud)
 {
     RemoveAreaVisual(m_player, cloud.area);
-    if (cloud.look.IsEmpty())
-        return;
-    if (Creature* standIn = m_player->GetMap()->GetCreature(cloud.look))
-        if (cloud.lookAura)
-            standIn->RemoveAurasDueToSpell(cloud.lookAura);
-    m_telegraphs.Release(m_player, cloud.look);
+    if (cloud.markKey)
+        SendBonkUnmark(m_player, "cloud" + std::to_string(cloud.markKey));
 }
 
 void BonkRun::ClearKeywordClouds()
@@ -10232,30 +10200,22 @@ void BonkRun::GiveShards(uint32 count)
     SendState();
 }
 
-ObjectGuid BonkRun::PlaceMarker(GameObject const* go, uint32 spellId, float scale)
+uint32 BonkRun::PlaceMarker(GameObject const* go, uint32 spellId, float scale)
 {
-    Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), 0.0f,
-        TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, false, 0, &InstallOrbAI);
-    if (!marker)
-        return ObjectGuid();
-
-    marker->SetObjectScale(scale);
-    marker->AddAura(spellId, ADD_AURA_PERMANENT);
-    return marker->GetObjectGuid();
+    uint32 const key = NextBonkAuraKey();
+    SendBonkAuraAt(m_player, key, spellId, go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), scale);
+    return key;
 }
 
-void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid)
+void BonkRun::RemovePickup(ObjectGuid const& goGuid, uint32 beamKey)
 {
+    if (beamKey)
+        SendBonkAuraGone(m_player, beamKey);
     Map* map = m_player->FindMap();
     if (!map)
         return;
     if (GameObject* go = map->GetGameObject(goGuid))
         go->Delete();
-    if (Creature* marker = map->GetCreature(markerGuid))
-    {
-        marker->RemoveAllAuras();
-        marker->DespawnOrUnsummon();
-    }
 }
 
 float BonkRun::GetGoldMultiplier() const

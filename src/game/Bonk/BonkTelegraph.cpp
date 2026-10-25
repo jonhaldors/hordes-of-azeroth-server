@@ -35,6 +35,7 @@ namespace
     char const* const BONK_TELEGRAPH_SHAPE_NAMES[MAX_BONK_TELEGRAPH_SHAPE] = { "circle", "cone", "line" };
 
     uint32 s_nextFlightId = 0;
+    uint32 s_nextAuraKey = 0;
 
     uint32 GetLinePieceCount(float length)
     {
@@ -120,6 +121,34 @@ void SendBonkFlight(Player* player, uint32 id, float fromX, float fromY, float f
 void SendBonkLanding(Player* player, uint32 id)
 {
     SendBonkDraw(player, "land~" + std::to_string(id));
+}
+
+void SendBonkMark(Player* player, std::string const& key, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
+    uint32 durationMs, bool outlineOnly, uint8 style, ObjectGuid const& follow, std::string const& texture)
+{
+    SendBonkDraw(player, "mark~" + key + "~" + std::to_string(uint32(shape)) + "~" + FormatPoint(x, y, z) + "~" + FormatFloat(orientation) + "~" +
+        FormatFloat(size) + "~" + std::to_string(durationMs) + "~" + std::to_string(outlineOnly ? BONK_TELEGRAPH_OUTLINE_ONLY : 0) + "~" +
+        std::to_string(uint32(style)) + "~" + std::to_string(follow.GetRawValue()) + "~" + texture);
+}
+
+void SendBonkUnmark(Player* player, std::string const& key)
+{
+    SendBonkDraw(player, "markx~" + key);
+}
+
+void SendBonkAuraAt(Player* player, uint32 key, uint32 spellId, float x, float y, float z, float scale)
+{
+    SendBonkDraw(player, "aura~" + std::to_string(key) + "~" + std::to_string(spellId) + "~" + FormatPoint(x, y, z) + "~" + FormatFloat(scale));
+}
+
+void SendBonkAuraGone(Player* player, uint32 key)
+{
+    SendBonkDraw(player, "aurax~" + std::to_string(key));
+}
+
+uint32 NextBonkAuraKey()
+{
+    return ++s_nextAuraKey;
 }
 
 uint32 NextBonkFlightId()
@@ -269,6 +298,7 @@ void BonkTelegraphs::CancelFrom(Player* owner, ObjectGuid const& caster, uint32 
 void BonkTelegraphs::Dismiss(Player* owner)
 {
     Clear(owner);
+    SendBonkDraw(owner, "clr");
     if (Map* map = owner->FindMap())
         for (StandIn const& standIn : m_standIns)
             if (Creature* creature = map->GetCreature(standIn.guid))

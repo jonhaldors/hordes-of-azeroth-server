@@ -135,6 +135,7 @@ namespace
     };
 
     uint32 const BONK_OLD_BLOOD_AURA_LOOK = 33401;
+    float const BONK_HERO_RING_STEPS_PER_YARD = 10.0f;
 
     static_assert(sizeof(BONK_HERO_LOOK_SPELLS) / sizeof(uint32) == size_t(BonkHeroLook::Count), "Every hero look needs a spell.");
     static_assert(sizeof(BONK_HERO_RING_FIRST_SPELLS) / sizeof(uint32) == size_t(BonkHeroRing::Count), "Every hero ring needs a first spell.");
@@ -157,16 +158,31 @@ uint32 BonkRun::GetRingSpell(BonkHeroRing ring, float reach) const
     return BONK_HERO_RING_FIRST_SPELLS[size_t(ring)] + GetBonkStandInSizeIndex(reach);
 }
 
-void BonkRun::ShowHeroRing(BonkHeroRing ring, float reach)
+BonkTelegraphStyle BonkRun::GetRingStyle(BonkHeroRing ring)
 {
-    uint32 const spellId = GetRingSpell(ring, reach / std::max(0.1f, m_player->GetObjectScale()));
-    if (!m_player->IsAlive() || !sSpellMgr.GetSpellEntry(spellId))
+    switch (ring)
+    {
+        case BonkHeroRing::BloodAura:  return BONK_TELEGRAPH_STYLE_BLOOD;
+        case BonkHeroRing::IcePath:    return BONK_TELEGRAPH_STYLE_FROST;
+        case BonkHeroRing::TimeBubble: return BONK_TELEGRAPH_STYLE_ARCANE;
+        case BonkHeroRing::Nature:     return BONK_TELEGRAPH_STYLE_NATURE;
+        default:                       return BONK_TELEGRAPH_STYLE_DANGER;
+    }
+}
+
+std::string BonkRun::GetHeroRingKey(BonkHeroRing ring)
+{
+    return "hero" + std::to_string(uint32(ring));
+}
+
+void BonkRun::ShowHeroRing(BonkHeroRing ring, float reach, uint32 fillMs)
+{
+    uint32 const shown = std::max(1u, uint32(reach * BONK_HERO_RING_STEPS_PER_YARD + 0.5f));
+    if (!m_player->IsAlive() || shown == m_heroRingSpells[size_t(ring)])
         return;
-    if (spellId == m_heroRingSpells[size_t(ring)] && m_player->HasAura(spellId))
-        return;
-    RemoveHeroRingAuras(ring);
-    m_player->CastSpell(m_player, spellId, true);
-    m_heroRingSpells[size_t(ring)] = spellId;
+    m_heroRingSpells[size_t(ring)] = shown;
+    SendBonkMark(m_player, GetHeroRingKey(ring), BONK_TELEGRAPH_CIRCLE, m_player->GetPositionX(), m_player->GetPositionY(),
+        m_player->GetPositionZ(), 0.0f, reach, fillMs, !fillMs, GetRingStyle(ring), m_player->GetObjectGuid());
 }
 
 void BonkRun::HideHeroRing(BonkHeroRing ring)
@@ -180,6 +196,8 @@ void BonkRun::RemoveHeroRingAuras(BonkHeroRing ring)
     uint32 const firstSpell = BONK_HERO_RING_FIRST_SPELLS[size_t(ring)];
     for (uint32 i = 0; i < GetBonkStandInSizeCount(); ++i)
         m_player->RemoveAurasDueToSpell(firstSpell + i);
+    if (m_heroRingSpells[size_t(ring)])
+        SendBonkUnmark(m_player, GetHeroRingKey(ring));
     m_heroRingSpells[size_t(ring)] = 0;
 }
 
