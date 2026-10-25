@@ -780,6 +780,14 @@ namespace
     uint32 const BONK_SPELL_JUDGEMENT_NPC   = 23590;
     uint32 const BONK_SPELL_CHEAP_SHOT_PLAYER = 1833;
     uint32 const BONK_SPELL_CHEAP_SHOT_NPC  = 6409;
+    uint32 const BONK_SPELL_SHRED_PLAYER    = 5221;
+    uint32 const BONK_SPELL_SHRED_NPC       = 27555;
+    uint32 const BONK_SPELL_MAUL_PLAYER     = 6807;
+    uint32 const BONK_SPELL_MAUL_NPC        = 12161;
+    uint32 const BONK_SPELL_CLAW_PLAYER     = 1082;
+    uint32 const BONK_SPELL_CLAW_NPC        = 16827;
+    uint32 const BONK_SPELL_RAKE_PLAYER     = 1822;
+    uint32 const BONK_SPELL_RAKE_NPC        = 24331;
 
     uint32 GetQuietStrikeLook(uint32 spellId)
     {
@@ -789,6 +797,10 @@ namespace
             case BONK_SPELL_BACKSTAB_PLAYER: return BONK_SPELL_BACKSTAB_TEST;
             case BONK_SPELL_JUDGEMENT_PLAYER: return BONK_SPELL_JUDGEMENT_NPC;
             case BONK_SPELL_CHEAP_SHOT_PLAYER: return BONK_SPELL_CHEAP_SHOT_NPC;
+            case BONK_SPELL_SHRED_PLAYER:  return BONK_SPELL_SHRED_NPC;
+            case BONK_SPELL_MAUL_PLAYER:   return BONK_SPELL_MAUL_NPC;
+            case BONK_SPELL_CLAW_PLAYER:   return BONK_SPELL_CLAW_NPC;
+            case BONK_SPELL_RAKE_PLAYER:   return BONK_SPELL_RAKE_NPC;
             default:                         return spellId;
         }
     }

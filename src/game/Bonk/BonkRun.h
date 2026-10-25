@@ -2136,6 +2136,9 @@ class BonkRun
         uint32 m_shapeshiftReadyMs = 0;
         uint32 m_shapeshiftSmokeAtMs = 0;
         uint32 m_druidMotionMs = 0;
+        uint32 m_druidClawLookMs = 0;
+        uint32 GetClawImpactKit(uint32 spellId) const;
+        void ShowDruidStrike(SpellEntry const* look, Creature* target);
         bool IsDruidAnimal() const;
         void PlayDruidMotion(uint32 spellId);
         void OnDruidStrike(OwnedWeapon const& owned);

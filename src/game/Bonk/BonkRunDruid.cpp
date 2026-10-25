@@ -30,6 +30,14 @@ namespace
     uint32 const BONK_KIT_NATURE_CAST         = 3291;
     uint32 const BONK_KIT_ARCANE_CAST         = 730;
     uint32 const BONK_DRUID_MOTION_GAP_MS     = 500;
+    uint32 const BONK_CLAW_LOOK_GAP_MS        = 500;
+    uint32 const BONK_KIT_CLAW_IMPACT         = 220;
+    uint32 const BONK_KIT_MAUL_IMPACT         = 290;
+    uint32 const BONK_SPELL_CLAW_LOOK         = 1082;
+    uint32 const BONK_SPELL_RAKE_LOOK         = 1822;
+    uint32 const BONK_SPELL_SHRED_LOOK        = 5221;
+    uint32 const BONK_SPELL_SWIPE_LOOK        = 779;
+    uint32 const BONK_SPELL_MAUL_LOOK         = 6807;
     uint32 const BONK_SHAPESHIFT_SMOKE_DELAY_MS = 100;
     float const BONK_RIGHT_FORM_BONUS         = 1.3f;
     float const BONK_BEAR_DAMAGE              = 0.8f;
@@ -107,13 +115,41 @@ void BonkRun::PlayDruidMotion(uint32 spellId)
         return;
     m_druidMotionMs = m_totalMs;
     if (IsDruidAnimal())
-    {
-        m_player->HandleEmote(EMOTE_ONESHOT_ATTACKUNARMED);
         return;
-    }
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
     bool const arcane = spellInfo && spellInfo->School == SPELL_SCHOOL_ARCANE;
     m_player->SendPlaySpellVisualKit(arcane ? BONK_KIT_ARCANE_CAST : BONK_KIT_NATURE_CAST);
+}
+
+uint32 BonkRun::GetClawImpactKit(uint32 spellId) const
+{
+    switch (spellId)
+    {
+        case BONK_SPELL_CLAW_LOOK:
+        case BONK_SPELL_RAKE_LOOK:
+        case BONK_SPELL_SWIPE_LOOK:
+            return BONK_KIT_CLAW_IMPACT;
+        case BONK_SPELL_SHRED_LOOK:
+        case BONK_SPELL_MAUL_LOOK:
+            return BONK_KIT_MAUL_IMPACT;
+        default:
+            return 0;
+    }
+}
+
+void BonkRun::ShowDruidStrike(SpellEntry const* look, Creature* target)
+{
+    if (!look || !target)
+        return;
+    uint32 const impact = GetClawImpactKit(look->Id);
+    if (impact && m_druidClawLookMs && m_totalMs - m_druidClawLookMs < BONK_CLAW_LOOK_GAP_MS)
+    {
+        target->SendPlaySpellVisualKit(impact);
+        return;
+    }
+    if (impact)
+        m_druidClawLookMs = m_totalMs;
+    ShowStrike(m_player, look, target);
 }
 
 void BonkRun::OnDruidStrike(OwnedWeapon const& owned)
@@ -138,6 +174,7 @@ void BonkRun::ResetDruidState()
     m_shapeshiftReadyMs = 0;
     m_shapeshiftSmokeAtMs = 0;
     m_druidMotionMs = 0;
+    m_druidClawLookMs = 0;
     m_sentDruidForm.clear();
     if (IsDruidHero())
         m_player->GetBonkPlayer()->SendAddon("druidform~caster");
@@ -259,7 +296,7 @@ void BonkRun::FireFormAttack(OwnedWeapon& owned)
     float const damage = GetWeaponDamage(owned) * attack.share;
     for (Creature* mob : mobs)
     {
-        ShowStrike(m_player, look, mob);
+        ShowDruidStrike(look, mob);
         HitAsDruid(owned, look, mob, damage);
         if (attack.bleedStacks && mob->IsAlive())
             ApplyWeaponKeyword(owned, mob, BONK_KEYWORD_BLEED, attack.bleedStacks);
@@ -372,7 +409,7 @@ void BonkRun::RakeEnemies(OwnedWeapon& owned, SpellEntry const* spellInfo)
     float const damage = GetWeaponDamage(owned);
     for (Creature* mob : mobs)
     {
-        ShowStrike(m_player, spellInfo, mob);
+        ShowDruidStrike(spellInfo, mob);
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, damage);
         if (mob->IsAlive())
             ApplyWeaponKeyword(ScaleForForm(owned), mob, BONK_KEYWORD_BLEED, stacks);
@@ -397,7 +434,7 @@ void BonkRun::ShredEnemy(OwnedWeapon& owned, SpellEntry const* spellInfo)
     for (Creature* mob : mobs)
     {
         float const bleeds = std::min(float(GetKeywordStacks(mob, BONK_KEYWORD_BLEED)), BONK_SHRED_MAX_STACKS);
-        ShowStrike(m_player, spellInfo, mob);
+        ShowDruidStrike(spellInfo, mob);
         HitAsDruid(owned, spellInfo, mob, GetWeaponDamage(owned) * (1.0f + owned.weapon.usesPct * bleeds / 100.0f));
     }
 }
@@ -417,7 +454,7 @@ void BonkRun::SwipeAround(OwnedWeapon& owned, SpellEntry const* spellInfo)
     for (Creature* mob : mobs)
     {
         if (shown++ < BONK_SWIPE_LOOKS)
-            ShowStrike(m_player, spellInfo, mob);
+            ShowDruidStrike(spellInfo, mob);
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, damage);
     }
 }
@@ -478,7 +515,7 @@ void BonkRun::EntangleEnemies(OwnedWeapon& owned, SpellEntry const* spellInfo)
     float const damage = GetWeaponDamage(owned);
     for (Creature* mob : mobs)
     {
-        ShowStrike(m_player, spellInfo, mob);
+        ShowDruidStrike(spellInfo, mob);
         HitAsDruid(owned, spellInfo, mob, damage);
         int32 durationMs = int32(BONK_ROOT_MS);
         if (mob->IsAlive() && LimitRoot(mob, durationMs))
