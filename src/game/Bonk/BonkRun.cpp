@@ -827,29 +827,6 @@ namespace
         caster->SendObjectMessageToSet(std::move(packet), true);
     }
 
-    std::string DescribeSeconds(uint32 ms)
-    {
-        uint32 const tenths = (ms + 50) / 100;
-        return std::to_string(tenths / 10) + (tenths % 10 ? "." + std::to_string(tenths % 10) : std::string()) +
-            (tenths == 10 ? " second" : " seconds");
-    }
-
-    std::string DescribeInterval(BonkWeapon const& weapon, uint32 intervalMs)
-    {
-        std::string const seconds = DescribeSeconds(intervalMs);
-        if (weapon.IsSeal())
-            return std::string();
-        if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS)
-            return "Can occur once every " + seconds + " on each enemy.";
-        if (weapon.IsRevenge())
-            return "Can occur once every " + seconds + ".";
-        if (weapon.behavior == BONK_BEHAVIOR_BLOOD_AURA)
-            return "Pulses every " + seconds + ".";
-        if (weapon.IsBlink())
-            return "Each dash charge comes back after " + seconds + ".";
-        return "Casts every " + seconds + ".";
-    }
-
     class BonkAreaVisual : public DynamicObject
     {
         public:
@@ -11175,7 +11152,7 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
         size_t const firstSentence = description.find(". ");
         if (weapon->IsBlink() && IsBlinkDash() && firstSentence != std::string::npos)
             description = description.substr(firstSentence + 2);
-        return TagBonkWeaponDescription(*weapon, description);
+        return description;
     }
     if (offer.step == BONK_STEP_EVOLVE)
     {
@@ -11632,45 +11609,40 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
     BonkWeapon const& weapon = owned.weapon;
     uint32 const interval = weapon.IsBlink() ? m_player->GetBonkPlayer()->GetDashCooldownMs() : GetWeaponCooldown(owned);
     owned.shownIntervalMs = interval;
-    std::string stats;
-    if (weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER)
-        stats = DescribeThunderCount(owned);
-    else if (weapon.behavior == BONK_BEHAVIOR_PET)
-    {
-        if (uint32 const attackMs = GetPetAttackMs(owned))
-            stats = GetPetAttackLabel(owned) + " " + DescribeSeconds(attackMs) + ".";
-    }
-    else
-        stats = DescribeInterval(weapon, interval);
-    uint32 const targets = GetWeaponTargets(owned);
-    if (weapon.HasTargets() && targets > 1)
-        stats += " " + weapon.DescribeTargets(targets);
     float upgrades[MAX_BONK_SPELL_UPGRADE] = {};
     GetSpellUpgrades(&owned, upgrades);
     WeaponStrength strength;
     bool const strengthens = GetWeaponStrength(weapon, owned.damageBonus, upgrades, strength);
+    std::string picks;
+    auto addPick = [&picks](std::string text)
+    {
+        text[0] = char(toupper(text[0]));
+        picks += (picks.empty() ? "" : " \xC2\xB7 ") + text;
+    };
     if (strengthens)
-        stats += " " + strength.Describe() + ".";
+        addPick(strength.Describe());
     for (uint8 upgrade = BONK_SPELL_UPGRADE_NONE + 1; upgrade < MAX_BONK_SPELL_UPGRADE; ++upgrade)
         if (float const amount = GetSpellUpgrade(owned, BonkSpellUpgrade(upgrade)))
         {
             if (strengthens && upgrade == strength.folded)
                 continue;
-            std::string added = DescribeBonkSpellUpgrade(weapon, BonkSpellUpgrade(upgrade), amount);
-            if (added.empty())
-                continue;
-            added[0] = char(toupper(added[0]));
-            stats += " " + added + ".";
+            std::string const added = DescribeBonkSpellUpgrade(weapon, BonkSpellUpgrade(upgrade), amount);
+            if (!added.empty())
+                addPick(added);
         }
-    if (!stats.empty() && stats[0] == ' ')
-        stats.erase(0, 1);
-    std::string description = TagBonkWeaponDescription(weapon, weapon.description);
+    std::string description = weapon.description;
     if (weapon.behavior == BONK_BEHAVIOR_PET && !weapon.HasFlag(BONK_WEAPON_FLAG_HYDRA) && !weapon.HasFlag(BONK_WEAPON_FLAG_ELEMENTAL_SHIFT))
         if (BonkPetFamily const* family = GetPetFamily(owned))
             if (!family->description.empty())
                 description += " " + family->description;
+    description = DescribeLiveSpell(owned, description);
+    if (weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER)
+        description += " " + DescribeThunderCount(owned);
+    bool faster = false;
+    std::string const header = DescribeSpellHeader(owned, interval, faster);
     m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() || weapon.behavior == BONK_BEHAVIOR_PET ? 0u : interval) + "~" +
-        std::to_string(std::max<int32>(0, owned.timer)) + "~" + stats + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)));
+        std::to_string(std::max<int32>(0, owned.timer)) + "~" + picks + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)) + "~" +
+        header + "~" + (faster ? "1" : "0") + "~" + DescribeBonkWeaponTags(weapon, GetShownSchool(owned)));
 }
 
 void BonkRun::SendOffer() const

@@ -7,6 +7,7 @@
 #include "Utilities/Random.h"
 
 #include <cmath>
+#include <cstring>
 #include <string>
 
 namespace
@@ -91,6 +92,119 @@ namespace
         if (nowSpace == std::string::npos || nextSpace == std::string::npos)
             return {};
         return { CapitalizeFirst(next.substr(nextSpace + 1)), now.substr(0, nowSpace), next.substr(0, nextSpace) };
+    }
+
+    float const BONK_SHOWN_BETTER = 1.001f;
+    char const* const BONK_DAMAGE_VERBS[] = { "dealing ", "deals ", "deal ", "for ", "take ", "takes " };
+    char const* const BONK_DAMAGE_ADJECTIVES[] = { "", "heavy ", "massive ", "extra " };
+    char const* const BONK_TARGET_NOUNS[] = { "enem", "random", "nearest", "strongest", "target", "pack" };
+
+    std::string MarkNumber(std::string const& text, bool better)
+    {
+        return (better ? "|cff20ff20" : "|cffffffff") + text + "|r";
+    }
+
+    std::string MarkRange(float hit, float spread, bool better)
+    {
+        uint32 const low = uint32(std::max(1.0f, std::floor(hit * (1.0f - spread))));
+        uint32 const high = uint32(std::max(1.0f, std::ceil(hit * (1.0f + spread))));
+        if (low == high)
+            return MarkNumber(std::to_string(low), better);
+        return MarkNumber(std::to_string(low), better) + " to " + MarkNumber(std::to_string(high), better);
+    }
+
+    std::string TrimNumber(float value)
+    {
+        return FormatNumber(std::round(value * 10.0f) / 10.0f, "%g");
+    }
+
+    bool IsWordEdge(std::string const& text, size_t at)
+    {
+        if (at >= text.size())
+            return true;
+        bool const decimal = text[at] == '.' && at + 1 < text.size() && isdigit(static_cast<unsigned char>(text[at + 1]));
+        return !isalnum(static_cast<unsigned char>(text[at])) && !decimal;
+    }
+
+    bool IsWordStart(std::string const& text, size_t at)
+    {
+        return at == 0 || !isalnum(static_cast<unsigned char>(text[at - 1]));
+    }
+
+    bool MarkNumberFollowedBy(std::string& text, std::string const& number, std::string const& follow, std::string const& marked)
+    {
+        std::string const needle = number + follow;
+        for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1))
+            if (IsWordStart(text, at))
+            {
+                text.replace(at, number.size(), marked);
+                return true;
+            }
+        return false;
+    }
+
+    bool ReplaceAtWordStart(std::string& text, std::string const& needle, std::string const& replacement)
+    {
+        for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1))
+            if (IsWordStart(text, at))
+            {
+                text.replace(at, needle.size(), replacement);
+                return true;
+            }
+        return false;
+    }
+
+    bool MarkNumberAfter(std::string& text, std::string const& lead, std::string const& number, std::string const& marked)
+    {
+        std::string const needle = lead + number;
+        for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1))
+            if (IsWordEdge(text, at + needle.size()))
+            {
+                text.replace(at + lead.size(), number.size(), marked);
+                return true;
+            }
+        return false;
+    }
+
+    bool MarkTargetCount(std::string& text, std::string const& number, std::string const& marked)
+    {
+        for (size_t at = text.find(number); at != std::string::npos; at = text.find(number, at + 1))
+        {
+            size_t const after = at + number.size();
+            if (!IsWordStart(text, at) || after >= text.size() || text[after] != ' ')
+                continue;
+            for (char const* noun : BONK_TARGET_NOUNS)
+                if (text.compare(after + 1, strlen(noun), noun) == 0)
+                {
+                    text.replace(at, number.size(), marked);
+                    return true;
+                }
+        }
+        return false;
+    }
+
+    bool InsertDamageRange(std::string& text, std::string const& school, std::string const& range)
+    {
+        size_t best = std::string::npos;
+        size_t bestLength = 0;
+        std::string bestVerb;
+        for (char const* verb : BONK_DAMAGE_VERBS)
+            for (char const* adjective : BONK_DAMAGE_ADJECTIVES)
+                for (std::string const& noun : { school + " damage", std::string("damage") })
+                {
+                    std::string const needle = std::string(verb) + adjective + noun;
+                    size_t const at = text.find(needle);
+                    if (at != std::string::npos && IsWordStart(text, at) && (best == std::string::npos || at < best))
+                    {
+                        best = at;
+                        bestLength = needle.size();
+                        bestVerb = verb;
+                    }
+                }
+        if (best == std::string::npos)
+            return false;
+        text.replace(best, bestLength, bestVerb + range + " " + school + " damage");
+        return true;
     }
 }
 
@@ -443,4 +557,119 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
             }
         }
     }
+}
+
+std::string BonkRun::GetShownSchool(OwnedWeapon const& owned) const
+{
+    std::string school = GetBonkMagicSchoolName(owned.weapon.spellId);
+    if (!school.empty() || owned.weapon.behavior != BONK_BEHAVIOR_PET)
+        return school;
+    BonkPetFamily const* family = GetPetFamily(owned);
+    if (!family)
+        return school;
+    for (BonkPetAbility const& ability : family->abilities)
+    {
+        school = GetBonkMagicSchoolName(ability.spellId);
+        if (!school.empty())
+            return school;
+    }
+    BonkKeywordInfo const* info = sBonkMgr.GetKeyword(family->applies);
+    return info ? GetBonkMagicSchoolName(info->spellId) : school;
+}
+
+std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string text) const
+{
+    BonkWeapon const& weapon = owned.weapon;
+    OwnedWeapon fresh = owned;
+    fresh.rank = 1;
+    fresh.damageBonus = 0.0f;
+    fresh.rarities.clear();
+    for (float& upgrade : fresh.upgrades)
+        upgrade = 0.0f;
+
+    bool const pet = weapon.behavior == BONK_BEHAVIOR_PET;
+    if (float const hit = GetShownHit(owned, 0.0f))
+    {
+        std::string const range = MarkRange(hit, GetShownSpread(owned), hit > GetShownHit(fresh, 0.0f) * BONK_SHOWN_BETTER);
+        std::string const school = GetSchoolName(sSpellMgr.GetSpellEntry(weapon.spellId));
+        if (pet)
+            text += " Its attacks deal " + range + " damage.";
+        else if (!InsertDamageRange(text, school, range))
+            text += " Deals " + range + " " + school + " damage.";
+    }
+
+    BonkKeyword keyword = weapon.applies;
+    uint32 baseStacks = weapon.applyStacks;
+    if (pet && keyword == BONK_KEYWORD_NONE)
+        if (BonkPetFamily const* family = GetPetFamily(owned))
+        {
+            keyword = family->applies;
+            baseStacks = family->applyStacks;
+        }
+    BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
+    if (info && baseStacks)
+    {
+        uint32 const stacks = std::min<uint32>(baseStacks + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS)), std::max<uint32>(baseStacks, info->maxStacks));
+        std::string marked = MarkNumber(std::to_string(stacks), stacks > baseStacks);
+        if (baseStacks != 1 || stacks == 1 || !ReplaceAtWordStart(text, "1 stack ", marked + " stacks "))
+            MarkNumberFollowedBy(text, std::to_string(baseStacks), " stack", marked);
+    }
+    if (float const tick = GetShownTick(owned, 0.0f))
+        if (info)
+            text += " Each stack of " + info->name + " deals " + MarkNumber(ShownNumber(tick), tick > GetShownTick(fresh, 0.0f) * BONK_SHOWN_BETTER) + " " +
+                GetSchoolName(sSpellMgr.GetSpellEntry(info->spellId)) + " damage every sec.";
+
+    if (weapon.durationMs)
+    {
+        float const scale = GetWeaponDurationScale(owned);
+        std::string const base = TrimNumber(weapon.durationMs / 1000.0f);
+        std::string const marked = MarkNumber(TrimNumber(weapon.durationMs * scale / 1000.0f), scale > BONK_SHOWN_BETTER);
+        if (!MarkNumberAfter(text, "for ", base, marked))
+            MarkNumberAfter(text, "lasts ", base, marked);
+    }
+
+    if (weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
+    {
+        float const area = GetWeaponArea(owned);
+        float const radius = weapon.groundRadius > 0.0f ? weapon.groundRadius : weapon.range;
+        std::string const base = TrimNumber(radius);
+        if (area > BONK_SHOWN_BETTER && radius > 0.0f)
+            MarkNumberAfter(text, "within ", base, MarkNumber(TrimNumber(radius * area), true));
+    }
+
+    uint32 const targets = GetWeaponTargets(owned);
+    if (weapon.HasTargets() && targets > 1)
+    {
+        std::string const marked = MarkNumber(std::to_string(targets), targets > weapon.baseTargets);
+        if (weapon.baseTargets <= 1 || !MarkTargetCount(text, std::to_string(weapon.baseTargets), marked))
+        {
+            std::string sentence = weapon.DescribeTargets(targets);
+            MarkNumberFollowedBy(sentence, std::to_string(targets), " ", marked);
+            text += " " + sentence;
+        }
+    }
+    return text;
+}
+
+std::string BonkRun::DescribeSpellHeader(OwnedWeapon const& owned, uint32 intervalMs, bool& better) const
+{
+    BonkWeapon const& weapon = owned.weapon;
+    better = !weapon.IsBlink() && GetWeaponCooldown(owned) < weapon.cooldownMs;
+    auto seconds = [](uint32 ms) { return TrimNumber(ms / 1000.0f) + " sec"; };
+    if (weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER || weapon.IsSeal())
+        return "";
+    if (weapon.behavior == BONK_BEHAVIOR_PET)
+    {
+        uint32 const attackMs = GetPetAttackMs(owned);
+        return attackMs ? GetPetAttackLabel(owned) + " " + seconds(attackMs) : "";
+    }
+    if (weapon.IsBlink())
+        return seconds(intervalMs) + " recharge";
+    if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS)
+        return "Once every " + seconds(intervalMs) + " per enemy";
+    if (weapon.IsRevenge())
+        return "Once every " + seconds(intervalMs);
+    if (weapon.behavior == BONK_BEHAVIOR_BLOOD_AURA)
+        return "Pulses every " + seconds(intervalMs);
+    return seconds(intervalMs) + " cooldown";
 }

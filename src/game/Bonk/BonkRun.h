@@ -817,6 +817,9 @@ class BonkRun
         float GetShownTick(OwnedWeapon const& owned, float extraPower) const;
         std::string DescribeShownRange(OwnedWeapon const& owned, float extraPower = 0.0f) const;
         std::string DescribeShownDamage(OwnedWeapon const& owned) const;
+        std::string GetShownSchool(OwnedWeapon const& owned) const;
+        std::string DescribeLiveSpell(OwnedWeapon const& owned, std::string text) const;
+        std::string DescribeSpellHeader(OwnedWeapon const& owned, uint32 intervalMs, bool& better) const;
         void DescribeOfferDamage(Offer const& offer, std::string& before, std::string& after, std::string& label) const;
         void DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const;
         void AddDamageStats(OwnedWeapon const& owned, OwnedWeapon const& next, std::vector<BonkStatChange>& stats) const;

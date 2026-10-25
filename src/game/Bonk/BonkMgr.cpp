@@ -992,11 +992,28 @@ void BonkMgr::LoadWeapons()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk weapons with %u upgrades", uint32(m_weapons.size()), upgrades);
 }
 
-std::string TagBonkWeaponDescription(BonkWeapon const& weapon, std::string const& description)
+std::string GetBonkMagicSchoolName(uint32 spellId)
 {
-    if (!weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
-        return description;
-    return "|cff71d5ffAoE|r " + description;
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
+    switch (spellInfo ? spellInfo->School : SPELL_SCHOOL_NORMAL)
+    {
+        case SPELL_SCHOOL_HOLY:   return "Holy";
+        case SPELL_SCHOOL_FIRE:   return "Fire";
+        case SPELL_SCHOOL_NATURE: return "Nature";
+        case SPELL_SCHOOL_FROST:  return "Frost";
+        case SPELL_SCHOOL_SHADOW: return "Shadow";
+        case SPELL_SCHOOL_ARCANE: return "Arcane";
+        default:                  return "";
+    }
+}
+
+std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& school)
+{
+    BonkMasteryTree const* tree = sBonkMastery.GetTree(BonkMastery::GetSpec(weapon.id));
+    std::string spec = tree ? tree->name : "";
+    if (spec.empty() && weapon.behavior == BONK_BEHAVIOR_PET)
+        spec = "Pet";
+    return school + "~" + spec + "~" + (weapon.HasFlag(BONK_WEAPON_FLAG_AOE) ? "1" : "0");
 }
 
 std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount)

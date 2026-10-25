@@ -50,7 +50,7 @@ void BonkCodex::Send(Player* player, std::string const& npc)
         std::string const locked = lockState(BONK_REWARD_WEAPON, weapon.id, price);
         bonk->SendAddon("cdxw~" + id + "~" + weapon.name + "~" + weapon.icon + "~" + std::to_string(weapon.classMask) + "~" +
             std::to_string(weapon.starterClassMask | weapon.starterOptionMask) + "~" + std::to_string(weapon.evolvesFrom) + "~" + locked + "~" + std::to_string(price));
-        bonk->SendAddon("cdxwd~" + id + "~" + TagBonkWeaponDescription(weapon, weapon.description));
+        bonk->SendAddon("cdxwd~" + id + "~" + weapon.description + "~" + DescribeBonkWeaponTags(weapon, GetBonkMagicSchoolName(weapon.spellId)));
         if (locked == "1")
             SendLock(bonk, "w", weapon.id, BONK_REWARD_WEAPON);
     }
