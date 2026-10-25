@@ -1,4 +1,5 @@
 #include "BonkRun.h"
+#include "BonkMastery.h"
 #include "BonkPlayer.h"
 #include "BonkRunStats.h"
 #include "Creature.h"
@@ -36,8 +37,8 @@ namespace
     size_t const BONK_STARFALL_STARS          = 3;
     size_t const BONK_ALIGNMENT_EXTRA_STARS   = 2;
     float const BONK_PRIMAL_FURY_CAT_TAKEN    = 0.8f;
-    float const BONK_HEART_OF_THE_WILD_BONUS  = 1.15f;
-    float const BONK_HEART_OF_THE_WILD_ATTACK = 0.6f;
+    float const BONK_HEART_OF_THE_WILD_PER_TREE = 0.15f;
+    float const BONK_HEART_OF_THE_WILD_ATTACK = 0.65f;
     uint32 const BONK_SPELL_STARFALL_LOOK     = 2912;
     float const BONK_CAT_MOVE_SPEED           = 15.0f;
     uint32 const BONK_CAT_CRIT_BLEED          = 1;
@@ -349,7 +350,7 @@ float BonkRun::GetDruidFormScale(OwnedWeapon const& owned) const
     if (root == BONK_WEAPON_SHAPESHIFT)
         return 1.0f;
     if (IsHeartOfTheWild())
-        return BONK_HEART_OF_THE_WILD_BONUS;
+        return GetHeartOfTheWildScale();
     if (GetDruidSpellForm(root) == m_druidForm)
         return BONK_RIGHT_FORM_BONUS;
     return m_druidForm == BonkDruidForm::Bear ? BONK_BEAR_DAMAGE : 1.0f;
@@ -358,6 +359,16 @@ float BonkRun::GetDruidFormScale(OwnedWeapon const& owned) const
 BonkRun::BonkDruidForm BonkRun::GetAttackForm() const
 {
     return IsHeartOfTheWild() ? BonkDruidForm::Moonkin : m_druidForm;
+}
+
+float BonkRun::GetHeartOfTheWildScale() const
+{
+    std::set<uint32> trees;
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.classMask & (1 << (CLASS_DRUID - 1)))
+            if (uint32 const spec = BonkMastery::GetSpec(owned.weapon.id))
+                trees.insert(spec);
+    return 1.0f + BONK_HEART_OF_THE_WILD_PER_TREE * float(trees.size());
 }
 
 bool BonkRun::IsHeartOfTheWild() const
