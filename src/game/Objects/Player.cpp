@@ -15012,9 +15012,17 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     m_reputationMgr.LoadFromDB(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADREPUTATION));
 
     bool hasEpicMount = false; // Needed for riding skill replacement in patch 1.12.
-    bool hasItems = _LoadInventory(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADINVENTORY), timeDiff, hasEpicMount);
+    _LoadInventory(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADINVENTORY), timeDiff, hasEpicMount);
 
-    if (!hasItems && m_playedTime[PLAYED_TIME_TOTAL] == 0)
+    auto const isUnequipped = [this]()
+    {
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            if (GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                return false;
+        return true;
+    };
+
+    if (m_playedTime[PLAYED_TIME_TOTAL] == 0 && isUnequipped())
     {
         AddStartingItems();
 
