@@ -33,6 +33,7 @@ namespace
     uint32 const BONK_STARFALL_EVERY_MS       = 3000;
     float const BONK_STARFALL_SHARE           = 1.5f;
     float const BONK_STARFALL_RANGE           = 30.0f;
+    size_t const BONK_STARFALL_STARS          = 3;
     uint32 const BONK_SPELL_STARFALL_LOOK     = 2912;
     float const BONK_CAT_MOVE_SPEED           = 15.0f;
     uint32 const BONK_CAT_CRIT_BLEED          = 1;
@@ -85,10 +86,10 @@ namespace
     FormAttack const BONK_FORM_ATTACKS[] =
     {
         { 0,    0,     0.0f, 1.0f,  0, 0.0f,  0, 0.0f,  0.0f, "caster" },
-        { 5176, 5176,  3.4f, 1.0f,  1, 30.0f, 0, 0.0f,  0.3f, "moonkin" },
+        { 5176, 5176,  3.4f, 1.0f,  1, 30.0f, 0, 0.0f,  0.45f, "moonkin" },
         { 1082, 1082,  2.5f, 0.67f, 1, 10.0f, 1, 0.0f,  0.4f, "cat" },
-        { 6807, 6807,  7.0f, 1.0f,  1, 10.0f, 0, 0.0f,  0.2f, "bear" },
-        { 5570, 16689, 1.6f, 1.0f,  3, 20.0f, 0, 0.15f, 0.2f, "tree" },
+        { 6807, 6807,  7.0f, 1.0f,  1, 10.0f, 0, 0.0f,  0.1f, "bear" },
+        { 5570, 16689, 1.6f, 1.0f,  3, 20.0f, 0, 0.3f,  0.2f, "tree" },
     };
 
     uint32 const BONK_SPELL_FRENZIED_REGEN    = 22842;
@@ -352,7 +353,7 @@ void BonkRun::FireFormAttack(OwnedWeapon& owned)
     owned.timer = int32(GetWeaponCooldown(owned) * attack.cooldownScale);
     PlayDruidMotion(attack.spellId);
     mobs.resize(std::min<size_t>(mobs.size(), attack.targets + GetSpellCount(owned)));
-    float const damage = GetWeaponDamage(owned) * attack.share * GetBrawlerScale();
+    float const damage = GetWeaponDamage(owned) * attack.share;
     std::set<ObjectGuid> splashed;
     for (Creature* mob : mobs)
         splashed.insert(mob->GetObjectGuid());
@@ -436,10 +437,16 @@ void BonkRun::DropStarfall()
     if (moonfired.empty())
         return;
     m_starfallReadyMs = m_totalMs + BONK_STARFALL_EVERY_MS;
-    Creature* target = moonfired[urand(0, uint32(moonfired.size() - 1))];
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_STARFALL_LOOK);
-    ShowStrike(m_player, look, target);
-    DealShamanHit(look, shapeshift->weapon.spellId, target, GetWeaponDamage(*shapeshift) * BONK_STARFALL_SHARE);
+    float const damage = GetWeaponDamage(*shapeshift) * BONK_STARFALL_SHARE;
+    for (size_t star = 0; star < BONK_STARFALL_STARS && !moonfired.empty(); ++star)
+    {
+        size_t const pick = urand(0, uint32(moonfired.size() - 1));
+        Creature* target = moonfired[pick];
+        moonfired.erase(moonfired.begin() + pick);
+        ShowStrike(m_player, look, target);
+        DealShamanHit(look, shapeshift->weapon.spellId, target, damage);
+    }
 }
 
 void BonkRun::RoarAsBear()
