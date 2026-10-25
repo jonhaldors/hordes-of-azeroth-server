@@ -11307,26 +11307,15 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
             adds.push_back(DescribeBonkSpellUpgrade(current, strength.folded, std::round(gain * 10.0f) / 10.0f));
     }
 
-    std::vector<std::string> totals;
-    if (damageNow + damage > 0.0f)
-        totals.push_back(describeDamage(damageNow + damage));
-    for (uint8 upgrade = BONK_SPELL_UPGRADE_NONE + 1; upgrade < MAX_BONK_SPELL_UPGRADE; ++upgrade)
-        if (after[upgrade] > 0.0f && (!strengthens || upgrade != strength.folded))
-            totals.push_back(DescribeBonkSpellUpgrade(current, BonkSpellUpgrade(upgrade), after[upgrade]));
-    if (strengthens)
+    std::stable_partition(adds.begin(), adds.end(), [](std::string const& part)
     {
-        std::string reached = strength.Describe();
-        reached[0] = char(tolower(reached[0]));
-        totals.push_back(reached);
-    }
-
+        return !part.empty() && (part[0] == '+' || part[0] == '-');
+    });
     std::string text = join(adds);
-    if (!text.empty())
-        text += ".";
-    std::string const total = join(totals);
-    if (!total.empty())
-        text += BONK_LINE_BREAK + std::string("Total: ") + total + ".";
-    return text;
+    if (text.empty())
+        return text;
+    text[0] = char(toupper(static_cast<unsigned char>(text[0])));
+    return text + ".";
 }
 
 void BonkRun::GetSpellUpgrades(OwnedWeapon const* owned, float* upgrades) const

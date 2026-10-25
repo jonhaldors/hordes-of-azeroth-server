@@ -1050,7 +1050,12 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         case BONK_SPELL_UPGRADE_SHIELD_SIZE: return percent + " Shield size";
         case BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN: return std::string("-") + number + "% internal cooldown";
         case BONK_SPELL_UPGRADE_ECHO:
-            return weapon.target == BONK_TARGET_GROUND ? "lands 1 additional at the next largest group of enemies" : "goes off 1 additional time, 0.3 sec later";
+        {
+            std::string const plural = amount == 1.0f ? "" : "s";
+            if (weapon.target == BONK_TARGET_GROUND)
+                return std::string("+") + number + " cast" + plural + " at the next largest group" + plural;
+            return std::string("+") + number + " cast" + plural + ", 0.3 sec apart";
+        }
         case BONK_SPELL_UPGRADE_MARK:       return percent + " damage taken by marked enemies";
         case BONK_SPELL_UPGRADE_PET_DAMAGE:
             return percent + " damage dealt by its " + weapon.GetTargetNoun() + (weapon.behavior == BONK_BEHAVIOR_WRATH ? "" : "s");
@@ -2061,15 +2066,7 @@ std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank) co
 
 std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const
 {
-    std::string text = DescribePassive(passive, 1);
-    if (rank <= 1)
-        return text;
-
-    std::vector<std::string> total;
-    ScalePassiveText(passive.description, rank, &total);
-    if (!total.empty())
-        text += BONK_LINE_BREAK + std::string("Total: ") + JoinValues(total) + ".";
-    return text;
+    return rank <= 1 ? DescribePassive(passive, 1) : ScalePassiveText(passive.description, 1);
 }
 
 void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std::vector<BonkStatChange>& stats) const
