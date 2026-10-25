@@ -73,6 +73,9 @@ namespace
     uint32 const BONK_SPAWN_TICK_MS        = 1000;
     uint32 const BONK_SPAWN_PER_TICK       = 12;
     uint32 const BONK_OPENING_REFILL_MIN   = 6;
+    float const BONK_STAGE_CARRY_SHARE     = 0.65f;
+    float const BONK_STAGE_CALM_SHARE      = 0.5f;
+    float const BONK_STAGE_CROWD_GROWTH    = 0.15f;
     float const BONK_VETERAN_HEALTH        = 2.5f;
     float const BONK_VETERAN_DAMAGE        = 1.25f;
     float const BONK_VETERAN_REWARD        = 3.5f;
@@ -1964,7 +1967,7 @@ bool BonkRun::IsInRoster(BonkArchetype archetype) const
     if (archetype >= MAX_BONK_ARCHETYPE)
         return false;
     BonkWave const& wave = GetWave();
-    if (m_stage > 1 && wave.beat == BONK_BEAT_BUILD && (archetype == BONK_ARCHETYPE_CASTER || archetype == BONK_ARCHETYPE_CHARGER))
+    if (m_stage > 1 && wave.beat == BONK_BEAT_BUILD && archetype != BONK_ARCHETYPE_SWARMER)
         return true;
     return wave.roster[archetype] > 0;
 }
@@ -1991,8 +1994,31 @@ float BonkRun::GetCurveMinAlive() const
     float minAlive = wave.crowdStart;
     if (span > 0.0f)
         minAlive += (wave.crowdEnd - wave.crowdStart) * std::min(1.0f, std::max(0.0f, (second - wave.startSecond) / span));
+    minAlive = std::max(minAlive, GetStageCrowdFloor()) * GetStageCrowdScale();
     return minAlive * m_tier.minAliveMultiplier * (1.0f + m_bonuses.spawnRate / 100.0f) * (1.0f + GetGreedCrowdPercent() / 100.0f) *
         GetOpeningEase() * (m_invaderId ? BONK_INVASION_CROWD : 1.0f);
+}
+
+float BonkRun::GetStageCrowdFloor() const
+{
+    if (m_stage <= 1)
+        return 0.0f;
+    float peak = 0.0f;
+    for (BonkWave const& wave : sBonkMgr.GetWaves())
+        peak = std::max(peak, wave.crowdEnd);
+    float const carry = peak * BONK_STAGE_CARRY_SHARE;
+    switch (GetWave().beat)
+    {
+        case BONK_BEAT_BUILD:    return carry;
+        case BONK_BEAT_LULL:
+        case BONK_BEAT_MINIBOSS: return carry * BONK_STAGE_CALM_SHARE;
+        default:                 return 0.0f;
+    }
+}
+
+float BonkRun::GetStageCrowdScale() const
+{
+    return 1.0f + BONK_STAGE_CROWD_GROWTH * float(m_stage > 1 ? m_stage - 1 : 0);
 }
 
 float BonkRun::GetOpeningProgress() const

@@ -513,6 +513,8 @@ class BonkRun
         bool IsInRoster(BonkArchetype archetype) const;
         uint32 CountRoster() const;
         float GetCurveMinAlive() const;
+        float GetStageCrowdFloor() const;
+        float GetStageCrowdScale() const;
         float GetOpeningProgress() const;
         float GetOpeningEase() const;
         uint32 GetSpawnTarget() const;
