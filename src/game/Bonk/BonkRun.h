@@ -2150,6 +2150,9 @@ class BonkRun
         BonkDruidForm PickDruidForm() const;
         uint32 GetDruidFormDisplay(BonkDruidForm form) const;
         void UpdateDruidForm();
+        void OnDruidPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey);
+        void SendEclipse();
+        std::string m_sentEclipse;
         float m_lunarEnergy = 0.0f;
         float m_solarEnergy = 0.0f;
         uint32 m_lunarUntilMs = 0;

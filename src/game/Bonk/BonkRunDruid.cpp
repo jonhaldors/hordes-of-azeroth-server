@@ -1,4 +1,5 @@
 #include "BonkRun.h"
+#include "BonkPlayer.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Player.h"
@@ -24,6 +25,9 @@ namespace
     uint32 const BONK_SPELL_THORNS            = 467;
     uint32 const BONK_SPELL_BLOOM_LASH        = 5570;
     uint32 const BONK_SPELL_HURRICANE_LOOK    = 16914;
+    uint32 const BONK_SPELL_TREANT_ROOTS      = 339;
+    float const BONK_TREANT_ROOT_RADIUS       = 5.0f;
+    std::string const BONK_ECLIPSE_OFF        = "eclipse~-1";
 
     uint32 const BONK_DISPLAY_MOONKIN_ALLIANCE = 15374;
     uint32 const BONK_DISPLAY_MOONKIN_HORDE   = 15375;
@@ -85,6 +89,9 @@ void BonkRun::ResetDruidState()
     m_tranquilityPulseMs = 0;
     m_tranquilityWeapon = 0;
     m_druidForm = BonkDruidForm::None;
+    if (!m_sentEclipse.empty() && m_sentEclipse != BONK_ECLIPSE_OFF)
+        m_player->GetBonkPlayer()->SendAddon(BONK_ECLIPSE_OFF);
+    m_sentEclipse.clear();
     if (m_player->HasAura(BONK_SPELL_LUNAR_LOOK))
         m_player->RemoveAurasDueToSpell(BONK_SPELL_LUNAR_LOOK);
     if (m_player->HasAura(BONK_SPELL_SOLAR_LOOK))
@@ -523,8 +530,44 @@ void BonkRun::UpdateDruidForm()
         m_player->SetDisplayId(display);
 }
 
+void BonkRun::OnDruidPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey)
+{
+    if (GetDruidPetFamily(owned) != BONK_PET_FAMILY_TREANT || !prey)
+        return;
+    SpellEntry const* roots = sSpellMgr.GetSpellEntry(BONK_SPELL_TREANT_ROOTS);
+    if (!roots)
+        return;
+    std::vector<Creature*> mobs = GetMobsNear(prey->GetPositionX(), prey->GetPositionY(), BONK_TREANT_ROOT_RADIUS * GetSummonReach(owned));
+    if (std::find(mobs.begin(), mobs.end(), prey) == mobs.end())
+        mobs.push_back(prey);
+    for (Creature* mob : mobs)
+    {
+        int32 durationMs = int32(BONK_ROOT_MS);
+        if (mob->IsAlive() && pet->IsWithinLOSInMap(mob) && LimitRoot(mob, durationMs))
+            HoldMob(mob, roots, SPELL_AURA_MOD_ROOT, durationMs);
+    }
+}
+
+void BonkRun::SendEclipse()
+{
+    bool const shown = IsDruidHero() && (FindOwnedByRoot(BONK_WEAPON_WRATH) || FindOwnedByRoot(BONK_WEAPON_STARFIRE));
+    std::string line = BONK_ECLIPSE_OFF;
+    if (shown)
+    {
+        uint32 const lunarLeft = IsLunarEclipse() ? m_lunarUntilMs - m_totalMs : 0;
+        uint32 const solarLeft = IsSolarEclipse() ? m_solarUntilMs - m_totalMs : 0;
+        line = "eclipse~" + std::to_string(uint32(m_lunarEnergy)) + "~" + std::to_string(uint32(m_solarEnergy)) + "~" +
+            std::to_string(lunarLeft ? 1 + lunarLeft / IN_MILLISECONDS : 0) + "~" + std::to_string(solarLeft ? 1 + solarLeft / IN_MILLISECONDS : 0);
+    }
+    if (line == m_sentEclipse)
+        return;
+    m_sentEclipse = line;
+    m_player->GetBonkPlayer()->SendAddon(line);
+}
+
 void BonkRun::UpdateDruid(uint32 diff)
 {
     UpdateDruidForm();
     PulseTranquility(diff);
+    SendEclipse();
 }

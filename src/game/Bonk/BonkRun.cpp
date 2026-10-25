@@ -8603,6 +8603,7 @@ void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
             PetStrike(owned, pet, prey, ability);
             state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
             OnWarlockPetStrike(owned, pet, prey, uint32(i));
+            OnDruidPetStrike(owned, pet, prey);
             return;
         }
         if (ability.kind == BONK_PET_ABILITY_CONE && strikeReach && PetPulse(owned, pet, ability, prey))
