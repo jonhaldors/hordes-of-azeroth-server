@@ -591,6 +591,8 @@ std::string BonkRun::DescribeFormRanges(OwnedWeapon const& owned, OwnedWeapon co
     bool const better = hit > GetShownHit(fresh, 0.0f) * BONK_SHOWN_BETTER;
     for (size_t form = size_t(BonkDruidForm::Moonkin); form <= size_t(BonkDruidForm::Tree); ++form)
     {
+        if (IsHeartOfTheWild() && BonkDruidForm(form) != GetAttackForm())
+            continue;
         FormTooltip const shown = GetFormTooltip(BonkDruidForm(form));
         size_t const start = text.find(shown.label);
         if (start == std::string::npos)

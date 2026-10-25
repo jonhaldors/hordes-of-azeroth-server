@@ -358,7 +358,7 @@ float BonkRun::GetDruidFormScale(OwnedWeapon const& owned) const
 
 BonkRun::FormTooltip BonkRun::GetFormTooltip(BonkDruidForm form) const
 {
-    float const share = GetFormAttack(form).share;
+    float const share = GetFormAttack(form).share * (IsHeartOfTheWild() ? BONK_HEART_OF_THE_WILD_ATTACK : 1.0f);
     switch (form)
     {
         case BonkDruidForm::Moonkin: return { "Moonkin Form:", "Nature", share };
