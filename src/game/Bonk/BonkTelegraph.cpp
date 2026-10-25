@@ -29,6 +29,7 @@ namespace
     uint32 const BONK_STANDIN_READY_MS    = 2500;
     uint32 const BONK_STANDIN_UNDRESS_MS  = 500;
     uint32 const BONK_STANDIN_RESCALE_MS  = 2500;
+    uint32 const BONK_STANDIN_LOOK_FADE_MS = 3500;
     uint32 const BONK_STANDIN_MIN_IDLE    = 32;
     uint32 const BONK_STANDIN_BATCH       = 8;
     uint32 const BONK_STANDIN_MAX         = 160;
@@ -478,6 +479,17 @@ void BonkTelegraphs::Hide(Player* owner, ObjectGuid const& guid)
     Wear(owner, guid, BONK_STANDIN_INVISIBLE);
 }
 
+void BonkTelegraphs::Release(Player* owner, ObjectGuid const& guid)
+{
+    Undress(owner, guid);
+    for (StandIn& standIn : m_standIns)
+        if (standIn.guid == guid)
+        {
+            standIn.readyAtMs = std::max(standIn.readyAtMs, m_clockMs + BONK_STANDIN_LOOK_FADE_MS);
+            return;
+        }
+}
+
 void BonkTelegraphs::Undress(Player* owner, ObjectGuid const& guid)
 {
     for (StandIn& standIn : m_standIns)
@@ -552,7 +564,7 @@ void BonkTelegraphs::Tend(Player* owner, uint32 diff)
         return;
     m_gatherTimer = 0;
     for (StandIn const& standIn : m_standIns)
-        if (!standIn.busy)
+        if (!standIn.busy && standIn.readyAtMs <= m_clockMs)
             if (Creature* creature = map->GetCreature(standIn.guid))
                 if (!creature->IsWithinDistInMap(owner, BONK_STANDIN_GATHER_RANGE))
                     PlaceStandIn(creature, owner->GetPositionX(), owner->GetPositionY(), owner->GetPositionZ(), creature->GetOrientation());

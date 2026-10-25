@@ -123,6 +123,26 @@ namespace
     uint32 const BONK_KIT_DUST_NOVA     = 7456;
     uint32 const BONK_KIT_EARTH_BURST   = 7400;
     uint32 const BONK_KIT_CHARGE_TRAIL  = 44;
+    uint32 const BONK_SPELL_HOLY_WINDUP   = 22011;
+    uint32 const BONK_SPELL_FIRE_WINDUP   = 2120;
+    uint32 const BONK_SPELL_NATURE_WINDUP = 2616;
+    uint32 const BONK_SPELL_FROST_WINDUP  = 10;
+    uint32 const BONK_SPELL_SHADOW_WINDUP = 17224;
+    uint32 const BONK_SPELL_ARCANE_WINDUP = 10797;
+
+    uint32 GetWindupLookSpell(SpellEntry const* spellInfo)
+    {
+        switch (spellInfo ? spellInfo->School : SPELL_SCHOOL_NORMAL)
+        {
+            case SPELL_SCHOOL_HOLY:   return BONK_SPELL_HOLY_WINDUP;
+            case SPELL_SCHOOL_FIRE:   return BONK_SPELL_FIRE_WINDUP;
+            case SPELL_SCHOOL_NATURE: return BONK_SPELL_NATURE_WINDUP;
+            case SPELL_SCHOOL_FROST:  return BONK_SPELL_FROST_WINDUP;
+            case SPELL_SCHOOL_SHADOW: return BONK_SPELL_SHADOW_WINDUP;
+            case SPELL_SCHOOL_ARCANE: return BONK_SPELL_ARCANE_WINDUP;
+            default:                  return 0;
+        }
+    }
 
     uint32 GetCastKit(BonkMobAbility const& ability)
     {
@@ -779,7 +799,7 @@ void BonkMobAI::AttackStart(Unit* victim)
 {
     Player* owner = GetOwner();
     if (!owner || victim != owner || m_arriveTimer > 0 || m_fleeing || m_stationary || m_passive || !m_raidTarget.IsEmpty() ||
-        m_chargeState != CHARGE_NONE || m_areaWinding || m_landingTimer > 0)
+        m_chargeState != CHARGE_NONE || m_areaWinding || m_landingTimer > 0 || IsHoldingForBolt())
         return;
 
     SetMeleeAttack(true);
@@ -846,6 +866,12 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         ReportTest("was interrupted during a wind-up.");
         AbandonWindups();
         ResumeChase(owner);
+    }
+    if (IsHeldByControl() && IsHoldingForBolt())
+    {
+        ReportTest("was interrupted while casting.");
+        m_boltTarget.Clear();
+        ClearWindupLook();
     }
 
     if (m_fleeing)
@@ -979,6 +1005,8 @@ void BonkMobAI::SetFrozen(bool frozen)
             return;
         }
         m_boltTarget.Clear();
+        if (!m_areaWinding)
+            ClearWindupLook();
         m_creature->InterruptNonMeleeSpells(false);
         m_creature->AttackStop();
         m_creature->GetMotionMaster()->Clear(false);
@@ -1009,6 +1037,7 @@ void BonkMobAI::AbandonWindups()
 {
     Player* owner = GetOwner();
     BonkRun* run = owner ? owner->GetBonkPlayer()->GetRun() : nullptr;
+    ClearWindupLook();
     if (m_areaWinding)
     {
         m_areaWinding = false;
@@ -1118,9 +1147,18 @@ void BonkMobAI::AimBolt(BonkMobAbility const& ability, SpellEntry const* spellIn
     m_boltSpell = spellInfo->Id;
     m_boltDamage = uint32(std::max(1.0f, GetMeleeHit() * ability.damage));
     m_boltLead = lead;
-    m_boltStartTimer = castTime < lead ? int32(lead - castTime) : 0;
+    m_boltServerDrawn = !sBonkMgr.GetBoltLook(spellInfo->Id);
+    m_boltCastKit = ability.castKit;
+    m_boltImpactKit = ability.impactKit;
+    m_boltStartTimer = m_boltServerDrawn ? int32(std::max(castTime, lead)) : castTime < lead ? int32(lead - castTime) : 0;
     m_boltAimTimer = castTime > lead ? int32(castTime - lead) : 0;
     m_boltStarted = m_boltAimed = false;
+    if (m_boltServerDrawn)
+    {
+        HoldStill();
+        m_creature->SetFacingToObject(owner);
+        ShowWindupLook(spellInfo);
+    }
     UpdateBolt(0, owner);
 }
 
@@ -1148,6 +1186,7 @@ void BonkMobAI::AimBoltNow(Player* owner)
         if (target)
             target->DespawnOrUnsummon();
         m_boltTarget.Clear();
+        ClearWindupLook();
         return;
     }
 
@@ -1160,7 +1199,9 @@ void BonkMobAI::AimBoltNow(Player* owner)
     target->NearTeleportTo(x, y, z, 0.0f);
 
     ObjectGuid const targetGuid = m_boltTarget;
-    BonkEnemyHit const hit = MakeHit(run, m_boltSpell, m_boltDamage);
+    BonkEnemyHit hit = MakeHit(run, m_boltSpell, m_boltDamage);
+    if (m_boltServerDrawn)
+        hit.impactKit = m_boltImpactKit;
     run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, BONK_BOLT_RADIUS, m_boltLead + flight,
         [run, hit, targetGuid, x, y]() { run->LandBolt(hit, targetGuid, x, y, BONK_BOLT_RADIUS); });
     run->LaunchEnemyMissile(m_creature->GetObjectGuid(), targetGuid, m_boltSpell, m_boltLead, flight, x, y, z);
@@ -1169,6 +1210,11 @@ void BonkMobAI::AimBoltNow(Player* owner)
 void BonkMobAI::LaunchBolt()
 {
     m_boltStarted = true;
+    if (m_boltServerDrawn)
+    {
+        ReleaseDrawnBolt();
+        return;
+    }
     Creature* target = m_creature->GetMap()->GetCreature(m_boltTarget);
     if (!target)
     {
@@ -1177,6 +1223,22 @@ void BonkMobAI::LaunchBolt()
     }
     m_creature->SetFacingToObject(target);
     m_creature->CastCustomSpell(GetCastTarget(target), m_boltSpell, 1, 1, 1, false);
+}
+
+void BonkMobAI::ReleaseDrawnBolt()
+{
+    ClearWindupLook();
+    if (Creature* target = m_creature->GetMap()->GetCreature(m_boltTarget))
+        m_creature->SetFacingToObject(target);
+    if (m_boltCastKit)
+        m_creature->SendPlaySpellVisualKit(m_boltCastKit);
+    if (Player* owner = GetOwner())
+        ResumeChase(owner);
+}
+
+bool BonkMobAI::IsHoldingForBolt() const
+{
+    return m_boltServerDrawn && !m_boltStarted && !m_boltTarget.IsEmpty();
 }
 
 Unit* BonkMobAI::GetCastTarget(Creature* target)
@@ -1391,6 +1453,7 @@ void BonkMobAI::StartArea(int32 abilityIndex, Player* owner)
     m_areaY = m_creature->GetPositionY();
     HoldStill();
     m_creature->SetFacingToObject(owner);
+    ShowWindupLook(spellInfo);
     float const x = m_areaX, y = m_areaY, z = m_creature->GetPositionZ();
     BonkEnemyHit const hit = MakeHit(run, spellId, damage, m_areaWindId);
     run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, warnMs,
@@ -1409,13 +1472,15 @@ void BonkMobAI::StartShape(int32 abilityIndex, Player* owner)
     switch (ability.shape)
     {
         case BONK_SHAPE_BARRAGE:
+            PlayCastKit(ability, owner);
             LaunchBarrage(owner, run, MakeAbilityHit(run, ability, 0, damage), std::max(1u, ability.count), size,
-                GetWarnMs(run, BONK_AREA_WARN_MS));
+                GetWarnMs(run, BONK_AREA_WARN_MS), ability.spellId);
             return;
         case BONK_SHAPE_TRAIL:
             run->SpawnPhaseAdds(m_creature, std::max(1u, ability.count), 0);
             return;
         case BONK_SHAPE_POOLS:
+            PlayCastKit(ability, owner);
             StartPools(ability, owner, run);
             return;
         case BONK_SHAPE_LEAP:
@@ -1452,8 +1517,17 @@ void BonkMobAI::StartShape(int32 abilityIndex, Player* owner)
         [run, hit, shape, x, y, z, o, heldSize]() { run->LandWarning(hit, shape, x, y, z, o, heldSize); }, m_areaWindId);
 }
 
-void BonkMobAI::LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& hit, uint32 count, float size, uint32 warnMs)
+void BonkMobAI::PlayCastKit(BonkMobAbility const& ability, Player* owner)
 {
+    if (!ability.castKit)
+        return;
+    m_creature->SetFacingToObject(owner);
+    m_creature->SendPlaySpellVisualKit(ability.castKit);
+}
+
+void BonkMobAI::LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& hit, uint32 count, float size, uint32 warnMs, uint32 missileSpell)
+{
+    SpellEntry const* missileInfo = missileSpell && sBonkMgr.GetBoltLook(missileSpell) ? sSpellMgr.GetSpellEntry(missileSpell) : nullptr;
     for (uint32 i = 0; i < count; ++i)
     {
         uint32 const landsInMs = warnMs + i * BONK_BARRAGE_STAGGER_MS;
@@ -1476,6 +1550,11 @@ void BonkMobAI::LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& h
         }
         run->AddEnemyTelegraph(m_creature, BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, size, landsInMs,
             [run, hit, x, y, z, size]() { run->Erupt(hit, x, y, z, size); });
+        if (missileInfo)
+        {
+            uint32 const flight = std::min(GetBoltFlightMs(missileInfo, m_creature->GetDistance(x, y, z)), landsInMs);
+            run->LaunchEnemyMissile(m_creature->GetObjectGuid(), ObjectGuid(), missileSpell, landsInMs - flight, flight, x, y, z);
+        }
     }
 }
 
@@ -1492,6 +1571,8 @@ void BonkMobAI::WindUp(int32 abilityIndex, float orientation, uint32 durationMs)
     m_areaSelfTimed = false;
     HoldStill();
     m_creature->SetFacingTo(orientation);
+    if (m_mob && abilityIndex >= 0 && abilityIndex < int32(m_mob->abilities.size()))
+        ShowWindupLook(sSpellMgr.GetSpellEntry(m_mob->abilities[abilityIndex].spellId));
 }
 
 bool BonkMobAI::StartLeap(int32 abilityIndex, Player* owner, BonkRun* run, uint32 damage)
@@ -1523,6 +1604,7 @@ void BonkMobAI::LaunchLeap()
     if (m_creature->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED))
         return;
     m_leapLaunched = true;
+    ClearWindupLook();
     float const distance = m_creature->GetDistance2d(m_leapX, m_leapY);
     float const speed = std::max(BONK_LEAP_SPEED, distance * IN_MILLISECONDS / float(std::max(1, m_leapTravelMs)));
     m_creature->GetMotionMaster()->MovePoint(0, m_leapX, m_leapY, m_leapZ, MOVE_RUN_MODE | MOVE_FORCE_DESTINATION, speed);
@@ -1596,6 +1678,24 @@ void BonkMobAI::HoldStill()
     m_creature->StopMoving();
     m_creature->GetMotionMaster()->Clear(false);
     m_creature->GetMotionMaster()->MoveIdle();
+}
+
+void BonkMobAI::ShowWindupLook(SpellEntry const* spellInfo)
+{
+    uint32 const look = GetWindupLookSpell(spellInfo);
+    if (!look || look == m_windupLook)
+        return;
+    m_windupLook = look;
+    m_creature->SetUInt32Value(UNIT_CHANNEL_SPELL, look);
+    m_creature->DirectSendPublicValueUpdate({ UNIT_CHANNEL_SPELL });
+}
+
+void BonkMobAI::ClearWindupLook()
+{
+    if (!m_windupLook)
+        return;
+    m_windupLook = 0;
+    m_creature->CancelSpellChannelingAnimationInstantly();
 }
 
 void BonkMobAI::KeepHolding()
@@ -1740,6 +1840,7 @@ void BonkMobAI::ResumeChase(Player* owner)
 void BonkMobAI::ResolveArea(Player* owner)
 {
     m_areaWinding = false;
+    ClearWindupLook();
 
     BonkMobAbility const* ability = m_mob && m_areaAbility >= 0 ? &m_mob->abilities[m_areaAbility] : nullptr;
     if (m_areaSelfTimed)
@@ -2556,6 +2657,7 @@ std::string BonkMobAI::Describe() const
 void BonkMobAI::JustDied(Unit* killer)
 {
     m_creature->SetTimeFrozen(false);
+    ClearWindupLook();
     if (m_creature->HasStaticFlag(CREATURE_STATIC_FLAG_DESPAWN_INSTANTLY))
         m_creature->DespawnOrUnsummon(BONK_DEAD_REMOVE_MS);
 

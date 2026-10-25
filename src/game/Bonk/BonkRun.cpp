@@ -464,6 +464,25 @@ namespace
     uint32 const BONK_KIT_FIRE_BURST       = 286;
     float const BONK_LINE_IMPACT_SPACING   = 6.0f;
     uint32 const BONK_ERUPTION_LOOK_MS     = 3000;
+    int32 const BONK_VOID_LOOK_EVERY_MS    = 1000;
+    uint32 const BONK_KIT_SAND_VORTEX      = 6472;
+    uint32 const BONK_SPELL_SAND_VORTEX_LOOK = 33460;
+    uint32 const BONK_SAND_VORTEX_LIFE_MS  = 8000;
+
+    uint32 GetPoolBurstMs(uint32 kit)
+    {
+        switch (kit)
+        {
+            case 895:  return 3100;
+            case 7453:
+            case 7454: return 3000;
+            case 286:  return 1600;
+            case 160:  return 900;
+            case 1004: return 800;
+            case 809:  return 700;
+            default:   return 1000;
+        }
+    }
     float const BONK_IMPACT_KIT_RADIUS     = 2.0f;
     float const BONK_IMPACT_MAX_STRETCH    = 6.0f;
     float const BONK_IMPACT_RING_FROM      = 5.0f;
@@ -3632,6 +3651,9 @@ void BonkRun::StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, 
 {
     if (m_state != STATE_RUNNING || m_paused)
         return;
+    bool const vortex = hit.impactKit == BONK_KIT_SAND_VORTEX && sSpellMgr.GetSpellEntry(BONK_SPELL_SAND_VORTEX_LOOK);
+    if (vortex)
+        durationMs = BONK_SAND_VORTEX_LIFE_MS;
     VoidZone zone;
     zone.hit = hit;
     zone.x = x;
@@ -3650,6 +3672,14 @@ void BonkRun::StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, 
     }
     if (!zone.lookAura)
         AddTelegraph(BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, durationMs, nullptr, true);
+    if (vortex)
+    {
+        if (zone.look.IsEmpty())
+            zone.look = m_telegraphs.BorrowInvisible(m_player, x, y, z);
+        Creature* standIn = zone.look.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(zone.look);
+        if (standIn && standIn->AddAura(BONK_SPELL_SAND_VORTEX_LOOK, ADD_AURA_PERMANENT))
+            zone.vortexAura = BONK_SPELL_SAND_VORTEX_LOOK;
+    }
     m_voidZones.push_back(zone);
 }
 
@@ -3659,8 +3689,12 @@ void BonkRun::EndVoidZone(VoidZone const& zone)
         return;
     if (Map* map = m_player->FindMap())
         if (Creature* standIn = map->GetCreature(zone.look))
+        {
             if (zone.lookAura)
                 standIn->RemoveAurasDueToSpell(zone.lookAura);
+            if (zone.vortexAura)
+                standIn->RemoveAurasDueToSpell(zone.vortexAura);
+        }
     m_telegraphs.Release(m_player, zone.look);
 }
 
@@ -3755,7 +3789,15 @@ void BonkRun::UpdateVoidZones(uint32 diff)
         if (itr->tickMs >= IN_MILLISECONDS)
         {
             itr->tickMs -= IN_MILLISECONDS;
-            Erupt(itr->hit, itr->x, itr->y, itr->z, itr->radius, false);
+            Erupt(itr->hit, itr->x, itr->y, itr->z, itr->radius, false, false);
+        }
+        itr->vortexMs -= int32(diff);
+        uint32 const burstKit = itr->hit.impactKit ? itr->hit.impactKit : BONK_KIT_FIRE_BURST;
+        uint32 const burstMs = GetPoolBurstMs(burstKit);
+        if (!itr->vortexAura && itr->vortexMs <= 0 && itr->leftMs >= burstMs)
+        {
+            itr->vortexMs += BONK_VOID_LOOK_EVERY_MS;
+            ShowKitOnStandIn(burstKit, itr->x, itr->y, itr->z, burstMs);
         }
         itr->leftMs = itr->leftMs > diff ? itr->leftMs - diff : 0;
         if (itr->leftMs)
@@ -7791,11 +7833,12 @@ Creature* BonkRun::SummonHazard(float x, float y, float z)
     return m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_HAZARD_MS, false, 0, &InstallOrbAI);
 }
 
-void BonkRun::Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst)
+void BonkRun::Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst, bool showImpact)
 {
     if (m_state != STATE_RUNNING)
         return;
-    ShowImpact(hit, x, y, z, burst ? radius : 0.0f);
+    if (showImpact)
+        ShowImpact(hit, x, y, z, burst ? radius : 0.0f);
 
     if (!hit.damage || !m_player->IsAlive() || !IsHeroWithin(m_player, x, y, radius))
         return;
@@ -7904,6 +7947,8 @@ void BonkRun::LandBolt(BonkEnemyHit const& hit, ObjectGuid targetGuid, float x, 
     Creature* target = map->GetCreature(targetGuid);
     if (target)
         target->DespawnOrUnsummon(500);
+    if (hit.impactKit && m_state == STATE_RUNNING)
+        ShowKitAt(hit.impactKit, x, y, target ? target->GetPositionZ() : m_player->GetPositionZ());
 
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(hit.spellId);
     if (m_state != STATE_RUNNING || !spellInfo || !m_player->IsAlive() || !IsHeroWithin(m_player, x, y, radius))

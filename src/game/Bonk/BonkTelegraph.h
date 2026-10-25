@@ -49,7 +49,7 @@ class BonkTelegraphs
         ObjectGuid Borrow(Player* owner, float x, float y, float z, uint32 display);
         ObjectGuid BorrowInvisible(Player* owner, float x, float y, float z);
         void Dress(Player* owner, ObjectGuid const& guid, uint32 display) { Wear(owner, guid, display); }
-        void Release(Player* owner, ObjectGuid const& guid) { Undress(owner, guid); }
+        void Release(Player* owner, ObjectGuid const& guid);
         void Hide(Player* owner, ObjectGuid const& guid);
         void Resize(Player* owner, ObjectGuid const& guid, float stretch);
 

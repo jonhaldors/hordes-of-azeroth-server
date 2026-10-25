@@ -111,6 +111,8 @@ class BonkMobAI : public CreatureAI
         void Halt();
         void HoldStill();
         void KeepHolding();
+        void ShowWindupLook(SpellEntry const* spellInfo);
+        void ClearWindupLook();
         bool IsHeldByControl() const;
         void AbandonWindups();
         bool ResumeWindup();
@@ -146,7 +148,8 @@ class BonkMobAI : public CreatureAI
         void EruptLaneWave(BonkRun* run);
         void UpdateBossBlink(uint32 diff, Player* owner, BonkRun* run);
         bool BlinkToHero(Player* owner, BonkRun* run);
-        void LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& hit, uint32 count, float size, uint32 warnMs);
+        void PlayCastKit(BonkMobAbility const& ability, Player* owner);
+        void LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& hit, uint32 count, float size, uint32 warnMs, uint32 missileSpell = 0);
         void StartArea(int32 abilityIndex, Player* owner);
         void StartShape(int32 abilityIndex, Player* owner);
         void WindUp(int32 abilityIndex, float orientation, uint32 durationMs);
@@ -167,6 +170,8 @@ class BonkMobAI : public CreatureAI
         void UpdateBolt(uint32 diff, Player* owner);
         void AimBoltNow(Player* owner);
         void LaunchBolt();
+        void ReleaseDrawnBolt();
+        bool IsHoldingForBolt() const;
         bool UpdateCharge(uint32 diff, Player* owner);
         void StartCharge(Player* owner, float damage);
         void WarnCharge(BonkRun* run, uint32 windupMs);
@@ -264,6 +269,10 @@ class BonkMobAI : public CreatureAI
         int32 m_boltAimTimer = 0;
         bool m_boltStarted = false;
         bool m_boltAimed = false;
+        bool m_boltServerDrawn = false;
+        uint32 m_boltCastKit = 0;
+        uint32 m_boltImpactKit = 0;
+        uint32 m_windupLook = 0;
         std::string m_plateIcon;
         bool m_fleeing = false;
         bool m_blinks = false;

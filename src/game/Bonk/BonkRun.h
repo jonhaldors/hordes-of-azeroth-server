@@ -258,7 +258,7 @@ class BonkRun
         void SpawnPhaseAdds(Creature const* boss, uint32 count, uint32 elites);
         void SpawnWards(Creature const* boss, uint32 count, float healthShare, float healPercent);
         void StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, float radius, uint32 durationMs);
-        void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst = true);
+        void Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst = true, bool showImpact = true);
         void MarkHero(BonkEnemyHit const& burst, BonkEnemyHit const& pool, float radius, uint32 followMs, uint32 warnMs, uint32 poolMs);
         bool IsHeroMarked() const { return m_heroMark.leftMs > 0; }
         void AddBossWound(uint32 maxStacks, float cutPercent, uint32 durationMs);
@@ -474,8 +474,10 @@ class BonkRun
             float radius = 0.0f;
             uint32 leftMs = 0;
             uint32 tickMs = 0;
+            int32 vortexMs = 0;
             ObjectGuid look;
             uint32 lookAura = 0;
+            uint32 vortexAura = 0;
         };
         std::vector<VoidZone> m_voidZones;
         void EndVoidZone(VoidZone const& zone);
