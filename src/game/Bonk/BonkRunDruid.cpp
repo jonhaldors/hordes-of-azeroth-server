@@ -26,6 +26,7 @@ namespace
     uint32 const BONK_WEAPON_SHAPESHIFT       = 1013;
 
     uint32 const BONK_SHAPESHIFT_COOLDOWN_MS  = 500;
+    float const BONK_MOONFIRE_IMPACT_SHARE    = 0.25f;
     uint32 const BONK_KIT_SHAPESHIFT_SMOKE    = 3610;
     uint32 const BONK_KIT_NATURE_CAST         = 3291;
     uint32 const BONK_KIT_ARCANE_CAST         = 730;
@@ -386,6 +387,12 @@ void BonkRun::CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
     }
     owned.timer = GetWeaponCooldown(owned);
     PlayDruidMotion(owned.weapon.spellId);
+    std::vector<Creature*> struck = mobs;
+    std::stable_partition(struck.begin(), struck.end(), [this](Creature* mob) { return !GetKeywordStacks(mob, BONK_KEYWORD_MOONFIRE); });
+    struck.resize(std::min<size_t>(struck.size(), GetWeaponTargets(owned)));
+    float const impact = GetWeaponDamage(owned) * BONK_MOONFIRE_IMPACT_SHARE;
+    for (Creature* mob : struck)
+        HitAsDruid(owned, spellInfo, mob, impact);
     AddWarlockStacks(ScaleForForm(owned), spellInfo, mobs, BONK_KEYWORD_MOONFIRE);
 }
 
