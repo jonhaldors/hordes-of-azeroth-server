@@ -4841,7 +4841,7 @@ float BonkRun::GetStat(BonkPassiveEffect effect) const
         return CurveHaste(total);
     float const cap = GetStatCap(effect);
     float const lasting = cap > 0.0f ? std::min(total, cap) : total;
-    return effect == BONK_PASSIVE_MOVE_SPEED ? lasting + GetBoostMoveSpeed() : lasting;
+    return effect == BONK_PASSIVE_MOVE_SPEED ? lasting + GetBoostMoveSpeed() + GetDruidMoveSpeed() : lasting;
 }
 
 float BonkRun::GetBoostMoveSpeed() const
@@ -7611,6 +7611,7 @@ float BonkRun::GetMobDamageMultiplier(Creature const* mob) const
             reduction = std::max(reduction, owned.weapon.behaviorValue * (1.0f + owned.damageBonus / 100.0f));
         else if (owned.weapon.behavior == BONK_BEHAVIOR_DEMORALIZING_SHOUT && mob->HasAura(owned.weapon.spellId))
             reduction = std::max(reduction, BONK_DEMORALIZING_SHOUT_REDUCTION);
+    reduction = std::max(reduction, GetDruidRoarReduction(mob));
     return 1.0f - std::min(reduction, BONK_MAX_DEMORALIZE) / 100.0f;
 }
 
@@ -8523,7 +8524,7 @@ uint32 BonkRun::GetWantedSummons(OwnedWeapon const& owned)
         return 1;
     if (owned.weapon.behavior != BONK_BEHAVIOR_PET)
         return 0;
-    return GetWeaponTargets(owned) + GetShamanExtraPets(owned);
+    return GetWeaponTargets(owned) + GetShamanExtraPets(owned) + GetDruidExtraPets(owned);
 }
 
 uint32 BonkRun::GetSummonRoom(OwnedWeapon const& owned)

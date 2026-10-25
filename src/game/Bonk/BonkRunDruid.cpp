@@ -8,6 +8,7 @@
 #include "Utilities/Random.h"
 
 #include <algorithm>
+#include <set>
 
 namespace
 {
@@ -26,7 +27,27 @@ namespace
     uint32 const BONK_WEAPON_SHAPESHIFT       = 1013;
 
     uint32 const BONK_SHAPESHIFT_COOLDOWN_MS  = 500;
-    float const BONK_MOONFIRE_IMPACT_SHARE    = 0.25f;
+    float const BONK_MOONFIRE_IMPACT_SHARE    = 0.4f;
+    float const BONK_FORM_SPLASH_RADIUS       = 5.0f;
+    uint32 const BONK_STARFALL_EVERY_MS       = 3000;
+    float const BONK_STARFALL_SHARE           = 1.5f;
+    float const BONK_STARFALL_RANGE           = 30.0f;
+    uint32 const BONK_SPELL_STARFALL_LOOK     = 2912;
+    uint32 const BONK_KIT_STARFALL            = 3381;
+    float const BONK_CAT_MOVE_SPEED           = 15.0f;
+    uint32 const BONK_CAT_CRIT_BLEED          = 1;
+    float const BONK_BRAWLER_PER_ENEMY        = 0.08f;
+    float const BONK_BRAWLER_RADIUS           = 8.0f;
+    uint32 const BONK_BRAWLER_MAX_ENEMIES     = 8;
+    uint32 const BONK_ROAR_EVERY_MS           = 6000;
+    uint32 const BONK_ROAR_MS                 = 4000;
+    float const BONK_ROAR_RADIUS              = 10.0f;
+    float const BONK_ROAR_REDUCTION           = 25.0f;
+    uint32 const BONK_KIT_ROAR_CAST           = 3372;
+    uint32 const BONK_KIT_ROAR_IMPACT         = 693;
+    size_t const BONK_ROAR_LOOKS              = 6;
+    float const BONK_TREE_REJUVENATION_PACE   = 0.67f;
+    uint32 const BONK_TREE_EXTRA_TREANTS      = 1;
     uint32 const BONK_KIT_SHAPESHIFT_SMOKE    = 3610;
     uint32 const BONK_KIT_NATURE_CAST         = 3291;
     uint32 const BONK_KIT_ARCANE_CAST         = 730;
@@ -56,16 +77,17 @@ namespace
         float range;
         uint32 bleedStacks;
         float healPerHit;
+        float splashShare;
         char const* name;
     };
 
     FormAttack const BONK_FORM_ATTACKS[] =
     {
-        { 0,    0.0f, 1.0f,  0, 0.0f,  0, 0.0f,  "caster" },
-        { 5176, 2.0f, 1.0f,  1, 30.0f, 0, 0.0f,  "moonkin" },
-        { 1082, 1.1f, 0.67f, 1, 10.0f, 1, 0.0f,  "cat" },
-        { 6807, 0.9f, 1.0f,  3, 10.0f, 0, 0.0f,  "bear" },
-        { 5570, 0.6f, 1.0f,  3, 20.0f, 0, 0.15f, "tree" },
+        { 0,    0.0f, 1.0f,  0, 0.0f,  0, 0.0f,  0.0f, "caster" },
+        { 5176, 3.4f, 1.0f,  1, 30.0f, 0, 0.0f,  0.3f, "moonkin" },
+        { 1082, 2.5f, 0.67f, 1, 10.0f, 1, 0.0f,  0.4f, "cat" },
+        { 6807, 2.0f, 1.0f,  1, 10.0f, 0, 0.0f,  0.3f, "bear" },
+        { 5570, 1.6f, 1.0f,  3, 20.0f, 0, 0.15f, 0.2f, "tree" },
     };
 
     uint32 const BONK_SPELL_FRENZIED_REGEN    = 22842;
@@ -207,6 +229,10 @@ void BonkRun::ResetDruidState()
     m_druidMotionMs = 0;
     m_druidClawLookMs = 0;
     m_sentDruidForm.clear();
+    m_sentDruidSlots.clear();
+    m_starfallReadyMs = 0;
+    m_roarReadyMs = 0;
+    m_roaredUntilMs.clear();
     if (IsDruidHero())
         m_player->GetBonkPlayer()->SendAddon("druidform~caster");
     if (IsDruidHero() && m_player->GetDisplayId() != m_player->GetNativeDisplayId())
@@ -324,11 +350,18 @@ void BonkRun::FireFormAttack(OwnedWeapon& owned)
     owned.timer = int32(GetWeaponCooldown(owned) * attack.cooldownScale);
     PlayDruidMotion(attack.spellId);
     mobs.resize(std::min<size_t>(mobs.size(), attack.targets + GetSpellCount(owned)));
-    float const damage = GetWeaponDamage(owned) * attack.share;
+    float const damage = GetWeaponDamage(owned) * attack.share * GetBrawlerScale();
+    std::set<ObjectGuid> splashed;
+    for (Creature* mob : mobs)
+        splashed.insert(mob->GetObjectGuid());
     for (Creature* mob : mobs)
     {
         ShowDruidStrike(look, mob);
         HitAsDruid(owned, look, mob, damage);
+        if (attack.splashShare > 0.0f)
+            for (Creature* neighbor : GetMobsInRange(BONK_FORM_SPLASH_RADIUS * GetWeaponArea(owned), mob))
+                if (splashed.insert(neighbor->GetObjectGuid()).second)
+                    DealShamanHit(look, owned.weapon.spellId, neighbor, damage * attack.splashShare);
         if (attack.bleedStacks && mob->IsAlive())
             ApplyWeaponKeyword(owned, mob, BONK_KEYWORD_BLEED, attack.bleedStacks);
     }
@@ -364,6 +397,7 @@ void BonkRun::Shapeshift(char const* formName)
     m_shapeshiftReadyMs = m_totalMs + BONK_SHAPESHIFT_COOLDOWN_MS;
     m_druidForm = next;
     UpdateDruidForm();
+    ApplyPassives();
     m_shapeshiftSmokeAtMs = m_totalMs + BONK_SHAPESHIFT_SMOKE_DELAY_MS;
     if (OwnedWeapon* shapeshift = FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT))
         shapeshift->timer = std::min(shapeshift->timer, BONK_DRUID_POLL_MS);
@@ -371,10 +405,84 @@ void BonkRun::Shapeshift(char const* formName)
 
 void BonkRun::HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage)
 {
-    DealShamanHit(spellInfo, owned.weapon.spellId, target, damage);
+    bool crit = DealShamanHit(spellInfo, owned.weapon.spellId, target, damage);
     float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
     if (twice > 0.0f && target->IsAlive() && roll_chance_f(twice))
-        DealShamanHit(spellInfo, owned.weapon.spellId, target, damage);
+        crit |= DealShamanHit(spellInfo, owned.weapon.spellId, target, damage);
+    if (crit && m_druidForm == BonkDruidForm::Cat && target->IsAlive())
+        ApplyWeaponKeyword(owned, target, BONK_KEYWORD_BLEED, BONK_CAT_CRIT_BLEED);
+}
+
+float BonkRun::GetBrawlerScale() const
+{
+    if (m_druidForm != BonkDruidForm::Bear)
+        return 1.0f;
+    size_t const crowd = std::min<size_t>(GetMobsInRange(BONK_BRAWLER_RADIUS).size(), BONK_BRAWLER_MAX_ENEMIES);
+    return 1.0f + BONK_BRAWLER_PER_ENEMY * float(crowd);
+}
+
+void BonkRun::DropStarfall()
+{
+    OwnedWeapon const* shapeshift = FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT);
+    if (m_druidForm != BonkDruidForm::Moonkin || !shapeshift || !m_player->IsAlive() || m_totalMs < m_starfallReadyMs)
+        return;
+    std::vector<Creature*> moonfired;
+    for (Creature* mob : GetDruidTargets(BONK_STARFALL_RANGE))
+        if (GetKeywordStacks(mob, BONK_KEYWORD_MOONFIRE))
+            moonfired.push_back(mob);
+    if (moonfired.empty())
+        return;
+    m_starfallReadyMs = m_totalMs + BONK_STARFALL_EVERY_MS;
+    Creature* target = moonfired[urand(0, uint32(moonfired.size() - 1))];
+    target->SendPlaySpellVisualKit(BONK_KIT_STARFALL);
+    DealShamanHit(sSpellMgr.GetSpellEntry(BONK_SPELL_STARFALL_LOOK), shapeshift->weapon.spellId, target, GetWeaponDamage(*shapeshift) * BONK_STARFALL_SHARE);
+}
+
+void BonkRun::RoarAsBear()
+{
+    OwnedWeapon const* shapeshift = FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT);
+    if (m_druidForm != BonkDruidForm::Bear || !shapeshift || !m_player->IsAlive() || m_totalMs < m_roarReadyMs)
+        return;
+    std::vector<Creature*> const mobs = GetMobsInRange(BONK_ROAR_RADIUS * GetWeaponArea(*shapeshift));
+    if (mobs.empty())
+        return;
+    m_roarReadyMs = m_totalMs + BONK_ROAR_EVERY_MS;
+    m_player->SendPlaySpellVisualKit(BONK_KIT_ROAR_CAST);
+    size_t shown = 0;
+    for (Creature* mob : mobs)
+    {
+        m_roaredUntilMs[mob->GetObjectGuid()] = m_totalMs + BONK_ROAR_MS;
+        ApplyWeaponKeyword(*shapeshift, mob, BONK_KEYWORD_DAZED, 1);
+        if (shown++ < BONK_ROAR_LOOKS)
+            mob->SendPlaySpellVisualKit(BONK_KIT_ROAR_IMPACT);
+    }
+}
+
+float BonkRun::GetDruidRoarReduction(Creature const* mob) const
+{
+    auto itr = m_roaredUntilMs.find(mob->GetObjectGuid());
+    return itr != m_roaredUntilMs.end() && itr->second > m_totalMs ? BONK_ROAR_REDUCTION : 0.0f;
+}
+
+float BonkRun::GetDruidMoveSpeed() const
+{
+    return IsDruidHero() && m_druidForm == BonkDruidForm::Cat ? BONK_CAT_MOVE_SPEED : 0.0f;
+}
+
+uint32 BonkRun::GetDruidExtraPets(OwnedWeapon const& owned) const
+{
+    return GetDruidPetFamily(owned) == BONK_PET_FAMILY_TREANT && m_druidForm == BonkDruidForm::Tree ? BONK_TREE_EXTRA_TREANTS : 0;
+}
+
+std::string BonkRun::DescribeDruidSlots() const
+{
+    std::string line = "druidslots";
+    for (OwnedWeapon const& owned : m_weapons)
+    {
+        float const scale = GetDruidFormScale(owned);
+        line += scale > 1.0f ? "~g" : scale < 1.0f ? "~r" : "~n";
+    }
+    return line;
 }
 
 void BonkRun::CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
@@ -486,7 +594,7 @@ void BonkRun::SwipeAround(OwnedWeapon& owned, SpellEntry const* spellInfo)
     }
     owned.timer = GetWeaponCooldown(owned);
     PlayDruidMotion(owned.weapon.spellId);
-    float const damage = GetWeaponDamage(owned);
+    float const damage = GetWeaponDamage(owned) * GetBrawlerScale();
     size_t shown = 0;
     for (Creature* mob : mobs)
     {
@@ -518,7 +626,8 @@ void BonkRun::RegenerateFrenzied(OwnedWeapon& owned)
 
 void BonkRun::BloomRejuvenation(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    owned.timer = GetWeaponCooldown(owned);
+    float const pace = m_druidForm == BonkDruidForm::Tree ? BONK_TREE_REJUVENATION_PACE : 1.0f;
+    owned.timer = int32(GetWeaponCooldown(owned) * pace);
     if (!m_player->IsAlive())
         return;
     if (TakeDruidLookSlot(owned.weapon.id))
@@ -572,6 +681,9 @@ void BonkRun::StartTranquility(OwnedWeapon& owned)
     m_tranquilityWeapon = owned.weapon.id;
     m_tranquilityPulsesLeft = std::max(1u, uint32(BONK_TRANQUILITY_PULSES * GetWeaponDurationScale(owned) + 0.5f));
     m_tranquilityPulseMs = 0;
+    uint32 const lastsMs = m_tranquilityPulsesLeft * BONK_TRANQUILITY_PULSE_MS;
+    PlaceAreaLook(owned.weapon.spellId, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(),
+        owned.weapon.range * GetWeaponArea(owned), lastsMs);
 }
 
 void BonkRun::PulseTranquility(uint32 diff)
@@ -593,7 +705,6 @@ void BonkRun::PulseTranquility(uint32 diff)
     --m_tranquilityPulsesLeft;
 
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(owned->weapon.spellId);
-    ShowStrike(m_player, spellInfo, m_player);
     float const damage = GetWeaponDamage(*owned);
     for (Creature* mob : GetMobsInRange(owned->weapon.range * GetWeaponArea(*owned)))
         DealShamanHit(spellInfo, owned->weapon.spellId, mob, damage);
@@ -651,6 +762,12 @@ void BonkRun::UpdateDruidForm()
         m_sentDruidForm = sent;
         m_player->GetBonkPlayer()->SendAddon(sent);
     }
+    std::string const slots = DescribeDruidSlots();
+    if (slots != m_sentDruidSlots)
+    {
+        m_sentDruidSlots = slots;
+        m_player->GetBonkPlayer()->SendAddon(slots);
+    }
     uint32 const display = GetDruidFormDisplay(m_druidForm);
     if (m_player->GetDisplayId() != display)
         m_player->SetDisplayId(display);
@@ -683,4 +800,6 @@ void BonkRun::UpdateDruid(uint32 diff)
     }
     UpdateDruidForm();
     PulseTranquility(diff);
+    DropStarfall();
+    RoarAsBear();
 }

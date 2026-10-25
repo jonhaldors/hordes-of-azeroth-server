@@ -2139,6 +2139,17 @@ class BonkRun
         uint32 m_shapeshiftSmokeAtMs = 0;
         uint32 m_druidMotionMs = 0;
         uint32 m_druidClawLookMs = 0;
+        float GetBrawlerScale() const;
+        void DropStarfall();
+        void RoarAsBear();
+        float GetDruidRoarReduction(Creature const* mob) const;
+        float GetDruidMoveSpeed() const;
+        uint32 GetDruidExtraPets(OwnedWeapon const& owned) const;
+        std::string DescribeDruidSlots() const;
+        std::string m_sentDruidSlots;
+        uint32 m_starfallReadyMs = 0;
+        uint32 m_roarReadyMs = 0;
+        std::map<ObjectGuid, uint32> m_roaredUntilMs;
         uint32 GetClawImpactKit(uint32 spellId) const;
         uint32 GetStillClawKit(uint32 spellId) const;
         void ShowDruidStrike(SpellEntry const* look, Creature* target);
