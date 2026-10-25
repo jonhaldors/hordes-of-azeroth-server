@@ -29,6 +29,8 @@ namespace
     float const BONK_PANDEMIC_POWER_COST       = 15.0f;
     float const BONK_MASTER_DEMONOLOGIST_POWER_COST = 15.0f;
     float const BONK_RUIN_CRIT_COST            = 10.0f;
+    float const BONK_CELESTIAL_ALIGNMENT_POWER_COST = 15.0f;
+    float const BONK_PRIMAL_FURY_POWER_COST    = 15.0f;
 }
 
 void BonkMastery::Load()
@@ -369,6 +371,12 @@ void BonkMastery::ApplyCapstoneCost(BonkMasteryBonuses& bonuses)
             break;
         case BONK_CAPSTONE_RUIN:
             bonuses.passives[BONK_PASSIVE_CRIT] -= BONK_RUIN_CRIT_COST;
+            break;
+        case BONK_CAPSTONE_CELESTIAL_ALIGNMENT:
+            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_CELESTIAL_ALIGNMENT_POWER_COST;
+            break;
+        case BONK_CAPSTONE_PRIMAL_FURY:
+            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_PRIMAL_FURY_POWER_COST;
             break;
         default:
             break;

@@ -2137,6 +2137,8 @@ class BonkRun
         BonkDruidForm GetDruidSpellForm(uint32 rootId) const;
         float GetDruidFormScale(OwnedWeapon const& owned) const;
         void FireFormAttack(OwnedWeapon& owned);
+        BonkDruidForm GetAttackForm() const;
+        bool IsHeartOfTheWild() const;
         uint32 m_shapeshiftReadyMs = 0;
         uint32 m_shapeshiftSmokeAtMs = 0;
         uint32 m_druidMotionMs = 0;

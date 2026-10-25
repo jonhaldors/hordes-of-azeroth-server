@@ -34,6 +34,10 @@ namespace
     float const BONK_STARFALL_SHARE           = 1.5f;
     float const BONK_STARFALL_RANGE           = 30.0f;
     size_t const BONK_STARFALL_STARS          = 3;
+    size_t const BONK_ALIGNMENT_EXTRA_STARS   = 2;
+    float const BONK_PRIMAL_FURY_CAT_TAKEN    = 0.8f;
+    float const BONK_HEART_OF_THE_WILD_BONUS  = 1.15f;
+    float const BONK_HEART_OF_THE_WILD_ATTACK = 0.6f;
     uint32 const BONK_SPELL_STARFALL_LOOK     = 2912;
     float const BONK_CAT_MOVE_SPEED           = 15.0f;
     uint32 const BONK_CAT_CRIT_BLEED          = 1;
@@ -337,19 +341,33 @@ BonkRun::BonkDruidForm BonkRun::GetDruidSpellForm(uint32 rootId) const
 
 float BonkRun::GetDruidFormScale(OwnedWeapon const& owned) const
 {
-    if (!IsDruidHero() || m_druidForm == BonkDruidForm::None || !(owned.weapon.classMask & (1 << (CLASS_DRUID - 1))))
+    if (!IsDruidHero() || !(owned.weapon.classMask & (1 << (CLASS_DRUID - 1))))
+        return 1.0f;
+    if (m_druidForm == BonkDruidForm::None && !IsHeartOfTheWild())
         return 1.0f;
     uint32 const root = GetRootWeapon(owned.weapon);
     if (root == BONK_WEAPON_SHAPESHIFT)
         return 1.0f;
+    if (IsHeartOfTheWild())
+        return BONK_HEART_OF_THE_WILD_BONUS;
     if (GetDruidSpellForm(root) == m_druidForm)
         return BONK_RIGHT_FORM_BONUS;
     return m_druidForm == BonkDruidForm::Bear ? BONK_BEAR_DAMAGE : 1.0f;
 }
 
+BonkRun::BonkDruidForm BonkRun::GetAttackForm() const
+{
+    return IsHeartOfTheWild() ? BonkDruidForm::Moonkin : m_druidForm;
+}
+
+bool BonkRun::IsHeartOfTheWild() const
+{
+    return m_mastery.Has(BONK_CAPSTONE_HEART_OF_THE_WILD);
+}
+
 void BonkRun::FireFormAttack(OwnedWeapon& owned)
 {
-    FormAttack const& attack = GetFormAttack(m_druidForm);
+    FormAttack const& attack = GetFormAttack(GetAttackForm());
     SpellEntry const* look = sSpellMgr.GetSpellEntry(attack.spellId);
     std::vector<Creature*> mobs;
     if (look)
@@ -362,7 +380,7 @@ void BonkRun::FireFormAttack(OwnedWeapon& owned)
     owned.timer = int32(GetWeaponCooldown(owned) * attack.cooldownScale);
     PlayDruidMotion(attack.spellId);
     mobs.resize(std::min<size_t>(mobs.size(), attack.targets + GetSpellCount(owned)));
-    float const damage = GetWeaponDamage(owned) * attack.share;
+    float const damage = GetWeaponDamage(owned) * attack.share * (IsHeartOfTheWild() ? BONK_HEART_OF_THE_WILD_ATTACK : 1.0f);
     std::set<ObjectGuid> splashed;
     for (Creature* mob : mobs)
         splashed.insert(mob->GetObjectGuid());
@@ -389,7 +407,7 @@ void BonkRun::ShapeshiftTo(uint32 form)
 
 void BonkRun::Shapeshift(char const* formName)
 {
-    if (m_state != STATE_RUNNING || !IsDruidHero() || !m_player->IsAlive() || !FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT))
+    if (m_state != STATE_RUNNING || !IsDruidHero() || !m_player->IsAlive() || !FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT) || IsHeartOfTheWild())
         return;
     BonkDruidForm next = BonkDruidForm(size_t(m_druidForm) % size_t(BonkDruidForm::Tree) + 1);
     if (formName && *formName)
@@ -425,7 +443,8 @@ void BonkRun::HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, 
     float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
     if (twice > 0.0f && target->IsAlive() && roll_chance_f(twice))
         crit |= DealShamanHit(spellInfo, credit, target, damage);
-    if (crit && m_druidForm == BonkDruidForm::Cat && target->IsAlive())
+    bool const clawsBleed = m_druidForm == BonkDruidForm::Cat || (m_druidForm == BonkDruidForm::Bear && m_mastery.Has(BONK_CAPSTONE_PRIMAL_FURY));
+    if (crit && clawsBleed && target->IsAlive())
         ApplyWeaponKeyword(owned, target, BONK_KEYWORD_BLEED, BONK_CAT_CRIT_BLEED);
 }
 
@@ -440,9 +459,11 @@ float BonkRun::GetBrawlerScale() const
 void BonkRun::DropStarfall()
 {
     OwnedWeapon const* shapeshift = FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT);
-    if (m_druidForm != BonkDruidForm::Moonkin || !shapeshift || !m_player->IsAlive() || m_totalMs < m_starfallReadyMs)
+    bool const aligned = m_mastery.Has(BONK_CAPSTONE_CELESTIAL_ALIGNMENT);
+    bool const formFalls = m_druidForm == BonkDruidForm::Moonkin || (aligned && m_druidForm != BonkDruidForm::None);
+    if (!formFalls || !shapeshift || !m_player->IsAlive() || m_totalMs < m_starfallReadyMs)
         return;
-    if (CallStarfall(*shapeshift, BONK_STARFALL_STARS))
+    if (CallStarfall(*shapeshift, BONK_STARFALL_STARS + (aligned ? BONK_ALIGNMENT_EXTRA_STARS : 0)))
         m_starfallReadyMs = m_totalMs + BONK_STARFALL_EVERY_MS;
 }
 
@@ -525,7 +546,10 @@ float BonkRun::GetDruidRoarReduction(Creature const* mob) const
 
 float BonkRun::GetDruidMoveSpeed() const
 {
-    return IsDruidHero() && m_druidForm == BonkDruidForm::Cat ? BONK_CAT_MOVE_SPEED : 0.0f;
+    if (!IsDruidHero())
+        return 0.0f;
+    bool const furious = m_druidForm == BonkDruidForm::Bear && m_mastery.Has(BONK_CAPSTONE_PRIMAL_FURY);
+    return m_druidForm == BonkDruidForm::Cat || furious ? BONK_CAT_MOVE_SPEED : 0.0f;
 }
 
 uint32 BonkRun::GetDruidExtraPets(OwnedWeapon const& owned) const
@@ -824,6 +848,8 @@ void BonkRun::OnDruidStruck(Creature* attacker)
 
 uint32 BonkRun::ApplyDruidDamageTaken(uint32 damage) const
 {
+    if (m_druidForm == BonkDruidForm::Cat && m_mastery.Has(BONK_CAPSTONE_PRIMAL_FURY))
+        return std::max(1u, uint32(damage * BONK_PRIMAL_FURY_CAT_TAKEN));
     if (m_druidForm != BonkDruidForm::Bear)
         return damage;
     return std::max(1u, uint32(damage * BONK_BEAR_TAKEN));
@@ -853,7 +879,7 @@ void BonkRun::UpdateDruidForm()
 {
     if (!IsDruidHero() || !m_player->IsAlive())
         return;
-    bool const shifts = FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT) != nullptr;
+    bool const shifts = FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT) != nullptr && !IsHeartOfTheWild();
     if (!shifts)
         m_druidForm = BonkDruidForm::None;
     else if (m_druidForm == BonkDruidForm::None)
