@@ -1444,6 +1444,8 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         return AddSandboxSpell(first, error);
     else if (verb == "evolve")
         return ForceEvolve(first, error);
+    else if (verb == "form")
+        ShapeshiftTo(first);
     else if (verb == "rank")
         SetSandboxRank(first, second, false);
     else if (verb == "maxrank")

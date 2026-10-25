@@ -100,6 +100,9 @@ struct BonkSupportSource
 class BonkRun
 {
     public:
+        enum class BonkDruidForm : uint8 { None, Moonkin, Cat, Bear, Tree };
+        void Shapeshift(char const* formName);
+        void ShapeshiftTo(uint32 form);
         class SupportScope
         {
             public:
@@ -2114,7 +2117,6 @@ class BonkRun
         uint32 m_lightsHammerVolleys = 0;
         std::map<ObjectGuid, uint32> m_judgedUntilMs;
         std::map<ObjectGuid, uint32> m_vengeanceStacks;
-        enum class BonkDruidForm : uint8 { None, Moonkin, Cat, Bear, Tree };
         bool IsDruidHero() const;
         void ResetDruidState();
         bool FireDruidSpell(OwnedWeapon& owned, SpellEntry const* spellInfo);
@@ -2122,7 +2124,13 @@ class BonkRun
         std::vector<Creature*> GetDruidTargets(float range) const;
         bool IsDruidNear() const;
         bool TakeDruidLookSlot(uint32 weaponId);
-        void HealDruid(float percent, uint32 textSpellId);
+        void HealDruid(OwnedWeapon const& owned, float percent);
+        OwnedWeapon ScaleForForm(OwnedWeapon const& owned) const;
+        BonkDruidForm GetDruidSpellForm(uint32 rootId) const;
+        float GetDruidFormScale(OwnedWeapon const& owned) const;
+        void FireFormAttack(OwnedWeapon& owned);
+        uint32 m_shapeshiftReadyMs = 0;
+        std::string m_sentDruidForm;
         void HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage);
         void CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void CallHurricane(OwnedWeapon& owned);
@@ -2147,7 +2155,6 @@ class BonkRun
         float GetDruidDamageMultiplier(SpellEntry const* spell) const;
         uint32 ApplyDruidDamageTaken(uint32 damage) const;
         uint32 GetDruidPetFamily(OwnedWeapon const& owned) const;
-        BonkDruidForm PickDruidForm() const;
         uint32 GetDruidFormDisplay(BonkDruidForm form) const;
         void UpdateDruidForm();
         void OnDruidPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey);

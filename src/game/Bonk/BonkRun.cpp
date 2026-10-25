@@ -4839,7 +4839,7 @@ void BonkRun::SendStats() const
 float BonkRun::GetWeaponDamage(OwnedWeapon const& owned) const
 {
     float const bonus = owned.damageBonus + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_PET_DAMAGE);
-    return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * (1.0f + bonus / 100.0f);
+    return GetMobHealth(GetMobLevel()) * owned.weapon.damageFraction * (1.0f + bonus / 100.0f) * GetDruidFormScale(owned);
 }
 
 float BonkRun::GetSpellUpgrade(OwnedWeapon const& owned, BonkSpellUpgrade upgrade) const

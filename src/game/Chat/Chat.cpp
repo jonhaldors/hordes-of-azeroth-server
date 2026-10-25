@@ -303,6 +303,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "spawnlook",      SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSpawnLookCommand,       "", nullptr },
         { "bosstune",       SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkBossTuneCommand,        "", nullptr },
         { "dash",           SEC_PLAYER,         false, &ChatHandler::HandleBonkDashCommand,            "", nullptr },
+        { "shapeshift",     SEC_PLAYER,         false, &ChatHandler::HandleBonkShapeshiftCommand,      "", nullptr },
         { "sandbox",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSandboxCommand,         "", nullptr },
         { "mobinfo",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkMobInfoCommand,         "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }

@@ -1073,6 +1073,16 @@ bool ChatHandler::HandleBonkDashCommand(char*)
     return true;
 }
 
+bool ChatHandler::HandleBonkShapeshiftCommand(char* args)
+{
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+        return true;
+    bool const picksForm = args && *args && m_session->GetSecurity() >= SEC_GAMEMASTER;
+    run->Shapeshift(picksForm ? args : nullptr);
+    return true;
+}
+
 bool ChatHandler::HandleBonkMobInfoCommand(char*)
 {
     Player* player = m_session->GetPlayer();
