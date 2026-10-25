@@ -72,8 +72,6 @@ namespace
     uint32 const BONK_SHARD_CHECK_MS       = 250;
     uint32 const BONK_SPAWN_TICK_MS        = 1000;
     uint32 const BONK_SPAWN_PER_TICK       = 12;
-    uint32 const BONK_OPENING_EASE_MS      = 360000;
-    float const BONK_OPENING_CROWD         = 0.5f;
     uint32 const BONK_OPENING_REFILL_MIN   = 6;
     float const BONK_VETERAN_HEALTH        = 2.5f;
     float const BONK_VETERAN_DAMAGE        = 1.25f;
@@ -1999,14 +1997,14 @@ float BonkRun::GetCurveMinAlive() const
 
 float BonkRun::GetOpeningProgress() const
 {
-    if (m_stage != 1 || m_stress.on || m_elapsedMs >= BONK_OPENING_EASE_MS)
+    if (m_stage != 1 || m_stress.on || m_elapsedMs >= m_tier.openingMs)
         return 1.0f;
-    return m_elapsedMs / float(BONK_OPENING_EASE_MS);
+    return m_elapsedMs / float(m_tier.openingMs);
 }
 
 float BonkRun::GetOpeningEase() const
 {
-    return BONK_OPENING_CROWD + (1.0f - BONK_OPENING_CROWD) * GetOpeningProgress();
+    return m_tier.openingCrowd + (1.0f - m_tier.openingCrowd) * GetOpeningProgress();
 }
 
 void BonkRun::UpdateWaves()

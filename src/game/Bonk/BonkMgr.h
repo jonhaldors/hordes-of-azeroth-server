@@ -257,6 +257,8 @@ struct BonkTier
     float stageHealthAccel = 0.05f;
     float stageDamageAccel = 0.05f;
     float minAliveMultiplier = 1.0f;
+    float openingCrowd = 1.0f;
+    uint32 openingMs = 0;
     float veteranChance = 0.0f;
     uint32 maxAlive = 200;
     uint32 maxBruisers = 8;
