@@ -1647,7 +1647,7 @@ float SpellCaster::SpellDamageBonusDone(Unit const* pVictim, SpellEntry const* s
         return pdamage;
 
     // Ignite damage already includes modifiers
-    if (spellProto->IsFitToFamily<SPELLFAMILY_MAGE, CF_MAGE_IGNITE>())
+    if (spellProto->IsFitToFamily<SPELLFAMILY_MAGE, CF_MAGE_IGNITE>() && !HasBonkRunDamage(this, spellProto, effectIndex))
         return pdamage;
 
     Unit* pUnit = ToUnit();
