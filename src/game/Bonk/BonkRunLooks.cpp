@@ -131,6 +131,7 @@ namespace
         33510,
         33540,
         33562,
+        33600,
     };
 
     uint32 const BONK_OLD_BLOOD_AURA_LOOK = 33401;

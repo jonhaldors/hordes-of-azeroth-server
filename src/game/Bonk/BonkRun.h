@@ -84,6 +84,7 @@ enum class BonkHeroRing : uint8
     Hazard,
     MarkOutline,
     MarkFill,
+    Nature,
     Count
 };
 
@@ -1480,13 +1481,14 @@ class BonkRun
             size_t maxAlive = 0;
             uint32 lookSpellId = 0;
             bool bloodRing = false;
+            bool natureRing = false;
             uint32 burstKit = 0;
         };
         std::vector<KeywordCloud> m_keywordClouds;
         std::vector<uint32> m_venomCloudTimes;
         KeywordCloudKind GetCloudKind(OwnedWeapon const& owned) const;
         void StartKeywordCloud(OwnedWeapon const& owned, float x, float y, float z);
-        void ShowBloodRingAt(KeywordCloud& cloud, float z);
+        void ShowRingAt(KeywordCloud& cloud, float z, BonkHeroRing ring);
         void EndKeywordCloud(KeywordCloud const& cloud);
         void ClearKeywordClouds();
         void UpdateKeywordClouds(uint32 diff);
@@ -2130,7 +2132,7 @@ class BonkRun
         std::vector<Creature*> GetDruidTargets(float range) const;
         bool IsDruidNear() const;
         bool TakeDruidLookSlot(uint32 weaponId);
-        void HealDruid(OwnedWeapon const& owned, float percent);
+        float HealDruid(OwnedWeapon const& owned, float percent);
         OwnedWeapon ScaleForForm(OwnedWeapon const& owned) const;
         BonkDruidForm GetDruidSpellForm(uint32 rootId) const;
         float GetDruidFormScale(OwnedWeapon const& owned) const;
@@ -2155,7 +2157,7 @@ class BonkRun
         void ShowDruidStrike(SpellEntry const* look, Creature* target);
         bool IsDruidAnimal() const;
         void PlayDruidMotion(uint32 spellId);
-        void OnDruidStrike(OwnedWeapon const& owned);
+        void OnDruidStrike(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target);
         std::string m_sentDruidForm;
         void HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage, uint32 creditSpellId = 0);
         static bool IsShapeshift(OwnedWeapon const& owned);
@@ -2184,7 +2186,72 @@ class BonkRun
         uint32 m_tranquilityPulsesLeft = 0;
         uint32 m_tranquilityPulseMs = 0;
         uint32 m_tranquilityWeapon = 0;
+        uint32 m_tranquilityPulse = 0;
+        uint32 m_formCycleMs = 0;
+        uint32 m_formCycleAtMs = 0;
         BonkDruidForm m_druidForm = BonkDruidForm::None;
+        size_t CallStarfall(OwnedWeapon const& shapeshift, size_t stars);
+        void StrikeAsSpirit(OwnedWeapon const& shapeshift, Creature* spirit, BonkDruidForm form);
+        uint32 GetSpiritAttackMs(OwnedWeapon const& shapeshift, BonkDruidForm form) const;
+        struct DruidSpirit
+        {
+            ObjectGuid guid;
+            BonkDruidForm form = BonkDruidForm::None;
+            uint32 untilMs = 0;
+            uint32 attackAtMs = 0;
+        };
+        struct DruidMushroom
+        {
+            ObjectGuid guid;
+            uint32 weaponId = 0;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            uint32 burstAtMs = 0;
+        };
+        std::vector<DruidSpirit> m_druidSpirits;
+        std::vector<DruidMushroom> m_druidMushrooms;
+        std::map<ObjectGuid, uint32> m_fullMoonNext;
+        std::map<ObjectGuid, uint32> m_strangledUntilMs;
+        uint32 m_strangleTickMs = 0;
+        uint32 m_shootingStarsMs = 0;
+        uint32 m_fullMoonPollMs = 0;
+        uint32 m_tigersFuryUntilMs = 0;
+        float m_tigersFuryHaste = 0.0f;
+        uint32 m_lifebloomTicks = 0;
+        uint32 m_surgeReadyMs[size_t(BonkDruidForm::Tree) + 1] = {};
+        uint32 m_spiritReadyMs[size_t(BonkDruidForm::Tree) + 1] = {};
+        void OnDruidShift(BonkDruidForm from, BonkDruidForm to);
+        void CycleSandboxForm();
+        void SurgeIntoForm(OwnedWeapon const& shapeshift, BonkDruidForm form);
+        void LeaveSpirit(OwnedWeapon const& shapeshift, BonkDruidForm form);
+        void FightAsSpirits();
+        Creature* SummonDruidLook(uint32 displayId, float scale, float x, float y, float z, uint32 lifeMs);
+        void ResetDruidEvolutions();
+        void UpdateDruidEvolutions();
+        void ApplyDruidMoonfire(OwnedWeapon const& source, Creature* mob, uint32 stacks);
+        void OnStarfireStrike(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target);
+        void FallShootingStars();
+        void EruptFullMoons();
+        void OnMoonfireStrikes(OwnedWeapon const& owned, std::vector<Creature*> const& struck);
+        bool GetDruidEvolvedCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind) const;
+        void OnDruidEvolvedCloudPulse(OwnedWeapon const& owned, KeywordCloud const& cloud);
+        void OnDruidCloudEnd(OwnedWeapon const& owned, KeywordCloud const& cloud);
+        void PickRakeTargets(OwnedWeapon const& owned, std::vector<Creature*>& mobs) const;
+        void OnRakeDone(OwnedWeapon const& owned, size_t struck);
+        float GetDruidHaste() const;
+        void OnShredHit(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, std::vector<Creature*>& queue);
+        float GetShredDamage(OwnedWeapon const& owned, Creature* mob) const;
+        void OnSwipe(OwnedWeapon const& owned, std::vector<Creature*> const& struck);
+        void OnFrenziedTick(OwnedWeapon const& owned, float healPct);
+        bool BloomEfflorescence(OwnedWeapon& owned);
+        void OnRejuvenationTick(OwnedWeapon const& owned, SpellEntry const* spellInfo);
+        void OnDruidRooted(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* mob, bool spreads);
+        void StrangleRooted();
+        float GetTranquilityReach(OwnedWeapon const& owned) const;
+        void OnTranquilityHeal(OwnedWeapon const& owned, float overhealShare);
+        void OnThornsStrike(OwnedWeapon const& thorns, SpellEntry const* look, Creature* attacker);
+        bool IsAncientOfWar(OwnedWeapon const& owned) const;
+        void PlantMushroom(OwnedWeapon const& owned, Creature* prey);
+        void BurstMushrooms();
         std::set<ObjectGuid> m_rogueTouched;
         std::map<ObjectGuid, uint32> m_findWeakness;
         std::map<ObjectGuid, uint32> m_ambushReadyMs;

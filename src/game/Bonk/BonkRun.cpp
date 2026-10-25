@@ -4797,7 +4797,7 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
             if (passive->effect == effect)
                 total += passive->valuePerRank * itr.second;
     if (effect == BONK_PASSIVE_HASTE)
-        total += GetEnrageHaste();
+        total += GetEnrageHaste() + GetDruidHaste();
     total += m_stress.bonuses[effect];
     total += m_cardStats[effect];
     total += m_shrineBonuses[effect];
@@ -5108,7 +5108,7 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
     OnShamanStrike(owned, shotInfo, target, shotShare);
     OnPriestStrike(owned, shotInfo, target, shotShare);
     OnWarlockStrike(owned, shotInfo, target, shotShare);
-    OnDruidStrike(owned);
+    OnDruidStrike(owned, shotInfo, target);
 
     if (weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
         KnockBack(target);
@@ -5954,8 +5954,8 @@ void BonkRun::StartKeywordCloud(OwnedWeapon const& owned, float x, float y, floa
     cloud.leftMs = int32(kind.lifeMs * GetWeaponDurationScale(owned));
     cloud.pulseEveryMs = kind.pulseEveryMs;
     cloud.stacks = kind.stacks;
-    if (kind.bloodRing)
-        ShowBloodRingAt(cloud, z);
+    if (kind.bloodRing || kind.natureRing)
+        ShowRingAt(cloud, z, kind.natureRing ? BonkHeroRing::Nature : BonkHeroRing::BloodAura);
     else
         cloud.area = PlaceAreaVisual(m_player, kind.lookSpellId, x, y, z, cloud.radius, uint32(cloud.leftMs));
     m_keywordClouds.push_back(cloud);
@@ -5963,9 +5963,9 @@ void BonkRun::StartKeywordCloud(OwnedWeapon const& owned, float x, float y, floa
         PlayKitAt(ObjectGuid(), x, y, z, kind.burstKit, true);
 }
 
-void BonkRun::ShowBloodRingAt(KeywordCloud& cloud, float z)
+void BonkRun::ShowRingAt(KeywordCloud& cloud, float z, BonkHeroRing ring)
 {
-    uint32 const ringSpell = GetRingSpell(BonkHeroRing::BloodAura, cloud.radius);
+    uint32 const ringSpell = GetRingSpell(ring, cloud.radius);
     if (!sSpellMgr.GetSpellEntry(ringSpell))
         return;
     cloud.look = m_telegraphs.BorrowInvisible(m_player, cloud.x, cloud.y, z);
@@ -6002,6 +6002,8 @@ void BonkRun::UpdateKeywordClouds(uint32 diff)
         cloud.pulseMs -= int32(diff);
         if (!owned || cloud.leftMs <= 0)
         {
+            if (owned)
+                OnDruidCloudEnd(*owned, cloud);
             EndKeywordCloud(cloud);
             m_keywordClouds.erase(m_keywordClouds.begin() + i);
             continue;

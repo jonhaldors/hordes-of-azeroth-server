@@ -776,6 +776,7 @@ uint32 const BONK_PET_FAMILY_VOIDWALKER = 13;
 uint32 const BONK_PET_FAMILY_SUCCUBUS = 14;
 uint32 const BONK_PET_FAMILY_FELHUNTER = 15;
 uint32 const BONK_PET_FAMILY_TREANT = 16;
+uint32 const BONK_PET_FAMILY_ANCIENT = 17;
 
 enum BonkPetAbilityKind : uint8
 {
