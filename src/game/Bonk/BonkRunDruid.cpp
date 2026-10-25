@@ -26,13 +26,14 @@ namespace
     uint32 const BONK_WEAPON_SHAPESHIFT       = 1013;
 
     uint32 const BONK_SHAPESHIFT_COOLDOWN_MS  = 500;
+    uint32 const BONK_KIT_SHAPESHIFT_SMOKE    = 3610;
+    uint32 const BONK_SHAPESHIFT_SMOKE_DELAY_MS = 100;
     float const BONK_RIGHT_FORM_BONUS         = 1.3f;
     float const BONK_BEAR_DAMAGE              = 0.8f;
 
     struct FormAttack
     {
         uint32 spellId;
-        uint32 shiftLookId;
         float share;
         float cooldownScale;
         uint32 targets;
@@ -44,11 +45,11 @@ namespace
 
     FormAttack const BONK_FORM_ATTACKS[] =
     {
-        { 0,    0,     0.0f, 1.0f,  0, 0.0f,  0, 0.0f,  "caster" },
-        { 5176, 24858, 2.0f, 1.0f,  1, 30.0f, 0, 0.0f,  "moonkin" },
-        { 1082, 768,   1.1f, 0.67f, 1, 10.0f, 1, 0.0f,  "cat" },
-        { 6807, 5487,  0.9f, 1.0f,  3, 10.0f, 0, 0.0f,  "bear" },
-        { 5570, 22812, 0.6f, 1.0f,  3, 20.0f, 0, 0.15f, "tree" },
+        { 0,    0.0f, 1.0f,  0, 0.0f,  0, 0.0f,  "caster" },
+        { 5176, 2.0f, 1.0f,  1, 30.0f, 0, 0.0f,  "moonkin" },
+        { 1082, 1.1f, 0.67f, 1, 10.0f, 1, 0.0f,  "cat" },
+        { 6807, 0.9f, 1.0f,  3, 10.0f, 0, 0.0f,  "bear" },
+        { 5570, 0.6f, 1.0f,  3, 20.0f, 0, 0.15f, "tree" },
     };
 
     uint32 const BONK_SPELL_LUNAR_LOOK        = 16870;
@@ -121,6 +122,7 @@ void BonkRun::ResetDruidState()
     m_tranquilityWeapon = 0;
     m_druidForm = BonkDruidForm::None;
     m_shapeshiftReadyMs = 0;
+    m_shapeshiftSmokeAtMs = 0;
     m_sentDruidForm.clear();
     if (IsDruidHero())
         m_player->GetBonkPlayer()->SendAddon("druidform~caster");
@@ -290,8 +292,7 @@ void BonkRun::Shapeshift(char const* formName)
     m_shapeshiftReadyMs = m_totalMs + BONK_SHAPESHIFT_COOLDOWN_MS;
     m_druidForm = next;
     UpdateDruidForm();
-    if (SpellEntry const* look = sSpellMgr.GetSpellEntry(GetFormAttack(next).shiftLookId))
-        ShowStrike(m_player, look, m_player);
+    m_shapeshiftSmokeAtMs = m_totalMs + BONK_SHAPESHIFT_SMOKE_DELAY_MS;
     if (OwnedWeapon* shapeshift = FindOwnedByRoot(BONK_WEAPON_SHAPESHIFT))
         shapeshift->timer = std::min(shapeshift->timer, BONK_DRUID_POLL_MS);
 }
@@ -673,6 +674,11 @@ void BonkRun::SendEclipse()
 
 void BonkRun::UpdateDruid(uint32 diff)
 {
+    if (m_shapeshiftSmokeAtMs && m_totalMs >= m_shapeshiftSmokeAtMs)
+    {
+        m_shapeshiftSmokeAtMs = 0;
+        m_player->SendPlaySpellVisualKit(BONK_KIT_SHAPESHIFT_SMOKE);
+    }
     UpdateDruidForm();
     PulseTranquility(diff);
     SendEclipse();

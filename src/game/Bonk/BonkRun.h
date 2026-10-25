@@ -2134,6 +2134,7 @@ class BonkRun
         float GetDruidFormScale(OwnedWeapon const& owned) const;
         void FireFormAttack(OwnedWeapon& owned);
         uint32 m_shapeshiftReadyMs = 0;
+        uint32 m_shapeshiftSmokeAtMs = 0;
         std::string m_sentDruidForm;
         void HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage);
         void CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo);
