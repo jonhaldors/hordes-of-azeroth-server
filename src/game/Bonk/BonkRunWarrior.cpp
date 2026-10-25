@@ -99,8 +99,8 @@ namespace
     int32 const BONK_MIN_SPIKED_SHIELD_PULSE_MS = 250;
     uint32 const BONK_KIT_SPIKED_SHIELD       = 895;
 
-    float const BONK_ROLLING_THUNDER_HITS     = 20.0f;
-    uint32 const BONK_MIN_ROLLING_THUNDER_HITS = 10;
+    float const BONK_ROLLING_THUNDER_HITS     = 8.0f;
+    uint32 const BONK_MIN_ROLLING_THUNDER_HITS = 4;
     uint32 const BONK_MAX_BANKED_CLAPS        = 2;
     int32 const BONK_ROLLING_THUNDER_GAP_MS   = 250;
 
@@ -352,7 +352,7 @@ float BonkRun::GetShieldPercent(BonkWeapon const& weapon, float damageBonus, flo
 
 float BonkRun::GetShieldSlamMultiplier(OwnedWeapon const& owned) const
 {
-    float const shieldPercent = 100.0f * float(m_shield + m_spellShield) / float(std::max(1u, m_player->GetMaxHealth()));
+    float const shieldPercent = 100.0f * float(m_spellShield) / float(std::max(1u, m_player->GetMaxHealth()));
     return 1.0f + std::min(owned.weapon.behaviorValue * shieldPercent, BONK_SHIELD_SLAM_MAX_BONUS) / 100.0f;
 }
 
@@ -418,6 +418,7 @@ void BonkRun::ResetWarriorState()
     m_aegisReadyMs = 0;
     m_spikedShieldMs = 0;
     m_thunderHits = 0;
+    m_thunderCountedMs.clear();
     m_vengeanceStored = 0;
     m_vengeanceShare = 1.0f;
     m_strikeImpactMs.clear();
@@ -845,14 +846,15 @@ void BonkRun::StrikeSteelCyclone(OwnedWeapon& owned, SpellEntry const* spellInfo
     }
 }
 
-void BonkRun::NoteHeroHit(uint32 damage, bool absorbed)
+void BonkRun::NoteHeroHit(uint32 unshielded, uint32 taken)
 {
-    if (m_state != STATE_RUNNING || !damage)
+    if (m_state != STATE_RUNNING || !unshielded)
         return;
+    bool const absorbed = taken < unshielded;
     for (OwnedWeapon const& owned : m_weapons)
     {
         if (owned.weapon.behavior == BONK_BEHAVIOR_VENGEANCE)
-            m_vengeanceStored = std::min(m_vengeanceStored + damage, uint32(m_player->GetMaxHealth() * BONK_VENGEANCE_MAX_STORE));
+            m_vengeanceStored = std::min(m_vengeanceStored + taken, uint32(m_player->GetMaxHealth() * BONK_VENGEANCE_MAX_STORE));
         else if (owned.weapon.behavior == BONK_BEHAVIOR_AEGIS && absorbed && m_totalMs >= m_aegisReadyMs)
             m_aegisPending = true;
     }
@@ -888,7 +890,7 @@ void BonkRun::ReleaseAegis()
 void BonkRun::PulseSpikedShield(uint32 diff)
 {
     OwnedWeapon const* owned = FindOwnedByBehavior(BONK_BEHAVIOR_SPIKED_SHIELD);
-    ShowHeroLook(BonkHeroLook::SpikedShield, owned && (m_shield || m_spellShield));
+    ShowHeroLook(BonkHeroLook::SpikedShield, owned && m_spellShield);
     if (!owned)
     {
         m_spikedShieldMs = 0;
@@ -899,7 +901,7 @@ void BonkRun::PulseSpikedShield(uint32 diff)
         return;
 
     m_spikedShieldMs = std::max(BONK_MIN_SPIKED_SHIELD_PULSE_MS, int32(BONK_SPIKED_SHIELD_PULSE_MS / GetWeaponHasteRate(*owned)));
-    if (m_shield || m_spellShield)
+    if (m_spellShield)
         StrikeAroundHero(*owned, BONK_KIT_SPIKED_SHIELD);
 }
 
@@ -924,14 +926,23 @@ void BonkRun::CountThunderHit(SpellEntry const* spell)
     if (!spell || m_state != STATE_RUNNING || IsPeriodicHit())
         return;
     OwnedWeapon const* owned = FindOwnedByBehavior(BONK_BEHAVIOR_ROLLING_THUNDER);
-    if (!owned || owned->weapon.spellId == spell->Id)
+    if (!owned || owned->weapon.spellId == spell->Id || !TakeThunderCount(spell->Id))
         return;
     m_thunderHits = std::min(m_thunderHits + 1, GetThunderHitsNeeded(*owned) * BONK_MAX_BANKED_CLAPS);
 }
 
+bool BonkRun::TakeThunderCount(uint32 spellId)
+{
+    auto const counted = m_thunderCountedMs.find(spellId);
+    if (counted != m_thunderCountedMs.end() && counted->second == m_totalMs)
+        return false;
+    m_thunderCountedMs[spellId] = m_totalMs;
+    return true;
+}
+
 std::string BonkRun::DescribeThunderCount(OwnedWeapon const& owned) const
 {
-    return "Claps after every " + std::to_string(GetThunderHitsNeeded(owned)) + " enemy hits by your other spells.";
+    return "Claps after every " + std::to_string(GetThunderHitsNeeded(owned)) + " casts of your other spells that hit an enemy.";
 }
 
 void BonkRun::DemoralizingShout(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> const& hit)

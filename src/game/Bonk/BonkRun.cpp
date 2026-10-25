@@ -1309,7 +1309,7 @@ void BonkRun::StartStage()
 
     UpdateGear();
 
-    m_shield = GetMaxShield();
+    RefillShield(GetMaxShield());
     m_shieldIdleMs = 0;
     SetNecroticStacks(0);
     ClearBossPressure();
@@ -1401,6 +1401,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     {
         if (m_sandbox)
         {
+            ++m_sandboxDeaths;
             ReviveInSandbox();
             return;
         }
@@ -1642,7 +1643,7 @@ void BonkRun::UpdateRecovery(uint32 diff)
     if (percent > 0.0f && m_player->IsAlive())
     {
         SupportScope scope(*this, PassiveSupport(BONK_PASSIVE_RECOVERY));
-        HealHero(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * percent / 100.0f))));
+        RegenerateHero(ReduceHealing(std::max(1u, uint32(m_player->GetMaxHealth() * percent / 100.0f))));
     }
 
     uint32 const bleedHeal = uint32(m_bleedHeal);
@@ -3420,25 +3421,18 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
         if (!m_spellShield && HasBehavior(BONK_BEHAVIOR_WARD))
             m_wardBurst = true;
         if (!m_spellShield)
+        {
             BreakBloodShield();
-    }
-
-    if (m_shield)
-    {
-        uint32 const absorbed = std::min(m_shield, damage);
-        m_shield -= absorbed;
-        damage -= absorbed;
-        BonkSupportSource const passive = PassiveSupport(BONK_PASSIVE_SHIELD);
-        CreditAbsorb(passive.name.empty() ? CapstoneSupport(BONK_CAPSTONE_JUGGERNAUT) : passive, absorbed);
-        if (!m_shield)
             OnShieldBroken();
+        }
     }
+    m_damageAbsorbed += unshielded - damage;
     damage = PreventDeath(GuardLowHealth(damage));
     if (damage && GetGlyph(BONK_GLYPH_NOMAD))
         m_nomadPenaltyUntilMs = m_totalMs + uint32(GetGlyphValue(BONK_GLYPH_NOMAD, 2));
-    if (!m_shield && !m_spellShield)
+    if (!m_spellShield)
         m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
-    NoteHeroHit(unshielded, damage < unshielded);
+    NoteHeroHit(unshielded, damage);
 
     m_minuteDamage += damage;
     m_damageTaken += damage;
@@ -3774,23 +3768,35 @@ void BonkRun::DespawnPools()
 uint32 BonkRun::GetMaxShield() const
 {
     float const shield = GetPassiveTotal(BONK_PASSIVE_SHIELD);
-    return shield > 0.0f ? uint32(m_player->GetMaxHealth() * shield / 100.0f) : 0;
+    return shield > 0.0f ? std::min(GetSpellShieldCap(), uint32(m_player->GetMaxHealth() * shield / 100.0f)) : 0;
+}
+
+BonkSupportSource BonkRun::ShieldStatSupport() const
+{
+    BonkSupportSource const passive = PassiveSupport(BONK_PASSIVE_SHIELD);
+    return passive.name.empty() ? CapstoneSupport(BONK_CAPSTONE_JUGGERNAUT) : passive;
+}
+
+void BonkRun::RefillShield(uint32 target)
+{
+    if (m_spellShield >= target)
+        return;
+    SupportScope scope(*this, ShieldStatSupport());
+    AddSpellShield(target - m_spellShield);
 }
 
 void BonkRun::UpdateShield(uint32 diff)
 {
     uint32 const max = GetMaxShield();
-    if (m_shield > max)
-        m_shield = max;
-    else if (m_shield < max)
+    if (m_spellShield < max)
     {
         m_shieldIdleMs += diff;
         if (m_shieldIdleMs >= BONK_SHIELD_REGEN_DELAY_MS)
-            m_shield = max;
+            RefillShield(max);
     }
     RechargeJuggernautShield(diff, max);
 
-    uint32 const total = m_shield + m_spellShield;
+    uint32 const total = m_spellShield;
     if (m_player->IsAlive())
     {
         bool const shown = m_player->HasAura(BONK_SPELL_SHIELD_VISUAL);
@@ -11948,7 +11954,6 @@ void BonkRun::CleanUp()
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
     m_player->RemoveAurasDueToSpell(BONK_SPELL_DODGE);
     m_player->RemoveAurasDueToSpell(BONK_SPELL_SHIELD_VISUAL);
-    m_shield = 0;
     m_player->GetBonkPlayer()->SendAddon("shield~0~0");
     SetNecroticStacks(0);
     ClearBossPressure();

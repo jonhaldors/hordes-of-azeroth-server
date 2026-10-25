@@ -202,12 +202,12 @@ uint32 BonkRun::GetShieldBlockTalent() const
 
 void BonkRun::RechargeJuggernautShield(uint32 diff, uint32 max)
 {
-    if (!m_mastery.Has(BONK_CAPSTONE_JUGGERNAUT) || m_shield >= max)
+    if (!m_mastery.Has(BONK_CAPSTONE_JUGGERNAUT) || m_spellShield >= max)
         return;
     m_juggernautCarry += max * BONK_JUGGERNAUT_REGEN_PER_SEC * diff / IN_MILLISECONDS;
     uint32 const gained = uint32(m_juggernautCarry);
     m_juggernautCarry -= gained;
-    m_shield = std::min(max, m_shield + gained);
+    RefillShield(std::min(max, m_spellShield + gained));
 }
 
 uint32 BonkRun::ApplyTalentDamageTaken(uint32 damage) const

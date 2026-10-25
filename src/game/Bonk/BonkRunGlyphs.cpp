@@ -153,47 +153,52 @@ bool BonkRun::ChooseGlyph(uint32 choice, std::string& error)
     bonk->SendAddon("glyphclose");
     if (glyph)
     {
-        m_glyphs.push_back(glyph);
-        if (BonkCard const* card = glyph->cardId ? sBonkMgr.GetCard(glyph->cardId) : nullptr)
-        {
-            m_glyphCardIds.insert(card->id);
-            AddCard(*card);
-        }
-        switch (glyph->effect)
-        {
-            case BONK_GLYPH_GAMBLER:
-                m_rerolls = 0;
-                break;
-            case BONK_GLYPH_STORM:
-                m_glyphStormTimer = int32(glyph->values[0]);
-                break;
-            case BONK_GLYPH_METEOR:
-                m_glyphMeteorTimer = int32(glyph->values[0]);
-                break;
-            case BONK_GLYPH_FORESIGHT:
-                m_rerolls += uint32(glyph->values[0]);
-                break;
-            case BONK_GLYPH_TREASURE:
-                m_glyphChestDue = true;
-                break;
-            case BONK_GLYPH_PRODIGY:
-                RankUpStarter(uint32(glyph->values[0]));
-                break;
-            case BONK_GLYPH_DASH:
-                bonk->SendDash();
-                break;
-            default:
-                break;
-        }
-        ApplyPassives();
+        TakeGlyph(*glyph);
         bonk->Notify("You chose " + glyph->name + ".");
-        SendGlyphs();
-        SendState();
     }
 
     SetPaused(false);
     UpdateOffers();
     return true;
+}
+
+void BonkRun::TakeGlyph(BonkGlyph const& glyph)
+{
+    m_glyphs.push_back(&glyph);
+    if (BonkCard const* card = glyph.cardId ? sBonkMgr.GetCard(glyph.cardId) : nullptr)
+    {
+        m_glyphCardIds.insert(card->id);
+        AddCard(*card);
+    }
+    switch (glyph.effect)
+    {
+        case BONK_GLYPH_GAMBLER:
+            m_rerolls = 0;
+            break;
+        case BONK_GLYPH_STORM:
+            m_glyphStormTimer = int32(glyph.values[0]);
+            break;
+        case BONK_GLYPH_METEOR:
+            m_glyphMeteorTimer = int32(glyph.values[0]);
+            break;
+        case BONK_GLYPH_FORESIGHT:
+            m_rerolls += uint32(glyph.values[0]);
+            break;
+        case BONK_GLYPH_TREASURE:
+            m_glyphChestDue = true;
+            break;
+        case BONK_GLYPH_PRODIGY:
+            RankUpStarter(uint32(glyph.values[0]));
+            break;
+        case BONK_GLYPH_DASH:
+            m_player->GetBonkPlayer()->SendDash();
+            break;
+        default:
+            break;
+    }
+    ApplyPassives();
+    SendGlyphs();
+    SendState();
 }
 
 void BonkRun::SendGlyphs() const

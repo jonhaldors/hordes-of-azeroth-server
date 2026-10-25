@@ -206,6 +206,7 @@ class BonkRun
         };
         bool ChooseGear(GearChoice choice, uint8 slot, std::string& error);
         bool ChooseGlyph(uint32 choice, std::string& error);
+        void TakeGlyph(BonkGlyph const& glyph);
         bool UseHidden(GameObject* go);
         bool UseItem(Item* item);
         struct VaultFind
@@ -452,6 +453,8 @@ class BonkRun
         void ReportQuestCounts();
         void UpdateShield(uint32 diff);
         uint32 GetMaxShield() const;
+        BonkSupportSource ShieldStatSupport() const;
+        void RefillShield(uint32 target);
         void UpdateNecrotic(uint32 diff);
         void SetNecroticStacks(uint32 stacks);
         uint32 ReduceHealing(uint32 heal) const;
@@ -877,6 +880,8 @@ class BonkRun
         float GetCardPower(Unit const* victim) const;
         void UpdateCards(uint32 diff);
         void HealHero(uint32 amount, uint32 textSpellId = 0);
+        void RegenerateHero(uint32 amount);
+        bool RollCardProc(BonkCardEffect effect, uint32 spellId);
         bool IsCardImmune() const { return m_cardImmuneUntilMs > m_totalMs; }
         void OnCardHitTaken();
         void OnShieldBroken();
@@ -895,6 +900,8 @@ class BonkRun
         BonkCard const* m_cardByEffect[MAX_BONK_CARD_EFFECT] = {};
         int32 m_cardCooldowns[MAX_BONK_CARD_EFFECT] = {};
         uint32 m_cardTickMs = 0;
+        bool m_regenerating = false;
+        std::map<uint64, uint32> m_cardRollMs;
         uint32 m_cardImmuneUntilMs = 0;
         uint32 m_cardSwiftUntilMs = 0;
         uint32 m_cardSurgeUntilMs = 0;
@@ -991,7 +998,7 @@ class BonkRun
         void CleanUp();
 
         Player* m_player;
-        BonkTier const m_tier;
+        BonkTier m_tier;
         BonkRunBonuses m_bonuses;
         BonkMasteryBonuses m_mastery;
         std::map<uint32, uint32> m_spellRoots;
@@ -1017,6 +1024,7 @@ class BonkRun
         };
         std::map<ObjectGuid, BossArrival> m_bossArrivals;
         uint32 m_damageTaken = 0;
+        uint32 m_damageAbsorbed = 0;
         void LogMinute();
         void LogDeath();
         void LogBossFight(Creature const* mob, BonkSpawnKind kind, BossArrival const& arrival);
@@ -1808,11 +1816,12 @@ class BonkRun
         int32 GetBladestormPulseMs(OwnedWeapon const& owned) const;
         void StartSteelCyclone(OwnedWeapon const& owned);
         void UpdateSteelCyclones(uint32 diff);
-        void NoteHeroHit(uint32 damage, bool absorbed);
+        void NoteHeroHit(uint32 unshielded, uint32 taken);
         void ReleaseAegis();
         void PulseSpikedShield(uint32 diff);
         void StrikeAroundHero(OwnedWeapon const& owned, uint32 kit);
         bool IsThunderReady(OwnedWeapon const& owned) const;
+        bool TakeThunderCount(uint32 spellId);
         uint32 GetThunderHitsNeeded(OwnedWeapon const& owned) const;
         void SpendThunder(OwnedWeapon& owned);
         std::string DescribeThunderCount(OwnedWeapon const& owned) const;
@@ -2283,6 +2292,7 @@ class BonkRun
         uint32 m_aegisReadyMs = 0;
         int32 m_spikedShieldMs = 0;
         uint32 m_thunderHits = 0;
+        std::map<uint32, uint32> m_thunderCountedMs;
         uint32 m_vengeanceStored = 0;
         float m_vengeanceShare = 1.0f;
         std::map<uint32, uint32> m_strikeImpactMs;
@@ -2304,7 +2314,6 @@ class BonkRun
         BonkTelegraphs m_telegraphs;
         BonkSpawnPoints m_spawnPoints;
         BonkObjectives m_objectives;
-        uint32 m_shield = 0;
         uint32 m_shieldIdleMs = 0;
         uint32 m_shieldSendTimer = 0;
         uint32 m_shieldSent = 0;
@@ -2459,6 +2468,11 @@ class BonkRun
         void SpawnSandboxCrystals(Creature const* keeper);
         OwnedWeapon* FindSandboxSpell(uint32 baseId);
         bool AddSandboxSpell(uint32 baseId, std::string& error);
+        bool AddSandboxGlyph(uint32 glyphId, std::string& error);
+        bool AddSandboxCards(uint32 cardId, uint32 copies, std::string& error);
+        void SetSandboxTalent(uint32 nodeId, uint32 rank);
+        bool SetSandboxTier(uint32 tierId, uint32 stage, std::string& error);
+        void ReportSandboxVitals();
         void SetSandboxRank(uint32 baseId, uint32 rank, bool epicRoundRobin);
         void SetSandboxPassiveRank(uint32 passiveId, uint32 rank);
         void RemoveSandboxSpells(uint32 baseId);
@@ -2486,6 +2500,8 @@ class BonkRun
         bool m_sandboxReachReport = false;
         bool m_sandboxQuietLevels = false;
         bool m_sandboxBench = false;
+        std::map<uint32, uint8> m_sandboxTalents;
+        uint32 m_sandboxDeaths = 0;
         float m_sandboxMinute = -1.0f;
         ObjectGuid m_sandboxKeeper;
         std::map<ObjectGuid, SandboxDummy> m_sandboxDummies;

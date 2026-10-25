@@ -28,6 +28,7 @@ namespace
     uint32 const BONK_SPELL_CARD_SHADOW    = 16583;
     uint32 const BONK_SPELL_HEALTHSTONE    = 11732;
     float const BONK_SHADOW_BURST_HEAL     = 0.1f;
+    float const BONK_CAMPFIRE_MAX_REGEN    = 3.0f;
 
     uint32 const BONK_KIT_FIRE_IMPACT      = 728;
     uint32 const BONK_KIT_NOVA             = 984;
@@ -452,14 +453,14 @@ void BonkRun::UpdateCards(uint32 diff)
         if (percent <= 0.0f)
             return;
         SupportScope scope(*this, CardSupport(effect));
-        HealHero(ReduceHealing(std::max(1u, uint32(maxHealth * percent / 100.0f))));
+        RegenerateHero(ReduceHealing(std::max(1u, uint32(maxHealth * percent / 100.0f))));
     };
     if (BonkCard const* bandage = m_cardByEffect[BONK_CARD_BANDAGE])
         if (!m_hurt || m_totalMs - m_lastHurtMs >= uint32(bandage->values[1] * IN_MILLISECONDS))
             healFromCard(BONK_CARD_BANDAGE, GetCardTotal(BONK_CARD_BANDAGE, 0));
     if (BonkCard const* campfire = m_cardByEffect[BONK_CARD_CAMPFIRE])
         if (m_totalMs - m_stillSinceMs >= uint32(campfire->values[1] * IN_MILLISECONDS))
-            healFromCard(BONK_CARD_CAMPFIRE, GetCardTotal(BONK_CARD_CAMPFIRE, 0));
+            healFromCard(BONK_CARD_CAMPFIRE, std::min(BONK_CAMPFIRE_MAX_REGEN, GetCardTotal(BONK_CARD_CAMPFIRE, 0)));
     if (BonkCard const* heroism = m_cardByEffect[BONK_CARD_CRIT_HEAL])
     {
         uint32 const crits = m_crits - m_cardCritsSeen;
@@ -524,6 +525,13 @@ void BonkRun::SendCardStatus(bool force) const
     }
 }
 
+void BonkRun::RegenerateHero(uint32 amount)
+{
+    m_regenerating = true;
+    HealHero(amount);
+    m_regenerating = false;
+}
+
 void BonkRun::HealHero(uint32 amount, uint32 textSpellId)
 {
     if (!amount || !m_player->IsAlive())
@@ -540,7 +548,7 @@ void BonkRun::HealHero(uint32 amount, uint32 textSpellId)
             m_player->ModifyHealth(int32(healed));
     }
 
-    if (amount > healed && HasCard(BONK_CARD_OVERHEAL))
+    if (amount > healed && !m_regenerating && HasCard(BONK_CARD_OVERHEAL))
     {
         uint32 const cap = uint32(maxHealth * GetCardTotal(BONK_CARD_OVERHEAL, 0) / 100.0f);
         SupportScope overheal(*this, CardSupport(BONK_CARD_OVERHEAL));
@@ -597,10 +605,20 @@ void BonkRun::ModifyHeroHit(Unit* victim, uint32& damage)
 {
     if (!m_cardProc)
         ModifyGlyphHit(victim, damage);
-    if (!damage || m_cardProc || !HasCard(BONK_CARD_DEATH_RAY) || !roll_chance_f(GetCardChance(BONK_CARD_DEATH_RAY)))
+    if (!damage || m_cardProc || !HasCard(BONK_CARD_DEATH_RAY) || !RollCardProc(BONK_CARD_DEATH_RAY, 0))
         return;
     damage = uint32(damage * m_cardByEffect[BONK_CARD_DEATH_RAY]->values[1]);
     victim->SendPlaySpellVisualKit(BONK_KIT_DEATH_RAY);
+}
+
+bool BonkRun::RollCardProc(BonkCardEffect effect, uint32 spellId)
+{
+    uint64 const key = (uint64(effect) << 32) | spellId;
+    auto const rolled = m_cardRollMs.find(key);
+    if (rolled != m_cardRollMs.end() && rolled->second == m_totalMs)
+        return false;
+    m_cardRollMs[key] = m_totalMs;
+    return roll_chance_f(GetCardChance(effect));
 }
 
 void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
@@ -609,6 +627,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
         return;
 
     float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim));
+    uint32 const spellId = spell ? spell->Id : 0;
 
     auto burstTargets = [this, victim](float radius)
     {
@@ -619,7 +638,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
     };
 
     if (BonkCard const* hand = m_cardByEffect[BONK_CARD_FIRE_BURST])
-        if (roll_chance_f(GetCardChance(BONK_CARD_FIRE_BURST)))
+        if (RollCardProc(BONK_CARD_FIRE_BURST, spellId))
             if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_FIRE))
             {
                 float const burst = damage * hand->values[1] / multiplier;
@@ -633,7 +652,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
             }
 
     if (BonkCard const* blade = m_cardByEffect[BONK_CARD_SHADOW_BURST])
-        if (roll_chance_f(GetCardChance(BONK_CARD_SHADOW_BURST)))
+        if (RollCardProc(BONK_CARD_SHADOW_BURST, spellId))
             if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_SHADOW))
             {
                 float const burst = damage * blade->values[1] / multiplier;
@@ -654,9 +673,9 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
             }
 
     if (BonkCard const* maelstrom = m_cardByEffect[BONK_CARD_CHAIN])
-        if (roll_chance_f(GetCardChance(BONK_CARD_CHAIN)))
+        if (RollCardProc(BONK_CARD_CHAIN, spellId))
         {
-            uint32 const spellId = maelstrom->values[2] > 3.0f ? BONK_SPELL_CARD_CHAIN_FIVE : BONK_SPELL_CARD_CHAIN_THREE;
+            uint32 const chainSpellId = maelstrom->values[2] > 3.0f ? BONK_SPELL_CARD_CHAIN_FIVE : BONK_SPELL_CARD_CHAIN_THREE;
             Unit* target = victim->IsAlive() ? victim : nullptr;
             if (!target)
             {
@@ -667,7 +686,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
             {
                 int32 const strike = std::max(1, int32(damage * maelstrom->values[1] / multiplier));
                 m_cardProc = true;
-                m_player->CastCustomSpell(target, spellId, strike, {}, {}, true);
+                m_player->CastCustomSpell(target, chainSpellId, strike, {}, {}, true);
                 m_cardProc = false;
             }
         }

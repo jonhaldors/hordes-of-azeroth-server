@@ -878,6 +878,72 @@ BonkRun::OwnedWeapon* BonkRun::FindSandboxSpell(uint32 baseId)
     return itr != m_weapons.end() ? &*itr : nullptr;
 }
 
+bool BonkRun::AddSandboxGlyph(uint32 glyphId, std::string& error)
+{
+    BonkGlyph const* glyph = sBonkMgr.GetGlyph(glyphId);
+    if (!glyph)
+    {
+        error = "That Glyph does not exist.";
+        return false;
+    }
+    if (std::find(m_glyphs.begin(), m_glyphs.end(), glyph) != m_glyphs.end())
+    {
+        error = "You already have that Glyph.";
+        return false;
+    }
+    TakeGlyph(*glyph);
+    m_player->GetBonkPlayer()->Notify("You gained " + glyph->name + ".");
+    return true;
+}
+
+void BonkRun::SetSandboxTalent(uint32 nodeId, uint32 rank)
+{
+    m_sandboxTalents[nodeId] = uint8(std::min(rank, 255u));
+    m_mastery = sBonkMastery.Evaluate(m_sandboxTalents);
+    ApplyPassives();
+    HealInSandbox();
+}
+
+bool BonkRun::SetSandboxTier(uint32 tierId, uint32 stage, std::string& error)
+{
+    BonkTier const* tier = sBonkMgr.GetTier(tierId);
+    if (!tier)
+    {
+        error = "That difficulty does not exist.";
+        return false;
+    }
+    m_tier = *tier;
+    m_stage = std::max(1u, stage);
+    m_player->GetBonkPlayer()->Notify("Sandbox enemies now fight as " + m_tier.name + ", stage " + std::to_string(m_stage) + ".");
+    return true;
+}
+
+void BonkRun::ReportSandboxVitals()
+{
+    uint32 const maxHealth = std::max(1u, m_player->GetMaxHealth());
+    m_player->GetBonkPlayer()->Notify("vitals hp " + std::to_string(m_player->GetHealth() * 100 / maxHealth) +
+        " shield " + std::to_string(uint64(m_spellShield) * 100 / maxHealth) +
+        " taken " + std::to_string(m_damageTaken) + " absorbed " + std::to_string(m_damageAbsorbed) +
+        " deaths " + std::to_string(m_sandboxDeaths));
+}
+
+bool BonkRun::AddSandboxCards(uint32 cardId, uint32 copies, std::string& error)
+{
+    BonkCard const* card = sBonkMgr.GetCard(cardId);
+    if (!card)
+    {
+        error = "That card does not exist.";
+        return false;
+    }
+    for (uint32 i = 0; i < copies && error.empty(); ++i)
+    {
+        if (card->maxCopies && GetCardCopies(cardId) >= card->maxCopies)
+            break;
+        GiveCard(cardId, error);
+    }
+    return error.empty();
+}
+
 bool BonkRun::AddSandboxSpell(uint32 baseId, std::string& error)
 {
     BonkWeapon const* base = sBonkMgr.GetWeapon(baseId);
@@ -1041,7 +1107,7 @@ void BonkRun::HealInSandbox()
         ReviveInSandbox();
     m_player->SetHealth(m_player->GetMaxHealth());
     m_player->SetPower(POWER_MANA, m_player->GetMaxPower(POWER_MANA));
-    m_shield = GetMaxShield();
+    RefillShield(GetMaxShield());
     m_shieldIdleMs = 0;
     SetNecroticStacks(0);
 }
@@ -1384,6 +1450,16 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         SetSandboxRank(first, second, true);
     else if (verb == "passive")
         SetSandboxPassiveRank(first, second);
+    else if (verb == "glyph")
+        return AddSandboxGlyph(first, error);
+    else if (verb == "card")
+        return AddSandboxCards(first, std::max(1u, second), error);
+    else if (verb == "tier")
+        return SetSandboxTier(first, second, error);
+    else if (verb == "talent")
+        SetSandboxTalent(first, second);
+    else if (verb == "vitals")
+        ReportSandboxVitals();
     else if (verb == "forget")
         RemoveSandboxSpells(first);
     else if (verb == "level")
