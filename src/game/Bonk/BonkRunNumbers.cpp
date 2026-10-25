@@ -102,7 +102,7 @@ namespace
     float const BONK_SHOWN_BETTER = 1.001f;
     char const* const BONK_DAMAGE_VERBS[] = { "dealing ", "deals ", "deal ", "for ", "take ", "takes " };
     char const* const BONK_DAMAGE_ADJECTIVES[] = { "", "heavy ", "massive ", "extra " };
-    char const* const BONK_TARGET_NOUNS[] = { "enem", "random", "nearest", "strongest", "target", "pack" };
+    char const* const BONK_TARGET_NOUNS[] = { "enem", "random", "nearest", "strongest", "target", "pack", "spirit" };
 
     std::string MarkNumber(std::string const& text, bool better)
     {
