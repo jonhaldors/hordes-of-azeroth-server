@@ -555,10 +555,23 @@ float BonkRun::GetSandboxFront() const
     return m_player->GetOrientation();
 }
 
+namespace
+{
+    float const BONK_CROWD_DUMMY_FIRST_RING = 3.0f;
+    float const BONK_CROWD_DUMMY_RING_STEP  = 3.0f;
+    float const BONK_CROWD_DUMMY_SPACING    = 2.5f;
+    uint32 const BONK_CROWD_DUMMY_MAX       = 30;
+}
+
 bool BonkRun::GetSandboxDummySpot(uint32 index, uint32 count, float ringRadius, float& x, float& y) const
 {
     float const heroX = m_player->GetPositionX();
     float const heroY = m_player->GetPositionY();
+    if (ringRadius < 0.0f)
+    {
+        GetCrowdDummySpot(index, x, y);
+        return true;
+    }
     if (ringRadius > 0.0f)
     {
         float const angle = 2.0f * M_PI_F * index / count;
@@ -577,6 +590,26 @@ bool BonkRun::GetSandboxDummySpot(uint32 index, uint32 count, float ringRadius, 
     x = heroX + ahead * std::cos(front) - side * std::sin(front);
     y = heroY + ahead * std::sin(front) + side * std::cos(front);
     return true;
+}
+
+void BonkRun::GetCrowdDummySpot(uint32 index, float& x, float& y) const
+{
+    float radius = BONK_CROWD_DUMMY_FIRST_RING;
+    uint32 first = 0;
+    for (;;)
+    {
+        uint32 const capacity = std::max(1u, uint32(2.0f * M_PI_F * radius / BONK_CROWD_DUMMY_SPACING));
+        if (index < first + capacity)
+        {
+            float const turn = (index - first) / float(capacity) + (radius / BONK_CROWD_DUMMY_RING_STEP) * 0.5f / float(capacity);
+            float const angle = 2.0f * M_PI_F * turn;
+            x = m_player->GetPositionX() + radius * std::cos(angle);
+            y = m_player->GetPositionY() + radius * std::sin(angle);
+            return;
+        }
+        first += capacity;
+        radius += BONK_CROWD_DUMMY_RING_STEP;
+    }
 }
 
 void BonkRun::SpawnSandboxDummies(uint32 count, BonkSpawnKind kind, float ringRadius)
@@ -1440,6 +1473,8 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         QueueSandboxPack(first ? first : BONK_SANDBOX_DEFAULT_PACK, second != 0);
     else if (verb == "dummies")
         SpawnSandboxDummies(std::max(1u, std::min(first, 20u)), BONK_SPAWN_NORMAL, float(second));
+    else if (verb == "crowddummies")
+        SpawnSandboxDummies(std::max(1u, std::min(first, BONK_CROWD_DUMMY_MAX)), BONK_SPAWN_NORMAL, -1.0f);
     else if (verb == "spell")
         return AddSandboxSpell(first, error);
     else if (verb == "evolve")

@@ -34,7 +34,6 @@ namespace
     float const BONK_STARFALL_SHARE           = 1.5f;
     float const BONK_STARFALL_RANGE           = 30.0f;
     uint32 const BONK_SPELL_STARFALL_LOOK     = 2912;
-    uint32 const BONK_KIT_STARFALL            = 3381;
     float const BONK_CAT_MOVE_SPEED           = 15.0f;
     uint32 const BONK_CAT_CRIT_BLEED          = 1;
     float const BONK_BRAWLER_PER_ENEMY        = 0.08f;
@@ -88,7 +87,7 @@ namespace
         { 0,    0,     0.0f, 1.0f,  0, 0.0f,  0, 0.0f,  0.0f, "caster" },
         { 5176, 5176,  3.4f, 1.0f,  1, 30.0f, 0, 0.0f,  0.3f, "moonkin" },
         { 1082, 1082,  2.5f, 0.67f, 1, 10.0f, 1, 0.0f,  0.4f, "cat" },
-        { 6807, 6807,  2.0f, 1.0f,  1, 10.0f, 0, 0.0f,  0.3f, "bear" },
+        { 6807, 6807,  5.0f, 1.0f,  1, 10.0f, 0, 0.0f,  0.2f, "bear" },
         { 5570, 16689, 1.6f, 1.0f,  3, 20.0f, 0, 0.15f, 0.2f, "tree" },
     };
 
@@ -117,7 +116,7 @@ namespace
     uint32 const BONK_ROOT_MS                 = 2000;
     uint32 const BONK_TRANQUILITY_PULSES      = 4;
     uint32 const BONK_TRANQUILITY_PULSE_MS    = 1000;
-    uint32 const BONK_KIT_TRANQUILITY_PULSE   = 3374;
+    uint32 const BONK_KIT_TRANQUILITY_PULSE   = 7415;
     uint32 const BONK_THORNS_PER_SEC          = 5;
     uint32 const BONK_HURRICANE_MS            = 4000;
     int32 const BONK_HURRICANE_PULSE_MS       = 1000;
@@ -438,8 +437,9 @@ void BonkRun::DropStarfall()
         return;
     m_starfallReadyMs = m_totalMs + BONK_STARFALL_EVERY_MS;
     Creature* target = moonfired[urand(0, uint32(moonfired.size() - 1))];
-    target->SendPlaySpellVisualKit(BONK_KIT_STARFALL);
-    DealShamanHit(sSpellMgr.GetSpellEntry(BONK_SPELL_STARFALL_LOOK), shapeshift->weapon.spellId, target, GetWeaponDamage(*shapeshift) * BONK_STARFALL_SHARE);
+    SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_STARFALL_LOOK);
+    ShowStrike(m_player, look, target);
+    DealShamanHit(look, shapeshift->weapon.spellId, target, GetWeaponDamage(*shapeshift) * BONK_STARFALL_SHARE);
 }
 
 void BonkRun::RoarAsBear()

@@ -2483,6 +2483,7 @@ class BonkRun
         float GetSandboxFront() const;
         void SpawnSandboxDummies(uint32 count, BonkSpawnKind kind, float ringRadius = 0.0f);
         bool GetSandboxDummySpot(uint32 index, uint32 count, float ringRadius, float& x, float& y) const;
+        void GetCrowdDummySpot(uint32 index, float& x, float& y) const;
         void QueueSandboxPack(uint32 count, bool meleeOnly);
         BonkMapCreature const* PickSandboxPackCreature() const;
         Creature* SpawnSandboxEnemy(uint32 entry);
