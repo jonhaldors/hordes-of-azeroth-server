@@ -356,6 +356,19 @@ float BonkRun::GetDruidFormScale(OwnedWeapon const& owned) const
     return m_druidForm == BonkDruidForm::Bear ? BONK_BEAR_DAMAGE : 1.0f;
 }
 
+BonkRun::FormTooltip BonkRun::GetFormTooltip(BonkDruidForm form) const
+{
+    float const share = GetFormAttack(form).share;
+    switch (form)
+    {
+        case BonkDruidForm::Moonkin: return { "Moonkin Form:", "Nature", share };
+        case BonkDruidForm::Cat:     return { "Cat Form:", "Physical", share };
+        case BonkDruidForm::Bear:    return { "Bear Form:", "Physical", share };
+        case BonkDruidForm::Tree:    return { "Tree of Life:", "Nature", share };
+        default:                     return { "", "", 0.0f };
+    }
+}
+
 BonkRun::BonkDruidForm BonkRun::GetAttackForm() const
 {
     return IsHeartOfTheWild() ? BonkDruidForm::Moonkin : m_druidForm;

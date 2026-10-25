@@ -583,6 +583,28 @@ std::string BonkRun::GetShownSchool(OwnedWeapon const& owned) const
     return info ? GetBonkMagicSchoolName(info->spellId) : school;
 }
 
+std::string BonkRun::DescribeFormRanges(OwnedWeapon const& owned, OwnedWeapon const& fresh, std::string text) const
+{
+    float const hit = GetShownHit(owned, 0.0f);
+    if (hit <= 0.0f)
+        return text;
+    bool const better = hit > GetShownHit(fresh, 0.0f) * BONK_SHOWN_BETTER;
+    for (size_t form = size_t(BonkDruidForm::Moonkin); form <= size_t(BonkDruidForm::Tree); ++form)
+    {
+        FormTooltip const shown = GetFormTooltip(BonkDruidForm(form));
+        size_t const start = text.find(shown.label);
+        if (start == std::string::npos)
+            continue;
+        size_t const end = text.find(BONK_LINE_BREAK, start);
+        std::string const needle = std::string("for ") + shown.school + " damage";
+        size_t const at = text.find(needle, start);
+        if (at == std::string::npos || (end != std::string::npos && at > end))
+            continue;
+        text.replace(at, needle.size(), "for " + MarkRange(hit * shown.share, GetShownSpread(owned), better) + " " + shown.school + " damage");
+    }
+    return text;
+}
+
 std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string text) const
 {
     BonkWeapon const& weapon = owned.weapon;
@@ -594,7 +616,9 @@ std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string tex
         upgrade = 0.0f;
 
     bool const pet = weapon.behavior == BONK_BEHAVIOR_PET;
-    if (float const hit = GetShownHit(owned, 0.0f))
+    if (IsShapeshift(owned))
+        text = DescribeFormRanges(owned, fresh, text);
+    else if (float const hit = GetShownHit(owned, 0.0f))
     {
         std::string const range = MarkRange(hit, GetShownSpread(owned), hit > GetShownHit(fresh, 0.0f) * BONK_SHOWN_BETTER);
         std::string const school = GetSchoolName(sSpellMgr.GetSpellEntry(weapon.spellId));

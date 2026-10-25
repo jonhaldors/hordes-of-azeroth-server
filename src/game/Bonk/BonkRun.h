@@ -828,6 +828,14 @@ class BonkRun
         std::string DescribeShownDamage(OwnedWeapon const& owned) const;
         std::string GetShownSchool(OwnedWeapon const& owned) const;
         std::string DescribeLiveSpell(OwnedWeapon const& owned, std::string text) const;
+        std::string DescribeFormRanges(OwnedWeapon const& owned, OwnedWeapon const& fresh, std::string text) const;
+        struct FormTooltip
+        {
+            char const* label;
+            char const* school;
+            float share;
+        };
+        FormTooltip GetFormTooltip(BonkDruidForm form) const;
         std::string DescribeSpellHeader(OwnedWeapon const& owned, uint32 intervalMs, bool& better) const;
         void DescribeOfferDamage(Offer const& offer, std::string& before, std::string& after, std::string& label) const;
         void DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const;
