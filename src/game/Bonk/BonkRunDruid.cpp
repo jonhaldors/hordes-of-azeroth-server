@@ -33,6 +33,10 @@ namespace
     uint32 const BONK_CLAW_LOOK_GAP_MS        = 500;
     uint32 const BONK_KIT_CLAW_IMPACT         = 220;
     uint32 const BONK_KIT_MAUL_IMPACT         = 290;
+    uint32 const BONK_KIT_STILL_RAKE          = 7410;
+    uint32 const BONK_KIT_STILL_CLAW          = 7411;
+    uint32 const BONK_KIT_STILL_SWIPE         = 7413;
+    uint32 const BONK_KIT_STILL_MAUL          = 7414;
     uint32 const BONK_SPELL_CLAW_LOOK         = 1082;
     uint32 const BONK_SPELL_RAKE_LOOK         = 1822;
     uint32 const BONK_SPELL_SHRED_LOOK        = 5221;
@@ -127,11 +131,29 @@ uint32 BonkRun::GetClawImpactKit(uint32 spellId) const
     {
         case BONK_SPELL_CLAW_LOOK:
         case BONK_SPELL_RAKE_LOOK:
+        case BONK_SPELL_SHRED_LOOK:
         case BONK_SPELL_SWIPE_LOOK:
             return BONK_KIT_CLAW_IMPACT;
-        case BONK_SPELL_SHRED_LOOK:
         case BONK_SPELL_MAUL_LOOK:
             return BONK_KIT_MAUL_IMPACT;
+        default:
+            return 0;
+    }
+}
+
+uint32 BonkRun::GetStillClawKit(uint32 spellId) const
+{
+    switch (spellId)
+    {
+        case BONK_SPELL_RAKE_LOOK:
+        case BONK_SPELL_SHRED_LOOK:
+            return BONK_KIT_STILL_RAKE;
+        case BONK_SPELL_CLAW_LOOK:
+            return BONK_KIT_STILL_CLAW;
+        case BONK_SPELL_SWIPE_LOOK:
+            return BONK_KIT_STILL_SWIPE;
+        case BONK_SPELL_MAUL_LOOK:
+            return BONK_KIT_STILL_MAUL;
         default:
             return 0;
     }
@@ -142,14 +164,22 @@ void BonkRun::ShowDruidStrike(SpellEntry const* look, Creature* target)
     if (!look || !target)
         return;
     uint32 const impact = GetClawImpactKit(look->Id);
-    if (impact && m_druidClawLookMs && m_totalMs - m_druidClawLookMs < BONK_CLAW_LOOK_GAP_MS)
+    if (!impact)
     {
-        target->SendPlaySpellVisualKit(impact);
+        ShowStrike(m_player, look, target);
         return;
     }
-    if (impact)
+    bool const clawReady = !m_druidClawLookMs || m_totalMs - m_druidClawLookMs >= BONK_CLAW_LOOK_GAP_MS;
+    if (clawReady)
         m_druidClawLookMs = m_totalMs;
-    ShowStrike(m_player, look, target);
+    if (clawReady && IsDruidAnimal())
+    {
+        ShowStrike(m_player, look, target);
+        return;
+    }
+    if (clawReady)
+        m_player->SendPlaySpellVisualKit(GetStillClawKit(look->Id));
+    target->SendPlaySpellVisualKit(impact);
 }
 
 void BonkRun::OnDruidStrike(OwnedWeapon const& owned)
