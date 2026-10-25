@@ -219,6 +219,7 @@ void BonkCrowd::Update(uint32 diff, Player* hero, std::vector<ObjectGuid> const&
             {
                 known->second.sentMoving = false;
                 known->second.standing = true;
+                known->second.corners.clear();
             }
             mob->SetBonkCrowdDriven(0);
             mob->SetBonkCrowdTouching(true);

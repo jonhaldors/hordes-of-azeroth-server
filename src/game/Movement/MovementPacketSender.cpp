@@ -234,6 +234,12 @@ void MovementPacketSender::SendTeleportToObservers(Unit* unit, float x, float y,
     moveInfo.ChangePosition(x, y, z, ang);
     data << moveInfo;
 
+    if (!mover)
+    {
+        unit->SendMovementMessageToSet(std::move(data), true);
+        return;
+    }
+
     // not using SendMovementMessageToSet because we want the packet sent now
     unit->SendObjectMessageToSet(&data, true, mover);
 }
