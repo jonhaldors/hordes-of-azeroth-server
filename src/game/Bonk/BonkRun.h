@@ -2157,7 +2157,9 @@ class BonkRun
         void PlayDruidMotion(uint32 spellId);
         void OnDruidStrike(OwnedWeapon const& owned);
         std::string m_sentDruidForm;
-        void HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage);
+        void HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage, uint32 creditSpellId = 0);
+        static bool IsShapeshift(OwnedWeapon const& owned);
+        std::string DescribeShapeshiftDamage() const;
         void CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo);
         void CallHurricane(OwnedWeapon& owned);
         bool GetDruidCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind) const;

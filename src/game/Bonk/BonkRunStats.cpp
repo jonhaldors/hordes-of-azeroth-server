@@ -360,6 +360,11 @@ BonkRunStats::Spell BonkStats::GetSpellStats(ObjectGuid player, uint32 spellId)
     return spell != stats->second.bySpell.end() ? spell->second : BonkRunStats::Spell();
 }
 
+namespace
+{
+    uint32 const BONK_SHAPESHIFT_CREDITS[] = { 1082, 6807, 16689 };
+}
+
 std::vector<uint32> BonkStats::GetWeaponSpells(BonkWeapon const& weapon)
 {
     std::vector<uint32> spellIds;
@@ -373,6 +378,8 @@ std::vector<uint32> BonkStats::GetWeaponSpells(BonkWeapon const& weapon)
             if (spellInfo->EffectTriggerSpell[i])
                 spellIds.push_back(spellInfo->EffectTriggerSpell[i]);
     }
+    if (weapon.behavior == BONK_BEHAVIOR_SHAPESHIFT)
+        spellIds.insert(spellIds.end(), std::begin(BONK_SHAPESHIFT_CREDITS), std::end(BONK_SHAPESHIFT_CREDITS));
     return spellIds;
 }
 

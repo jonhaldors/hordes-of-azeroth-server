@@ -11545,7 +11545,7 @@ void BonkRun::SendState() const
 {
     std::string damageTypes;
     for (auto const& owned : m_weapons)
-        damageTypes += BonkStats::DescribeDamageTypes(m_player->GetObjectGuid(), owned.weapon.spellId) + ",";
+        damageTypes += (IsShapeshift(owned) ? DescribeShapeshiftDamage() : BonkStats::DescribeDamageTypes(m_player->GetObjectGuid(), owned.weapon.spellId)) + ",";
     uint32 const shownSeconds = (m_sandbox ? m_totalMs : m_elapsedMs) / IN_MILLISECONDS;
     m_player->GetBonkPlayer()->SendAddon("state~" + std::to_string(shownSeconds) + "~" + std::to_string(m_sandbox ? 0 : m_map.durationSeconds) + "~" +
         std::to_string(m_kills) + "~" + std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + (m_bossSpawned ? "1" : "0") + "~" +
@@ -11559,7 +11559,13 @@ std::string BonkRun::DescribeWeaponStats() const
     std::string text;
     for (auto const& owned : m_weapons)
     {
-        BonkRunStats::Spell const stats = BonkStats::GetSpellStats(m_player->GetObjectGuid(), owned.weapon.spellId);
+        BonkRunStats::Spell stats;
+        for (uint32 spellId : IsShapeshift(owned) ? BonkStats::GetWeaponSpells(owned.weapon) : std::vector<uint32>{ owned.weapon.spellId })
+        {
+            BonkRunStats::Spell const part = BonkStats::GetSpellStats(m_player->GetObjectGuid(), spellId);
+            stats.damage += part.damage;
+            stats.kills += part.kills;
+        }
         text += std::to_string(stats.damage) + ":" + std::to_string(stats.kills) + ",";
     }
     return text;
