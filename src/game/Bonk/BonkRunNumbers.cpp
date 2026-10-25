@@ -17,6 +17,11 @@ namespace
     uint32 const BONK_PET_NO_SWING_MS = 60000;
     uint32 const BONK_PET_MIN_ATTACK_MS = 300;
 
+    bool IsStackStrengthSpell(BonkWeapon const& weapon)
+    {
+        return weapon.behavior == BONK_BEHAVIOR_CORRUPTION || weapon.behavior == BONK_BEHAVIOR_CURSE_OF_AGONY;
+    }
+
     char const* GetSchoolName(SpellEntry const* spellInfo)
     {
         switch (spellInfo ? spellInfo->School : SPELL_SCHOOL_NORMAL)
@@ -315,7 +320,7 @@ bool BonkRun::KeepsWindowUptime(OwnedWeapon const& owned, float const* rolled, B
 
 float BonkRun::GetShownHit(OwnedWeapon const& owned, float extraPower) const
 {
-    if (owned.weapon.damageFraction <= 0.0f)
+    if (owned.weapon.damageFraction <= 0.0f || IsStackStrengthSpell(owned.weapon))
         return 0.0f;
 
     if (owned.weapon.behavior == BONK_BEHAVIOR_PET)
@@ -359,7 +364,8 @@ float BonkRun::GetShownTick(OwnedWeapon const& owned, float extraPower) const
     if (!info)
         return 0.0f;
     float const scale = 1.0f + (owned.damageBonus + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_PET_DAMAGE)) / 100.0f;
-    float const points = std::max(1.0f, std::round(GetKeywordPoints(*info) * scale));
+    float const strength = IsStackStrengthSpell(owned.weapon) ? std::max(1.0f, owned.weapon.damageFraction) : 1.0f;
+    float const points = std::max(1.0f, std::round(GetKeywordPoints(*info) * scale * strength));
     return points * GetDamageMultiplier(sSpellMgr.GetSpellEntry(info->spellId), nullptr, 1.0f, extraPower);
 }
 
@@ -614,10 +620,21 @@ std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string tex
         if (baseStacks != 1 || stacks == 1 || !ReplaceAtWordStart(text, "1 stack ", marked + " stacks "))
             MarkNumberFollowedBy(text, std::to_string(baseStacks), " stack", marked);
     }
+    std::string keywordLine;
     if (float const tick = GetShownTick(owned, 0.0f))
         if (info)
-            text += " Each stack of " + info->name + " deals " + MarkNumber(ShownNumber(tick), tick > GetShownTick(fresh, 0.0f) * BONK_SHOWN_BETTER) + " " +
-                GetSchoolName(sSpellMgr.GetSpellEntry(info->spellId)) + " damage every sec.";
+        {
+            bool const better = tick > GetShownTick(fresh, 0.0f) * BONK_SHOWN_BETTER;
+            keywordLine = "|n|n" + info->name + ": " + MarkNumber(ShownNumber(tick), better) + " " +
+                GetSchoolName(sSpellMgr.GetSpellEntry(info->spellId)) + " damage per stack every sec";
+            if (keyword == BONK_KEYWORD_AGONY)
+            {
+                float const peakSeconds = GetAgonyPeakTicks() * info->tickMs / GetHasteRate() / 1000.0f;
+                keywordLine += ", rising to " + MarkNumber(ShownNumber(tick * GetAgonyPeakScale()), better) + " after " +
+                    MarkNumber(TrimNumber(peakSeconds), GetHasteRate() > BONK_SHOWN_BETTER) + " sec";
+            }
+            keywordLine += ".";
+        }
 
     if (weapon.durationMs)
     {
@@ -648,7 +665,7 @@ std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string tex
             text += " " + sentence;
         }
     }
-    return text;
+    return text + keywordLine;
 }
 
 std::string BonkRun::DescribeSpellHeader(OwnedWeapon const& owned, uint32 intervalMs, bool& better) const

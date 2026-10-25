@@ -1485,6 +1485,7 @@ void BonkRun::UpdateRunning(uint32 diff)
         m_stateTimer = 0;
         UpdateGear();
         SendState();
+        RefreshChangedWeaponInfo();
     }
 }
 
@@ -11605,7 +11606,14 @@ void BonkRun::SendCooldownPie(uint32 index, OwnedWeapon const& owned) const
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + (owned.held ? "1" : "0"));
 }
 
-void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
+void BonkRun::RefreshChangedWeaponInfo() const
+{
+    uint32 index = 0;
+    for (OwnedWeapon const& owned : m_weapons)
+        SendWeaponInfo(++index, owned, true);
+}
+
+void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIfChanged) const
 {
     BonkWeapon const& weapon = owned.weapon;
     uint32 const interval = weapon.IsBlink() ? m_player->GetBonkPlayer()->GetDashCooldownMs() : GetWeaponCooldown(owned);
@@ -11641,6 +11649,10 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const
         description += " " + DescribeThunderCount(owned);
     bool faster = false;
     std::string const header = DescribeSpellHeader(owned, interval, faster);
+    std::string const shown = description + "~" + header + "~" + picks + "~" + DescribeShownDamage(owned);
+    if (onlyIfChanged && shown == owned.shownTip)
+        return;
+    owned.shownTip = shown;
     m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() || weapon.behavior == BONK_BEHAVIOR_PET ? 0u : interval) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + picks + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)) + "~" +
         header + "~" + (faster ? "1" : "0") + "~" + DescribeBonkWeaponTags(weapon, GetShownSchool(owned)));

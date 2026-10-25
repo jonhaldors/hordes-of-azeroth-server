@@ -193,6 +193,8 @@ class BonkRun
         void PreviewSpawnLook();
         static ObjectGuid GetMissileLookSource();
         float GetDotGrowth(Unit const* victim, uint32 spellId) const;
+        static float GetAgonyPeakScale();
+        static uint32 GetAgonyPeakTicks();
 
         void OnHeroHitBy(Creature* attacker, uint32 damage);
         void ModifyHeroHit(Unit* victim, uint32& damage);
@@ -339,6 +341,7 @@ class BonkRun
             bool pieResync = false;
             mutable uint32 shownIntervalMs = 0;
             mutable std::string shownDamage;
+            mutable std::string shownTip;
         };
 
         struct Offer
@@ -978,7 +981,8 @@ class BonkRun
 
         void SendState() const;
         void SendLoadout() const;
-        void SendWeaponInfo(uint32 index, OwnedWeapon const& owned) const;
+        void SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIfChanged = false) const;
+        void RefreshChangedWeaponInfo() const;
         void NoteWeaponFired(OwnedWeapon& owned);
         void SendCooldownPie(uint32 index, OwnedWeapon const& owned) const;
         void SendOffer() const;

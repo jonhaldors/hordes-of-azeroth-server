@@ -165,6 +165,16 @@ namespace
     }
 }
 
+float BonkRun::GetAgonyPeakScale()
+{
+    return 1.0f + BONK_AGONY_MAX_GROWTH;
+}
+
+uint32 BonkRun::GetAgonyPeakTicks()
+{
+    return uint32(std::ceil(BONK_AGONY_MAX_GROWTH / BONK_AGONY_GROWTH));
+}
+
 void BonkRun::SetPeriodicHit(bool periodic)
 {
     t_periodicHit = periodic;
