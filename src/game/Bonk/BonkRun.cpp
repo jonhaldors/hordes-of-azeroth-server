@@ -144,14 +144,9 @@ namespace
     uint32 const BONK_EMERGE_SETTLE_MS     = 400;
     uint32 const BONK_EMERGE_DISPLAY       = 11686;
     uint32 const BONK_EMERGE_FACTION       = 35;
-    uint32 const BONK_EMERGE_NAME_DELAY_MS = 400;
     uint32 const BONK_SPELL_BOSS_ADD_SMOKE = 10389;
-    float const BONK_EMERGE_CLOSE_SHARE    = 0.8f;
-    uint32 const BONK_EMERGE_REPLACE_MS    = 1000;
     uint32 s_spawnKit                      = 92;
-    uint32 s_spawnKitsOnMob                = 0;
-    uint32 s_spawnsReplaced                = 0;
-    uint32 s_spawnLookLeadMs               = 300;
+    uint32 s_spawnLookLeadMs               = 400;
     uint32 const BONK_SPAWN_LOOK_HOLD_MS   = 1600;
     float const BONK_SPAWN_LOOK_PREVIEW_DISTANCE = 8.0f;
     uint32 const BONK_PERCH_CHECK_MS       = 1000;
@@ -1362,7 +1357,6 @@ void BonkRun::StartStage()
     m_pendingCasts.clear();
     m_heldShotSources.clear();
     m_telegraphs.Dismiss(m_player);
-    m_telegraphs.Warm();
     m_objectives.Clear(m_player);
     m_spawnPoints.Reset(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
     ResetShrines();
@@ -1477,7 +1471,6 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateVoidZones(diff);
     UpdateHeroMark(diff);
     UpdateBossWounds(diff);
-    UpdateImpactLooks(diff);
     UpdatePowerups(diff, !m_sandbox);
     UpdateObjectives(diff);
     UpdateOrbs(diff);
@@ -3061,9 +3054,8 @@ void BonkRun::SetSpawnLookLeadMs(uint32 leadMs)
 
 std::string BonkRun::DescribeSpawnLook() const
 {
-    return "Spawn looks lead " + std::to_string(s_spawnLookLeadMs) + " ms; played on the enemy (no free stand-in) " + std::to_string(s_spawnKitsOnMob) +
-        ", hidden enemies moved back out " + std::to_string(s_spawnsReplaced) +
-        ", hidden now " + std::to_string(m_emerging.size()) + ".";
+    return "Spawned enemies turn hostile " + std::to_string(s_spawnLookLeadMs) + " ms after their spawn flash; emerging now " +
+        std::to_string(m_emerging.size()) + ".";
 }
 
 void BonkRun::PreviewSpawnLook()
@@ -3095,13 +3087,13 @@ Creature* BonkRun::EmergeMobAt(BonkMapCreature const& creature, float x, float y
     ObjectGuid const guid = mob->GetObjectGuid();
     m_mobs.erase(std::remove(m_mobs.begin(), m_mobs.end(), guid), m_mobs.end());
 
-    int32 const hiddenMs = int32(BONK_EMERGE_HIDDEN_MS + delayMs);
-    mob->SetDisplayId(BONK_EMERGE_DISPLAY);
+    if (delayMs)
+        mob->SetDisplayId(BONK_EMERGE_DISPLAY);
     mob->SetFactionTemplateId(BONK_EMERGE_FACTION);
     mob->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
-        ai->Hold(uint32(hiddenMs) + BONK_EMERGE_SETTLE_MS);
-    m_emerging.push_back({ guid, hiddenMs });
+        ai->Hold(delayMs + s_spawnLookLeadMs + BONK_EMERGE_SETTLE_MS);
+    m_emerging.push_back({ guid, int32(delayMs) });
     return mob;
 }
 
@@ -3117,17 +3109,6 @@ void BonkRun::UpdateEmerging(uint32 diff)
             continue;
         }
         itr->leftMs -= int32(diff);
-        if (!itr->flashed && itr->leftMs <= int32(s_spawnLookLeadMs))
-        {
-            if (ReplaceIfClose(mob))
-            {
-                itr->leftMs = int32(BONK_EMERGE_REPLACE_MS);
-                ++itr;
-                continue;
-            }
-            itr->flashed = true;
-            itr->flashedAhead = s_spawnKit && ShowKitOnStandIn(s_spawnKit, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), BONK_SPAWN_LOOK_HOLD_MS);
-        }
         if (itr->leftMs > 0)
         {
             ++itr;
@@ -3137,55 +3118,40 @@ void BonkRun::UpdateEmerging(uint32 diff)
         {
             ShowEmergingBody(mob);
             itr->shown = true;
-            itr->leftMs = int32(BONK_EMERGE_NAME_DELAY_MS);
+            itr->leftMs = int32(s_spawnLookLeadMs);
             ++itr;
             continue;
         }
-        ActivateEmerged(mob, !itr->flashedAhead);
+        ActivateEmerged(mob);
         itr = m_emerging.erase(itr);
     }
 }
 
 void BonkRun::ShowEmergingBody(Creature* mob)
 {
-    mob->SetDisplayId(mob->GetNativeDisplayId());
+    if (mob->GetDisplayId() != mob->GetNativeDisplayId())
+        mob->SetDisplayId(mob->GetNativeDisplayId());
     mob->SetFacingTo(std::atan2(m_player->GetPositionY() - mob->GetPositionY(), m_player->GetPositionX() - mob->GetPositionX()));
+    if (s_spawnKit)
+        mob->SendPlaySpellVisualKit(s_spawnKit);
 }
 
-void BonkRun::ActivateEmerged(Creature* mob, bool flashOnMob)
+void BonkRun::ActivateEmerged(Creature* mob)
 {
     mob->SetFactionTemplateId(BONK_ENEMY_FACTION);
     mob->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
         ai->Hold(BONK_EMERGE_SETTLE_MS);
     m_mobs.push_back(mob->GetObjectGuid());
-    if (flashOnMob && s_spawnKit)
-    {
-        ++s_spawnKitsOnMob;
-        mob->SendPlaySpellVisualKit(s_spawnKit);
-    }
-}
-
-bool BonkRun::ReplaceIfClose(Creature* mob)
-{
-    if (!mob->IsWithinDistInMap(m_player, m_map.spawnMinDistance * BONK_EMERGE_CLOSE_SHARE))
-        return false;
-    float x, y, z;
-    if (!FindMobPosition(x, y, z, m_map.spawnMinDistance, m_map.spawnMaxDistance))
-        return false;
-    ++s_spawnsReplaced;
-    mob->NearTeleportTo(x, y, z, std::atan2(m_player->GetPositionY() - y, m_player->GetPositionX() - x));
-    return true;
 }
 
 void BonkRun::ShowTeleportFlash(Creature* mob, float x, float y, float z)
 {
     if (!s_spawnKit)
         return;
-    bool const departed = ShowKitOnStandIn(s_spawnKit, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), BONK_SPAWN_LOOK_HOLD_MS);
-    bool const arrived = ShowKitOnStandIn(s_spawnKit, x, y, z, BONK_SPAWN_LOOK_HOLD_MS);
-    if (!departed || !arrived)
-        mob->SendPlaySpellVisualKit(s_spawnKit);
+    SendBonkKitAt(m_player, s_spawnKit, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), mob->GetOrientation(),
+        BONK_SPAWN_LOOK_HOLD_MS);
+    SendBonkKitAt(m_player, s_spawnKit, x, y, z, mob->GetOrientation(), BONK_SPAWN_LOOK_HOLD_MS);
 }
 
 void BonkRun::UpdateCrowd(uint32 diff)
@@ -7549,10 +7515,10 @@ void BonkRun::DespawnProjectiles()
         for (Projectile const& projectile : m_projectiles)
             if (Creature* missile = map->GetCreature(projectile.creature))
                 missile->DespawnOrUnsummon();
-        for (EnemyMissile const& missile : m_enemyMissiles)
-            if (Creature* creature = map->GetCreature(missile.creature))
-                creature->DespawnOrUnsummon();
     }
+    for (EnemyMissile const& missile : m_enemyMissiles)
+        if (missile.flightId)
+            SendBonkLanding(m_player, missile.flightId);
     m_projectiles.clear();
     m_enemyMissiles.clear();
 }
@@ -7609,8 +7575,8 @@ void BonkRun::DropEnemyMissilesFrom(ObjectGuid const& caster)
     {
         if (missile.caster != caster)
             return false;
-        if (Creature* creature = map ? map->GetCreature(missile.creature) : nullptr)
-            creature->DespawnOrUnsummon();
+        if (missile.flightId)
+            SendBonkLanding(m_player, missile.flightId);
         return true;
     }), m_enemyMissiles.end());
 }
@@ -7627,54 +7593,20 @@ void BonkRun::FlyEnemyMissile(EnemyMissile& missile)
     float const y = caster->GetPositionY() + caster->GetObjectBoundingRadius() * std::sin(angle);
     float const z = caster->GetPositionZ() + BONK_ENEMY_MISSILE_HEIGHT;
     float const dx = missile.x - x, dy = missile.y - y, dz = missile.z - z;
-    float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (distance < 1.0f)
+    if (dx * dx + dy * dy + dz * dz < 1.0f)
         return;
 
-    Creature* creature = m_player->SummonCreature(BONK_PROJECTILE, x, y, z, angle, TEMPSUMMON_MANUAL_DESPAWN, 0, false, 0, &InstallProjectileAI);
-    if (!creature)
-        return;
-    creature->SetDisplayId(look->displayId);
-    creature->SetObjectScale(look->scale);
-    creature->SetFactionTemplateId(m_player->GetFactionTemplateId());
-    missile.creature = creature->GetObjectGuid();
-    missile.speed = distance / (std::max(missile.leftMs, 1u) / float(IN_MILLISECONDS));
-    creature->MonsterMoveWithSpeed(missile.x, missile.y, missile.z, angle, missile.speed, MOVE_FLY_MODE);
+    missile.flightId = NextBonkFlightId();
+    SendBonkFlight(m_player, missile.flightId, x, y, z, missile.x, missile.y, missile.z, missile.leftMs, look->displayId, look->scale);
 }
 
 void BonkRun::LandEnemyMissile(EnemyMissile const& missile)
 {
-    Map* map = m_player->GetMap();
-    Creature* creature = map->GetCreature(missile.creature);
-    if (!creature)
+    if (!missile.flightId)
         return;
-    creature->StopMoving();
-    creature->SetDisplayId(BONK_DISPLAY_INVISIBLE);
-    creature->DespawnOrUnsummon(1000);
-
     BonkBoltLook const* look = sBonkMgr.GetBoltLook(missile.spellId);
-    if (!look || !look->impactKit)
-        return;
-    Creature* spot = map->GetCreature(missile.target);
-    if (!spot)
-        spot = SummonHazard(missile.x, missile.y, missile.z - BONK_ENEMY_MISSILE_AIM);
-    if (spot)
-        spot->SendPlaySpellVisualKit(look->impactKit);
-}
-
-void BonkRun::HoldEnemyMissiles(bool hold)
-{
-    Map* map = m_player->FindMap();
-    if (!map)
-        return;
-    for (EnemyMissile const& missile : m_enemyMissiles)
-        if (Creature* creature = map->GetCreature(missile.creature))
-        {
-            if (hold)
-                creature->StopMoving(true);
-            else
-                creature->MonsterMoveWithSpeed(missile.x, missile.y, missile.z, creature->GetOrientation(), missile.speed, MOVE_FLY_MODE);
-        }
+    if (look && look->impactKit)
+        SendBonkKitAt(m_player, look->impactKit, missile.x, missile.y, missile.z - BONK_ENEMY_MISSILE_AIM, 0.0f, BONK_ERUPTION_LOOK_MS);
 }
 
 float BonkRun::GetMobDamageMultiplier(Creature const* mob) const
@@ -7749,56 +7681,13 @@ void BonkRun::ShowAreaImpact(uint32 kit, float x, float y, float z, float radius
 
 bool BonkRun::ShowKitOnStandIn(uint32 kit, float x, float y, float z, uint32 holdMs)
 {
-    ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
-    if (guid.IsEmpty() || !m_player->GetMap()->GetCreature(guid))
-        return false;
-    ImpactLook look;
-    look.guid = guid;
-    look.kit = kit;
-    look.leftMs = holdMs;
-    m_impactLooks.push_back(look);
+    SendBonkKitAt(m_player, kit, x, y, z, 0.0f, holdMs);
     return true;
 }
 
-void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z, float stretch)
+void BonkRun::ShowKitAt(uint32 kit, float x, float y, float z, float)
 {
-    ObjectGuid const guid = m_telegraphs.BorrowInvisible(m_player, x, y, z);
-    if (!guid.IsEmpty() && m_player->GetMap()->GetCreature(guid))
-    {
-        if (stretch != 1.0f)
-            m_telegraphs.Resize(m_player, guid, stretch);
-        ImpactLook look;
-        look.guid = guid;
-        look.kit = kit;
-        look.leftMs = BONK_ERUPTION_LOOK_MS;
-        m_impactLooks.push_back(look);
-        return;
-    }
-    if (Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_ERUPTION_LOOK_MS,
-        false, 0, &InstallOrbAI))
-        marker->SendPlaySpellVisualKit(kit);
-}
-
-void BonkRun::UpdateImpactLooks(uint32 diff)
-{
-    Map* map = m_player->FindMap();
-    for (auto itr = m_impactLooks.begin(); itr != m_impactLooks.end();)
-    {
-        if (itr->kit)
-        {
-            if (Creature* standIn = map ? map->GetCreature(itr->guid) : nullptr)
-                standIn->SendPlaySpellVisualKit(itr->kit);
-            itr->kit = 0;
-        }
-        if (itr->leftMs > diff)
-        {
-            itr->leftMs -= diff;
-            ++itr;
-            continue;
-        }
-        m_telegraphs.Release(m_player, itr->guid);
-        itr = m_impactLooks.erase(itr);
-    }
+    SendBonkKitAt(m_player, kit, x, y, z, 0.0f, BONK_ERUPTION_LOOK_MS);
 }
 
 void BonkRun::ShowLineImpacts(uint32 kit, float x, float y, float z, float orientation, float length)
@@ -11955,7 +11844,6 @@ void BonkRun::SetPaused(bool paused)
             hold(released.guid, false);
         for (Beast const& beast : m_beasts)
             hold(beast.guid, false);
-        HoldEnemyMissiles(paused);
         if (!paused)
             ResumeCharges();
     }

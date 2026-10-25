@@ -482,20 +482,12 @@ class BonkRun
         std::vector<VoidZone> m_voidZones;
         void EndVoidZone(VoidZone const& zone);
         std::vector<uint32> m_boltLandings;
-        struct ImpactLook
-        {
-            ObjectGuid guid;
-            uint32 kit = 0;
-            uint32 leftMs = 0;
-        };
-        std::vector<ImpactLook> m_impactLooks;
         void UpdateVoidZones(uint32 diff);
         void UpdateHeroMark(uint32 diff);
         void HideHeroMarkRings();
         void UpdateBossWounds(uint32 diff);
         void SetBossWoundStacks(uint32 stacks);
         void ClearBossPressure();
-        void UpdateImpactLooks(uint32 diff);
         void ShowImpact(BonkEnemyHit const& hit, float x, float y, float z, float radius = 0.0f);
         void ShowAttackLook(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
         Creature* SummonHazard(float x, float y, float z);
@@ -566,16 +558,13 @@ class BonkRun
         {
             ObjectGuid guid;
             int32 leftMs = 0;
-            bool flashed = false;
-            bool flashedAhead = false;
             bool shown = false;
         };
         std::vector<TimedMob> m_emerging;
         Creature* EmergeMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran, uint32 delayMs);
         void UpdateEmerging(uint32 diff);
         void ShowEmergingBody(Creature* mob);
-        void ActivateEmerged(Creature* mob, bool flashOnMob);
-        bool ReplaceIfClose(Creature* mob);
+        void ActivateEmerged(Creature* mob);
         void ShowTeleportFlash(Creature* mob, float x, float y, float z);
         void UpdateStragglers(uint32 diff);
         void UpdateCrowd(uint32 diff);
@@ -1683,20 +1672,18 @@ class BonkRun
         {
             ObjectGuid caster;
             ObjectGuid target;
-            ObjectGuid creature;
+            uint32 flightId = 0;
             uint32 spellId = 0;
             uint32 delayMs = 0;
             uint32 leftMs = 0;
             bool launched = false;
             float x = 0.0f, y = 0.0f, z = 0.0f;
-            float speed = 0.0f;
         };
         std::vector<EnemyMissile> m_enemyMissiles;
         void UpdateEnemyMissiles(uint32 diff);
         void DropEnemyMissilesFrom(ObjectGuid const& caster);
         void FlyEnemyMissile(EnemyMissile& missile);
         void LandEnemyMissile(EnemyMissile const& missile);
-        void HoldEnemyMissiles(bool hold);
         uint32 m_spellShield = 0;
         bool m_wardBurst = false;
         struct Mark

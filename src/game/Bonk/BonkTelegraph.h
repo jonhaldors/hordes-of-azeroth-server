@@ -19,6 +19,13 @@ enum BonkTelegraphShape : uint8
     MAX_BONK_TELEGRAPH_SHAPE
 };
 
+enum BonkTelegraphStyle : uint8
+{
+    BONK_TELEGRAPH_STYLE_DANGER = 0,
+    BONK_TELEGRAPH_STYLE_ARCANE = 1,
+    BONK_TELEGRAPH_STYLE_NATURE = 2
+};
+
 char const* GetBonkTelegraphShapeName(BonkTelegraphShape shape);
 bool ParseBonkTelegraphShape(std::string const& name, BonkTelegraphShape& shape);
 
@@ -31,50 +38,38 @@ float GetBonkTelegraphGround(Map* map, float x, float y, float z, float reach);
 uint32 GetBonkStandInSizeCount();
 uint32 GetBonkStandInSizeIndex(float size);
 
+void SendBonkDraw(Player* player, std::string const& line);
+void SendBonkKitAt(Player* player, uint32 kit, float x, float y, float z, float orientation, uint32 holdMs);
+void SendBonkFlight(Player* player, uint32 id, float fromX, float fromY, float fromZ, float toX, float toY, float toZ, uint32 flightMs,
+    uint32 display, float scale);
+void SendBonkLanding(Player* player, uint32 id);
+uint32 NextBonkFlightId();
+
 class BonkTelegraphs
 {
     public:
         void Add(Player* owner, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs,
-            std::function<void()> onFire = nullptr, bool lingers = false, ObjectGuid const& caster = ObjectGuid(), uint32 windId = 0);
+            std::function<void()> onFire = nullptr, bool lingers = false, ObjectGuid const& caster = ObjectGuid(), uint32 windId = 0,
+            BonkTelegraphStyle style = BONK_TELEGRAPH_STYLE_DANGER);
         void Update(Player* owner, uint32 diff);
         void Clear(Player* owner);
         void CancelFrom(Player* owner, ObjectGuid const& caster, uint32 windId = 0);
         void Dismiss(Player* owner);
-        void Warm() { m_warm = true; }
-        void SetPatient(bool patient) { m_patient = patient; }
         size_t Count() const { return m_telegraphs.size(); }
         size_t CountStandIns() const { return m_standIns.size(); }
-        size_t CountBusyStandIns() const { return m_standIns.size() - CountIdle(false); }
+        size_t CountBusyStandIns() const;
 
         ObjectGuid Borrow(Player* owner, float x, float y, float z, uint32 display);
         ObjectGuid BorrowInvisible(Player* owner, float x, float y, float z);
-        void Dress(Player* owner, ObjectGuid const& guid, uint32 display) { Wear(owner, guid, display); }
+        void Dress(Player* owner, ObjectGuid const& guid, uint32 display);
         void Release(Player* owner, ObjectGuid const& guid);
         void Hide(Player* owner, ObjectGuid const& guid);
         void Resize(Player* owner, ObjectGuid const& guid, float stretch);
 
     private:
-        struct Piece
-        {
-            float x = 0.0f, y = 0.0f, z = 0.0f;
-            float fillX = 0.0f, fillY = 0.0f;
-            uint32 outlineDisplay = 0;
-            uint32 fillDisplay = 0;
-            float stretch = 1.0f;
-        };
-
         struct Telegraph
         {
-            BonkTelegraphShape shape = BONK_TELEGRAPH_CIRCLE;
-            float orientation = 0.0f;
-            std::vector<Piece> pieces;
-            std::vector<ObjectGuid> outlines;
-            std::vector<ObjectGuid> fills;
-            bool shown = false;
-            bool filled = false;
-            uint32 fillMs = 0;
-            int32 showInMs = 0;
-            int32 fillInMs = 0;
+            uint32 id = 0;
             int32 leftMs = 0;
             std::function<void()> onFire;
             ObjectGuid caster;
@@ -84,42 +79,20 @@ class BonkTelegraphs
         struct StandIn
         {
             ObjectGuid guid;
-            uint32 readyAtMs = 0;
-            bool busy = false;
             float baseScale = 1.0f;
+            bool busy = true;
+            uint32 goneAtMs = 0;
         };
 
-        struct Request
-        {
-            BonkTelegraphShape shape = BONK_TELEGRAPH_CIRCLE;
-            float x = 0.0f, y = 0.0f, z = 0.0f, orientation = 0.0f, size = 0.0f;
-            uint32 durationMs = 0;
-            std::function<void()> onFire;
-            bool lingers = false;
-            ObjectGuid caster;
-            uint32 windId = 0;
-        };
-
-        static Telegraph Lay(Map* map, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);
-        void Reserve(Player* owner, Telegraph& telegraph);
-        void Show(Player* owner, Telegraph& telegraph, bool fill);
         void TakeOff(Player* owner, Telegraph const& telegraph);
-        ObjectGuid Move(Player* owner, float x, float y, float z, float orientation, bool turn);
-        void Wear(Player* owner, ObjectGuid const& guid, uint32 display, float stretch = 1.0f);
-        void Undress(Player* owner, ObjectGuid const& guid);
-        void Summon(Player* owner, uint32 count);
-        uint32 CountIdle(bool readyOnly) const;
-        void Tend(Player* owner, uint32 diff);
+        void Tend(Player* owner);
 
         std::vector<Telegraph> m_telegraphs;
         std::vector<StandIn> m_standIns;
-        std::vector<Request> m_requests;
         uint32 m_clockMs = 0;
-        uint32 m_gatherTimer = 0;
+        uint32 m_nextId = 0;
         uint32 m_mapId = 0;
         uint32 m_instanceId = 0;
-        bool m_warm = false;
-        bool m_patient = false;
 };
 
 #endif

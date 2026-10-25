@@ -1576,8 +1576,6 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
 
 void BonkPlayer::PreviewTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs)
 {
-    m_previewTelegraphs.SetPatient(true);
-    m_previewTelegraphs.Warm();
     m_previewTelegraphs.Add(m_player, shape, x, y, z, orientation, size, durationMs);
 }
 
