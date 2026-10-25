@@ -210,6 +210,9 @@ void ReputationMgr::Initialize()
 
 bool ReputationMgr::SetReputation(FactionEntry const* factionEntry, int32 standing, bool incremental, bool noSpillover)
 {
+    if (incremental)
+        return false;
+
     if (!noSpillover)
     {
         // if spillover definition exists in DB
