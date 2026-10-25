@@ -5,6 +5,7 @@
 #include "MoveSpline.h"
 #include "MovementPacketSender.h"
 #include "Player.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +14,6 @@ namespace
 {
     float const BONK_DASH_DISTANCE          = 8.0f;
     uint32 const BONK_DASH_MS               = 200;
-    uint32 const BONK_DASH_SETTLE_MS        = 800;
     uint32 const BONK_DASH_INVULNERABLE_MS  = 250;
     uint32 const BONK_DASH_COOLDOWN_MS      = 10000;
     uint32 const BONK_DASH_MIN_COOLDOWN_MS  = 3000;
@@ -71,6 +71,7 @@ bool BonkPlayer::Dash()
     if (m_run)
         m_run->OnDash();
 
+    m_dashRunTracked = false;
     if (blink)
         BlinkHero();
     else if (mi.moveFlags & (MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR))
@@ -84,16 +85,37 @@ bool BonkPlayer::Dash()
     }
     else
     {
+        TrackDashRun();
         m_dashBurstUntilMs = m_dashClockMs + BONK_DASH_MS;
         SetDashBurst(true);
     }
 
-    m_dashMoveUntilMs = m_dashClockMs + BONK_DASH_MS;
-    m_dashSettleUntilMs = m_dashMoveUntilMs + BONK_DASH_SETTLE_MS;
     if (!m_dashSpent++)
         m_dashRechargeMs = GetDashCooldownMs();
     m_dashInvulnerableUntilMs = m_dashClockMs + std::max(BONK_DASH_INVULNERABLE_MS, blink ? m_run->GetBlinkInvulnerableMs() : 0u);
     SendDash();
+    return true;
+}
+
+void BonkPlayer::TrackDashRun()
+{
+    if (!m_dashBursting)
+        m_dashRunBaseSpeed = m_player->GetSpeedForMovementInfo(m_player->m_movementInfo);
+    m_dashRunStartedAtMs = WorldTimer::getMSTime() + m_player->GetSession()->GetLatency();
+    m_dashRunTracked = true;
+}
+
+bool BonkPlayer::GetDashRunTravel(uint32 fromMs, uint32 toMs, float& travel) const
+{
+    if (!m_dashRunTracked)
+        return false;
+    uint32 const dashEndMs = m_dashRunStartedAtMs + BONK_DASH_MS;
+    if (fromMs >= dashEndMs && !m_dashBursting)
+        return false;
+    uint32 const burstFromMs = std::max(fromMs, m_dashRunStartedAtMs);
+    uint32 const burstToMs = std::min(toMs, dashEndMs);
+    uint32 const burstMs = burstToMs > burstFromMs ? burstToMs - burstFromMs : 0;
+    travel = (m_dashRunBaseSpeed * (toMs - fromMs) + (GetDashSpeed() - m_dashRunBaseSpeed) * burstMs) / IN_MILLISECONDS;
     return true;
 }
 

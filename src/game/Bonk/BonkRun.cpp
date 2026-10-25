@@ -874,13 +874,35 @@ namespace
             }
     }
 
+    void ApplyDashRunTravel(Player const* hero, uint32 age, float& x, float& y)
+    {
+        BonkPlayer const* bonk = hero->GetBonkPlayer();
+        uint32 const now = WorldTimer::getMSTime();
+        float travel;
+        if (!bonk || !age || !bonk->GetDashRunTravel(now - age, now, travel))
+            return;
+        MovementInfo const& mi = hero->m_movementInfo;
+        float const dx = x - mi.pos.x, dy = y - mi.pos.y;
+        float const extrapolated = std::sqrt(dx * dx + dy * dy);
+        if (extrapolated < 0.01f)
+            return;
+        float const scale = travel / extrapolated;
+        x = mi.pos.x + dx * scale;
+        y = mi.pos.y + dy * scale;
+    }
+
     bool ExtrapolateHeroNow(Player const* hero, float& x, float& y, float& z)
     {
         if (!hero->IsMoving())
             return false;
-        uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(hero->m_movementInfo.stime), BONK_HERO_MAX_AGE_MS);
+        MovementInfo const& mi = hero->m_movementInfo;
+        uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(mi.stime), BONK_HERO_MAX_AGE_MS);
         float o;
-        return hero->ExtrapolateMovement(hero->m_movementInfo, age, x, y, z, o) && hero->IsWithinLOS(x, y, z);
+        if (!hero->ExtrapolateMovement(mi, age, x, y, z, o))
+            return false;
+        if (!mi.HasMovementFlag(MOVEFLAG_JUMPING))
+            ApplyDashRunTravel(hero, age, x, y);
+        return hero->IsWithinLOS(x, y, z);
     }
 
     void GetHeroPositionNow(Player const* hero, float& x, float& y, float& z)
@@ -916,18 +938,26 @@ namespace
         z = hero->m_movementInfo.HasMovementFlag(MOVEFLAG_JUMPING) ? std::max(pz, ground) : ground;
     }
 
-    void GetHeroChestPositionNow(Player const* hero, bool predict, float& x, float& y, float& z)
+    void GetHeroChestPositionNow(Player const* hero, float& x, float& y, float& z)
     {
-        if (predict)
-            GetHeroBodyPositionNow(hero, x, y, z);
-        else
-            hero->GetPosition(x, y, z);
+        GetHeroBodyPositionNow(hero, x, y, z);
         z += std::max(BONK_ORB_LIFT, hero->GetCollisionHeight() * BONK_ORB_CHEST_SHARE);
     }
 
     float GetHeroDistance(Player const* hero, float x, float y, float z, WorldObject const* object)
     {
         return std::max(0.0f, object->GetDistance(x, y, z) - hero->GetObjectBoundingRadius());
+    }
+
+    float GetHeroSweepDistance(Player const* hero, Position const& from, float x, float y, float z, WorldObject const* object)
+    {
+        float const sx = x - from.x, sy = y - from.y, sz = z - from.z;
+        float const lengthSq = sx * sx + sy * sy + sz * sz;
+        float share = 0.0f;
+        if (lengthSq > 0.0001f)
+            share = std::min(1.0f, std::max(0.0f,
+                ((object->GetPositionX() - from.x) * sx + (object->GetPositionY() - from.y) * sy + (object->GetPositionZ() - from.z) * sz) / lengthSq));
+        return GetHeroDistance(hero, from.x + sx * share, from.y + sy * share, from.z + sz * share, object);
     }
 
     std::vector<Creature*> PickGroundSpots(std::vector<Creature*> const& mobs, float radius, uint32 count)
@@ -9877,16 +9907,17 @@ void BonkRun::UpdateOrbs(uint32 diff)
     float const magnet = GetMagnetRange();
     Map* map = m_player->GetMap();
     float heroX, heroY, heroZ;
-    BonkPlayer const* bonk = m_player->GetBonkPlayer();
-    GetHeroChestPositionNow(m_player, !bonk->IsDashSettling(), heroX, heroY, heroZ);
-    bool const holdAim = bonk->IsDashMoving();
+    GetHeroChestPositionNow(m_player, heroX, heroY, heroZ);
+    uint32 const now = WorldTimer::getMSTime();
+    if (!m_orbSweepAtMs || now - m_orbSweepAtMs > 2 * BONK_ORB_CHECK_MS)
+        m_orbSweepFrom = Position(heroX, heroY, heroZ, 0.0f);
     uint32 collected = 0;
     for (auto itr = m_orbs.begin(); itr != m_orbs.end();)
     {
         Creature* orb = map->GetCreature(itr->guid);
         float const distance = orb ? GetHeroDistance(m_player, heroX, heroY, heroZ, orb) : 0.0f;
 
-        if (!orb || distance <= BONK_ORB_PICKUP_RANGE)
+        if (!orb || GetHeroSweepDistance(m_player, m_orbSweepFrom, heroX, heroY, heroZ, orb) <= BONK_ORB_PICKUP_RANGE)
         {
             collected += itr->experience;
             ++m_orbsSinceXpSent;
@@ -9896,11 +9927,6 @@ void BonkRun::UpdateOrbs(uint32 diff)
             continue;
         }
 
-        if (holdAim)
-        {
-            ++itr;
-            continue;
-        }
         float const x = heroX;
         float const y = heroY;
         float const z = heroZ;
@@ -9916,6 +9942,8 @@ void BonkRun::UpdateOrbs(uint32 diff)
         }
         ++itr;
     }
+    m_orbSweepFrom = Position(heroX, heroY, heroZ, 0.0f);
+    m_orbSweepAtMs = now;
 
     if (collected)
         GiveExperience(collected);
@@ -9925,7 +9953,7 @@ void BonkRun::PullAllOrbs()
 {
     Map* map = m_player->GetMap();
     float heroX, heroY, heroZ;
-    GetHeroChestPositionNow(m_player, !m_player->GetBonkPlayer()->IsDashSettling(), heroX, heroY, heroZ);
+    GetHeroChestPositionNow(m_player, heroX, heroY, heroZ);
     for (Orb& orb : m_orbs)
     {
         if (orb.pulled)

@@ -1279,6 +1279,8 @@ class BonkRun
         void ForgetPowerupObjective(ObjectGuid const& powerup);
         std::vector<Orb> m_orbs;
         uint32 m_orbTimer = 0;
+        Position m_orbSweepFrom;
+        uint32 m_orbSweepAtMs = 0;
         std::vector<OrbMerge> m_orbMerges;
         uint32 m_orbMergeTimer = 0;
         uint32 m_lastOrbMergeId = 0;
