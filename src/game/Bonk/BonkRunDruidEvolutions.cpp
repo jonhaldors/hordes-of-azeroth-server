@@ -71,7 +71,7 @@ namespace
     uint32 const BONK_FULL_MOON_POLL_MS          = 250;
     uint32 const BONK_FULL_MOON_EVERY            = 10;
     float const BONK_FULL_MOON_RADIUS            = 6.0f;
-    float const BONK_FULL_MOON_SHARE             = 0.6f;
+    float const BONK_FULL_MOON_SHARE             = 0.3f;
     float const BONK_FULL_MOON_RANGE             = 40.0f;
     int32 const BONK_VORTEX_PULSE_MS             = 1000;
     uint32 const BONK_VORTEX_MS                  = 3000;
@@ -403,7 +403,7 @@ bool BonkRun::GetDruidEvolvedCloudKind(OwnedWeapon const& owned, KeywordCloudKin
 void BonkRun::OnDruidEvolvedCloudPulse(OwnedWeapon const& owned, KeywordCloud const& cloud)
 {
     uint32 const id = owned.weapon.id;
-    if (id == BONK_WEAPON_MOONSTORM)
+    if (id == BONK_WEAPON_MOONSTORM && (cloud.leftMs / cloud.pulseEveryMs) % 2 == 0)
         for (Creature* mob : GetMobsNear(cloud.x, cloud.y, cloud.radius))
             ApplyDruidMoonfire(owned, mob, 1);
     if (id == BONK_WEAPON_URSOLS_VORTEX)
