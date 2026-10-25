@@ -67,7 +67,7 @@ namespace
     uint32 const BONK_SPELL_MAUL_LOOK         = 6807;
     uint32 const BONK_SHAPESHIFT_SMOKE_DELAY_MS = 100;
     float const BONK_RIGHT_FORM_BONUS         = 1.3f;
-    float const BONK_SPIRIT_SHARE             = 0.5f;
+    float const BONK_SPIRIT_SHARE             = 0.25f;
     float const BONK_BEAR_DAMAGE              = 0.8f;
 
     struct FormAttack

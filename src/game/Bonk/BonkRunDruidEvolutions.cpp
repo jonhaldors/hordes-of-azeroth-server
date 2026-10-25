@@ -60,17 +60,18 @@ namespace
     uint32 const BONK_DISPLAY_MUSHROOM           = 11686;
 
     float const BONK_STARBURST_RADIUS            = 8.0f;
-    float const BONK_STARBURST_SHARE             = 0.5f;
+    float const BONK_STARBURST_SHARE             = 0.15f;
     uint32 const BONK_SHOOTING_STARS_POLL_MS     = 1000;
     float const BONK_SHOOTING_STARS_CHANCE       = 3.0f;
     uint32 const BONK_SHOOTING_STARS_MAX         = 2;
     float const BONK_SHOOTING_STARS_SHARE        = 0.5f;
     float const BONK_SHOOTING_STARS_RANGE        = 30.0f;
     float const BONK_SUNFIRE_RADIUS              = 5.0f;
+    size_t const BONK_SUNFIRE_SPREAD             = 3;
     uint32 const BONK_FULL_MOON_POLL_MS          = 250;
     uint32 const BONK_FULL_MOON_EVERY            = 10;
     float const BONK_FULL_MOON_RADIUS            = 6.0f;
-    float const BONK_FULL_MOON_SHARE             = 2.0f;
+    float const BONK_FULL_MOON_SHARE             = 0.6f;
     float const BONK_FULL_MOON_RANGE             = 40.0f;
     int32 const BONK_VORTEX_PULSE_MS             = 1000;
     uint32 const BONK_VORTEX_MS                  = 3000;
@@ -83,7 +84,8 @@ namespace
     float const BONK_TIGERS_FURY_MAX             = 25.0f;
     uint32 const BONK_TIGERS_FURY_MS             = 4000;
     float const BONK_MANGLE_RADIUS               = 5.0f;
-    float const BONK_MANGLE_SHARE                = 0.5f;
+    float const BONK_MANGLE_SHARE                = 0.25f;
+    size_t const BONK_MANGLE_TARGETS             = 4;
     uint32 const BONK_FEROCIOUS_BITE_CHAIN       = 3;
     float const BONK_FRENZY_RADIUS               = 8.0f;
     size_t const BONK_FRENZY_MAX_ENEMIES         = 5;
@@ -91,7 +93,7 @@ namespace
     uint32 const BONK_LIFEBLOOM_EVERY            = 4;
     float const BONK_LIFEBLOOM_HEAL              = 1.0f;
     float const BONK_LIFEBLOOM_RADIUS            = 10.0f;
-    float const BONK_LIFEBLOOM_SHARE             = 2.0f;
+    float const BONK_LIFEBLOOM_SHARE             = 0.8f;
     size_t const BONK_LIFEBLOOM_LOOKS            = 6;
     uint32 const BONK_EFFLORESCENCE_MS           = 4000;
     int32 const BONK_EFFLORESCENCE_PULSE_MS      = 1000;
@@ -103,13 +105,13 @@ namespace
     float const BONK_STRANGLE_HEAL_PER_ENEMY     = 0.05f;
     float const BONK_STRANGLE_HEAL_MAX           = 0.5f;
     float const BONK_WIDENING_CALM_STEP          = 3.0f;
-    float const BONK_OVERGROWTH_SHARE            = 1.0f;
+    float const BONK_OVERGROWTH_SHARE            = 0.6f;
     float const BONK_BRAMBLES_RADIUS             = 8.0f;
     float const BONK_BRAMBLES_SHARE              = 0.5f;
     int32 const BONK_NATURES_GRASP_MS            = 1000;
     uint32 const BONK_MUSHROOM_MS                = 3000;
     float const BONK_MUSHROOM_RADIUS             = 8.0f;
-    float const BONK_MUSHROOM_SHARE              = 3.0f;
+    float const BONK_MUSHROOM_SHARE              = 0.4f;
     float const BONK_MUSHROOM_SCALE              = 0.6f;
     size_t const BONK_MAX_MUSHROOMS              = 8;
     uint32 const BONK_SURGE_EVERY_MS             = 6000;
@@ -335,9 +337,15 @@ void BonkRun::OnMoonfireStrikes(OwnedWeapon const& owned, std::vector<Creature*>
     for (Creature* mob : struck)
         burned.insert(mob->GetObjectGuid());
     for (Creature* mob : struck)
+    {
+        size_t spread = 0;
         for (Creature* neighbor : GetMobsInRange(BONK_SUNFIRE_RADIUS * GetWeaponArea(owned), mob))
-            if (burned.insert(neighbor->GetObjectGuid()).second)
+            if (spread < BONK_SUNFIRE_SPREAD && burned.insert(neighbor->GetObjectGuid()).second)
+            {
+                ++spread;
                 ApplyDruidMoonfire(owned, neighbor, 1);
+            }
+    }
 }
 
 void BonkRun::EruptFullMoons()
@@ -469,8 +477,12 @@ void BonkRun::OnShredHit(OwnedWeapon const& owned, SpellEntry const* spellInfo, 
 {
     uint32 const id = owned.weapon.id;
     if (id == BONK_WEAPON_MANGLE)
-        for (Creature* mob : GetMobsInRange(BONK_MANGLE_RADIUS * GetWeaponArea(owned), target))
+    {
+        std::vector<Creature*> mangled = GetMobsInRange(BONK_MANGLE_RADIUS * GetWeaponArea(owned), target);
+        mangled.resize(std::min(mangled.size(), BONK_MANGLE_TARGETS));
+        for (Creature* mob : mangled)
             HitAsDruid(owned, spellInfo, mob, GetShredDamage(owned, mob) * BONK_MANGLE_SHARE);
+    }
     if (id != BONK_WEAPON_FEROCIOUS_BITE)
         return;
     uint32 bites = 0;
