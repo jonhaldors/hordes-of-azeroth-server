@@ -52,15 +52,12 @@ namespace
         { 5570, 0.6f, 1.0f,  3, 20.0f, 0, 0.15f, "tree" },
     };
 
-    uint32 const BONK_SPELL_LUNAR_LOOK        = 16870;
-    uint32 const BONK_SPELL_SOLAR_LOOK        = 16886;
     uint32 const BONK_SPELL_FRENZIED_REGEN    = 22842;
     uint32 const BONK_SPELL_THORNS            = 467;
     uint32 const BONK_SPELL_BLOOM_LASH        = 5570;
     uint32 const BONK_SPELL_HURRICANE_LOOK    = 16914;
     uint32 const BONK_SPELL_TREANT_ROOTS      = 339;
     float const BONK_TREANT_ROOT_RADIUS       = 5.0f;
-    std::string const BONK_ECLIPSE_OFF        = "eclipse~-1";
 
     uint32 const BONK_DISPLAY_MOONKIN_ALLIANCE = 15374;
     uint32 const BONK_DISPLAY_MOONKIN_HORDE   = 15375;
@@ -70,13 +67,6 @@ namespace
     uint32 const BONK_DISPLAY_BEAR_HORDE      = 2289;
     uint32 const BONK_DISPLAY_TREE            = 864;
 
-    float const BONK_ECLIPSE_FULL             = 100.0f;
-    float const BONK_WRATH_LUNAR_GAIN         = 10.0f;
-    float const BONK_STARFIRE_SOLAR_GAIN      = 34.0f;
-    float const BONK_MOONFIRED_GAIN_FACTOR    = 2.0f;
-    uint32 const BONK_ECLIPSE_MS              = 8000;
-    float const BONK_SOLAR_NATURE_BONUS       = 1.5f;
-    uint32 const BONK_LUNAR_MOONFIRE_STACKS   = 1;
 
     float const BONK_BEAR_TAKEN               = 0.65f;
 
@@ -96,7 +86,6 @@ namespace
     int32 const BONK_DRUID_POLL_MS            = 250;
     uint32 const BONK_DRUID_IDLE_MS           = 1000;
 
-    uint32 const BONK_SCHOOL_MASK_NATURE      = 1 << SPELL_SCHOOL_NATURE;
 
     FormAttack const& GetFormAttack(BonkRun::BonkDruidForm form)
     {
@@ -111,10 +100,6 @@ bool BonkRun::IsDruidHero() const
 
 void BonkRun::ResetDruidState()
 {
-    m_lunarEnergy = 0.0f;
-    m_solarEnergy = 0.0f;
-    m_lunarUntilMs = 0;
-    m_solarUntilMs = 0;
     m_druidLookMs.clear();
     m_thornsTimes.clear();
     m_tranquilityPulsesLeft = 0;
@@ -126,13 +111,6 @@ void BonkRun::ResetDruidState()
     m_sentDruidForm.clear();
     if (IsDruidHero())
         m_player->GetBonkPlayer()->SendAddon("druidform~caster");
-    if (!m_sentEclipse.empty() && m_sentEclipse != BONK_ECLIPSE_OFF)
-        m_player->GetBonkPlayer()->SendAddon(BONK_ECLIPSE_OFF);
-    m_sentEclipse.clear();
-    if (m_player->HasAura(BONK_SPELL_LUNAR_LOOK))
-        m_player->RemoveAurasDueToSpell(BONK_SPELL_LUNAR_LOOK);
-    if (m_player->HasAura(BONK_SPELL_SOLAR_LOOK))
-        m_player->RemoveAurasDueToSpell(BONK_SPELL_SOLAR_LOOK);
     if (IsDruidHero() && m_player->GetDisplayId() != m_player->GetNativeDisplayId())
         m_player->SetDisplayId(m_player->GetNativeDisplayId());
 }
@@ -254,11 +232,6 @@ void BonkRun::FireFormAttack(OwnedWeapon& owned)
         HitAsDruid(owned, look, mob, damage);
         if (attack.bleedStacks && mob->IsAlive())
             ApplyWeaponKeyword(owned, mob, BONK_KEYWORD_BLEED, attack.bleedStacks);
-        if (m_druidForm == BonkDruidForm::Moonkin)
-        {
-            float const moonfired = GetKeywordStacks(mob, BONK_KEYWORD_MOONFIRE) ? BONK_MOONFIRED_GAIN_FACTOR : 1.0f;
-            FillEclipse(m_lunarEnergy, BONK_WRATH_LUNAR_GAIN * moonfired, m_lunarUntilMs, BONK_SPELL_LUNAR_LOOK);
-        }
     }
     if (attack.healPerHit > 0.0f)
         HealDruid(owned, attack.healPerHit * mobs.size());
@@ -314,10 +287,7 @@ void BonkRun::CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
         return;
     }
     owned.timer = GetWeaponCooldown(owned);
-    OwnedWeapon lunar = ScaleForForm(owned);
-    if (IsLunarEclipse())
-        lunar.weapon.applyStacks += BONK_LUNAR_MOONFIRE_STACKS;
-    AddWarlockStacks(lunar, spellInfo, mobs, BONK_KEYWORD_MOONFIRE);
+    AddWarlockStacks(ScaleForForm(owned), spellInfo, mobs, BONK_KEYWORD_MOONFIRE);
 }
 
 void BonkRun::CallHurricane(OwnedWeapon& owned)
@@ -527,71 +497,6 @@ void BonkRun::OnDruidStruck(Creature* attacker)
     HitAsDruid(*thorns, look ? look : sSpellMgr.GetSpellEntry(thorns->weapon.spellId), attacker, GetWeaponDamage(*thorns));
 }
 
-bool BonkRun::IsLunarEclipse() const
-{
-    return m_lunarUntilMs > m_totalMs;
-}
-
-bool BonkRun::IsSolarEclipse() const
-{
-    return m_solarUntilMs > m_totalMs;
-}
-
-void BonkRun::ShowEclipse(uint32 lookSpellId)
-{
-    SpellAuraHolder* holder = m_player->GetSpellAuraHolder(lookSpellId);
-    if (!holder)
-        holder = m_player->AddAura(lookSpellId, 0, m_player);
-    if (!holder)
-        return;
-    holder->SetAuraMaxDuration(int32(BONK_ECLIPSE_MS));
-    holder->SetAuraDuration(int32(BONK_ECLIPSE_MS));
-    holder->RefreshHolder();
-}
-
-void BonkRun::FillEclipse(float& energy, float gain, uint32& untilMs, uint32 lookSpellId)
-{
-    if (untilMs > m_totalMs)
-        return;
-    energy += gain;
-    if (energy < BONK_ECLIPSE_FULL)
-        return;
-    energy = 0.0f;
-    untilMs = m_totalMs + BONK_ECLIPSE_MS;
-    ShowEclipse(lookSpellId);
-    if (lookSpellId == BONK_SPELL_LUNAR_LOOK)
-        if (OwnedWeapon* starfire = FindOwnedByRoot(BONK_WEAPON_STARFIRE))
-            starfire->timer = 0;
-}
-
-void BonkRun::OnDruidStrike(OwnedWeapon& owned, Creature* target)
-{
-    if (GetRootWeapon(owned.weapon) != BONK_WEAPON_STARFIRE)
-        return;
-    float const moonfired = target && GetKeywordStacks(target, BONK_KEYWORD_MOONFIRE) ? BONK_MOONFIRED_GAIN_FACTOR : 1.0f;
-    FillEclipse(m_solarEnergy, BONK_STARFIRE_SOLAR_GAIN * moonfired, m_solarUntilMs, BONK_SPELL_SOLAR_LOOK);
-}
-
-float BonkRun::GetDruidCritChance(SpellEntry const* spell, float chance) const
-{
-    if (!IsDruidHero())
-        return chance;
-    if (!spell || !IsLunarEclipse())
-        return chance;
-    for (OwnedWeapon const& owned : m_weapons)
-        if (owned.weapon.spellId == spell->Id && GetRootWeapon(owned.weapon) == BONK_WEAPON_STARFIRE)
-            return std::max(100.0f, chance);
-    return chance;
-}
-
-float BonkRun::GetDruidDamageMultiplier(SpellEntry const* spell) const
-{
-    if (!IsDruidHero() || !spell)
-        return 1.0f;
-    uint32 const school = spell->GetSpellSchoolMask();
-    return IsSolarEclipse() && (school & BONK_SCHOOL_MASK_NATURE) ? BONK_SOLAR_NATURE_BONUS : 1.0f;
-}
-
 uint32 BonkRun::ApplyDruidDamageTaken(uint32 damage) const
 {
     if (m_druidForm != BonkDruidForm::Bear)
@@ -655,23 +560,6 @@ void BonkRun::OnDruidPetStrike(OwnedWeapon const& owned, Creature* pet, Creature
     }
 }
 
-void BonkRun::SendEclipse()
-{
-    bool const shown = IsDruidHero() && (m_druidForm == BonkDruidForm::Moonkin || FindOwnedByRoot(BONK_WEAPON_STARFIRE));
-    std::string line = BONK_ECLIPSE_OFF;
-    if (shown)
-    {
-        uint32 const lunarLeft = IsLunarEclipse() ? m_lunarUntilMs - m_totalMs : 0;
-        uint32 const solarLeft = IsSolarEclipse() ? m_solarUntilMs - m_totalMs : 0;
-        line = "eclipse~" + std::to_string(uint32(m_lunarEnergy)) + "~" + std::to_string(uint32(m_solarEnergy)) + "~" +
-            std::to_string(lunarLeft ? 1 + lunarLeft / IN_MILLISECONDS : 0) + "~" + std::to_string(solarLeft ? 1 + solarLeft / IN_MILLISECONDS : 0);
-    }
-    if (line == m_sentEclipse)
-        return;
-    m_sentEclipse = line;
-    m_player->GetBonkPlayer()->SendAddon(line);
-}
-
 void BonkRun::UpdateDruid(uint32 diff)
 {
     if (m_shapeshiftSmokeAtMs && m_totalMs >= m_shapeshiftSmokeAtMs)
@@ -681,5 +569,4 @@ void BonkRun::UpdateDruid(uint32 diff)
     }
     UpdateDruidForm();
     PulseTranquility(diff);
-    SendEclipse();
 }

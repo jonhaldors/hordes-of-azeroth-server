@@ -3843,7 +3843,7 @@ float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit c
         for (OwnedWeapon const& owned : m_weapons)
             if (owned.weapon.spellId == spell->Id && owned.weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT))
                 return std::max(100.0f, chance);
-    return GetDruidCritChance(spell, GetPaladinCritChance(spell, GetRogueCritChance(spell, chance)));
+    return GetPaladinCritChance(spell, GetRogueCritChance(spell, chance));
 }
 
 float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
@@ -3870,7 +3870,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
     float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower) * powerShare;
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
-        GetPaladinDamageMultiplier(victim) * GetDruidDamageMultiplier(spell);
+        GetPaladinDamageMultiplier(victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim);
 
@@ -5072,7 +5072,6 @@ void BonkRun::StrikeWith(OwnedWeapon& owned, SpellEntry const* spellInfo, Creatu
     OnShamanStrike(owned, shotInfo, target, shotShare);
     OnPriestStrike(owned, shotInfo, target, shotShare);
     OnWarlockStrike(owned, shotInfo, target, shotShare);
-    OnDruidStrike(owned, target);
 
     if (weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
         KnockBack(target);
