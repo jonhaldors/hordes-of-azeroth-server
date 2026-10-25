@@ -70,6 +70,8 @@ class BonkPlayer
         static void MarkIronman(uint32 guidLow);
         static void DeleteIronmanProgress(uint32 guidLow);
         static uint32 GetIronmanAccount(uint32 guidLow);
+        static void GatherAccountBank(uint32 accountId, uint32 guidLow);
+        static void ParkAccountBank(uint32 guidLow);
         bool IsIronman() const;
         uint32 GetProgressAccount() const;
 
@@ -257,6 +259,7 @@ class BonkPlayer
         void ReconcileMastery();
         void LoadStarter();
         void GiveStarterBags();
+        void GiveBankBag(uint8 slot);
         void TeachWeaponSkills();
         std::string GetClassName() const;
         bool Spend(uint32 copper, std::string& message);

@@ -410,6 +410,7 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPackets::Character::PlayerLogin 
         return;
     }
 
+    BonkPlayer::GatherAccountBank(GetAccountId(), packet.guid.GetCounter());
     LoginQueryHolder* holder = new LoginQueryHolder(GetAccountId(), packet.guid);
     if (!holder->Initialize())
     {
@@ -423,6 +424,7 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPackets::Character::PlayerLogin 
 void WorldSession::LoginPlayer(ObjectGuid loginPlayerGuid)
 {
     ASSERT(loginPlayerGuid.IsPlayer());
+    BonkPlayer::GatherAccountBank(GetAccountId(), loginPlayerGuid.GetCounter());
     LoginQueryHolder* holder = new LoginQueryHolder(GetAccountId(), loginPlayerGuid);
     if (!holder->Initialize())
     {

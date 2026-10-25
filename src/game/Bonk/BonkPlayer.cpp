@@ -13,6 +13,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MasterPlayer.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "SpellAuras.h"
@@ -24,6 +25,7 @@
 #include <cstdio>
 #include <fstream>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -80,6 +82,39 @@ namespace
         if (!sBonkQuests.IsLocked(player->GetBonkPlayer()->GetProgressAccount(), type, id))
             return nullptr;
         return sBonkQuests.GetUnlockingQuest(type, id);
+    }
+
+    struct AccountBankItem
+    {
+        uint32 itemGuid;
+        uint32 itemId;
+        uint8 slot;
+        uint32 holderGuid;
+    };
+
+    uint8 TakeBankSlot(std::set<uint8>& used, uint8 wanted, uint8 first, uint8 end)
+    {
+        if (wanted >= first && wanted < end && used.insert(wanted).second)
+            return wanted;
+        for (uint8 slot = first; slot < end; ++slot)
+            if (used.insert(slot).second)
+                return slot;
+        return NULL_SLOT;
+    }
+
+    void MoveHeldBankItem(AccountBankItem const& item, uint8 slot, uint32 guidLow)
+    {
+        CharacterDatabase.DirectPExecute("UPDATE `character_inventory` SET `guid` = %u, `slot` = %u WHERE `item_guid` = %u", guidLow, uint32(slot), item.itemGuid);
+        CharacterDatabase.DirectPExecute("UPDATE `character_inventory` SET `guid` = %u WHERE `bag` = %u", guidLow, item.itemGuid);
+    }
+
+    void MoveParkedBankItem(AccountBankItem const& item, uint8 slot, uint32 guidLow)
+    {
+        CharacterDatabase.DirectPExecute("INSERT INTO `character_inventory` (`guid`, `bag`, `slot`, `item_guid`, `item_id`) VALUES (%u, 0, %u, %u, %u)",
+            guidLow, uint32(slot), item.itemGuid, item.itemId);
+        CharacterDatabase.DirectPExecute("INSERT INTO `character_inventory` (`guid`, `bag`, `slot`, `item_guid`, `item_id`) "
+            "SELECT %u, `bag`, `slot`, `item_guid`, `item_id` FROM `bonk_account_bank` WHERE `bag` = %u", guidLow, item.itemGuid);
+        CharacterDatabase.DirectPExecute("DELETE FROM `bonk_account_bank` WHERE `item_guid` = %u OR `bag` = %u", item.itemGuid, item.itemGuid);
     }
 
     std::string RequirementText(std::string const& name, uint8 ranks, uint8 maxRank)
@@ -189,6 +224,24 @@ void BonkPlayer::GiveStarterBags()
     uint8 const bankBagSlots = BANK_SLOT_BAG_END - BANK_SLOT_BAG_START;
     if (m_player->GetBankBagSlotCount() < bankBagSlots)
         m_player->SetBankBagSlotCount(bankBagSlots);
+
+    for (uint8 slot = BANK_SLOT_BAG_START; slot < BANK_SLOT_BAG_END; ++slot)
+        if (!m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            GiveBankBag(slot);
+}
+
+void BonkPlayer::GiveBankBag(uint8 slot)
+{
+    Item* bag = Item::CreateItem(BONK_ITEM_STARTER_BAG, 1, m_player->GetObjectGuid());
+    if (!bag)
+        return;
+
+    ItemPosCountVec dest;
+    uint8 bagSlot = 0;
+    if (m_player->CanBankItem(INVENTORY_SLOT_BAG_0, slot, dest, bag, false, bagSlot) == EQUIP_ERR_OK)
+        m_player->BankItem(dest, bag, true);
+    else
+        delete bag;
 }
 
 void BonkPlayer::LoadPurchases()
@@ -711,6 +764,8 @@ void BonkPlayer::WipeAccount(uint32 accountId)
 {
     for (char const* table : BONK_ACCOUNT_TABLES)
         CharacterDatabase.PExecute("DELETE FROM `%s` WHERE `account` = %u", table, accountId);
+    CharacterDatabase.PExecute("DELETE i FROM `item_instance` i JOIN `bonk_account_bank` b ON b.`item_guid` = i.`guid` WHERE b.`account` = %u", accountId);
+    CharacterDatabase.PExecute("DELETE FROM `bonk_account_bank` WHERE `account` = %u", accountId);
 
     WriteHeroScreenFile("BONK_STATS = {\n\tgold = 0,\n\tlastHero = \"\",\n\theroes = {\n\t},\n};\n");
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk: account %u wiped from the hero screen", accountId);
@@ -750,6 +805,76 @@ void BonkPlayer::DeleteIronmanProgress(uint32 guidLow)
 uint32 BonkPlayer::GetIronmanAccount(uint32 guidLow)
 {
     return BONK_IRONMAN_ACCOUNT_BIT | guidLow;
+}
+
+void BonkPlayer::GatherAccountBank(uint32 accountId, uint32 guidLow)
+{
+    if (!CharacterDatabase.PQuery("SELECT 1 FROM `characters` c WHERE c.`guid` = %u AND c.`account` = %u "
+        "AND NOT EXISTS (SELECT 1 FROM `bonk_ironman` m WHERE m.`guid` = c.`guid`)", guidLow, accountId))
+        return;
+
+    std::set<uint8> used;
+    std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `slot` FROM `character_inventory` WHERE `guid` = %u AND `bag` = 0 AND `slot` >= %u AND `slot` < %u",
+        guidLow, uint32(BANK_SLOT_ITEM_START), uint32(BANK_SLOT_BAG_END));
+    if (result)
+    {
+        do
+        {
+            used.insert(result->Fetch()[0].GetUInt8());
+        } while (result->NextRow());
+    }
+
+    std::vector<AccountBankItem> items;
+    result = CharacterDatabase.PQuery("SELECT i.`item_guid`, i.`item_id`, i.`slot`, i.`guid` FROM `character_inventory` i JOIN `characters` c ON c.`guid` = i.`guid` "
+        "WHERE c.`account` = %u AND i.`guid` <> %u AND i.`bag` = 0 AND i.`slot` >= %u AND i.`slot` < %u "
+        "AND NOT EXISTS (SELECT 1 FROM `bonk_ironman` m WHERE m.`guid` = i.`guid`) "
+        "UNION ALL SELECT `item_guid`, `item_id`, `slot`, 0 FROM `bonk_account_bank` WHERE `account` = %u AND `bag` = 0",
+        accountId, guidLow, uint32(BANK_SLOT_ITEM_START), uint32(BANK_SLOT_BAG_END), accountId);
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            items.push_back({ fields[0].GetUInt32(), fields[1].GetUInt32(), fields[2].GetUInt8(), fields[3].GetUInt32() });
+        } while (result->NextRow());
+    }
+
+    bool movedBag = false;
+    for (AccountBankItem const& item : items)
+    {
+        if (item.holderGuid && sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, item.holderGuid)))
+            continue;
+
+        bool const isBag = item.slot >= BANK_SLOT_BAG_START;
+        uint8 const slot = isBag
+            ? TakeBankSlot(used, item.slot, BANK_SLOT_BAG_START, BANK_SLOT_BAG_END)
+            : TakeBankSlot(used, item.slot, BANK_SLOT_ITEM_START, BANK_SLOT_ITEM_END);
+        if (slot == NULL_SLOT)
+            continue;
+
+        if (item.holderGuid)
+            MoveHeldBankItem(item, slot, guidLow);
+        else
+            MoveParkedBankItem(item, slot, guidLow);
+        CharacterDatabase.DirectPExecute("UPDATE `item_instance` SET `owner_guid` = %u WHERE `guid` = %u "
+            "OR `guid` IN (SELECT `item_guid` FROM `character_inventory` WHERE `bag` = %u)", guidLow, item.itemGuid, item.itemGuid);
+        movedBag = movedBag || isBag;
+    }
+
+    uint32 const bankBagSlots = BANK_SLOT_BAG_END - BANK_SLOT_BAG_START;
+    if (movedBag)
+        CharacterDatabase.DirectPExecute("UPDATE `characters` SET `bank_bag_slots` = %u WHERE `guid` = %u AND `bank_bag_slots` < %u", bankBagSlots, guidLow, bankBagSlots);
+}
+
+void BonkPlayer::ParkAccountBank(uint32 guidLow)
+{
+    CharacterDatabase.PExecute("INSERT IGNORE INTO `bonk_account_bank` (`account`, `bag`, `slot`, `item_guid`, `item_id`) "
+        "SELECT c.`account`, i.`bag`, i.`slot`, i.`item_guid`, i.`item_id` FROM `character_inventory` i JOIN `characters` c ON c.`guid` = i.`guid` "
+        "WHERE i.`guid` = %u AND c.`account` <> 0 AND NOT EXISTS (SELECT 1 FROM `bonk_ironman` m WHERE m.`guid` = i.`guid`) "
+        "AND ((i.`bag` = 0 AND i.`slot` >= %u AND i.`slot` < %u) OR i.`bag` IN "
+        "(SELECT b.`item_guid` FROM `character_inventory` b WHERE b.`guid` = %u AND b.`bag` = 0 AND b.`slot` >= %u AND b.`slot` < %u))",
+        guidLow, uint32(BANK_SLOT_ITEM_START), uint32(BANK_SLOT_BAG_END), guidLow, uint32(BANK_SLOT_BAG_START), uint32(BANK_SLOT_BAG_END));
+    CharacterDatabase.PExecute("UPDATE `item_instance` i JOIN `bonk_account_bank` b ON b.`item_guid` = i.`guid` SET i.`owner_guid` = 0 WHERE i.`owner_guid` = %u", guidLow);
 }
 
 bool BonkPlayer::IsIronman() const

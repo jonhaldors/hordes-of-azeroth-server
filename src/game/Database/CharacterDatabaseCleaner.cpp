@@ -141,7 +141,9 @@ void CharacterDatabaseCleaner::CleanOrphanedCharacterData()
     //RemoveOrphanedRows("guild_eventlog", "player_guid1", "characters", "guid");
     //RemoveOrphanedRows("guild_eventlog", "player_guid2", "characters", "guid");
     RemoveOrphanedRows("guild_member", "guid", "characters", "guid");
-    RemoveOrphanedRows("item_instance", "owner_guid", "characters", "guid");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Deleting orphaned rows in table `item_instance`...");
+    CharacterDatabase.DirectExecute("DELETE t1 FROM `item_instance` t1 LEFT JOIN `characters` t2 ON t1.`owner_guid` = t2.`guid` "
+        "LEFT JOIN `bonk_account_bank` b ON b.`item_guid` = t1.`guid` WHERE t2.`guid` IS NULL AND b.`item_guid` IS NULL");
     //RemoveOrphanedRows("item_instance", "creator_guid", "characters", "guid");
     //RemoveOrphanedRows("item_instance", "gift_creator_guid", "characters", "guid");
     RemoveOrphanedRows("item_loot", "owner_guid", "characters", "guid");

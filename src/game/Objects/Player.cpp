@@ -4458,6 +4458,7 @@ void Player::DeleteFromDB(ObjectGuid playerGuid, uint32 accountId, bool updateRe
                 while (resultPets->NextRow());
             }
 
+            BonkPlayer::ParkAccountBank(lowGuid);
             CharacterDatabase.PExecute("DELETE FROM `characters` WHERE `guid` = '%u'", lowGuid);
             CharacterDatabase.PExecute("DELETE FROM `character_action` WHERE `guid` = '%u'", lowGuid);
             CharacterDatabase.PExecute("DELETE FROM `character_aura` WHERE `guid` = '%u'", lowGuid);
