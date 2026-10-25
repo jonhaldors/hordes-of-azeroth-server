@@ -142,7 +142,6 @@ namespace
     uint32 const BONK_EMERGE_HIDDEN_MS     = 2000;
     uint32 const BONK_EMERGE_MEMBER_STAGGER_MS = 600;
     uint32 const BONK_EMERGE_SETTLE_MS     = 400;
-    uint32 const BONK_EMERGE_DISPLAY       = 11686;
     uint32 const BONK_EMERGE_FACTION       = 35;
     uint32 const BONK_SPELL_BOSS_ADD_SMOKE = 10389;
     uint32 s_spawnKit                      = 92;
@@ -3024,9 +3023,9 @@ void BonkRun::SpawnTrashPacks(uint32 count)
                 }
             }
             bool const veteran = RollVeteran(*creature);
-            Creature* const mob = m_stress.on ? SpawnMobAt(*creature, x, y, z, veteran) :
+            bool const spawned = m_stress.on ? SpawnMobAt(*creature, x, y, z, veteran) != nullptr :
                 EmergeMobAt(*creature, x, y, z, veteran, groupDelayMs + urand(0, BONK_EMERGE_MEMBER_STAGGER_MS));
-            if (mob && found)
+            if (spawned && found)
                 crowd[uint32(sector)] += 1.0f;
         }
     }
@@ -3079,26 +3078,57 @@ uint32 BonkRun::RollSpawnGroupSize() const
     return urand(BONK_SPAWN_GROUP_MIN, BONK_SPAWN_GROUP_MAX);
 }
 
-Creature* BonkRun::EmergeMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran, uint32 delayMs)
+bool BonkRun::EmergeMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran, uint32 delayMs)
+{
+    if (m_sandbox)
+        return SpawnMobAt(creature, x, y, z, veteran) != nullptr;
+    if (!delayMs)
+    {
+        EmergeNow(creature, x, y, z, veteran);
+        return true;
+    }
+    PendingSpawn pending;
+    pending.creature = creature;
+    pending.x = x;
+    pending.y = y;
+    pending.z = z;
+    pending.veteran = veteran;
+    pending.leftMs = int32(delayMs);
+    m_pendingSpawns.push_back(pending);
+    return true;
+}
+
+void BonkRun::EmergeNow(BonkMapCreature const& creature, float x, float y, float z, bool veteran)
 {
     Creature* mob = SpawnMobAt(creature, x, y, z, veteran);
-    if (!mob || m_sandbox)
-        return mob;
+    if (!mob)
+        return;
     ObjectGuid const guid = mob->GetObjectGuid();
     m_mobs.erase(std::remove(m_mobs.begin(), m_mobs.end(), guid), m_mobs.end());
-
-    if (delayMs)
-        mob->SetDisplayId(BONK_EMERGE_DISPLAY);
     mob->SetFactionTemplateId(BONK_EMERGE_FACTION);
     mob->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
     if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
-        ai->Hold(delayMs + s_spawnLookLeadMs + BONK_EMERGE_SETTLE_MS);
-    m_emerging.push_back({ guid, int32(delayMs) });
-    return mob;
+        ai->Hold(s_spawnLookLeadMs + BONK_EMERGE_SETTLE_MS);
+    if (s_spawnKit)
+        SendBonkKitAt(m_player, s_spawnKit, x, y, mob->GetPositionZ(), mob->GetOrientation(), BONK_SPAWN_LOOK_HOLD_MS);
+    m_emerging.push_back({ guid, int32(s_spawnLookLeadMs) });
 }
 
 void BonkRun::UpdateEmerging(uint32 diff)
 {
+    for (auto itr = m_pendingSpawns.begin(); itr != m_pendingSpawns.end();)
+    {
+        itr->leftMs -= int32(diff);
+        if (itr->leftMs > 0)
+        {
+            ++itr;
+            continue;
+        }
+        PendingSpawn const due = *itr;
+        itr = m_pendingSpawns.erase(itr);
+        EmergeNow(due.creature, due.x, due.y, due.z, due.veteran);
+    }
+
     Map* map = m_player->GetMap();
     for (auto itr = m_emerging.begin(); itr != m_emerging.end();)
     {
@@ -3108,17 +3138,14 @@ void BonkRun::UpdateEmerging(uint32 diff)
             itr = m_emerging.erase(itr);
             continue;
         }
-        itr->leftMs -= int32(diff);
-        if (itr->leftMs > 0)
-        {
-            ++itr;
-            continue;
-        }
         if (!itr->shown)
         {
             ShowEmergingBody(mob);
             itr->shown = true;
-            itr->leftMs = int32(s_spawnLookLeadMs);
+        }
+        itr->leftMs -= int32(diff);
+        if (itr->leftMs > 0)
+        {
             ++itr;
             continue;
         }
@@ -3129,11 +3156,7 @@ void BonkRun::UpdateEmerging(uint32 diff)
 
 void BonkRun::ShowEmergingBody(Creature* mob)
 {
-    if (mob->GetDisplayId() != mob->GetNativeDisplayId())
-        mob->SetDisplayId(mob->GetNativeDisplayId());
     mob->SetFacingTo(std::atan2(m_player->GetPositionY() - mob->GetPositionY(), m_player->GetPositionX() - mob->GetPositionX()));
-    if (s_spawnKit)
-        mob->SendPlaySpellVisualKit(s_spawnKit);
 }
 
 void BonkRun::ActivateEmerged(Creature* mob)
@@ -4261,6 +4284,7 @@ void BonkRun::DespawnMobs()
             if (Creature* mob = map->GetCreature(emerging.guid))
                 mob->DespawnOrUnsummon();
     m_emerging.clear();
+    m_pendingSpawns.clear();
     m_mobs.clear();
     m_farSince.clear();
     m_crowd.Clear();

@@ -561,7 +561,16 @@ class BonkRun
             bool shown = false;
         };
         std::vector<TimedMob> m_emerging;
-        Creature* EmergeMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran, uint32 delayMs);
+        struct PendingSpawn
+        {
+            BonkMapCreature creature;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            bool veteran = false;
+            int32 leftMs = 0;
+        };
+        std::vector<PendingSpawn> m_pendingSpawns;
+        bool EmergeMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran, uint32 delayMs);
+        void EmergeNow(BonkMapCreature const& creature, float x, float y, float z, bool veteran);
         void UpdateEmerging(uint32 diff);
         void ShowEmergingBody(Creature* mob);
         void ActivateEmerged(Creature* mob);

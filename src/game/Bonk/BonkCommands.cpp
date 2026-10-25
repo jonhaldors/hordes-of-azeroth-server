@@ -1033,7 +1033,7 @@ bool ChatHandler::HandleBonkSpawnLookCommand(char* args)
         BonkRun::SetSpawnKit(kit);
     if (ExtractUInt32(&args, leadMs))
         BonkRun::SetSpawnLookLeadMs(leadMs);
-    PSendSysMessage("Spawn look kit %u, shown %u ms before the enemy appears. Usage: .bonk spawnlook [kit] [lead ms].",
+    PSendSysMessage("Spawn look kit %u; enemies turn hostile %u ms after it. Usage: .bonk spawnlook [kit] [hostile after ms].",
         BonkRun::GetSpawnKit(), BonkRun::GetSpawnLookLeadMs());
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
