@@ -154,7 +154,10 @@ class BonkRun
         bool IsPortalOpen() const { return m_state == STATE_PORTAL; }
         BonkMap const& GetMap() const { return m_map; }
         BonkTier const& GetTier() const { return m_tier; }
-        uint32 GetEliteAffixes() const { return m_tier.eliteAffixes + m_bonuses.eliteAffixes; }
+        uint32 GetEliteAffixes() const { return m_tier.eliteAffixes + m_bonuses.eliteAffixes + GetMilestoneAffixes(); }
+        uint32 GetFloorMilestones() const;
+        uint32 GetMilestoneAffixes() const;
+        float GetMilestoneVeteranChance() const;
         uint32 GetEvolveRank() const;
         void BringBossEarlier();
         uint32 GetStage() const { return m_stage; }
@@ -504,6 +507,9 @@ class BonkRun
         void DespawnPools();
         void RunEvent(BonkMapEvent const& event);
         void OpenPortal(Creature* boss);
+        void RewardMythicFloor();
+        bool IsMythic() const { return m_tier.key == "mythic"; }
+        float GetFloorRewardScale() const;
         void PlacePortal(float x, float y, float baseZ);
 
         void PruneMobs();
@@ -1233,7 +1239,6 @@ class BonkRun
         uint32 m_overtimeWaves = 0;
         int32 m_overtimeTimer = 0;
         float m_spawnDamageScale = 1.0f;
-        float m_spawnHealthScale = 1.0f;
         uint32 m_boundaryTimer = 0;
         uint32 m_nativeTimer = 0;
         uint32 m_recoveryTimer = 0;
@@ -1241,6 +1246,8 @@ class BonkRun
         int32 m_endTimer = 0;
 
         bool m_bossSpawned = false;
+        bool m_stoneBoss = false;
+        float m_scalingMinuteOverride = -1.0f;
         ObjectGuid m_bossGuid;
         std::vector<ObjectGuid> m_mobs;
         uint32 m_lastPlateId = 0;

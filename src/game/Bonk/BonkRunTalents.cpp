@@ -214,6 +214,8 @@ uint32 BonkRun::ApplyTalentDamageTaken(uint32 damage) const
 {
     if (m_mastery.Has(BONK_CAPSTONE_BERSERKER))
         damage = uint32(damage * BONK_BERSERKER_DAMAGE_TAKEN);
+    if (m_bonuses.damageTakenCut > 0.0f)
+        damage = uint32(damage * std::max(0.0f, 1.0f - m_bonuses.damageTakenCut / 100.0f));
     return damage;
 }
 

@@ -52,7 +52,6 @@ namespace
     float const BONK_MOONWELL_HEAL         = 0.08f;
 
     float const BONK_STONE_BOSS_DISTANCE   = 8.0f;
-    float const BONK_SUMMONED_BOSS_HEALTH  = 0.7f;
 
     char const* const SHRINE_NAMES[MAX_BONK_SHRINE] = { "leyline", "greed", "altar", "moonwell", "stone" };
     char const* const SHRINE_LABELS[MAX_BONK_SHRINE] = { "Ley Line", "Greed Totem", "Challenge Altar", "Moonwell", "Summoning Stone" };
@@ -553,15 +552,18 @@ void BonkRun::UpdatePendingSummons(uint32 diff)
     for (PendingSummon const& summon : ready)
     {
         BonkMobAI::SetNextAffixCount(summon.affixes);
-        ObjectGuid const stageBoss = m_bossGuid;
-        m_spawnHealthScale = summon.boss ? BONK_SUMMONED_BOSS_HEALTH : 1.0f;
-        Creature* mob = SpawnMobAt(*summon.creature, summon.x, summon.y, summon.z);
-        m_spawnHealthScale = 1.0f;
         if (summon.boss)
-            m_bossGuid = stageBoss;
+            m_scalingMinuteOverride = std::max(GetRunMinutes(), m_map.durationSeconds / 60.0f);
+        Creature* mob = SpawnMobAt(*summon.creature, summon.x, summon.y, summon.z);
+        m_scalingMinuteOverride = -1.0f;
         BonkMobAI::SetNextAffixCount(0);
         if (!mob)
             continue;
+        if (summon.boss)
+        {
+            m_bossSpawned = true;
+            m_stoneBoss = true;
+        }
         mob->CastSpell(mob, BONK_SPELL_SUMMON_SMOKE, true);
         if (summon.boss)
             bonk->Notify(std::string(mob->GetName()) + " answers the summons!");

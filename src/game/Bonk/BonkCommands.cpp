@@ -593,6 +593,7 @@ bool ChatHandler::HandleBonkHelloCommand(char*)
     bonk->FlushMasteryNotice();
     bonk->SendWallet();
     bonk->SendDash();
+    bonk->SendDetermination();
     sBonkQuests.SendLog(m_session->GetPlayer(), "");
     if (BonkRun* run = bonk->GetRun())
         run->SendFullState();
