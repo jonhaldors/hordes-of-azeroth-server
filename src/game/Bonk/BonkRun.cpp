@@ -4955,17 +4955,21 @@ float BonkRun::GetStatCap(BonkPassiveEffect effect)
         case BONK_PASSIVE_DODGE:  return BONK_MAX_DODGE;
         case BONK_PASSIVE_HIT:    return BONK_MAX_HIT;
         case BONK_PASSIVE_AMOUNT: return BONK_MAX_COUNT;
-        case BONK_PASSIVE_AREA:   return BONK_MAX_AREA;
         case BONK_PASSIVE_MOVE_SPEED: return BONK_MAX_MOVE_SPEED;
         default:                  return 0.0f;
     }
 }
 
-float CurveHaste(float raw)
+float CurveStat(float raw, float ceiling)
 {
     if (raw <= 0.0f)
         return raw;
-    return BONK_MAX_HASTE * (1.0f - std::exp(-raw / BONK_MAX_HASTE));
+    return ceiling * (1.0f - std::exp(-raw / ceiling));
+}
+
+float CurveHaste(float raw)
+{
+    return CurveStat(raw, BONK_MAX_HASTE);
 }
 
 float BonkRun::GetStat(BonkPassiveEffect effect) const
@@ -4973,6 +4977,8 @@ float BonkRun::GetStat(BonkPassiveEffect effect) const
     float const total = GetPassiveTotal(effect);
     if (effect == BONK_PASSIVE_HASTE)
         return CurveHaste(total);
+    if (effect == BONK_PASSIVE_AREA)
+        return CurveStat(total, BONK_MAX_AREA);
     float const cap = GetStatCap(effect);
     float const lasting = cap > 0.0f ? std::min(total, cap) : total;
     return effect == BONK_PASSIVE_MOVE_SPEED ? lasting + GetBoostMoveSpeed() + GetDruidMoveSpeed() : lasting;
@@ -5084,8 +5090,8 @@ void BonkRun::UpdateWeapons(uint32 diff)
 float BonkRun::GetWeaponArea(OwnedWeapon const& owned) const
 {
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
-        return std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f) * GetTalentReach(owned);
-    return (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_REACH) / 100.0f) * GetTalentReach(owned);
+        return std::max(0.1f, 1.0f + CurveStat(GetPassiveTotal(BONK_PASSIVE_AREA) + GetTalentReach(owned), BONK_MAX_AREA) / 100.0f);
+    return 1.0f + CurveStat(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_REACH) + GetTalentReach(owned), BONK_MAX_AREA) / 100.0f;
 }
 
 uint32 BonkRun::GetWeaponTargets(OwnedWeapon const& owned) const
@@ -8729,7 +8735,7 @@ float BonkRun::GetSummonGrowth(OwnedWeapon const& owned) const
 
 float BonkRun::GetSummonReach(OwnedWeapon const& owned) const
 {
-    return (1.0f + GetSummonGrowth(owned) / 100.0f) * GetTalentReach(owned);
+    return 1.0f + CurveStat(GetSummonGrowth(owned) + GetTalentReach(owned), BONK_MAX_AREA) / 100.0f;
 }
 
 float BonkRun::GetSummonLookScale(OwnedWeapon const& owned, float base) const

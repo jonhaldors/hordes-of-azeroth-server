@@ -325,7 +325,7 @@ uint32 BonkRun::GetKeywordTalentCap(uint32 keyword) const
 float BonkRun::GetTalentReach(OwnedWeapon const& owned) const
 {
     auto itr = m_mastery.spellReach.find(GetRootWeapon(owned.weapon));
-    return itr != m_mastery.spellReach.end() ? 1.0f + itr->second / 100.0f : 1.0f;
+    return itr != m_mastery.spellReach.end() ? itr->second : 0.0f;
 }
 
 uint32 BonkRun::ApplyTalentDamageTaken(uint32 damage) const
