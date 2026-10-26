@@ -76,6 +76,7 @@ namespace
     float const BONK_STAGE_CARRY_SHARE     = 0.65f;
     float const BONK_STAGE_CALM_SHARE      = 0.5f;
     float const BONK_STAGE_CROWD_GROWTH    = 0.15f;
+    float const BONK_KILL_SHOT_PERCENT     = 100000.0f;
     uint32 const BONK_STAGE_CROWD_GROWTH_STAGES = 2;
     float const BONK_MILESTONE_VETERAN_CHANCE = 5.0f;
     float const BONK_VETERAN_HEALTH        = 2.5f;
@@ -1523,6 +1524,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateKeywordClouds(diff);
     UpdateWarrior(diff);
     UpdateMage(diff);
+    UpdateTalents(diff);
     UpdateShaman(diff);
     UpdatePriest(diff);
     UpdateRogue(diff);
@@ -3997,6 +3999,11 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
         if (bonus != m_mastery.spellDamage.end())
             percent += bonus->second;
         percent += GetSpecDamage(root->second) + GetTormentBonus(root->second, victim);
+        if (root->second == BONK_WEAPON_AIMED_SHOT && victim && m_mastery.Special(BONK_SPECIAL_KILL_SHOT) > 0.0f &&
+            victim->GetHealthPercent() < m_mastery.Special(BONK_SPECIAL_KILL_SHOT))
+            if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(victim->ToCreature() ? victim->ToCreature()->AI() : nullptr))
+                if (ai->GetKind() == BONK_SPAWN_NORMAL)
+                    percent += BONK_KILL_SHOT_PERCENT;
     }
     percent += GetTalentDamagePercent();
     for (auto const& bonus : m_mastery.schoolDamage)
@@ -8409,6 +8416,7 @@ bool BonkRun::Howl(OwnedWeapon& owned)
         return false;
 
     wolf->HandleEmote(EMOTE_ONESHOT_ROAR);
+    OnTalentHowl(wolf);
     uint32 const until = WorldTimer::getMSTime() + uint32(owned.weapon.durationMs * GetWeaponDurationScale(owned));
     if (!IsHowlFrenzied() || int32(until - m_petFrenzyUntil) > 0)
         m_petFrenzyUntil = until;
@@ -8795,7 +8803,7 @@ void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
         if (ability.kind == BONK_PET_ABILITY_STRIKE && strikeReach)
         {
             PetStrike(owned, pet, prey, ability);
-            state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace);
+            state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace * GetClawRate(owned));
             OnWarlockPetStrike(owned, pet, prey, uint32(i));
             OnDruidPetStrike(owned, pet, prey);
             return;
@@ -8838,8 +8846,12 @@ void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkP
     else
         pet->CastCustomSpell(prey, abilitySpell, damage, {}, {}, true);
 
+    OnTalentPetStrike(owned, pet, prey, abilityInfo, damage);
+
     PendingKeyword keyword;
-    uint32 const stacks = owned.weapon.HasFlag(BONK_WEAPON_FLAG_PLAGUE) ? BONK_PLAGUE_CLAW_STACKS : ability.stacks;
+    uint32 stacks = owned.weapon.HasFlag(BONK_WEAPON_FLAG_PLAGUE) ? BONK_PLAGUE_CLAW_STACKS : ability.stacks;
+    if (stacks && GetRootWeapon(owned.weapon) == BONK_WEAPON_CALL_PET)
+        stacks += uint32(m_mastery.Special(BONK_SPECIAL_PACK_TACTICS));
     if (ability.stacks && prey->IsAlive() && (GetWeaponKeyword(owned, keyword) || GetPetAbilityKeyword(owned, ability, keyword)))
         ApplyKeyword(prey, keyword.keyword, stacks + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS)), keyword.durationMs,
             keyword.damageScale, keyword.spellId);

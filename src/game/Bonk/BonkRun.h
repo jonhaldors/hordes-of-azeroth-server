@@ -1588,6 +1588,11 @@ class BonkRun
         bool IsFreshMeat(SpellEntry const* spell, Unit const* victim) const;
         void OnTalentBleedingDeath();
         float GetTalentMoveSpeed() const;
+        void OnTalentPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey, SpellEntry const* abilityInfo, int32 damage);
+        float GetClawRate(OwnedWeapon const& owned) const;
+        uint32 CountLivingPets() const;
+        void OnTalentHowl(Creature* wolf);
+        void UpdateTalents(uint32 diff);
         void ReduceTimer(uint32 rootWeapon, int32 ms);
         void EchoMissile(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
         void BlowFreezingWinds(PendingCast const& cast);
@@ -2406,6 +2411,9 @@ class BonkRun
         uint32 m_potencyCasts = 0;
         std::vector<uint32> m_castHasteUntil;
         std::vector<uint32> m_bloodsurgeUntil;
+        uint32 m_rapidFireUntil = 0;
+        uint32 m_mongooseStacks = 0;
+        int32 m_mongooseTimer = 0;
         bool m_fingersReady = false;
         bool m_searingBurstArmed = false;
         uint32 m_talentCritsSeen = 0;

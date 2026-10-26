@@ -26,6 +26,12 @@ namespace
     float const BONK_UNBREAKABLE_SHIELD         = 0.3f;
     uint32 const BONK_OVERPOWER_BLEED           = 10;
     int32 const BONK_THUNDERLORD_DELAY_MS       = 400;
+    float const BONK_BEAST_CLEAVE_RADIUS        = 3.0f;
+    float const BONK_INTIMIDATING_ROAR_RADIUS   = 10.0f;
+    uint32 const BONK_RAPID_FIRE_MS             = 5000;
+    int32 const BONK_MONGOOSE_REFRESH_MS        = 500;
+    float const BONK_MONGOOSE_RADIUS            = 10.0f;
+    uint32 const BONK_MONGOOSE_MAX_STACKS       = 10;
     float const BONK_BESTIAL_WRATH_FRENZY       = 1.5f;
     float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.7f;
     float const BONK_TRUESHOT_MARKED            = 1.4f;
@@ -113,6 +119,7 @@ float BonkRun::GetTalentDamagePercent() const
         uint32 const now = m_totalMs;
         percent += surge * float(std::count_if(m_bloodsurgeUntil.begin(), m_bloodsurgeUntil.end(), [now](uint32 until) { return until > now; }));
     }
+    percent += m_mastery.Special(BONK_SPECIAL_PACK_HUNTER) * float(CountLivingPets());
     float const unbreakable = m_mastery.Special(BONK_SPECIAL_UNBREAKABLE);
     if (unbreakable > 0.0f && m_spellShield >= uint32(m_player->GetMaxHealth() * BONK_UNBREAKABLE_SHIELD))
         percent += unbreakable;
@@ -399,6 +406,9 @@ void BonkRun::OnTalentCastDone(OwnedWeapon& owned)
             m_castHasteUntil.erase(m_castHasteUntil.begin());
     }
 
+    if (root == BONK_WEAPON_HUNTERS_MARK && m_mastery.Special(BONK_SPECIAL_RAPID_FIRE) > 0.0f)
+        m_rapidFireUntil = m_totalMs + BONK_RAPID_FIRE_MS;
+
     if (root == BONK_WEAPON_THUNDER_CLAP && m_mastery.Special(BONK_SPECIAL_THUNDERLORD) > 0.0f)
     {
         PendingCast again;
@@ -419,10 +429,71 @@ void BonkRun::OnTalentCastDone(OwnedWeapon& owned)
 
 float BonkRun::GetTalentHaste() const
 {
-    if (m_mastery.castHaste <= 0.0f)
-        return 0.0f;
     uint32 const now = m_totalMs;
-    return m_mastery.castHaste * float(std::count_if(m_castHasteUntil.begin(), m_castHasteUntil.end(), [now](uint32 until) { return until > now; }));
+    float haste = m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) * float(m_mongooseStacks);
+    if (m_rapidFireUntil > now)
+        haste += m_mastery.Special(BONK_SPECIAL_RAPID_FIRE);
+    if (m_mastery.castHaste > 0.0f)
+        haste += m_mastery.castHaste * float(std::count_if(m_castHasteUntil.begin(), m_castHasteUntil.end(), [now](uint32 until) { return until > now; }));
+    return haste;
+}
+
+void BonkRun::OnTalentPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey, SpellEntry const* abilityInfo, int32 damage)
+{
+    if (GetRootWeapon(owned.weapon) != BONK_WEAPON_CALL_PET || !prey->IsAlive())
+        return;
+    if (m_mastery.Special(BONK_SPECIAL_INTIMIDATION) > 0.0f)
+        m_pendingStuns.push_back(prey->GetObjectGuid());
+    float const cleave = m_mastery.Special(BONK_SPECIAL_BEAST_CLEAVE);
+    if (cleave > 0.0f && abilityInfo)
+        for (Creature* mob : GetMobsNear(prey->GetPositionX(), prey->GetPositionY(), BONK_BEAST_CLEAVE_RADIUS))
+            if (mob != prey)
+                DealSpellHit(abilityInfo, mob, damage * cleave / 100.0f, pet);
+}
+
+float BonkRun::GetClawRate(OwnedWeapon const& owned) const
+{
+    if (GetRootWeapon(owned.weapon) != BONK_WEAPON_CALL_PET)
+        return 1.0f;
+    return 1.0f / (1.0f + m_mastery.Special(BONK_SPECIAL_CLAW_HASTE) / 100.0f);
+}
+
+uint32 BonkRun::CountLivingPets() const
+{
+    uint32 count = 0;
+    Map* map = m_player->GetMap();
+    for (OwnedWeapon const& owned : m_weapons)
+        for (ObjectGuid const& guid : owned.pets)
+            if (Creature* pet = map->GetCreature(guid))
+                if (pet->IsAlive())
+                    ++count;
+    return count;
+}
+
+void BonkRun::OnTalentHowl(Creature* wolf)
+{
+    float const slow = m_mastery.Special(BONK_SPECIAL_INTIMIDATING_ROAR);
+    if (slow <= 0.0f)
+        return;
+    for (Creature* mob : GetMobsNear(wolf->GetPositionX(), wolf->GetPositionY(), BONK_INTIMIDATING_ROAR_RADIUS))
+        if (BonkMobAI const* ai = GetRunAI(mob))
+            if (ai->GetKind() == BONK_SPAWN_NORMAL)
+                m_pendingSlows.emplace_back(mob->GetObjectGuid(), slow);
+}
+
+void BonkRun::UpdateTalents(uint32 diff)
+{
+    if (m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) <= 0.0f)
+        return;
+    m_mongooseTimer -= int32(diff);
+    if (m_mongooseTimer > 0)
+        return;
+    m_mongooseTimer = BONK_MONGOOSE_REFRESH_MS;
+    uint32 poisoned = 0;
+    for (Creature* mob : GetMobsInRange(BONK_MONGOOSE_RADIUS))
+        if (GetKeywordStacks(mob, BONK_KEYWORD_POISON))
+            ++poisoned;
+    m_mongooseStacks = std::min(poisoned, BONK_MONGOOSE_MAX_STACKS);
 }
 
 bool BonkRun::IsFreshMeat(SpellEntry const* spell, Unit const* victim) const
@@ -631,7 +702,9 @@ void BonkRun::PreferMarked(std::vector<Creature*>& mobs) const
 
 float BonkRun::GetPackPowerShare() const
 {
-    return HasBehavior(BONK_BEHAVIOR_WRATH) ? m_mastery.packPower / 100.0f : 0.0f;
+    if (HasBehavior(BONK_BEHAVIOR_WRATH))
+        return m_mastery.packPower / 100.0f;
+    return m_mastery.packPower * m_mastery.Special(BONK_SPECIAL_KINDRED_SPIRITS) / 10000.0f;
 }
 
 bool BonkRun::IsPetFrenzied() const
