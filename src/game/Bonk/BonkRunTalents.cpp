@@ -21,6 +21,11 @@ namespace
     float const BONK_GLACIAL_FRAGMENTS_RADIUS   = 5.0f;
     float const BONK_ARCANE_ECHO_RADIUS         = 8.0f;
     uint32 const BONK_ARCANE_POTENCY_CASTS      = 3;
+    uint32 const BONK_BLOODSURGE_MS             = 8000;
+    size_t const BONK_BLOODSURGE_STACKS         = 10;
+    float const BONK_UNBREAKABLE_SHIELD         = 0.3f;
+    uint32 const BONK_OVERPOWER_BLEED           = 10;
+    int32 const BONK_THUNDERLORD_DELAY_MS       = 400;
     float const BONK_BESTIAL_WRATH_FRENZY       = 1.5f;
     float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.7f;
     float const BONK_TRUESHOT_MARKED            = 1.4f;
@@ -102,6 +107,15 @@ float BonkRun::GetSpecDamage(uint32 weaponId) const
 float BonkRun::GetTalentDamagePercent() const
 {
     float percent = m_castDamageBonus;
+    float const surge = m_mastery.Special(BONK_SPECIAL_BLOODSURGE);
+    if (surge > 0.0f)
+    {
+        uint32 const now = m_totalMs;
+        percent += surge * float(std::count_if(m_bloodsurgeUntil.begin(), m_bloodsurgeUntil.end(), [now](uint32 until) { return until > now; }));
+    }
+    float const unbreakable = m_mastery.Special(BONK_SPECIAL_UNBREAKABLE);
+    if (unbreakable > 0.0f && m_spellShield >= uint32(m_player->GetMaxHealth() * BONK_UNBREAKABLE_SHIELD))
+        percent += unbreakable;
     if (IsEnraged())
         percent += m_mastery.enrageDamage;
     if (IsHowlFrenzied())
@@ -385,6 +399,16 @@ void BonkRun::OnTalentCastDone(OwnedWeapon& owned)
             m_castHasteUntil.erase(m_castHasteUntil.begin());
     }
 
+    if (root == BONK_WEAPON_THUNDER_CLAP && m_mastery.Special(BONK_SPECIAL_THUNDERLORD) > 0.0f)
+    {
+        PendingCast again;
+        again.weaponId = owned.weapon.id;
+        again.spellId = owned.weapon.spellId;
+        again.leftMs = BONK_THUNDERLORD_DELAY_MS;
+        again.selfArea = true;
+        m_pendingCasts.push_back(again);
+    }
+
     if (root == BONK_WEAPON_FROSTBOLT)
     {
         m_fingersReady = roll_chance_f(m_mastery.Special(BONK_SPECIAL_FINGERS_OF_FROST));
@@ -401,8 +425,37 @@ float BonkRun::GetTalentHaste() const
     return m_mastery.castHaste * float(std::count_if(m_castHasteUntil.begin(), m_castHasteUntil.end(), [now](uint32 until) { return until > now; }));
 }
 
+bool BonkRun::IsFreshMeat(SpellEntry const* spell, Unit const* victim) const
+{
+    float const threshold = m_mastery.Special(BONK_SPECIAL_FRESH_MEAT);
+    if (threshold <= 0.0f || !spell || !victim || victim->GetHealthPercent() <= threshold)
+        return false;
+    auto root = m_spellRoots.find(spell->Id);
+    return root != m_spellRoots.end() && root->second == BONK_WEAPON_BLOODTHIRST;
+}
+
+void BonkRun::OnTalentBleedingDeath()
+{
+    if (m_mastery.Special(BONK_SPECIAL_BLOODSURGE) <= 0.0f)
+        return;
+    uint32 const now = m_totalMs;
+    m_bloodsurgeUntil.erase(std::remove_if(m_bloodsurgeUntil.begin(), m_bloodsurgeUntil.end(), [now](uint32 until) { return until <= now; }),
+        m_bloodsurgeUntil.end());
+    m_bloodsurgeUntil.push_back(now + BONK_BLOODSURGE_MS);
+    if (m_bloodsurgeUntil.size() > BONK_BLOODSURGE_STACKS)
+        m_bloodsurgeUntil.erase(m_bloodsurgeUntil.begin());
+}
+
+float BonkRun::GetTalentMoveSpeed() const
+{
+    return IsEnraged() ? m_mastery.Special(BONK_SPECIAL_FRENZY) : 0.0f;
+}
+
 float BonkRun::GetTormentBonus(uint32 rootWeapon, Unit const* victim) const
 {
+    float const overpower = m_mastery.Special(BONK_SPECIAL_OVERPOWER);
+    if (overpower > 0.0f && victim && rootWeapon == BONK_WEAPON_MORTAL_STRIKE && GetKeywordStacks(victim, BONK_KEYWORD_BLEED) >= BONK_OVERPOWER_BLEED)
+        return overpower;
     float const bonus = m_mastery.Special(BONK_SPECIAL_TORMENT_THE_WEAK);
     if (bonus <= 0.0f || !victim || BonkMastery::GetSpec(rootWeapon) != BONK_TREE_ARCANE)
         return 0.0f;

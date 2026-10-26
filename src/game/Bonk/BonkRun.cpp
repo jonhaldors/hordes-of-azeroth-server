@@ -3949,7 +3949,8 @@ bool BonkRun::RollDodge(Unit const* victim) const
 float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit const* attacker) const
 {
     float const chance = BONK_BASE_CRIT + GetPassiveTotal(BONK_PASSIVE_CRIT) + GetTalentCritChance(victim, attacker);
-    if (IsReckless() || IsFrostSpellOnFrozen(spell, victim) || IsWeaponMasterStrike(spell) || IsLavaBurstOnBurning(spell, victim))
+    if (IsReckless() || IsFrostSpellOnFrozen(spell, victim) || IsWeaponMasterStrike(spell) || IsLavaBurstOnBurning(spell, victim) ||
+        IsFreshMeat(spell, victim))
         return std::max(100.0f, chance);
     if (spell)
         for (OwnedWeapon const& owned : m_weapons)
@@ -3962,7 +3963,9 @@ float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
 {
     float bonus = (weaponAttack ? 1.0f : 0.5f) + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_CRIT_DAMAGE)) / 100.0f;
     if (victim && (IsFrozen(victim) || (victim->HasAuraType(SPELL_AURA_MOD_ROOT) && HasBehavior(BONK_BEHAVIOR_FREEZE))))
-        bonus += BONK_FROZEN_CRIT_BONUS;
+        bonus += BONK_FROZEN_CRIT_BONUS + m_mastery.Special(BONK_SPECIAL_WINTERS_CHILL) / 100.0f;
+    if (IsEnraged())
+        bonus += m_mastery.Special(BONK_SPECIAL_RECKLESS_ABANDON) / 100.0f;
     float multiplier = 1.0f + bonus;
     ++m_crits;
 
@@ -4022,7 +4025,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
         for (OwnedWeapon const& owned : m_weapons)
             if (owned.weapon.behavior == BONK_BEHAVIOR_EXECUTE && owned.weapon.spellId == spell->Id &&
                 victim->GetHealthPercent() < owned.weapon.behaviorValue)
-                multiplier *= owned.weapon.altDamage;
+                multiplier *= owned.weapon.altDamage + m_mastery.Special(BONK_SPECIAL_ANNIHILATOR);
     return multiplier;
 }
 
@@ -4920,6 +4923,8 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
                 total += passive->valuePerRank * itr.second;
     if (effect == BONK_PASSIVE_HASTE)
         total += GetEnrageHaste() + GetDruidHaste();
+    if (effect == BONK_PASSIVE_MOVE_SPEED)
+        total += GetTalentMoveSpeed();
     total += m_stress.bonuses[effect];
     total += m_cardStats[effect];
     total += m_shrineBonuses[effect];

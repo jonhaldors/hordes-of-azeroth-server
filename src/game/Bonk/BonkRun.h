@@ -1585,6 +1585,9 @@ class BonkRun
         void OnTalentKill(Unit* victim);
         float GetTalentHaste() const;
         float GetTormentBonus(uint32 rootWeapon, Unit const* victim) const;
+        bool IsFreshMeat(SpellEntry const* spell, Unit const* victim) const;
+        void OnTalentBleedingDeath();
+        float GetTalentMoveSpeed() const;
         void ReduceTimer(uint32 rootWeapon, int32 ms);
         void EchoMissile(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
         void BlowFreezingWinds(PendingCast const& cast);
@@ -2402,6 +2405,7 @@ class BonkRun
         bool m_clearcastBoostReady = false;
         uint32 m_potencyCasts = 0;
         std::vector<uint32> m_castHasteUntil;
+        std::vector<uint32> m_bloodsurgeUntil;
         bool m_fingersReady = false;
         bool m_searingBurstArmed = false;
         uint32 m_talentCritsSeen = 0;
