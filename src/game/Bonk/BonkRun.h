@@ -1960,6 +1960,7 @@ class BonkRun
         void ResolveShamanCast(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         uint32 GetShamanPetFamily(OwnedWeapon const& owned) const;
         void QueueWindfury(OwnedWeapon const& owned, Creature* target, float share);
+        void ShowWindfuryGust(int32 durationMs);
         void SwingWindfury(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         void CountMaelstromHit();
         void ReleaseMaelstrom();

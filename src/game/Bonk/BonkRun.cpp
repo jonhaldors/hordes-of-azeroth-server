@@ -824,6 +824,18 @@ namespace
         }
     }
 
+    uint32 const BONK_SPELL_SHURIKEN_THROW   = 4165;
+    uint32 const BONK_SHURIKEN_AMMO_DISPLAY  = 20771;
+
+    void AddLookAmmo(WorldPackets::Spell::SpellGo& packet)
+    {
+        if (packet.spellId != BONK_SPELL_SHURIKEN_THROW)
+            return;
+        packet.castFlags |= CAST_FLAG_AMMO;
+        packet.ammoDisplayId = BONK_SHURIKEN_AMMO_DISPLAY;
+        packet.ammoInventoryType = INVTYPE_THROWN;
+    }
+
     void ShowMissileAt(Unit* caster, SpellEntry const* spellInfo, float x, float y, float z)
     {
         auto packet = std::make_unique<WorldPackets::Spell::SpellGo>();
@@ -831,6 +843,7 @@ namespace
         packet->unitCasterGuid = caster->GetObjectGuid();
         packet->spellId = GetQuietStrikeLook(spellInfo->Id);
         packet->castFlags = CAST_FLAG_UNKNOWN9;
+        AddLookAmmo(*packet);
         packet->targets.setDestination(x, y, z);
         caster->SendObjectMessageToSet(std::move(packet), true);
     }
@@ -842,6 +855,7 @@ namespace
         packet->unitCasterGuid = caster->GetObjectGuid();
         packet->spellId = GetQuietStrikeLook(spellInfo->Id);
         packet->castFlags = CAST_FLAG_UNKNOWN9;
+        AddLookAmmo(*packet);
         packet->targets.setUnitTarget(target);
         caster->SendObjectMessageToSet(std::move(packet), true);
     }
@@ -853,6 +867,7 @@ namespace
         packet->unitCasterGuid = caster->GetObjectGuid();
         packet->spellId = GetQuietStrikeLook(spellInfo->Id);
         packet->castFlags = CAST_FLAG_UNKNOWN9;
+        AddLookAmmo(*packet);
         packet->hitTargets.push_back(target->GetObjectGuid());
         packet->targets.setUnitTarget(target);
         caster->SendObjectMessageToSet(std::move(packet), true);

@@ -58,6 +58,7 @@ namespace
     uint32 const BONK_WINDFURY_EVERY          = 3;
     uint32 const BONK_WINDFURY_SWINGS         = 2;
     int32 const BONK_WINDFURY_GAP_MS          = 120;
+    int32 const BONK_WINDFURY_LOOK_LINGER_MS  = 600;
     float const BONK_WINDFURY_SPLASH          = 4.0f;
     float const BONK_FLAMETONGUE_SHARE        = 0.3f;
     uint32 const BONK_DOOM_WINDS_EVERY_MS     = 15000;
@@ -302,10 +303,23 @@ void BonkRun::BurnWithFlametongue(OwnedWeapon& owned, Creature* target, uint32 s
     ApplyShamanKeyword(owned, target, BONK_KEYWORD_BURNING, stacks);
 }
 
+void BonkRun::ShowWindfuryGust(int32 durationMs)
+{
+    if (m_player->HasAura(BONK_SPELL_DOOM_WINDS_LOOK))
+        return;
+    if (SpellAuraHolder* holder = m_player->AddAura(BONK_SPELL_DOOM_WINDS_LOOK))
+    {
+        holder->SetAuraMaxDuration(durationMs);
+        holder->SetAuraDuration(durationMs);
+        holder->RefreshHolder();
+    }
+}
+
 void BonkRun::QueueWindfury(OwnedWeapon const& owned, Creature* target, float share)
 {
     OnTalentWindfury();
     uint32 const swings = BONK_WINDFURY_SWINGS + uint32(m_mastery.Special(BONK_SPECIAL_IMPROVED_WINDFURY));
+    ShowWindfuryGust(int32(swings) * BONK_WINDFURY_GAP_MS + BONK_WINDFURY_LOOK_LINGER_MS);
     for (uint32 swing = 1; swing <= swings; ++swing)
     {
         PendingCast gust;

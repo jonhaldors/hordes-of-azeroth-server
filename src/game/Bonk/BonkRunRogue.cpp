@@ -51,7 +51,7 @@ namespace
     uint32 const BONK_SPELL_RIPOSTE           = 14251;
     uint32 const BONK_SPELL_CALTROPS_LOOK     = 21070;
     uint32 const BONK_SPELL_SMOKE_BOMB_LOOK   = 8817;
-    uint32 const BONK_SPELL_SHURIKEN_LOOK     = 13398;
+    uint32 const BONK_SPELL_SHURIKEN_LOOK     = 4165;
     uint32 const BONK_KIT_THROW               = 1184;
     uint32 const BONK_THROW_ANIMATION_GAP_MS  = 400;
     uint32 const BONK_KIT_SHURIKEN_IMPACT     = 1946;
