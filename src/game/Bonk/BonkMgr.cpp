@@ -1076,7 +1076,7 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         }
         case BONK_SPELL_UPGRADE_DEPLOY:     return std::string("+") + number + " yd deploy range";
         case BONK_SPELL_UPGRADE_TRAP_AREA:  return percent + " trap radius";
-        case BONK_SPELL_UPGRADE_REACH:      return percent + " reach";
+        case BONK_SPELL_UPGRADE_REACH:      return percent + " range";
         case BONK_SPELL_UPGRADE_TARGETS:
             return std::string("affects ") + number + (amount == 1.0f ? " additional enemy" : " additional enemies");
         case BONK_SPELL_UPGRADE_SHIELD_SIZE: return percent + " Shield size";

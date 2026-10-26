@@ -564,7 +564,7 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
                     std::to_string(weapon.baseTargets + uint32(after[upgrade])) });
                 break;
             case BONK_SPELL_UPGRADE_REACH:
-                stats.push_back({ "Reach", FormatNumber(weapon.range * GetWeaponArea(owned), "%.1f") + " yd",
+                stats.push_back({ "Range", FormatNumber(weapon.range * GetWeaponArea(owned), "%.1f") + " yd",
                     FormatNumber(weapon.range * GetWeaponArea(next), "%.1f") + " yd" });
                 break;
             case BONK_SPELL_UPGRADE_DEPLOY:
