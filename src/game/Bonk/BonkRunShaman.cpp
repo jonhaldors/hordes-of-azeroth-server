@@ -110,7 +110,7 @@ namespace
     uint32 const BONK_FIRE_NOVA_STACKS        = 3;
     float const BONK_TOTEM_OF_WRATH_REACH     = 15.0f;
     float const BONK_TOTEM_OF_WRATH_BONUS     = 1.15f;
-    float const BONK_LIQUID_MAGMA_REACH       = 20.0f;
+    float const BONK_LIQUID_MAGMA_REACH       = 12.0f;
     uint32 const BONK_LIQUID_MAGMA_GLOBS      = 2;
     float const BONK_LIQUID_MAGMA_SHARE       = 0.5f;
     uint32 const BONK_HEALING_RAIN_EVERY_TICKS = 3;

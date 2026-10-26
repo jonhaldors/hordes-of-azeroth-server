@@ -35,7 +35,7 @@ namespace
     uint32 const BONK_KIT_WAKE_ECHO           = 366;
 
     uint32 const BONK_FOURTH_SWING_EVERY      = 4;
-    float const BONK_FOURTH_SWING_WIDTH       = 2.0f;
+    float const BONK_FOURTH_SWING_WIDTH       = 1.5f;
     uint32 const BONK_KIT_FOURTH_SWING        = 5649;
 
     uint32 const BONK_KIT_BLOOD_AURA          = 3051;

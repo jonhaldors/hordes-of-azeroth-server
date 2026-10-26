@@ -108,7 +108,7 @@ namespace
     uint32 const BONK_AMBUSH_REPEAT_MS        = 1000;
     float const BONK_VANISH_RADIUS            = 10.0f;
     int32 const BONK_VANISH_MS                = 2000;
-    float const BONK_SYMBOLS_RANGE            = 20.0f;
+    float const BONK_SYMBOLS_RANGE            = 14.0f;
     size_t const BONK_SYMBOLS_TARGETS         = 5;
     size_t const BONK_RIPOSTE_PER_SEC         = 5;
     uint32 const BONK_SMOKE_BOMB_MS           = 5000;
