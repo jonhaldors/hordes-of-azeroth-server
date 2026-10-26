@@ -52,6 +52,11 @@ namespace
     size_t const BONK_HARVESTER_STACKS          = 10;
     uint32 const BONK_SOUL_FIRE_EVERY           = 5;
     uint32 const BONK_SOUL_FIRE_BURNING         = 3;
+    uint32 const BONK_STARLORD_MS               = 8000;
+    size_t const BONK_STARLORD_STACKS           = 3;
+    uint32 const BONK_SOUL_OF_THE_FOREST_MS     = 8000;
+    size_t const BONK_SOUL_OF_THE_FOREST_STACKS = 10;
+    uint32 const BONK_BLOODTALONS_MAX_STACKS    = 10;
 
     void PushTimedStack(std::vector<uint32>& stacks, uint32 now, uint32 lengthMs, size_t cap)
     {
@@ -155,6 +160,7 @@ float BonkRun::GetTalentDamagePercent() const
     percent += m_mastery.Special(BONK_SPECIAL_PACK_HUNTER) * float(CountLivingPets());
     percent += m_mastery.Special(BONK_SPECIAL_BULWARK) * float(m_bulwarkStacks);
     percent += m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) * float(m_madnessStacks);
+    percent += m_mastery.Special(BONK_SPECIAL_BLOODTALONS) * float(m_bloodtalonsStacks);
     percent += m_mastery.Special(BONK_SPECIAL_FORCEFUL_WINDS) * CountTimedStacks(m_forcefulUntil, m_totalMs);
     if (m_mastery.Special(BONK_SPECIAL_DEMONIC_PACT) > 0.0f)
         percent += m_mastery.Special(BONK_SPECIAL_DEMONIC_PACT) * float(CountDemonFamilies());
@@ -466,6 +472,9 @@ void BonkRun::OnTalentCastDone(OwnedWeapon& owned)
     if (root == BONK_WEAPON_LIGHTS_HAMMER && roll_chance_f(m_mastery.Special(BONK_SPECIAL_DIVINE_PURPOSE)))
         owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_FLOOR_MS);
 
+    if (root == BONK_WEAPON_STARFIRE && m_mastery.Special(BONK_SPECIAL_STARLORD) > 0.0f)
+        PushTimedStack(m_starlordUntil, m_totalMs, BONK_STARLORD_MS, BONK_STARLORD_STACKS);
+
     if (root == BONK_WEAPON_POWER_WORD_SHIELD)
     {
         if (m_mastery.Special(BONK_SPECIAL_BORROWED_TIME) > 0.0f)
@@ -525,6 +534,8 @@ float BonkRun::GetTalentHaste() const
         haste += m_mastery.Special(BONK_SPECIAL_FLURRY);
     haste += m_mastery.Special(BONK_SPECIAL_UNRELENTING_STORM) * CountTimedStacks(m_unrelentingUntil, now);
     haste += m_mastery.Special(BONK_SPECIAL_HARVESTER_OF_SOULS) * CountTimedStacks(m_harvestUntil, now);
+    haste += m_mastery.Special(BONK_SPECIAL_STARLORD) * CountTimedStacks(m_starlordUntil, now);
+    haste += m_mastery.Special(BONK_SPECIAL_SOUL_OF_THE_FOREST) * CountTimedStacks(m_forestUntil, now);
     for (auto const& itr : m_castHasteUntil)
     {
         auto value = m_mastery.castHaste.find(itr.first);
@@ -582,7 +593,8 @@ void BonkRun::UpdateTalents(uint32 diff)
     bool const mongoose = m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) > 0.0f;
     bool const bulwark = m_mastery.Special(BONK_SPECIAL_BULWARK) > 0.0f;
     bool const madness = m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) > 0.0f;
-    if (!mongoose && !bulwark && !madness)
+    bool const bloodtalons = m_mastery.Special(BONK_SPECIAL_BLOODTALONS) > 0.0f;
+    if (!mongoose && !bulwark && !madness && !bloodtalons)
         return;
     m_mongooseTimer -= int32(diff);
     if (m_mongooseTimer > 0)
@@ -590,9 +602,15 @@ void BonkRun::UpdateTalents(uint32 diff)
     m_mongooseTimer = BONK_MONGOOSE_REFRESH_MS;
     std::vector<Creature*> const around = GetMobsInRange(BONK_MONGOOSE_RADIUS);
     uint32 poisoned = 0;
+    uint32 bleeding = 0;
     for (Creature* mob : around)
+    {
         if (GetKeywordStacks(mob, BONK_KEYWORD_POISON))
             ++poisoned;
+        if (GetKeywordStacks(mob, BONK_KEYWORD_BLEED))
+            ++bleeding;
+    }
+    m_bloodtalonsStacks = bloodtalons ? std::min(bleeding, BONK_BLOODTALONS_MAX_STACKS) : 0;
     m_mongooseStacks = mongoose ? std::min(poisoned, BONK_MONGOOSE_MAX_STACKS) : 0;
     m_bulwarkStacks = bulwark ? std::min(uint32(around.size()), BONK_BULWARK_MAX_STACKS) : 0;
     uint32 decaying = 0;
@@ -765,6 +783,8 @@ void BonkRun::OnTalentKill(Unit* victim)
     float const venomRush = m_mastery.Special(BONK_SPECIAL_VENOM_RUSH);
     if (venomRush > 0.0f && dead && GetKeywordStacks(dead, BONK_KEYWORD_POISON))
         ReduceTimer(BONK_WEAPON_ENVENOM, int32(venomRush * IN_MILLISECONDS));
+    if (dead && m_mastery.Special(BONK_SPECIAL_SOUL_OF_THE_FOREST) > 0.0f && dead->HasAuraType(SPELL_AURA_MOD_ROOT))
+        PushTimedStack(m_forestUntil, m_totalMs, BONK_SOUL_OF_THE_FOREST_MS, BONK_SOUL_OF_THE_FOREST_STACKS);
     float const deepening = m_mastery.Special(BONK_SPECIAL_DEEPENING_SHADOWS);
     if (deepening > 0.0f && m_shadowDanceUntilMs > m_totalMs)
         ReduceTimer(BONK_WEAPON_SHADOW_DANCE, int32(deepening * IN_MILLISECONDS));

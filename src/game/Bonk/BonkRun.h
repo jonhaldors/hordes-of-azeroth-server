@@ -2424,6 +2424,9 @@ class BonkRun
         uint32 m_borrowedTimeUntil = 0;
         uint32 m_flurryUntil = 0;
         uint32 m_shadowBoltHits = 0;
+        uint32 m_bloodtalonsStacks = 0;
+        std::vector<uint32> m_starlordUntil;
+        std::vector<uint32> m_forestUntil;
         std::vector<uint32> m_harvestUntil;
         std::vector<uint32> m_unrelentingUntil;
         std::vector<uint32> m_forcefulUntil;

@@ -14,7 +14,6 @@
 
 namespace
 {
-    uint32 const BONK_WEAPON_STARFIRE         = 1001;
     uint32 const BONK_WEAPON_MOONFIRE         = 1002;
     uint32 const BONK_WEAPON_HURRICANE        = 1003;
     uint32 const BONK_WEAPON_RAKE             = 1004;
@@ -119,6 +118,7 @@ namespace
     float const BONK_SHRED_MAX_STACKS         = 30.0f;
     float const BONK_FRENZIED_REGEN_RADIUS    = 8.0f;
     float const BONK_FRENZIED_REGEN_MAX_ENEMIES = 5.0f;
+    float const BONK_SURVIVAL_HEALTH          = 35.0f;
     uint32 const BONK_DRUID_LOOK_GAP_MS       = 3000;
     uint32 const BONK_ROOT_MS                 = 2000;
     uint32 const BONK_TRANQUILITY_PULSES      = 4;
@@ -583,7 +583,10 @@ float BonkRun::GetDruidMoveSpeed() const
 
 uint32 BonkRun::GetDruidExtraPets(OwnedWeapon const& owned) const
 {
-    return GetDruidPetFamily(owned) == BONK_PET_FAMILY_TREANT && m_druidForm == BonkDruidForm::Tree ? BONK_TREE_EXTRA_TREANTS : 0;
+    if (GetDruidPetFamily(owned) != BONK_PET_FAMILY_TREANT)
+        return 0;
+    uint32 const grove = uint32(m_mastery.Special(BONK_SPECIAL_GROVE_GUARDIANS));
+    return grove + (m_druidForm == BonkDruidForm::Tree ? BONK_TREE_EXTRA_TREANTS : 0);
 }
 
 bool BonkRun::IsShapeshift(OwnedWeapon const& owned)
@@ -653,7 +656,7 @@ bool BonkRun::GetDruidCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind
         return true;
     if (GetRootWeapon(owned.weapon) != BONK_WEAPON_HURRICANE)
         return false;
-    kind.lifeMs = BONK_HURRICANE_MS;
+    kind.lifeMs = BONK_HURRICANE_MS + uint32(m_mastery.Special(BONK_SPECIAL_IMPROVED_HURRICANE) * IN_MILLISECONDS);
     kind.pulseEveryMs = BONK_HURRICANE_PULSE_MS;
     kind.stacks = owned.weapon.applyStacks;
     kind.maxAlive = BONK_HURRICANE_ALIVE;
@@ -760,11 +763,12 @@ void BonkRun::RegenerateFrenzied(OwnedWeapon& owned)
     size_t const nearby = GetMobsInRange(BONK_FRENZIED_REGEN_RADIUS * GetWeaponArea(owned)).size();
     if (!nearby)
         return;
-    float const enemies = std::min(float(nearby), BONK_FRENZIED_REGEN_MAX_ENEMIES);
+    float const enemies = std::min(float(nearby), BONK_FRENZIED_REGEN_MAX_ENEMIES + m_mastery.Special(BONK_SPECIAL_IMPROVED_FRENZIED));
     OnFrenziedTick(owned, GetFrenziedRegenerationHeal(owned) * enemies);
     if (m_player->GetHealth() >= m_player->GetMaxHealth())
         return;
-    HealDruid(owned, GetFrenziedRegenerationHeal(owned) * enemies);
+    float const fittest = m_player->GetHealthPercent() < BONK_SURVIVAL_HEALTH ? 1.0f + m_mastery.Special(BONK_SPECIAL_SURVIVAL_OF_THE_FITTEST) : 1.0f;
+    HealDruid(owned, GetFrenziedRegenerationHeal(owned) * enemies * fittest);
     if (TakeDruidLookSlot(owned.weapon.id))
         if (SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_FRENZIED_REGEN))
             ShowStrike(m_player, look, m_player);
@@ -810,7 +814,7 @@ void BonkRun::EntangleEnemies(OwnedWeapon& owned, SpellEntry const* spellInfo)
     {
         ShowDruidStrike(spellInfo, mob);
         HitAsDruid(owned, spellInfo, mob, damage);
-        int32 durationMs = int32(BONK_ROOT_MS);
+        int32 durationMs = int32(BONK_ROOT_MS + m_mastery.Special(BONK_SPECIAL_DEEP_ROOTS) * IN_MILLISECONDS);
         if (mob->IsAlive() && LimitRoot(mob, durationMs))
         {
             HoldMob(mob, spellInfo, SPELL_AURA_MOD_ROOT, durationMs);
@@ -829,7 +833,8 @@ void BonkRun::StartTranquility(OwnedWeapon& owned)
     owned.timer = GetWeaponCooldown(owned);
     PlayDruidMotion(owned.weapon.spellId);
     m_tranquilityWeapon = owned.weapon.id;
-    m_tranquilityPulsesLeft = std::max(1u, uint32(BONK_TRANQUILITY_PULSES * GetWeaponDurationScale(owned) + 0.5f));
+    m_tranquilityPulsesLeft = std::max(1u, uint32(BONK_TRANQUILITY_PULSES * GetWeaponDurationScale(owned) + 0.5f)) +
+        uint32(m_mastery.Special(BONK_SPECIAL_INNER_PEACE));
     m_tranquilityPulseMs = 0;
     m_tranquilityPulse = 0;
 }
@@ -854,7 +859,8 @@ void BonkRun::PulseTranquility(uint32 diff)
 
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(owned->weapon.spellId);
     m_player->SendPlaySpellVisualKit(BONK_KIT_TRANQUILITY_PULSE);
-    float const damage = GetWeaponDamage(*owned);
+    float const flourish = m_tranquilityPulsesLeft ? 1.0f : 1.0f + m_mastery.Special(BONK_SPECIAL_FLOURISH);
+    float const damage = GetWeaponDamage(*owned) * flourish;
     for (Creature* mob : GetMobsInRange(GetTranquilityReach(*owned)))
         DealShamanHit(spellInfo, owned->weapon.spellId, mob, damage);
     ++m_tranquilityPulse;
