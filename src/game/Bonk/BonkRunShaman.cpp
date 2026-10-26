@@ -60,13 +60,11 @@ namespace
     uint32 const BONK_WINDFURY_SWINGS         = 2;
     int32 const BONK_WINDFURY_GAP_MS          = 120;
     int32 const BONK_WINDFURY_LOOK_LINGER_MS  = 600;
-    float const BONK_WINDFURY_SPLASH          = 4.0f;
     float const BONK_FLAMETONGUE_SHARE        = 0.3f;
     uint32 const BONK_DOOM_WINDS_EVERY_MS     = 15000;
     uint32 const BONK_DOOM_WINDS_LASTS_MS     = 4000;
     float const BONK_LAVA_LASH_BURNING        = 1.5f;
     uint32 const BONK_LAVA_LASH_STACKS        = 2;
-    float const BONK_CRASH_RADIUS             = 8.0f;
     float const BONK_CRASH_SHARE              = 0.5f;
     uint32 const BONK_STORMSTRIKE_STATIC      = 2;
 
@@ -77,7 +75,6 @@ namespace
     uint32 const BONK_STATIC_SURGE_STACKS     = 5;
 
     uint32 const BONK_LIGHTNING_SHIELD_CHARGES = 3;
-    float const BONK_STATIC_SHOCK_RADIUS      = 4.0f;
     float const BONK_EARTH_SHIELD_STEP        = 1.0f;
     float const BONK_EARTH_SHIELD_CAP         = 10.0f;
 
@@ -107,17 +104,15 @@ namespace
     float const BONK_TOTEM_REPLANT_RANGE      = 20.0f;
     float const BONK_HEALING_STREAM_RANGE     = 15.0f;
     uint32 const BONK_FIRE_NOVA_EVERY_TICKS   = 4;
-    float const BONK_FIRE_NOVA_RADIUS         = 8.0f;
     float const BONK_FIRE_NOVA_SHARE          = 1.0f;
     uint32 const BONK_FIRE_NOVA_STACKS        = 3;
     float const BONK_TOTEM_OF_WRATH_REACH     = 15.0f;
     float const BONK_TOTEM_OF_WRATH_BONUS     = 1.15f;
-    float const BONK_LIQUID_MAGMA_REACH       = 20.0f;
+    float const BONK_LIQUID_MAGMA_REACH       = 12.0f;
     uint32 const BONK_LIQUID_MAGMA_GLOBS      = 2;
     float const BONK_LIQUID_MAGMA_SHARE       = 0.5f;
     uint32 const BONK_HEALING_RAIN_EVERY_TICKS = 3;
     int32 const BONK_STORMFLURRY_RECHARGE_MS  = 600000;
-    float const BONK_HEALING_RAIN_RADIUS      = 10.0f;
 }
 
 void BonkRun::ResetShamanState()
@@ -283,7 +278,7 @@ void BonkRun::OnShamanStrike(OwnedWeapon& owned, SpellEntry const*, Creature* ta
     if (weapon.id != BONK_WEAPON_CRASH_LIGHTNING)
         return;
     SpellEntry const* zap = sSpellMgr.GetSpellEntry(BONK_SPELL_LIGHTNING_ZAP);
-    float const radius = BONK_CRASH_RADIUS * GetWeaponArea(owned);
+    float const radius = GetWeaponRadius(owned);
     if (SpellEntry const* clap = sSpellMgr.GetSpellEntry(BONK_SPELL_THUNDERCLAP_LOOK))
         ShowAreaImpact(clap, radius);
     for (Creature* mob : GetMobsInRange(radius))
@@ -351,7 +346,7 @@ void BonkRun::SwingWindfury(OwnedWeapon& owned, SpellEntry const* spellInfo, Pen
         return;
 
     StrikeWith(owned, spellInfo, target, cast.share, true);
-    for (Creature* mob : GetMobsInRange(BONK_WINDFURY_SPLASH * GetWeaponArea(owned), target))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
         if (mob != target && m_player->IsWithinLOSInMap(mob))
             StrikeWith(owned, spellInfo, mob, cast.share, true);
     CountMaelstromHit();
@@ -558,7 +553,7 @@ void BonkRun::SpendStaticShock(Creature* target)
     SpellEntry const* zap = sSpellMgr.GetSpellEntry(BONK_SPELL_LIGHTNING_ZAP);
     if (look)
         ShowStrike(m_player, look, target);
-    std::vector<Creature*> victims = GetMobsInRange(BONK_STATIC_SHOCK_RADIUS, target);
+    std::vector<Creature*> victims = GetMobsInRange(GetWeaponRadius(*shock), target);
     if (std::find(victims.begin(), victims.end(), target) == victims.end())
         victims.insert(victims.begin(), target);
     for (Creature* mob : victims)
@@ -643,7 +638,7 @@ void BonkRun::StormNearDischarge(PendingCast const& cast)
         return;
     SpellEntry const* zap = sSpellMgr.GetSpellEntry(BONK_SPELL_LIGHTNING_ZAP);
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_STATIC_DISCHARGE);
-    for (Creature* mob : GetMobsNear(cast.x, cast.y, BONK_STATIC_RADIUS * GetWeaponArea(*eye)))
+    for (Creature* mob : GetMobsNear(cast.x, cast.y, GetWeaponRadius(*eye)))
     {
         if (look)
             ShowStrike(m_player, look, mob);
@@ -800,7 +795,7 @@ void BonkRun::BurstFireNovaTotems()
     if (!nova || !fire || !m_player->IsAlive())
         return;
     Map* map = m_player->GetMap();
-    float const radius = BONK_FIRE_NOVA_RADIUS * GetWeaponArea(*nova);
+    float const radius = GetWeaponRadius(*nova);
     for (ObjectGuid const& guid : nova->pets)
     {
         Creature* totem = map->GetCreature(guid);
@@ -825,7 +820,7 @@ void BonkRun::RainFromHealingTotems()
     if (!rain || !zap || !m_player->IsAlive())
         return;
     Map* map = m_player->GetMap();
-    float const radius = BONK_HEALING_RAIN_RADIUS * GetWeaponArea(*rain);
+    float const radius = GetWeaponRadius(*rain);
     for (ObjectGuid const& guid : rain->pets)
     {
         Creature* totem = map->GetCreature(guid);

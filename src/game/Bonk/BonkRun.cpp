@@ -287,7 +287,6 @@ namespace
     int32 const BONK_DETONATION_FIRST_MS   = 200;
     int32 const BONK_DETONATION_GAP_MS     = 100;
     size_t const BONK_MAX_DETONATIONS      = 20;
-    float const BONK_DETONATION_RADIUS     = 4.0f;
     uint32 const BONK_KIT_DETONATION       = 286;
     float const BONK_STEADY_RATE           = 2.0f;
     uint32 const BONK_STEADY_STEP_MS       = 1000;
@@ -339,7 +338,6 @@ namespace
     uint32 const BONK_KIT_PLAGUE_RISE      = 219;
     int32 const BONK_PLAGUE_RISE_DELAY_MS  = 500;
     int32 const BONK_PLAGUE_PULSE_MS       = 1000;
-    float const BONK_PLAGUE_RADIUS         = 5.0f;
     uint32 const BONK_PLAGUE_CLAW_STACKS   = 2;
     uint32 const BONK_STAMPEDE_MS          = 20000;
     int32 const BONK_STAMPEDE_FIRST_MS     = 2000;
@@ -3918,18 +3916,6 @@ uint32 BonkRun::GetMissileDelay(SpellCaster const* caster, Unit const* target, f
     return std::max(1u, uint32(t * IN_MILLISECONDS));
 }
 
-bool BonkRun::RollDodge(Unit const* victim) const
-{
-    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(victim->AI());
-    if (!ai || ai->GetKind() == BONK_SPAWN_NORMAL)
-        return false;
-
-    float chance = m_tier.eliteDodge - GetStat(BONK_PASSIVE_HIT);
-    if (ai->GetKind() != BONK_SPAWN_ELITE)
-        chance += BONK_BOSS_EXTRA_DODGE;
-    return chance > 0.0f && roll_chance_f(chance);
-}
-
 float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit const* attacker) const
 {
     float const chance = BONK_BASE_CRIT + GetPassiveTotal(BONK_PASSIVE_CRIT) + GetTalentCritChance(victim, attacker);
@@ -4936,19 +4922,22 @@ float BonkRun::GetStatCap(BonkPassiveEffect effect)
     switch (effect)
     {
         case BONK_PASSIVE_DODGE:  return BONK_MAX_DODGE;
-        case BONK_PASSIVE_HIT:    return BONK_MAX_HIT;
         case BONK_PASSIVE_AMOUNT: return BONK_MAX_COUNT;
-        case BONK_PASSIVE_AREA:   return BONK_MAX_AREA;
         case BONK_PASSIVE_MOVE_SPEED: return BONK_MAX_MOVE_SPEED;
         default:                  return 0.0f;
     }
 }
 
-float CurveHaste(float raw)
+float CurveStat(float raw, float ceiling)
 {
     if (raw <= 0.0f)
         return raw;
-    return BONK_MAX_HASTE * (1.0f - std::exp(-raw / BONK_MAX_HASTE));
+    return ceiling * (1.0f - std::exp(-raw / ceiling));
+}
+
+float CurveHaste(float raw)
+{
+    return CurveStat(raw, BONK_MAX_HASTE);
 }
 
 float BonkRun::GetStat(BonkPassiveEffect effect) const
@@ -4956,6 +4945,8 @@ float BonkRun::GetStat(BonkPassiveEffect effect) const
     float const total = GetPassiveTotal(effect);
     if (effect == BONK_PASSIVE_HASTE)
         return CurveHaste(total);
+    if (effect == BONK_PASSIVE_AREA)
+        return CurveStat(total, BONK_MAX_AREA);
     float const cap = GetStatCap(effect);
     float const lasting = cap > 0.0f ? std::min(total, cap) : total;
     return effect == BONK_PASSIVE_MOVE_SPEED ? lasting + GetBoostMoveSpeed() + GetDruidMoveSpeed() : lasting;
@@ -5067,8 +5058,13 @@ void BonkRun::UpdateWeapons(uint32 diff)
 float BonkRun::GetWeaponArea(OwnedWeapon const& owned) const
 {
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
-        return std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f) * GetTalentReach(owned);
-    return (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_REACH) / 100.0f) * GetTalentReach(owned);
+        return std::max(0.1f, 1.0f + CurveStat(GetPassiveTotal(BONK_PASSIVE_AREA) + GetTalentReach(owned), BONK_MAX_AREA) / 100.0f);
+    return 1.0f + CurveStat(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_REACH) + GetTalentReach(owned), BONK_MAX_AREA) / 100.0f;
+}
+
+float BonkRun::GetWeaponRadius(OwnedWeapon const& owned) const
+{
+    return owned.weapon.radius * GetWeaponArea(owned);
 }
 
 uint32 BonkRun::GetWeaponTargets(OwnedWeapon const& owned) const
@@ -5655,7 +5651,7 @@ void BonkRun::Detonate(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingC
     PlayKitAt(cast.target, x, y, z, BONK_KIT_DETONATION, false);
 
     float const damage = GetWeaponDamage(owned) * cast.share;
-    for (Creature* victim : GetMobsNear(x, y, BONK_DETONATION_RADIUS * GetWeaponArea(owned)))
+    for (Creature* victim : GetMobsNear(x, y, GetWeaponRadius(owned)))
         DealSpellHit(spellInfo, victim, damage);
 }
 
@@ -6053,6 +6049,20 @@ BonkRun::KeywordCloudKind BonkRun::GetCloudKind(OwnedWeapon const& owned) const
     return venom;
 }
 
+float BonkRun::GetCloudRadius(OwnedWeapon const& owned) const
+{
+    switch (owned.weapon.behavior)
+    {
+        case BONK_BEHAVIOR_METEOR:
+        case BONK_BEHAVIOR_BURNING_GROUND:
+        case BONK_BEHAVIOR_SWIPE:
+        case BONK_BEHAVIOR_FAN_OF_KNIVES:
+            return std::max(0.0f, owned.weapon.behaviorValue) * GetWeaponArea(owned);
+        default:
+            return GetWeaponRadius(owned);
+    }
+}
+
 void BonkRun::StartKeywordCloud(OwnedWeapon const& owned, float x, float y, float z)
 {
     KeywordCloudKind const kind = GetCloudKind(owned);
@@ -6068,7 +6078,7 @@ void BonkRun::StartKeywordCloud(OwnedWeapon const& owned, float x, float y, floa
     cloud.weaponId = owned.weapon.id;
     cloud.x = x;
     cloud.y = y;
-    cloud.radius = std::max(0.0f, owned.weapon.behaviorValue) * GetWeaponArea(owned);
+    cloud.radius = GetCloudRadius(owned);
     cloud.leftMs = int32(kind.lifeMs * GetWeaponDurationScale(owned));
     cloud.pulseEveryMs = kind.pulseEveryMs;
     cloud.stacks = kind.stacks;
@@ -6322,7 +6332,7 @@ void BonkRun::Shatter(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCa
 {
     PlayKitAt(ObjectGuid(), cast.x, cast.y, cast.z, BONK_KIT_FROST_NOVA, true);
     float const damage = GetWeaponDamage(owned);
-    for (Creature* mob : GetMobsNear(cast.x, cast.y, owned.weapon.range * GetWeaponArea(owned) * (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_TRAP_AREA) / 100.0f)))
+    for (Creature* mob : GetMobsNear(cast.x, cast.y, GetWeaponRadius(owned) * (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_TRAP_AREA) / 100.0f)))
         DealSpellHit(spellInfo, mob, damage);
 }
 
@@ -6352,7 +6362,7 @@ void BonkRun::UpdateIcePath(uint32 diff)
 
     float x, y, z;
     GetHeroPositionNow(m_player, x, y, z);
-    float const radius = owned->weapon.range * GetWeaponArea(*owned);
+    float const radius = GetWeaponRadius(*owned);
     ShowHeroRing(BonkHeroRing::IcePath, radius);
 
     m_icePath.slowMs -= int32(diff);
@@ -6549,7 +6559,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         if (!spellId)
             continue;
         BonkPlayer::SpellTweak& tweak = m_player->GetBonkPlayer()->TweakSpell(spellId);
-        tweak.areaScale = areaScale;
+        tweak.areaScale = areaScale * (weapon.target == BONK_TARGET_GROUND && spellId == weapon.spellId ? weapon.SpellRadiusScale() : 1.0f);
         tweak.chainBonus = 0;
         tweak.jumpRadius = weapon.HasFlag(BONK_WEAPON_FLAG_LONG_JUMPS) ? BONK_LONG_JUMP_RADIUS : CHAIN_SPELL_JUMP_RADIUS;
         tweak.durationMs = weapon.durationMs;
@@ -6637,7 +6647,8 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
 
     bool const reachGrows = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE || weapon.behavior == BONK_BEHAVIOR_CLEAVE;
     bool const thrown = weapon.behavior == BONK_BEHAVIOR_TRAP && weapon.target == BONK_TARGET_GROUND;
-    float const range = thrown ? BONK_TRAP_THROW_RANGE : weapon.range * (reachGrows ? areaScale : 1.0f);
+    bool const radial = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE;
+    float const range = thrown ? BONK_TRAP_THROW_RANGE : radial ? weapon.radius * areaScale : weapon.range * (reachGrows ? areaScale : 1.0f);
     std::vector<Creature*> mobs = GetMobsInRange(range);
 
     if (weapon.target == BONK_TARGET_RANDOM)
@@ -7008,7 +7019,7 @@ void BonkRun::CastSelfArea(OwnedWeapon& owned, SpellEntry const* spellInfo, floa
     {
         uint32 struck = 0;
         Creature* first = nullptr;
-        for (Creature* mob : GetMobsInRange(owned.weapon.range * areaScale))
+        for (Creature* mob : GetMobsInRange(owned.weapon.radius * areaScale))
             if (m_player->IsWithinLOSInMap(mob))
             {
                 OnAroundStrike(owned, mob);
@@ -7024,13 +7035,14 @@ void BonkRun::CastSelfArea(OwnedWeapon& owned, SpellEntry const* spellInfo, floa
         return;
     }
 
-    m_player->GetBonkPlayer()->TweakSpell(spellInfo->Id).areaScale = areaScale;
+    bool const own = spellInfo->Id == owned.weapon.spellId;
+    m_player->GetBonkPlayer()->TweakSpell(spellInfo->Id).areaScale = areaScale * (own ? owned.weapon.SpellRadiusScale() : 1.0f);
     optional<int32> basePoints[MAX_EFFECT_INDEX];
     GetBasePoints(owned, spellInfo, share, basePoints);
     m_player->CastCustomSpell(m_player, spellInfo, basePoints[0], basePoints[1], basePoints[2], true);
-    ShowAreaImpact(spellInfo, owned.weapon.range * areaScale);
+    ShowAreaImpact(spellInfo, owned.weapon.radius * areaScale);
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_KNOCKBACK))
-        for (Creature* mob : GetMobsInRange(owned.weapon.range * areaScale))
+        for (Creature* mob : GetMobsInRange(owned.weapon.radius * areaScale))
             KnockBack(mob);
     OnMageSelfArea(owned);
 }
@@ -7119,7 +7131,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             {
                 float const share = info->Id == owned->weapon.spellId ? 1.0f : owned->weapon.altDamage;
                 FiringWeapon firing(m_player->GetBonkPlayer());
-                for (Creature* mob : GetMobsInCone(*owned, owned->weapon.range * area))
+                for (Creature* mob : GetMobsInCone(*owned, owned->weapon.radius * area))
                     StrikeWith(*owned, info, mob, share);
             }
             else
@@ -7129,7 +7141,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
 
         if (cast.field)
         {
-            float const radius = owned->weapon.range * GetWeaponArea(*owned) * (1.0f + GetSpellUpgrade(*owned, BONK_SPELL_UPGRADE_TRAP_AREA) / 100.0f);
+            float const radius = GetWeaponRadius(*owned) * (1.0f + GetSpellUpgrade(*owned, BONK_SPELL_UPGRADE_TRAP_AREA) / 100.0f);
             float const damage = GetWeaponDamage(*owned) * cast.share;
             for (ObjectGuid const& guid : m_mobs)
                 if (Creature* mob = map->GetCreature(guid))
@@ -7183,7 +7195,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             float scale = GetWeaponArea(*owned);
             if (info->Id != owned->weapon.spellId)
                 if (float const own = GetSpellRadiusOf(info))
-                    scale *= owned->weapon.range * BONK_ECHO_AREA / own;
+                    scale *= owned->weapon.radius * BONK_ECHO_AREA / own;
             CastSelfArea(*owned, info, scale);
             continue;
         }
@@ -8229,7 +8241,7 @@ void BonkRun::SpringTrap(OwnedWeapon& owned, float x, float y, float z)
     }
 
     FiringWeapon firing(m_player->GetBonkPlayer());
-    float const radius = weapon.range * GetWeaponArea(owned) * (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_TRAP_AREA) / 100.0f);
+    float const radius = GetWeaponRadius(owned) * (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_TRAP_AREA) / 100.0f);
     ScaleRadius(spellInfo, radius);
     optional<int32> basePoints[MAX_EFFECT_INDEX];
     GetBasePoints(owned, spellInfo, 1.0f, basePoints);
@@ -8664,7 +8676,7 @@ float BonkRun::GetSummonGrowth(OwnedWeapon const& owned) const
 
 float BonkRun::GetSummonReach(OwnedWeapon const& owned) const
 {
-    return (1.0f + GetSummonGrowth(owned) / 100.0f) * GetTalentReach(owned);
+    return 1.0f + CurveStat(GetSummonGrowth(owned) + GetTalentReach(owned), BONK_MAX_AREA) / 100.0f;
 }
 
 float BonkRun::GetSummonLookScale(OwnedWeapon const& owned, float base) const
@@ -9608,7 +9620,7 @@ void BonkRun::PulsePlague(uint32 diff)
         PendingKeyword poison;
         if (!owned.weapon.HasFlag(BONK_WEAPON_FLAG_PLAGUE) || owned.pets.empty() || !GetWeaponKeyword(owned, poison))
             continue;
-        float const radius = BONK_PLAGUE_RADIUS * GetWeaponArea(owned);
+        float const radius = GetWeaponRadius(owned);
         for (ObjectGuid const& guid : owned.pets)
         {
             Creature* pet = map->GetCreature(guid);
@@ -11794,13 +11806,14 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIf
         description += " " + DescribeThunderCount(owned);
     bool faster = false;
     std::string const header = DescribeSpellHeader(owned, interval, faster);
-    std::string const shown = description + "~" + header + "~" + picks + "~" + DescribeShownDamage(owned);
+    std::string const radius = std::to_string(std::round(GetWeaponRadius(owned) * 10.0f) / 10.0f);
+    std::string const shown = description + "~" + header + "~" + picks + "~" + DescribeShownDamage(owned) + "~" + radius;
     if (onlyIfChanged && shown == owned.shownTip)
         return;
     owned.shownTip = shown;
     m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() || weapon.behavior == BONK_BEHAVIOR_PET ? 0u : interval) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + picks + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)) + "~" +
-        header + "~" + (faster ? "1" : "0") + "~" + DescribeBonkWeaponTags(weapon, GetShownSchool(owned)));
+        header + "~" + (faster ? "1" : "0") + "~" + DescribeBonkWeaponTags(weapon, GetShownSchool(owned)) + "~" + radius);
 }
 
 void BonkRun::SendOffer() const

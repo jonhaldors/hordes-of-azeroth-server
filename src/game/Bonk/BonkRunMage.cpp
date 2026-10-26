@@ -29,7 +29,6 @@ namespace
 
     uint32 const BONK_ICE_SHARD_HOPS          = 6;
     float const BONK_ICE_SHARD_RANGE          = 12.0f;
-    float const BONK_FROST_SHATTER_RADIUS     = 5.0f;
     uint32 const BONK_KIT_FROST_NOVA          = 160;
     size_t const BONK_MAX_FROSTBOLT_TARGETS   = 8;
     float const BONK_ICE_NOVA_REACH           = 30.0f;
@@ -50,12 +49,10 @@ namespace
     uint32 const BONK_WILDFIRE_MS             = 6000;
     int32 const BONK_WILDFIRE_PULSE_MS        = 1000;
     int32 const BONK_MIN_WILDFIRE_PULSE_MS    = 400;
-    float const BONK_WILDFIRE_RANGE           = 8.0f;
     size_t const BONK_MAX_WILDFIRES           = 12;
     uint32 const BONK_SPELL_WILDFIRE_LOOK     = 133;
 
     int32 const BONK_LIVING_BOMB_MS           = 2000;
-    float const BONK_LIVING_BOMB_RADIUS       = 6.0f;
     float const BONK_LIVING_BOMB_SHARE        = 0.5f;
     size_t const BONK_MAX_LIVING_BOMBS        = 10;
     uint32 const BONK_KIT_LIVING_BOMB_PLANT   = 76;
@@ -75,11 +72,9 @@ namespace
 
     uint32 const BONK_SPELL_METEOR_LOOK       = 26558;
     int32 const BONK_METEOR_FALL_MS           = 1000;
-    float const BONK_METEOR_RADIUS            = 8.0f;
     float const BONK_METEOR_SHARE             = 0.6f;
     uint32 const BONK_METEOR_SHOWER_COUNT     = 7;
     float const BONK_METEOR_SHOWER_SPREAD     = 10.0f;
-    float const BONK_METEOR_SHOWER_RADIUS     = 3.0f;
     float const BONK_METEOR_SHOWER_SHARE      = 0.3f;
     float const BONK_METEOR_SHOWER_PER_BURN   = 10.0f;
     uint32 const BONK_MAX_BURNING_COUNTED     = 30;
@@ -434,7 +429,7 @@ void BonkRun::SplashPyroblast(OwnedWeapon& owned, SpellEntry const* spellInfo, P
         }
 
     float const damage = GetWeaponDamage(owned) * cast.share;
-    float const radius = BONK_PYROBLAST_SPLASH_RADIUS * GetWeaponArea(owned);
+    float const radius = GetWeaponRadius(owned);
     FiringWeapon firing(m_player->GetBonkPlayer());
     uint32 const burning = uint32(m_mastery.Special(BONK_SPECIAL_PYROCLASM_BURNING));
     for (Creature* mob : GetMobsNear(x, y, radius))
@@ -661,7 +656,7 @@ void BonkRun::ShatterFrozen(OwnedWeapon& owned, SpellEntry const* spellInfo, Pen
     PlayKitAt(ObjectGuid(), x, y, z, BONK_KIT_FROST_NOVA, true);
     float const damage = GetWeaponDamage(owned) * cast.share;
     FiringWeapon firing(m_player->GetBonkPlayer());
-    for (Creature* mob : GetMobsNear(x, y, BONK_FROST_SHATTER_RADIUS * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsNear(x, y, GetWeaponRadius(owned)))
         if (mob->GetObjectGuid() != cast.target)
             DealSpellHit(spellInfo, mob, damage);
 }
@@ -789,7 +784,7 @@ void BonkRun::BurstIceNova(OwnedWeapon& owned, SpellEntry const* spellInfo, Crea
 
     float const damage = GetWeaponDamage(owned);
     float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
-    std::vector<Creature*> caught = GetMobsNear(x, y, owned.weapon.range * GetWeaponArea(owned));
+    std::vector<Creature*> caught = GetMobsNear(x, y, GetWeaponRadius(owned));
     FiringWeapon firing(m_player->GetBonkPlayer());
     for (Creature* mob : caught)
     {
@@ -837,7 +832,7 @@ void BonkRun::SpreadWildfire(uint32 diff)
     m_wildfireMs = std::max(BONK_MIN_WILDFIRE_PULSE_MS, int32(BONK_WILDFIRE_PULSE_MS / GetWeaponHasteRate(*owned)));
 
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_WILDFIRE_LOOK);
-    float const reach = BONK_WILDFIRE_RANGE * GetWeaponArea(*owned);
+    float const reach = GetWeaponRadius(*owned);
     Map* map = m_player->GetMap();
     std::vector<Creature*> sources;
     m_wildfires.erase(std::remove_if(m_wildfires.begin(), m_wildfires.end(), [&](Wildfire const& fire)
@@ -897,7 +892,7 @@ void BonkRun::ExplodeLivingBomb(OwnedWeapon& owned, SpellEntry const* spellInfo,
     PlayKitAt(cast.target, x, y, z, BONK_KIT_LIVING_BOMB_BLAST, true);
     float const damage = GetWeaponDamage(owned) * BONK_LIVING_BOMB_SHARE;
     FiringWeapon firing(m_player->GetBonkPlayer());
-    for (Creature* mob : GetMobsNear(x, y, BONK_LIVING_BOMB_RADIUS * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsNear(x, y, GetWeaponRadius(owned)))
         DealSpellHit(spellInfo, mob, damage);
 }
 
@@ -923,7 +918,7 @@ void BonkRun::WalkFire(OwnedWeapon const& owned, SpellEntry const* spellInfo, fl
 
 bool BonkRun::DropMeteors(OwnedWeapon& owned, SpellEntry const* spellInfo, std::vector<Creature*> const& mobs)
 {
-    float const radius = BONK_METEOR_RADIUS * GetWeaponArea(owned);
+    float const radius = GetWeaponRadius(owned);
     std::vector<Creature*> const aims = PickGroupCenters(mobs, radius, GetWeaponTargets(owned));
     for (Creature* aim : aims)
         QueueMeteor(owned, spellInfo, aim, BONK_METEOR_SHARE, radius, false);
@@ -944,7 +939,7 @@ bool BonkRun::RainMeteors(OwnedWeapon& owned, SpellEntry const* spellInfo, std::
     if (spots.size() > meteors)
         spots.resize(meteors);
     for (Creature* spot : spots)
-        QueueMeteor(owned, spellInfo, spot, BONK_METEOR_SHOWER_SHARE, BONK_METEOR_SHOWER_RADIUS * area, true);
+        QueueMeteor(owned, spellInfo, spot, BONK_METEOR_SHOWER_SHARE, GetWeaponRadius(owned), true);
     return true;
 }
 
@@ -984,7 +979,7 @@ void BonkRun::EruptBurning(OwnedWeapon& owned, SpellEntry const* spellInfo)
     m_player->SendPlaySpellVisualKit(BONK_KIT_BLAST_WAVE);
     float const area = GetWeaponArea(owned);
     std::vector<Creature*> burning;
-    for (Creature* mob : GetMobsInRange(owned.weapon.range * area))
+    for (Creature* mob : GetMobsInRange(owned.weapon.radius * area))
         if (GetKeywordStacks(mob, BONK_KEYWORD_BURNING))
             burning.push_back(mob);
     if (burning.size() > BONK_MAX_ERUPTIONS)
@@ -1048,7 +1043,7 @@ void BonkRun::LeaveTimeBubble(OwnedWeapon const& owned)
 
     float x, y, z;
     m_player->GetPosition(x, y, z);
-    float const radius = owned.weapon.range * GetWeaponArea(owned);
+    float const radius = GetWeaponRadius(owned);
     uint32 const untilMs = m_totalMs + uint32(BONK_TIME_BUBBLE_MS * GetWeaponDurationScale(owned));
 
     TimeBubble bubble;

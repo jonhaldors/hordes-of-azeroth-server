@@ -59,18 +59,15 @@ namespace
     uint32 const BONK_KIT_SURGE_ROOTS            = 542;
     uint32 const BONK_DISPLAY_MUSHROOM           = 11686;
 
-    float const BONK_STARBURST_RADIUS            = 8.0f;
     float const BONK_STARBURST_SHARE             = 0.15f;
     uint32 const BONK_SHOOTING_STARS_POLL_MS     = 1000;
     float const BONK_SHOOTING_STARS_CHANCE       = 3.0f;
     uint32 const BONK_SHOOTING_STARS_MAX         = 2;
     float const BONK_SHOOTING_STARS_SHARE        = 0.5f;
     float const BONK_SHOOTING_STARS_RANGE        = 30.0f;
-    float const BONK_SUNFIRE_RADIUS              = 5.0f;
     size_t const BONK_SUNFIRE_SPREAD             = 3;
     uint32 const BONK_FULL_MOON_POLL_MS          = 250;
     uint32 const BONK_FULL_MOON_EVERY            = 10;
-    float const BONK_FULL_MOON_RADIUS            = 6.0f;
     float const BONK_FULL_MOON_SHARE             = 0.3f;
     float const BONK_FULL_MOON_RANGE             = 40.0f;
     int32 const BONK_VORTEX_PULSE_MS             = 1000;
@@ -79,26 +76,21 @@ namespace
     float const BONK_VORTEX_SHARE                = 0.5f;
     uint32 const BONK_SPELL_VORTEX_LOOK          = 16914;
     float const BONK_TYPHOON_SHARE               = 2.0f;
-    float const BONK_THRASH_RADIUS               = 8.0f;
     float const BONK_TIGERS_FURY_PER_ENEMY       = 5.0f;
     float const BONK_TIGERS_FURY_MAX             = 25.0f;
     uint32 const BONK_TIGERS_FURY_MS             = 4000;
-    float const BONK_MANGLE_RADIUS               = 5.0f;
     float const BONK_MANGLE_SHARE                = 0.25f;
     size_t const BONK_MANGLE_TARGETS             = 4;
     uint32 const BONK_FEROCIOUS_BITE_CHAIN       = 3;
-    float const BONK_FRENZY_RADIUS               = 8.0f;
     size_t const BONK_FRENZY_MAX_ENEMIES         = 5;
     float const BONK_BARKSKIN_MAX_PCT            = 10.0f;
     uint32 const BONK_LIFEBLOOM_EVERY            = 4;
     float const BONK_LIFEBLOOM_HEAL              = 1.0f;
-    float const BONK_LIFEBLOOM_RADIUS            = 10.0f;
     float const BONK_LIFEBLOOM_SHARE             = 0.8f;
     size_t const BONK_LIFEBLOOM_LOOKS            = 6;
     uint32 const BONK_EFFLORESCENCE_MS           = 4000;
     int32 const BONK_EFFLORESCENCE_PULSE_MS      = 1000;
     float const BONK_EFFLORESCENCE_SHARE         = 0.6f;
-    float const BONK_MASS_ENTANGLE_RADIUS        = 5.0f;
     uint32 const BONK_ROOT_MS                    = 2000;
     uint32 const BONK_STRANGLE_TICK_MS           = 1000;
     float const BONK_STRANGLE_SHARE              = 0.5f;
@@ -106,7 +98,6 @@ namespace
     float const BONK_STRANGLE_HEAL_MAX           = 0.5f;
     float const BONK_WIDENING_CALM_STEP          = 3.0f;
     float const BONK_OVERGROWTH_SHARE            = 0.6f;
-    float const BONK_BRAMBLES_RADIUS             = 8.0f;
     float const BONK_BRAMBLES_SHARE              = 0.5f;
     int32 const BONK_NATURES_GRASP_MS            = 1000;
     uint32 const BONK_MUSHROOM_MS                = 3000;
@@ -116,7 +107,6 @@ namespace
     size_t const BONK_MAX_MUSHROOMS              = 8;
     uint32 const BONK_SURGE_EVERY_MS             = 6000;
     size_t const BONK_SURGE_STARS                = 5;
-    float const BONK_SURGE_RADIUS                = 8.0f;
     uint32 const BONK_SURGE_BLEED                = 2;
     int32 const BONK_SURGE_ROOT_MS               = 1000;
     float const BONK_SURGE_HEAL                  = 2.0f;
@@ -221,7 +211,7 @@ void BonkRun::OnDruidShift(BonkDruidForm from, BonkDruidForm to)
 
 void BonkRun::SurgeIntoForm(OwnedWeapon const& shapeshift, BonkDruidForm form)
 {
-    float const radius = BONK_SURGE_RADIUS * GetWeaponArea(shapeshift);
+    float const radius = GetWeaponRadius(shapeshift);
     switch (form)
     {
         case BonkDruidForm::Moonkin:
@@ -300,7 +290,7 @@ void BonkRun::OnStarfireStrike(OwnedWeapon const& owned, SpellEntry const* spell
         return;
     target->SendPlaySpellVisualKit(BONK_KIT_STAR_BURST);
     float const damage = GetWeaponDamage(owned) * BONK_STARBURST_SHARE;
-    std::vector<Creature*> struck = GetMobsInRange(BONK_STARBURST_RADIUS * GetWeaponArea(owned), target);
+    std::vector<Creature*> struck = GetMobsInRange(GetWeaponRadius(owned), target);
     for (Creature* mob : struck)
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, damage);
     struck.push_back(target);
@@ -339,7 +329,7 @@ void BonkRun::OnMoonfireStrikes(OwnedWeapon const& owned, std::vector<Creature*>
     for (Creature* mob : struck)
     {
         size_t spread = 0;
-        for (Creature* neighbor : GetMobsInRange(BONK_SUNFIRE_RADIUS * GetWeaponArea(owned), mob))
+        for (Creature* neighbor : GetMobsInRange(GetWeaponRadius(owned), mob))
             if (spread < BONK_SUNFIRE_SPREAD && burned.insert(neighbor->GetObjectGuid()).second)
             {
                 ++spread;
@@ -367,7 +357,7 @@ void BonkRun::EruptFullMoons()
             continue;
         next += BONK_FULL_MOON_EVERY;
         ShowStrike(m_player, look, mob);
-        std::vector<Creature*> struck = GetMobsInRange(BONK_FULL_MOON_RADIUS * GetWeaponArea(*owned), mob);
+        std::vector<Creature*> struck = GetMobsInRange(GetWeaponRadius(*owned), mob);
         struck.push_back(mob);
         for (Creature* hit : struck)
             DealShamanHit(look, owned->weapon.spellId, hit, damage);
@@ -452,7 +442,7 @@ void BonkRun::PickRakeTargets(OwnedWeapon const& owned, std::vector<Creature*>& 
         mobs.resize(std::min<size_t>(mobs.size(), GetWeaponTargets(owned)));
         return;
     }
-    float const radius = BONK_THRASH_RADIUS * GetWeaponArea(owned);
+    float const radius = GetWeaponRadius(owned);
     mobs.erase(std::remove_if(mobs.begin(), mobs.end(), [this, radius](Creature* mob) { return !m_player->IsWithinDistInMap(mob, radius); }), mobs.end());
 }
 
@@ -478,7 +468,7 @@ void BonkRun::OnShredHit(OwnedWeapon const& owned, SpellEntry const* spellInfo, 
     uint32 const id = owned.weapon.id;
     if (id == BONK_WEAPON_MANGLE)
     {
-        std::vector<Creature*> mangled = GetMobsInRange(BONK_MANGLE_RADIUS * GetWeaponArea(owned), target);
+        std::vector<Creature*> mangled = GetMobsInRange(GetWeaponRadius(owned), target);
         mangled.resize(std::min(mangled.size(), BONK_MANGLE_TARGETS));
         for (Creature* mob : mangled)
             HitAsDruid(owned, spellInfo, mob, GetShredDamage(owned, mob) * BONK_MANGLE_SHARE);
@@ -516,7 +506,7 @@ void BonkRun::OnFrenziedTick(OwnedWeapon const& owned, float healPct)
     uint32 const id = owned.weapon.id;
     if (id == BONK_WEAPON_BLOODY_FRENZY)
     {
-        std::vector<Creature*> mobs = GetMobsInRange(BONK_FRENZY_RADIUS * GetWeaponArea(owned));
+        std::vector<Creature*> mobs = GetMobsInRange(GetWeaponRadius(owned));
         mobs.resize(std::min(mobs.size(), BONK_FRENZY_MAX_ENEMIES));
         SpellEntry const* look = sSpellMgr.GetSpellEntry(owned.weapon.spellId);
         float const damage = GetWeaponDamage(owned);
@@ -569,7 +559,7 @@ void BonkRun::OnRejuvenationTick(OwnedWeapon const& owned, SpellEntry const* spe
     SpellEntry const* lash = sSpellMgr.GetSpellEntry(BONK_SPELL_LASH_LOOK);
     float const damage = GetWeaponDamage(owned) * BONK_LIFEBLOOM_SHARE;
     size_t shown = 0;
-    for (Creature* mob : GetMobsInRange(BONK_LIFEBLOOM_RADIUS * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned)))
     {
         if (shown++ < BONK_LIFEBLOOM_LOOKS)
             ShowStrike(m_player, lash, mob);
@@ -584,7 +574,7 @@ void BonkRun::OnDruidRooted(OwnedWeapon const& owned, SpellEntry const* spellInf
         m_strangledUntilMs[mob->GetObjectGuid()] = m_totalMs + BONK_ROOT_MS;
     if (id != BONK_WEAPON_MASS_ENTANGLEMENT || !spreads)
         return;
-    for (Creature* neighbor : GetMobsInRange(BONK_MASS_ENTANGLE_RADIUS * GetWeaponArea(owned), mob))
+    for (Creature* neighbor : GetMobsInRange(GetWeaponRadius(owned), mob))
     {
         int32 durationMs = int32(BONK_ROOT_MS);
         if (!neighbor->IsAlive() || !IsNormalMob(neighbor) || !LimitRoot(neighbor, durationMs))
@@ -627,7 +617,7 @@ void BonkRun::StrangleRooted()
 
 float BonkRun::GetTranquilityReach(OwnedWeapon const& owned) const
 {
-    float reach = owned.weapon.range;
+    float reach = owned.weapon.radius;
     if (owned.weapon.id == BONK_WEAPON_WIDENING_CALM && m_tranquilityPulse)
         reach += BONK_WIDENING_CALM_STEP * float(m_tranquilityPulse);
     return reach * GetWeaponArea(owned);
@@ -652,7 +642,7 @@ void BonkRun::OnThornsStrike(OwnedWeapon const& thorns, SpellEntry const* look, 
 {
     uint32 const id = thorns.weapon.id;
     if (id == BONK_WEAPON_BRAMBLES)
-        for (Creature* mob : GetMobsInRange(BONK_BRAMBLES_RADIUS * GetWeaponArea(thorns)))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(thorns)))
             if (mob != attacker)
                 HitAsDruid(thorns, look, mob, GetWeaponDamage(thorns) * BONK_BRAMBLES_SHARE);
     if (id != BONK_WEAPON_NATURES_GRASP || !attacker->IsAlive() || !IsNormalMob(attacker))

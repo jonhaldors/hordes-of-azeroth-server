@@ -73,12 +73,10 @@ namespace
     float const BONK_SHACKLE_TICK_SHARE       = 0.5f;
     int32 const BONK_MIND_FLAY_SLOW           = -30;
     int32 const BONK_MIND_FLAY_SLOW_MS        = 1000;
-    float const BONK_MIND_BLAST_REACH         = 8.0f;
     uint32 const BONK_MIND_BLAST_MAX_COPY     = 10;
     int32 const BONK_SURGE_OF_DARKNESS_MS     = 600000;
 
     uint32 const BONK_SEARING_LIGHT_EVERY     = 4;
-    float const BONK_SEARING_LIGHT_RADIUS     = 6.0f;
     int32 const BONK_SEARING_LIGHT_STUN_MS    = 1000;
     size_t const BONK_ECHO_OF_LIGHT_PER_SEC   = 2;
     uint32 const BONK_PRAYER_OF_MENDING_JUMPS = 2;
@@ -86,13 +84,11 @@ namespace
     int32 const BONK_DIVINE_HYMN_GAP_MS       = 1000;
     uint32 const BONK_DIVINE_HYMN_RINGS       = 3;
     float const BONK_LIGHTS_EDGE_BONUS        = 1.0f;
-    float const BONK_SANCTIFY_RADIUS          = 8.0f;
     float const BONK_SANCTIFY_SHARE           = 0.5f;
     float const BONK_SANCTIFY_HEAL            = 5.0f;
     uint32 const BONK_BARRIER_MS              = 5000;
     float const BONK_BARRIER_TAKEN            = 0.75f;
     uint32 const BONK_RAPTURE_BOLTS           = 2;
-    float const BONK_CONTRITION_RADIUS        = 4.0f;
     float const BONK_CONTRITION_SHARE         = 0.5f;
     float const BONK_PSYCHIC_HORROR_BONUS     = 1.2f;
     uint32 const BONK_SHADOW_TERROR_STACKS    = 3;
@@ -100,13 +96,10 @@ namespace
     uint32 const BONK_MASS_SHACKLE_CHAINS     = 3;
     float const BONK_VAMPIRIC_TOUCH_SHARE     = 0.02f;
     float const BONK_VAMPIRIC_TOUCH_CAP       = 1.0f;
-    float const BONK_MIND_SEAR_RADIUS         = 6.0f;
     float const BONK_MIND_SEAR_SHARE          = 0.5f;
     float const BONK_VOID_ERUPTION_SHARE      = 0.5f;
-    float const BONK_MINDBENDER_RADIUS        = 5.0f;
     float const BONK_MINDBENDER_SHARE         = 0.5f;
     uint32 const BONK_VOID_TENDRILS_EVERY_MS  = 6000;
-    float const BONK_VOID_TENDRILS_RADIUS     = 6.0f;
     int32 const BONK_VOID_TENDRILS_MS         = 2000;
     uint32 const BONK_PRIEST_TICK_MS          = 1000;
     float const BONK_ARCHANGEL_SMITE_HEALTH   = 0.8f;
@@ -297,7 +290,7 @@ void BonkRun::OnPriestStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, Cr
 
     if (id == BONK_WEAPON_SANCTIFY)
     {
-        for (Creature* mob : GetMobsInRange(BONK_SANCTIFY_RADIUS * GetWeaponArea(owned), target))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
             DealShamanHit(spellInfo, owned.weapon.spellId, mob, GetWeaponDamage(owned) * share * BONK_SANCTIFY_SHARE);
         HealPriest(BONK_SANCTIFY_HEAL, owned.weapon.spellId, false);
     }
@@ -309,7 +302,7 @@ void BonkRun::OnPriestStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, Cr
     SpellEntry const* stun = sSpellMgr.GetSpellEntry(BONK_SPELL_HOLY_STUN);
     if (nova)
         ShowStrike(m_player, nova, target);
-    std::vector<Creature*> struck = GetMobsInRange(BONK_SEARING_LIGHT_RADIUS * GetWeaponArea(owned), target);
+    std::vector<Creature*> struck = GetMobsInRange(GetWeaponRadius(owned), target);
     for (Creature* mob : struck)
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, GetWeaponDamage(owned) * share);
     struck.push_back(target);
@@ -411,7 +404,7 @@ void BonkRun::OnPriestOverheal()
 
 void BonkRun::RingHalo(OwnedWeapon& owned, SpellEntry const* spellInfo, bool fresh)
 {
-    float const outer = owned.weapon.range * GetWeaponArea(owned);
+    float const outer = GetWeaponRadius(owned);
     std::vector<Creature*> ring;
     for (Creature* mob : GetMobsInRange(outer))
         if (m_player->GetDistance(mob) >= BONK_HALO_INNER && m_player->IsWithinLOSInMap(mob))
@@ -476,7 +469,7 @@ void BonkRun::RaisePowerWordShield(OwnedWeapon& owned)
         return;
     m_barrierX = m_player->GetPositionX();
     m_barrierY = m_player->GetPositionY();
-    m_barrierRadius = std::max(0.0f, owned.weapon.behaviorValue) * GetWeaponArea(owned);
+    m_barrierRadius = GetWeaponRadius(owned);
     m_barrierUntilMs = m_totalMs + uint32(BONK_BARRIER_MS * GetWeaponDurationScale(owned));
     StartKeywordCloud(owned, m_barrierX, m_barrierY, m_player->GetPositionZ());
 }
@@ -642,7 +635,7 @@ void BonkRun::LandPenanceBolt(OwnedWeapon& owned, SpellEntry const* bolt, Pendin
     if (!target || !target->IsAlive())
         return;
     if (owned.weapon.id == BONK_WEAPON_CONTRITION)
-        for (Creature* mob : GetMobsInRange(BONK_CONTRITION_RADIUS * GetWeaponArea(owned), target))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
             DealShamanHit(bolt, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_CONTRITION_SHARE);
     DealShamanHit(bolt, owned.weapon.spellId, target, GetWeaponDamage(owned));
     HealPriest(BONK_PENANCE_HEAL * (1.0f + owned.damageBonus / 100.0f), owned.weapon.spellId, true);
@@ -681,7 +674,7 @@ void BonkRun::HoldMob(Creature* mob, SpellEntry const* spellInfo, AuraType type,
 void BonkRun::ScreamPsychic(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
     std::vector<Creature*> scared;
-    for (Creature* mob : GetMobsInRange(owned.weapon.range * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned)))
         if (IsNormalMob(mob) && m_player->IsWithinLOSInMap(mob))
             scared.push_back(mob);
     if (scared.empty())
@@ -744,7 +737,7 @@ void BonkRun::FlayMind(OwnedWeapon& owned, SpellEntry const* spellInfo)
     ShowStrike(m_player, spellInfo, target);
     DealShamanHit(spellInfo, owned.weapon.spellId, target, GetWeaponDamage(owned));
     if (owned.weapon.id == BONK_WEAPON_MIND_SEAR)
-        for (Creature* mob : GetMobsInRange(BONK_MIND_SEAR_RADIUS * GetWeaponArea(owned), target))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
             DealShamanHit(spellInfo, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_MIND_SEAR_SHARE);
     if (!target->IsAlive())
     {
@@ -776,7 +769,7 @@ void BonkRun::BlastMind(OwnedWeapon& owned, SpellEntry const* spellInfo)
     std::vector<Creature*> mobs = GetMobsInRange(owned.weapon.range);
     SortMostDecayFirst(mobs);
     uint32 const blasts = 1 + GetSpellCount(owned);
-    float const reach = BONK_MIND_BLAST_REACH * GetWeaponArea(owned);
+    float const reach = GetWeaponRadius(owned);
     uint32 fired = 0;
     for (Creature* target : mobs)
     {
@@ -813,7 +806,7 @@ void BonkRun::OnPriestPetBite(Creature* pet, Unit* victim)
         HealPriest(GetHealPercent(owned.weapon, owned.damageBonus), owned.weapon.spellId, false);
         if (owned.weapon.id == BONK_WEAPON_MINDBENDER)
             if (SpellEntry const* shadow = sSpellMgr.GetSpellEntry(BONK_SPELL_SHADOW_HIT))
-                for (Creature* mob : GetMobsInRange(BONK_MINDBENDER_RADIUS * GetWeaponArea(owned), victim))
+                for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), victim))
                     DealShamanHit(shadow, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_MINDBENDER_SHARE);
         return;
     }
@@ -859,7 +852,7 @@ void BonkRun::GraspWithVoidTendrils()
     if (!tendrils || !grasp || !m_player->IsAlive())
         return;
     Map* map = m_player->GetMap();
-    float const radius = BONK_VOID_TENDRILS_RADIUS * GetWeaponArea(*tendrils);
+    float const radius = GetWeaponRadius(*tendrils);
     for (ObjectGuid const& guid : tendrils->pets)
     {
         Creature* fiend = map->GetCreature(guid);

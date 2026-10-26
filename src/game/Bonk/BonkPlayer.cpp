@@ -1219,6 +1219,14 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
         return false;
     }
 
+    uint32 const gate = GetFortuneRowGate(talent->layout.row);
+    uint32 const above = GetFortuneSpentAbove(talent->layout.row);
+    if (above < gate)
+    {
+        message = "Spend " + FormatBonkShards(gate) + " on the rows above to unlock " + talent->name + ". You have spent " + std::to_string(above) + ".";
+        return false;
+    }
+
     if (rank < talent->rankQuests.size())
     {
         uint32 const needed = talent->rankQuests[rank];
@@ -1349,6 +1357,31 @@ bool BonkPlayer::RefundUpgrade(uint32 upgradeId, std::string& message)
     return true;
 }
 
+uint32 BonkPlayer::GetFortuneSpentAbove(uint8 row, uint32 refundedId) const
+{
+    uint32 spent = 0;
+    for (auto const& itr : m_talentRanks)
+        if (BonkTalent const* talent = sBonkMgr.GetTalent(itr.first))
+            if (talent->layout.row < row)
+            {
+                uint8 const ranks = itr.first == refundedId && itr.second ? itr.second - 1 : itr.second;
+                for (uint8 rank = 0; rank < ranks; ++rank)
+                    spent += talent->GetCost(rank);
+            }
+    return spent;
+}
+
+uint32 BonkPlayer::GetFortuneSpent(uint32 tree) const
+{
+    uint32 spent = 0;
+    for (auto const& itr : m_talentRanks)
+        if (BonkTalent const* talent = sBonkMgr.GetTalent(itr.first))
+            if (talent->layout.tree == tree)
+                for (uint8 rank = 0; rank < itr.second; ++rank)
+                    spent += talent->GetCost(rank);
+    return spent;
+}
+
 bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
 {
     BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
@@ -1373,6 +1406,15 @@ bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
             if (itr.second && other->layout.requiredId == talentId && rank - 1 < other->layout.requiredRank)
             {
                 message = "Refund " + other->name + " first, because it requires this one.";
+                return false;
+            }
+
+    for (auto const& itr : m_talentRanks)
+        if (BonkTalent const* other = sBonkMgr.GetTalent(itr.first))
+            if (itr.second && other->layout.row > talent->layout.row &&
+                GetFortuneSpentAbove(other->layout.row, talentId) < GetFortuneRowGate(other->layout.row))
+            {
+                message = "Refund " + other->name + " first, because it needs the tickets you spent here.";
                 return false;
             }
 
@@ -1582,12 +1624,22 @@ void BonkPlayer::SendShop(bool open) const
     }
 
     bool const shards = m_shop == BONK_SHOP_TALENTS;
+    std::string gates;
+    if (shards)
+    {
+        uint8 lastRow = 1;
+        for (auto const& itr : sBonkMgr.GetTalents())
+            lastRow = std::max(lastRow, itr.second.layout.row);
+        for (uint8 row = 1; row <= lastRow; ++row)
+            gates += (row > 1 ? "," : "") + std::to_string(GetFortuneRowGate(row)) + ":" + std::to_string(GetFortuneSpentAbove(row));
+    }
     SendAddon("shop~" + std::to_string(uint32(m_shop)) + "~" + (open ? "1" : "0") + "~" + m_shopNpcName + "~" +
-        (shards ? "shards~" + std::to_string(m_shards) : "gold~" + std::to_string(m_player->GetMoney())));
+        (shards ? "shards~" + std::to_string(m_shards) + "~" + gates : "gold~" + std::to_string(m_player->GetMoney())));
 
     for (auto const& itr : sBonkMgr.GetShopTrees())
         if (itr.second.shop == m_shop)
-            SendAddon("tree~" + std::to_string(itr.first) + "~" + itr.second.name + "~" + itr.second.background);
+            SendAddon("tree~" + std::to_string(itr.first) + "~" + itr.second.name + "~" + itr.second.background + "~" +
+                std::to_string(shards ? GetFortuneSpent(itr.first) : 0));
 
     BonkQuestReward const lockType = m_shop == BONK_SHOP_UPGRADES ? BONK_REWARD_UPGRADE : BONK_REWARD_TALENT;
     auto sendNode = [this, lockType](uint32 id, BonkShopNode const& layout, uint8 rank, uint8 maxRank, uint32 nextCost, uint32 refund, bool toggle,

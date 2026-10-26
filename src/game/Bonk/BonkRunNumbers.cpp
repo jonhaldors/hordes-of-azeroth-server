@@ -433,18 +433,34 @@ void BonkRun::DescribeOfferDamage(Offer const& offer, std::string& before, std::
         before.clear();
 }
 
+void BonkRun::AddCurvedTotal(BonkPassiveEffect effect, float gain, std::vector<BonkStatChange>& stats) const
+{
+    float const ceiling = effect == BONK_PASSIVE_HASTE ? BONK_MAX_HASTE : effect == BONK_PASSIVE_AREA ? BONK_MAX_AREA : 0.0f;
+    if (ceiling <= 0.0f)
+        return;
+    float const raw = GetPassiveTotal(effect);
+    auto percent = [](float value) { return std::to_string(int32(std::lround(value))) + "%"; };
+    stats.push_back({ "Total", percent(CurveStat(raw, ceiling)), percent(CurveStat(raw + gain, ceiling)) });
+}
+
 void BonkRun::DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const
 {
     stats.clear();
-    if (offer.isCard || offer.newLevel <= 1)
+    if (offer.isCard)
         return;
 
     if (!offer.isWeapon)
     {
         if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
+        {
             sBonkMgr.DescribePassiveStats(*passive, offer.newLevel, stats);
+            AddCurvedTotal(BonkPassiveEffect(passive->effect), passive->valuePerRank, stats);
+        }
         return;
     }
+
+    if (offer.newLevel <= 1)
+        return;
 
     if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY)
         return;
@@ -667,7 +683,7 @@ std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string tex
     if (weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
     {
         float const area = GetWeaponArea(owned);
-        float const radius = weapon.groundRadius > 0.0f ? weapon.groundRadius : weapon.range;
+        float const radius = weapon.radius > 0.0f ? weapon.radius : weapon.range;
         std::string const base = TrimNumber(radius);
         if (area > BONK_SHOWN_BETTER && radius > 0.0f)
             MarkNumberAfter(text, "within ", base, MarkNumber(TrimNumber(radius * area), true));

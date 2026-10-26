@@ -492,12 +492,7 @@ void SpellCaster::RollMeleeOutcomeAgainst(MeleeHitOutcome& outHitOutcome, uint32
 
     if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
     {
-        if (run->RollDodge(pVictim))
-        {
-            outHitInfo |= HITINFO_ROLLED_DODGE;
-            outHitOutcome = MELEE_HIT_DODGE;
-        }
-        else if (canCrit && roll_chance_f(run->GetCritChance(pSpellEntry, pVictim, ToUnit())))
+        if (canCrit && roll_chance_f(run->GetCritChance(pSpellEntry, pVictim, ToUnit())))
         {
             outHitInfo |= HITINFO_CRITICALHIT;
             outHitOutcome = MELEE_HIT_CRIT;
@@ -839,8 +834,8 @@ SpellMissInfo SpellCaster::MagicSpellHitResult(Unit const* pVictim, SpellEntry c
     if (!pVictim->IsAlive())
         return SPELL_MISS_NONE;
 
-    if (BonkRun const* run = BonkRun::FromAttack(this, pVictim))
-        return run->RollDodge(pVictim) ? SPELL_MISS_DODGE : SPELL_MISS_NONE;
+    if (BonkRun::FromAttack(this, pVictim))
+        return SPELL_MISS_NONE;
 
     // Spell cannot be resisted (not exist on dbc, custom flag)
     if (pSpellEntry->AttributesEx4 & SPELL_ATTR_EX4_IGNORE_RESISTANCES)
