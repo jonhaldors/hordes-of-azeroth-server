@@ -2415,6 +2415,10 @@ class BonkRun
         std::vector<uint32> m_bloodsurgeUntil;
         uint32 m_rapidFireUntil = 0;
         uint32 m_sliceAndDiceUntil = 0;
+        uint32 m_borrowedTimeUntil = 0;
+        uint32 m_smiteCount = 0;
+        uint32 m_madnessStacks = 0;
+        std::map<ObjectGuid, uint32> m_schismUntil;
         std::vector<uint32> m_danseUntil;
         uint32 m_mongooseStacks = 0;
         int32 m_mongooseTimer = 0;

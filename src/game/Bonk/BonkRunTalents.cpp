@@ -36,6 +36,12 @@ namespace
     uint32 const BONK_SLICE_AND_DICE_MS         = 5000;
     uint32 const BONK_DANSE_MACABRE_MS          = 8000;
     size_t const BONK_DANSE_MACABRE_STACKS      = 10;
+    uint32 const BONK_BORROWED_TIME_MS          = 4000;
+    uint32 const BONK_SCHISM_MS                 = 6000;
+    float const BONK_SHINING_FORCE_RADIUS       = 6.0f;
+    uint32 const BONK_ANSWERED_PRAYERS_EVERY    = 8;
+    float const BONK_ANCIENT_MADNESS_RADIUS     = 20.0f;
+    uint32 const BONK_ANCIENT_MADNESS_MAX_STACKS = 10;
     float const BONK_BESTIAL_WRATH_FRENZY       = 1.5f;
     float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.7f;
     float const BONK_TRUESHOT_MARKED            = 1.4f;
@@ -125,6 +131,11 @@ float BonkRun::GetTalentDamagePercent() const
     }
     percent += m_mastery.Special(BONK_SPECIAL_PACK_HUNTER) * float(CountLivingPets());
     percent += m_mastery.Special(BONK_SPECIAL_BULWARK) * float(m_bulwarkStacks);
+    percent += m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) * float(m_madnessStacks);
+    if (m_spellShield)
+        percent += m_mastery.Special(BONK_SPECIAL_POWER_INFUSION);
+    if (m_player->GetHealth() >= m_player->GetMaxHealth())
+        percent += m_mastery.Special(BONK_SPECIAL_DIVINE_PROVIDENCE);
     float const danse = m_mastery.Special(BONK_SPECIAL_DANSE_MACABRE);
     if (danse > 0.0f)
     {
@@ -427,6 +438,18 @@ void BonkRun::OnTalentCastDone(OwnedWeapon& owned)
     if (root == BONK_WEAPON_LIGHTS_HAMMER && roll_chance_f(m_mastery.Special(BONK_SPECIAL_DIVINE_PURPOSE)))
         owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_FLOOR_MS);
 
+    if (root == BONK_WEAPON_POWER_WORD_SHIELD)
+    {
+        if (m_mastery.Special(BONK_SPECIAL_BORROWED_TIME) > 0.0f)
+            m_borrowedTimeUntil = m_totalMs + BONK_BORROWED_TIME_MS;
+        if (m_mastery.Special(BONK_SPECIAL_SHINING_FORCE) > 0.0f)
+            for (Creature* mob : GetMobsInRange(BONK_SHINING_FORCE_RADIUS))
+                m_pendingStuns.push_back(mob->GetObjectGuid());
+    }
+
+    if (root == BONK_WEAPON_SMITE && m_mastery.Special(BONK_SPECIAL_ANSWERED_PRAYERS) > 0.0f && ++m_smiteCount % BONK_ANSWERED_PRAYERS_EVERY == 0)
+        ReduceTimer(BONK_WEAPON_HALO, BONK_INSTANT_RECHARGE_MS);
+
     if (root == BONK_WEAPON_EVISCERATE)
     {
         float const restless = m_mastery.Special(BONK_SPECIAL_RESTLESS_BLADES);
@@ -468,6 +491,8 @@ float BonkRun::GetTalentHaste() const
         haste += m_mastery.Special(BONK_SPECIAL_RAPID_FIRE);
     if (m_sliceAndDiceUntil > now)
         haste += m_mastery.Special(BONK_SPECIAL_SLICE_AND_DICE);
+    if (m_borrowedTimeUntil > now)
+        haste += m_mastery.Special(BONK_SPECIAL_BORROWED_TIME);
     for (auto const& itr : m_castHasteUntil)
     {
         auto value = m_mastery.castHaste.find(itr.first);
@@ -524,7 +549,8 @@ void BonkRun::UpdateTalents(uint32 diff)
 {
     bool const mongoose = m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) > 0.0f;
     bool const bulwark = m_mastery.Special(BONK_SPECIAL_BULWARK) > 0.0f;
-    if (!mongoose && !bulwark)
+    bool const madness = m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) > 0.0f;
+    if (!mongoose && !bulwark && !madness)
         return;
     m_mongooseTimer -= int32(diff);
     if (m_mongooseTimer > 0)
@@ -537,6 +563,12 @@ void BonkRun::UpdateTalents(uint32 diff)
             ++poisoned;
     m_mongooseStacks = mongoose ? std::min(poisoned, BONK_MONGOOSE_MAX_STACKS) : 0;
     m_bulwarkStacks = bulwark ? std::min(uint32(around.size()), BONK_BULWARK_MAX_STACKS) : 0;
+    uint32 decaying = 0;
+    if (madness)
+        for (Creature* mob : GetMobsInRange(BONK_ANCIENT_MADNESS_RADIUS))
+            if (GetKeywordStacks(mob, BONK_KEYWORD_DECAY))
+                ++decaying;
+    m_madnessStacks = std::min(decaying, BONK_ANCIENT_MADNESS_MAX_STACKS);
 }
 
 bool BonkRun::IsFreshMeat(SpellEntry const* spell, Unit const* victim) const
@@ -606,6 +638,9 @@ void BonkRun::OnTalentDamage(Unit* victim, SpellEntry const* spell)
         if (flamestrike > 0)
             ReduceTimer(BONK_WEAPON_FLAMESTRIKE, flamestrike);
     }
+
+    if (root == BONK_WEAPON_PENANCE && m_mastery.Special(BONK_SPECIAL_SCHISM) > 0.0f)
+        m_schismUntil[victim->GetObjectGuid()] = m_totalMs + BONK_SCHISM_MS;
 
     if (root == BONK_WEAPON_FIRE_BLAST)
     {

@@ -11,8 +11,6 @@
 
 namespace
 {
-    uint32 const BONK_WEAPON_SMITE            = 500;
-    uint32 const BONK_WEAPON_HALO             = 502;
     uint32 const BONK_WEAPON_SHADOWFIEND      = 511;
 
     uint32 const BONK_WEAPON_SEARING_LIGHT    = 513;
@@ -77,6 +75,7 @@ namespace
     int32 const BONK_MIND_FLAY_SLOW_MS        = 1000;
     float const BONK_MIND_BLAST_REACH         = 8.0f;
     uint32 const BONK_MIND_BLAST_MAX_COPY     = 10;
+    int32 const BONK_SURGE_OF_DARKNESS_MS     = 600000;
 
     uint32 const BONK_SEARING_LIGHT_EVERY     = 4;
     float const BONK_SEARING_LIGHT_RADIUS     = 6.0f;
@@ -364,9 +363,12 @@ void BonkRun::PulseRenew(OwnedWeapon& owned)
     if (!m_player->HasAura(BONK_SPELL_RENEW))
         m_player->AddAura(BONK_SPELL_RENEW, ADD_AURA_PERMANENT);
     uint32 const smiteFrom = m_mastery.Has(BONK_CAPSTONE_ARCHANGEL) ? uint32(m_player->GetMaxHealth() * BONK_ARCHANGEL_SMITE_HEALTH) : m_player->GetMaxHealth();
+    uint32 const naaruMs = uint32(m_mastery.Special(BONK_SPECIAL_LIGHT_OF_THE_NAARU) * IN_MILLISECONDS);
     if (m_player->GetHealth() < smiteFrom)
     {
         HealPriest(GetHealPercent(owned.weapon, owned.damageBonus), BONK_SPELL_RENEW, false);
+        if (naaruMs && m_mastery.Special(BONK_SPECIAL_BENEDICTION) > 0.0f)
+            ShortenHolyWord(naaruMs);
         return;
     }
     SpellEntry const* smite = sSpellMgr.GetSpellEntry(BONK_SPELL_SMITE);
@@ -375,6 +377,8 @@ void BonkRun::PulseRenew(OwnedWeapon& owned)
         return;
     ShowStrike(m_player, smite, target);
     DealShamanHit(smite, owned.weapon.spellId, target, GetWeaponDamage(owned));
+    if (naaruMs)
+        ShortenHolyWord(naaruMs);
     if (owned.weapon.id != BONK_WEAPON_PRAYER_OF_MENDING)
         return;
     uint32 jumped = 0;
@@ -545,7 +549,7 @@ void BonkRun::FirePenance(OwnedWeapon& owned)
             targets.push_back(mob);
     }
     uint32 const rapture = owned.weapon.id == BONK_WEAPON_RAPTURE && m_spellShield ? BONK_RAPTURE_BOLTS : 0;
-    uint32 const bolts = BONK_PENANCE_BOLTS + rapture + GetSpellCount(owned);
+    uint32 const bolts = BONK_PENANCE_BOLTS + rapture + GetSpellCount(owned) + uint32(m_mastery.Special(BONK_SPECIAL_CASTIGATION));
     for (Creature* mob : GetMobsInRange(range))
     {
         if (targets.size() >= bolts)
@@ -687,7 +691,7 @@ void BonkRun::ScreamPsychic(OwnedWeapon& owned, SpellEntry const* spellInfo)
     }
     owned.timer = GetWeaponCooldown(owned);
     ShowStrike(m_player, spellInfo, m_player);
-    int32 const durationMs = int32(BONK_FEAR_MS * GetWeaponDurationScale(owned));
+    int32 const durationMs = int32(BONK_FEAR_MS * GetWeaponDurationScale(owned) + m_mastery.Special(BONK_SPECIAL_SHEER_TERROR) * IN_MILLISECONDS);
     for (Creature* mob : scared)
     {
         HoldMob(mob, spellInfo, SPELL_AURA_MOD_FEAR, durationMs);
@@ -743,7 +747,11 @@ void BonkRun::FlayMind(OwnedWeapon& owned, SpellEntry const* spellInfo)
         for (Creature* mob : GetMobsInRange(BONK_MIND_SEAR_RADIUS * GetWeaponArea(owned), target))
             DealShamanHit(spellInfo, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_MIND_SEAR_SHARE);
     if (!target->IsAlive())
+    {
+        if (m_mastery.Special(BONK_SPECIAL_SURGE_OF_DARKNESS) > 0.0f)
+            ReduceTimer(BONK_WEAPON_MIND_BLAST, BONK_SURGE_OF_DARKNESS_MS);
         return;
+    }
     uint32 stacks = owned.weapon.applyStacks;
     if (switched && owned.weapon.id == BONK_WEAPON_INSANITY)
         stacks += m_flayCarried;
@@ -777,7 +785,7 @@ void BonkRun::BlastMind(OwnedWeapon& owned, SpellEntry const* spellInfo)
         if (!target->IsAlive() || !m_player->IsWithinLOSInMap(target))
             continue;
         ++fired;
-        uint32 const copied = std::min(GetKeywordStacks(target, BONK_KEYWORD_DECAY), BONK_MIND_BLAST_MAX_COPY);
+        uint32 const copied = std::min(GetKeywordStacks(target, BONK_KEYWORD_DECAY), BONK_MIND_BLAST_MAX_COPY + uint32(m_mastery.Special(BONK_SPECIAL_PSYCHIC_LINK)));
         std::vector<Creature*> const minds = GetMobsInRange(reach, target);
         ShowStrike(m_player, spellInfo, target);
         DealShamanHit(spellInfo, owned.weapon.spellId, target, GetWeaponDamage(owned));
@@ -878,5 +886,8 @@ float BonkRun::GetPriestDamageMultiplier(Unit const* victim) const
         multiplier *= BONK_PSYCHIC_HORROR_BONUS;
     if (FindOwned(BONK_WEAPON_CHAINS_OF_LIGHT) && victim->HasAura(BONK_SPELL_SHACKLE))
         multiplier *= BONK_CHAINS_OF_LIGHT_BONUS;
+    auto schism = m_schismUntil.find(victim->GetObjectGuid());
+    if (schism != m_schismUntil.end() && schism->second > m_totalMs)
+        multiplier *= 1.0f + m_mastery.Special(BONK_SPECIAL_SCHISM) / 100.0f;
     return multiplier;
 }
