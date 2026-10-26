@@ -46,7 +46,7 @@ void SendBonkFlight(Player* player, uint32 id, float fromX, float fromY, float f
     uint32 display, float scale);
 void SendBonkLanding(Player* player, uint32 id);
 void SendBonkMark(Player* player, std::string const& key, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
-    uint32 durationMs, bool outlineOnly, uint8 style, ObjectGuid const& follow = ObjectGuid(), std::string const& texture = "");
+    uint32 durationMs, bool outlineOnly, uint8 style, ObjectGuid const& follow = ObjectGuid(), std::string const& texture = "", uint32 doneMs = 0);
 void SendBonkUnmark(Player* player, std::string const& key);
 void SendBonkAuraAt(Player* player, uint32 key, uint32 spellId, float x, float y, float z, float scale = 1.0f);
 void SendBonkAuraGone(Player* player, uint32 key);

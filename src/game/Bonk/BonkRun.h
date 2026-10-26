@@ -979,7 +979,7 @@ class BonkRun
         void MaybeDropHearthstone(BonkSpawnKind kind);
         void UpdateHearth(uint32 diff);
         void PauseHearth(bool paused);
-        void DressHearthFill();
+        void ShowHearthRing();
         void SendHearthBar(bool inside);
         void LeaveHeroBehind();
         bool IsHeroInHearthRing() const;
@@ -993,9 +993,7 @@ class BonkRun
         bool m_hearthShown = false;
         bool m_hearthInside = false;
         float m_hearthX = 0.0f, m_hearthY = 0.0f, m_hearthZ = 0.0f;
-        ObjectGuid m_hearthOutline;
         ObjectGuid m_hearthSwirl;
-        ObjectGuid m_hearthFill;
 
         void SendState() const;
         void SendLoadout() const;

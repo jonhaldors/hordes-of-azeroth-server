@@ -36,23 +36,12 @@ namespace
     float const BONK_HEARTH_LORE_STEP    = 20.0f;
     uint32 const BONK_HEARTH_MIN_MS      = 8000;
     uint32 const BONK_HEARTH_SEND_MS     = 250;
-    uint32 const BONK_HEARTH_RING_DISPLAY       = 18400;
-    uint32 const BONK_HEARTH_FIRST_FILL_DISPLAY = 18401;
-    uint32 const BONK_HEARTH_FILL_STEP_MS       = 1000;
-    uint32 const BONK_HEARTH_RESUME_STEP_MS     = 500;
+    char const* const BONK_HEARTH_MARK          = "hearth";
     uint32 const BONK_HEARTH_VANISH_MS          = 300;
     uint32 const BONK_HEARTH_SWIRL_DISPLAY      = 18585;
     uint32 const BONK_KIT_ASTRAL_RECALL         = 365;
     float const BONK_VAULT_REACH         = 8.0f;
     float const BONK_VAULT_RING_OFFSET   = 2.5f;
-
-    uint32 GetHearthFillDisplay(uint32 durationMs, uint32 doneMs)
-    {
-        uint32 display = BONK_HEARTH_FIRST_FILL_DISPLAY;
-        for (uint32 shorter = BONK_HEARTH_MIN_MS; shorter < durationMs; shorter += BONK_HEARTH_FILL_STEP_MS)
-            display += shorter / BONK_HEARTH_RESUME_STEP_MS;
-        return display + std::min(doneMs, durationMs - 1) / BONK_HEARTH_RESUME_STEP_MS;
-    }
 
     std::vector<uint8> GetEquipSlotsFor(uint32 inventoryType)
     {
@@ -567,9 +556,8 @@ bool BonkRun::UseItem(Item* item)
     m_hearthSendMs = 0;
     m_hearthLeavingMs = 0;
     m_hearthShown = false;
-    m_hearthOutline = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_RING_DISPLAY);
     m_hearthSwirl = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_SWIRL_DISPLAY);
-    DressHearthFill();
+    ShowHearthRing();
     SendHearthBar(true);
     bonk->Notify("The ring fills in " + std::to_string(GetHearthMs() / IN_MILLISECONDS) + " seconds. Be inside it when it does to return to the Inn" +
         (IsVaultEmptyWithFinds() ? ". Put your best find in the Extraction Vault first!" : " with your loot!"));
@@ -590,12 +578,8 @@ void BonkRun::UpdateHearth(uint32 diff)
         return;
     }
 
-    if (m_hearthOutline.IsEmpty())
-        m_hearthOutline = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_RING_DISPLAY);
     if (m_hearthSwirl.IsEmpty())
         m_hearthSwirl = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, BONK_HEARTH_SWIRL_DISPLAY);
-    if (m_hearthFill.IsEmpty())
-        DressHearthFill();
 
     m_hearthMs += diff;
     m_hearthSendMs += diff;
@@ -623,21 +607,15 @@ void BonkRun::PauseHearth(bool paused)
     if (!m_hearthActive || m_hearthLeavingMs)
         return;
     if (paused)
-        m_telegraphs.Hide(m_player, m_hearthFill);
+        SendBonkUnmark(m_player, BONK_HEARTH_MARK);
     else
-        DressHearthFill();
+        ShowHearthRing();
 }
 
-void BonkRun::DressHearthFill()
+void BonkRun::ShowHearthRing()
 {
-    uint32 const done = m_hearthMs - m_hearthMs % BONK_HEARTH_RESUME_STEP_MS;
-    uint32 const display = GetHearthFillDisplay(GetHearthMs(), done);
-    if (m_hearthFill.IsEmpty())
-        m_hearthFill = m_telegraphs.Borrow(m_player, m_hearthX, m_hearthY, m_hearthZ, display);
-    else
-        m_telegraphs.Dress(m_player, m_hearthFill, display);
-    if (!m_hearthFill.IsEmpty())
-        m_hearthMs = done;
+    SendBonkMark(m_player, BONK_HEARTH_MARK, BONK_TELEGRAPH_CIRCLE, m_hearthX, m_hearthY, m_hearthZ, 0.0f, BONK_HEARTH_RADIUS, GetHearthMs(),
+        false, BONK_TELEGRAPH_STYLE_FROST, ObjectGuid(), "", m_hearthMs);
 }
 
 void BonkRun::SendHearthBar(bool inside)
@@ -684,12 +662,9 @@ void BonkRun::EndHearth()
     m_hearthShown = false;
     m_hearthActive = false;
     m_hearthLeavingMs = 0;
-    m_telegraphs.Release(m_player, m_hearthOutline);
+    SendBonkUnmark(m_player, BONK_HEARTH_MARK);
     m_telegraphs.Release(m_player, m_hearthSwirl);
-    m_telegraphs.Release(m_player, m_hearthFill);
-    m_hearthOutline.Clear();
     m_hearthSwirl.Clear();
-    m_hearthFill.Clear();
     if (m_state != STATE_PORTAL)
         DespawnVault();
 }
