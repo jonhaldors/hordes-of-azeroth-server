@@ -114,6 +114,7 @@ namespace
     uint32 const BONK_LIQUID_MAGMA_GLOBS      = 2;
     float const BONK_LIQUID_MAGMA_SHARE       = 0.5f;
     uint32 const BONK_HEALING_RAIN_EVERY_TICKS = 3;
+    int32 const BONK_STORMFLURRY_RECHARGE_MS  = 600000;
     float const BONK_HEALING_RAIN_RADIUS      = 10.0f;
 }
 
@@ -303,7 +304,9 @@ void BonkRun::BurnWithFlametongue(OwnedWeapon& owned, Creature* target, uint32 s
 
 void BonkRun::QueueWindfury(OwnedWeapon const& owned, Creature* target, float share)
 {
-    for (uint32 swing = 1; swing <= BONK_WINDFURY_SWINGS; ++swing)
+    OnTalentWindfury();
+    uint32 const swings = BONK_WINDFURY_SWINGS + uint32(m_mastery.Special(BONK_SPECIAL_IMPROVED_WINDFURY));
+    for (uint32 swing = 1; swing <= swings; ++swing)
     {
         PendingCast gust;
         gust.weaponId = owned.weapon.id;
@@ -436,6 +439,8 @@ void BonkRun::ReleaseMaelstrom()
             ApplyShamanKeyword(*chosen, mob, BONK_KEYWORD_STATIC, BONK_STATIC_SURGE_STACKS);
         ++fired;
     }
+    if (fired && m_mastery.Special(BONK_SPECIAL_STORMFLURRY) > 0.0f)
+        ReduceTimer(BONK_WEAPON_STORMSTRIKE, BONK_STORMFLURRY_RECHARGE_MS);
 }
 
 void BonkRun::OnShamanPetBite(Creature* pet, Unit* victim)
@@ -449,6 +454,9 @@ void BonkRun::OnShamanPetBite(Creature* pet, Unit* victim)
 
         CountMaelstromHit();
         Creature* prey = victim->ToCreature();
+        uint32 const alphaWolf = uint32(m_mastery.Special(BONK_SPECIAL_ALPHA_WOLF));
+        if (family == BONK_PET_FAMILY_SPIRIT_WOLF && prey && alphaWolf && prey->IsAlive())
+            ApplyShamanKeyword(owned, prey, BONK_KEYWORD_STATIC, alphaWolf);
         if (family == BONK_PET_FAMILY_ELEMENTAL_SPIRIT && prey)
         {
             BonkKeyword const forms[] = { BONK_KEYWORD_BURNING, BONK_KEYWORD_CHILL, BONK_KEYWORD_STATIC };
@@ -596,17 +604,21 @@ void BonkRun::DischargeStatic(PendingCast const& cast)
         victims.push_back(target);
     for (Creature* mob : GetMobsNear(cast.x, cast.y, BONK_STATIC_RADIUS))
     {
-        if (victims.size() >= BONK_STATIC_VICTIMS + 1)
+        if (victims.size() >= BONK_STATIC_VICTIMS + 1 + uint32(m_mastery.Special(BONK_SPECIAL_AFTERSHOCK)))
             break;
         if (mob != target)
             victims.push_back(mob);
     }
 
+    bool const stuns = m_mastery.Special(BONK_SPECIAL_STATIC_CHARGE) > 0.0f;
     for (Creature* mob : victims)
     {
         ShowStrike(m_player, look, mob);
         DealShamanHit(spellInfo, spellInfo->Id, mob, damage);
+        if (stuns && mob->IsAlive())
+            m_pendingStuns.push_back(mob->GetObjectGuid());
     }
+    OnTalentStaticDischarge();
     StormNearDischarge(cast);
 }
 
@@ -694,6 +706,10 @@ void BonkRun::OnShamanKill(Unit* victim)
 
 void BonkRun::OnShamanPetPulse(OwnedWeapon& owned, Creature* pet, float radius)
 {
+    if (GetRootWeapon(owned.weapon) == BONK_WEAPON_MAGMA_TOTEM && m_mastery.Special(BONK_SPECIAL_EARTHGRAB) > 0.0f)
+        for (Creature* mob : GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), radius))
+            ApplyShamanKeyword(owned, mob, BONK_KEYWORD_DAZED, 1);
+
     if (owned.weapon.id == BONK_WEAPON_EARTHBIND)
         for (Creature* mob : GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), radius))
             ApplyShamanKeyword(owned, mob, BONK_KEYWORD_DAZED, 1);

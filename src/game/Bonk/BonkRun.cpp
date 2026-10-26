@@ -8729,7 +8729,7 @@ float BonkRun::GetSummonGrowth(OwnedWeapon const& owned) const
 
 float BonkRun::GetSummonReach(OwnedWeapon const& owned) const
 {
-    return 1.0f + GetSummonGrowth(owned) / 100.0f;
+    return (1.0f + GetSummonGrowth(owned) / 100.0f) * GetTalentReach(owned);
 }
 
 float BonkRun::GetSummonLookScale(OwnedWeapon const& owned, float base) const
@@ -8887,11 +8887,16 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
         pet->SendPlaySpellVisualKit(ability.kit);
 
     float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
-    float const hit = GetPetBiteDamage(owned, *family) * ability.damage * frenzy;
+    uint32 const root = GetRootWeapon(owned.weapon);
+    auto talentDamage = m_mastery.spellDamage.find(root);
+    float const talentPercent = (talentDamage != m_mastery.spellDamage.end() ? talentDamage->second : 0.0f) + GetSpecDamage(root);
+    float const hit = GetPetBiteDamage(owned, *family) * ability.damage * frenzy * (1.0f + talentPercent / 100.0f);
     float const powerShare = GetPowerShare(pet);
     PendingKeyword keyword;
     bool const applies = ability.stacks && (GetWeaponKeyword(owned, keyword) || GetPetAbilityKeyword(owned, ability, keyword));
-    uint32 const stacks = ability.stacks + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS));
+    auto talentStacks = m_mastery.spellStacks.find(root);
+    uint32 const stacks = ability.stacks + uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_STACKS)) +
+        (talentStacks != m_mastery.spellStacks.end() ? uint32(talentStacks->second) : 0);
     for (Creature* mob : mobs)
     {
         if (!pet->IsWithinLOSInMap(mob))
