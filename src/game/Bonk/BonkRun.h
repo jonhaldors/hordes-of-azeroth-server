@@ -169,7 +169,6 @@ class BonkRun
         void AddNecroticStack();
         float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare = 1.0f, float extraPower = 0.0f) const;
         float RollDamageSpread() const;
-        void FloatSummonDamage(Unit* victim, uint32 damage, SpellEntry const* spellInfo) const;
         float GetPowerShare(Unit const* attacker) const;
 
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);

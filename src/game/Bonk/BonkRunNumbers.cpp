@@ -254,13 +254,6 @@ std::string BonkRun::GetPetAttackLabel(OwnedWeapon const& owned) const
     return pulses ? "Pulses every" : "Attacks every";
 }
 
-void BonkRun::FloatSummonDamage(Unit* victim, uint32 damage, SpellEntry const* spellInfo) const
-{
-    SpellNonMeleeDamage shown(m_player, victim, spellInfo->Id, SpellSchools(spellInfo->School));
-    shown.damage = damage;
-    m_player->SendSpellNonMeleeDamageLog(&shown);
-}
-
 float BonkRun::RollDamageSpread() const
 {
     return frand(1.0f - BONK_DAMAGE_SPREAD, 1.0f + BONK_DAMAGE_SPREAD);
