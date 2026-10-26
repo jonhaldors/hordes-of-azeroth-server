@@ -1586,6 +1586,9 @@ class BonkRun
         void OnTalentWindfury();
         void OnTalentStaticDischarge();
         bool IsNearOwnTotem() const;
+        void OnTalentHarvestSoul();
+        uint32 GetConsumeStacks() const;
+        uint32 CountDemonFamilies() const;
         void OnTalentKill(Unit* victim);
         float GetTalentHaste() const;
         float GetTormentBonus(uint32 rootWeapon, Unit const* victim) const;
@@ -2420,6 +2423,8 @@ class BonkRun
         uint32 m_sliceAndDiceUntil = 0;
         uint32 m_borrowedTimeUntil = 0;
         uint32 m_flurryUntil = 0;
+        uint32 m_shadowBoltHits = 0;
+        std::vector<uint32> m_harvestUntil;
         std::vector<uint32> m_unrelentingUntil;
         std::vector<uint32> m_forcefulUntil;
         uint32 m_smiteCount = 0;

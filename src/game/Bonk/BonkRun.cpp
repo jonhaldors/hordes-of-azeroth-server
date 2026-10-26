@@ -8761,7 +8761,10 @@ float BonkRun::GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& f
         if (ability.kind == BONK_PET_ABILITY_STRIKE || ability.kind == BONK_PET_ABILITY_PULSE)
             rate += ability.damage * IN_MILLISECONDS / float(ability.cooldownMs);
     uint32 const spellMs = std::max(500u, owned.weapon.tickMs);
-    return GetWeaponDamage(owned) * IN_MILLISECONDS / float(spellMs) / rate * GetDemonDamageScale();
+    uint32 const root = GetRootWeapon(owned.weapon);
+    auto talentDamage = m_mastery.spellDamage.find(root);
+    float const talentPercent = (talentDamage != m_mastery.spellDamage.end() ? talentDamage->second : 0.0f) + GetSpecDamage(root);
+    return GetWeaponDamage(owned) * IN_MILLISECONDS / float(spellMs) / rate * GetDemonDamageScale() * (1.0f + talentPercent / 100.0f);
 }
 
 void BonkRun::StartPetAttack(OwnedWeapon const& owned, Creature* pet, Creature* target)
@@ -8888,9 +8891,7 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
 
     float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
     uint32 const root = GetRootWeapon(owned.weapon);
-    auto talentDamage = m_mastery.spellDamage.find(root);
-    float const talentPercent = (talentDamage != m_mastery.spellDamage.end() ? talentDamage->second : 0.0f) + GetSpecDamage(root);
-    float const hit = GetPetBiteDamage(owned, *family) * ability.damage * frenzy * (1.0f + talentPercent / 100.0f);
+    float const hit = GetPetBiteDamage(owned, *family) * ability.damage * frenzy;
     float const powerShare = GetPowerShare(pet);
     PendingKeyword keyword;
     bool const applies = ability.stacks && (GetWeaponKeyword(owned, keyword) || GetPetAbilityKeyword(owned, ability, keyword));

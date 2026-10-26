@@ -48,6 +48,10 @@ namespace
     uint32 const BONK_FORCEFUL_WINDS_MS         = 8000;
     size_t const BONK_FORCEFUL_WINDS_STACKS     = 5;
     float const BONK_CALL_OF_THE_ELEMENTS_RANGE = 15.0f;
+    uint32 const BONK_HARVESTER_MS              = 8000;
+    size_t const BONK_HARVESTER_STACKS          = 10;
+    uint32 const BONK_SOUL_FIRE_EVERY           = 5;
+    uint32 const BONK_SOUL_FIRE_BURNING         = 3;
 
     void PushTimedStack(std::vector<uint32>& stacks, uint32 now, uint32 lengthMs, size_t cap)
     {
@@ -152,6 +156,8 @@ float BonkRun::GetTalentDamagePercent() const
     percent += m_mastery.Special(BONK_SPECIAL_BULWARK) * float(m_bulwarkStacks);
     percent += m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) * float(m_madnessStacks);
     percent += m_mastery.Special(BONK_SPECIAL_FORCEFUL_WINDS) * CountTimedStacks(m_forcefulUntil, m_totalMs);
+    if (m_mastery.Special(BONK_SPECIAL_DEMONIC_PACT) > 0.0f)
+        percent += m_mastery.Special(BONK_SPECIAL_DEMONIC_PACT) * float(CountDemonFamilies());
     if (m_mastery.Special(BONK_SPECIAL_CALL_OF_THE_ELEMENTS) > 0.0f && IsNearOwnTotem())
         percent += m_mastery.Special(BONK_SPECIAL_CALL_OF_THE_ELEMENTS);
     if (m_spellShield)
@@ -518,6 +524,7 @@ float BonkRun::GetTalentHaste() const
     if (m_flurryUntil > now)
         haste += m_mastery.Special(BONK_SPECIAL_FLURRY);
     haste += m_mastery.Special(BONK_SPECIAL_UNRELENTING_STORM) * CountTimedStacks(m_unrelentingUntil, now);
+    haste += m_mastery.Special(BONK_SPECIAL_HARVESTER_OF_SOULS) * CountTimedStacks(m_harvestUntil, now);
     for (auto const& itr : m_castHasteUntil)
     {
         auto value = m_mastery.castHaste.find(itr.first);
@@ -664,6 +671,18 @@ void BonkRun::OnTalentDamage(Unit* victim, SpellEntry const* spell)
             ReduceTimer(BONK_WEAPON_FLAMESTRIKE, flamestrike);
     }
 
+    float const backlash = m_mastery.Special(BONK_SPECIAL_BACKLASH);
+    if (crit && backlash > 0.0f)
+        ReduceTimer(BONK_WEAPON_RAIN_OF_FIRE, int32(backlash * IN_MILLISECONDS));
+    if (root == BONK_WEAPON_SHADOW_BOLT)
+    {
+        Creature* mob = victim->ToCreature();
+        if (mob && mob->IsAlive() && crit && m_mastery.Special(BONK_SPECIAL_IMPROVED_SHADOW_BOLT) > 0.0f)
+            ApplyKeyword(mob, BONK_KEYWORD_SHADOW_VULNERABILITY, 1, 0, 1.0f, spell->Id);
+        if (mob && mob->IsAlive() && m_mastery.Special(BONK_SPECIAL_SOUL_FIRE) > 0.0f && ++m_shadowBoltHits % BONK_SOUL_FIRE_EVERY == 0)
+            ApplyKeyword(mob, BONK_KEYWORD_BURNING, BONK_SOUL_FIRE_BURNING, 0, 1.0f, spell->Id);
+    }
+
     if (root == BONK_WEAPON_PENANCE && m_mastery.Special(BONK_SPECIAL_SCHISM) > 0.0f)
         m_schismUntil[victim->GetObjectGuid()] = m_totalMs + BONK_SCHISM_MS;
 
@@ -702,6 +721,12 @@ void BonkRun::OnTalentWindfury()
         m_flurryUntil = m_totalMs + BONK_FLURRY_MS;
     if (m_mastery.Special(BONK_SPECIAL_FORCEFUL_WINDS) > 0.0f)
         PushTimedStack(m_forcefulUntil, m_totalMs, BONK_FORCEFUL_WINDS_MS, BONK_FORCEFUL_WINDS_STACKS);
+}
+
+void BonkRun::OnTalentHarvestSoul()
+{
+    if (m_mastery.Special(BONK_SPECIAL_HARVESTER_OF_SOULS) > 0.0f)
+        PushTimedStack(m_harvestUntil, m_totalMs, BONK_HARVESTER_MS, BONK_HARVESTER_STACKS);
 }
 
 void BonkRun::OnTalentStaticDischarge()
