@@ -116,7 +116,6 @@ namespace
     float const BONK_BEAR_TAKEN               = 0.65f;
 
     float const BONK_SHRED_MAX_STACKS         = 30.0f;
-    float const BONK_FRENZIED_REGEN_RADIUS    = 8.0f;
     float const BONK_FRENZIED_REGEN_MAX_ENEMIES = 5.0f;
     float const BONK_SURVIVAL_HEALTH          = 35.0f;
     uint32 const BONK_DRUID_LOOK_GAP_MS       = 3000;
@@ -731,7 +730,7 @@ float BonkRun::GetShredDamage(OwnedWeapon const& owned, Creature* mob) const
 
 void BonkRun::SwipeAround(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    std::vector<Creature*> const mobs = GetMobsInRange(owned.weapon.range * GetWeaponArea(owned));
+    std::vector<Creature*> const mobs = GetMobsInRange(GetWeaponRadius(owned));
     if (mobs.empty())
     {
         owned.timer = BONK_DRUID_POLL_MS;
@@ -760,7 +759,7 @@ void BonkRun::RegenerateFrenzied(OwnedWeapon& owned)
     owned.timer = GetWeaponCooldown(owned);
     if (!m_player->IsAlive())
         return;
-    size_t const nearby = GetMobsInRange(BONK_FRENZIED_REGEN_RADIUS * GetWeaponArea(owned)).size();
+    size_t const nearby = GetMobsInRange(GetWeaponRadius(owned)).size();
     if (!nearby)
         return;
     float const enemies = std::min(float(nearby), BONK_FRENZIED_REGEN_MAX_ENEMIES + m_mastery.Special(BONK_SPECIAL_IMPROVED_FRENZIED));

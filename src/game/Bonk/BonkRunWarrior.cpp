@@ -47,7 +47,6 @@ namespace
     size_t const BONK_MAX_NEW_BLOOD_POOLS     = 6;
     uint32 const BONK_KIT_BLOOD_POOL          = 809;
 
-    float const BONK_BLOODSPLATTER_RADIUS     = 4.0f;
     size_t const BONK_MAX_SPLATTERED          = 8;
     uint32 const BONK_KIT_BLOODSPLATTER       = 903;
 
@@ -68,7 +67,6 @@ namespace
     float const BONK_BLOODBATH_HEALTH         = 50.0f;
     uint32 const BONK_KIT_BLOODBATH           = 902;
 
-    float const BONK_BLOOD_SHIELD_RADIUS      = 8.0f;
     uint32 const BONK_KIT_BLOOD_SHIELD_BURST  = 903;
 
     int32 const BONK_CHAIN_EXECUTION_DELAY_MS = 100;
@@ -283,7 +281,7 @@ void BonkRun::SplatterBlood(OwnedWeapon const& owned, Creature* struck, uint32 s
         return;
 
     size_t splattered = 0;
-    for (Creature* mob : GetMobsNear(struck->GetPositionX(), struck->GetPositionY(), BONK_BLOODSPLATTER_RADIUS * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsNear(struck->GetPositionX(), struck->GetPositionY(), GetWeaponRadius(owned)))
     {
         if (splattered >= BONK_MAX_SPLATTERED)
             break;
@@ -549,7 +547,7 @@ void BonkRun::EchoBlades(OwnedWeapon& owned, SpellEntry const* spellInfo, Pendin
 {
     PlayKitAt(ObjectGuid(), cast.x, cast.y, cast.z, BONK_KIT_WAKE_ECHO, true);
     float const damage = GetWeaponDamage(owned);
-    for (Creature* mob : GetMobsNear(cast.x, cast.y, owned.weapon.range * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsNear(cast.x, cast.y, GetWeaponRadius(owned)))
         DealSpellHit(spellInfo, mob, damage);
 }
 
@@ -576,7 +574,7 @@ void BonkRun::PulseBloodAura(OwnedWeapon const& owned)
     ShowHeroRing(BonkHeroRing::BloodAura, GetBloodAuraReach(owned));
 
     bool bled = false;
-    for (Creature* mob : GetMobsInRange(owned.weapon.range * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned)))
         bled = ApplyKeyword(mob, bleed.keyword, bleed.stacks, bleed.durationMs, bleed.damageScale, bleed.spellId) || bled;
     if (bled)
         m_player->SendPlaySpellVisualKit(BONK_KIT_BLOOD_AURA);
@@ -584,7 +582,7 @@ void BonkRun::PulseBloodAura(OwnedWeapon const& owned)
 
 float BonkRun::GetBloodAuraReach(OwnedWeapon const& owned) const
 {
-    return owned.weapon.range * GetWeaponArea(owned) + m_player->GetObjectBoundingRadius();
+    return GetWeaponRadius(owned) + m_player->GetObjectBoundingRadius();
 }
 
 void BonkRun::UpdateBloodAuraRing()
@@ -645,7 +643,7 @@ void BonkRun::EruptAftershock(OwnedWeapon& owned, SpellEntry const* spellInfo, P
     uint32 const bleedMs = bleed ? uint32(bleed->durationMs * GetWeaponDurationScale(owned)) : 0;
     float const bleedScale = 1.0f + owned.damageBonus / 100.0f;
     float const damage = GetWeaponDamage(owned) * BONK_AFTERSHOCK_SHARE;
-    for (Creature* mob : GetMobsNear(cast.x, cast.y, owned.weapon.range * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsNear(cast.x, cast.y, GetWeaponRadius(owned)))
     {
         DealSpellHit(spellInfo, mob, damage);
         ApplyKeyword(mob, BONK_KEYWORD_BLEED, BONK_AFTERSHOCK_STACKS, bleedMs, bleedScale, owned.weapon.spellId);
@@ -691,7 +689,7 @@ void BonkRun::BurstBloodShield()
 
     m_player->SendPlaySpellVisualKit(BONK_KIT_BLOOD_SHIELD_BURST);
     float const damage = GetWeaponDamage(*owned) * std::max(1.0f, owned->weapon.behaviorValue);
-    for (Creature* mob : GetMobsInRange(BONK_BLOOD_SHIELD_RADIUS * GetWeaponArea(*owned)))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(*owned)))
         DealSpellHit(spellInfo, mob, damage);
 }
 
@@ -854,7 +852,7 @@ void BonkRun::StrikeSteelCyclone(OwnedWeapon& owned, SpellEntry const* spellInfo
     PlayKitAt(ObjectGuid(), storm.x, storm.y, storm.z, BONK_KIT_WHIRLWIND_SPIN, true);
     float const damage = GetWeaponDamage(owned) * BONK_STEEL_CYCLONE_SHARE;
     float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
-    for (Creature* mob : GetMobsNear(storm.x, storm.y, owned.weapon.range * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsNear(storm.x, storm.y, GetWeaponRadius(owned)))
     {
         DealSpellHit(spellInfo, mob, damage);
         if (twice > 0.0f && roll_chance_f(twice))
@@ -881,7 +879,7 @@ void BonkRun::StrikeAroundHero(OwnedWeapon const& owned, uint32 kit)
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(owned.weapon.spellId);
     if (!spellInfo || !m_player->IsAlive())
         return;
-    std::vector<Creature*> const mobs = GetMobsInRange(owned.weapon.range * GetWeaponArea(owned));
+    std::vector<Creature*> const mobs = GetMobsInRange(GetWeaponRadius(owned));
     if (mobs.empty())
         return;
 

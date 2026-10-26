@@ -686,6 +686,7 @@ class BonkRun
         float GetWeaponHasteRate(OwnedWeapon const& owned) const;
         uint32 GetWeaponCooldown(OwnedWeapon const& owned) const;
         float GetWeaponArea(OwnedWeapon const& owned) const;
+        float GetWeaponRadius(OwnedWeapon const& owned) const;
         uint32 GetWeaponTargets(OwnedWeapon const& owned) const;
         void FireWeapon(OwnedWeapon& owned);
         void GetBasePoints(OwnedWeapon const& owned, SpellEntry const* spellInfo, float damageShare, nonstd::optional<int32>* basePoints) const;
@@ -1512,6 +1513,7 @@ class BonkRun
         std::vector<uint32> m_venomCloudTimes;
         KeywordCloudKind GetCloudKind(OwnedWeapon const& owned) const;
         void StartKeywordCloud(OwnedWeapon const& owned, float x, float y, float z);
+        float GetCloudRadius(OwnedWeapon const& owned) const;
         void ShowRingAt(KeywordCloud& cloud, float z, BonkHeroRing ring);
         void EndKeywordCloud(KeywordCloud const& cloud);
         void ClearKeywordClouds();

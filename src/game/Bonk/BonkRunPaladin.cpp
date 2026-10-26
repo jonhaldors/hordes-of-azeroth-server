@@ -57,7 +57,6 @@ namespace
     uint32 const BONK_KIT_CRUSADER_IMPACT     = 437;
     int32 const BONK_CRUSADER_LAND_MS         = 300;
 
-    float const BONK_CRUSADER_SPLASH_RADIUS   = 5.0f;
     float const BONK_CRUSADER_SPLASH_SHARE    = 0.3f;
     float const BONK_ZEAL_SPLASH_SHARE        = 0.5f;
     float const BONK_AVENGING_HAMMER_CHANCE   = 15.0f;
@@ -71,7 +70,6 @@ namespace
     float const BONK_VENGEANCE_PER_STACK      = 0.2f;
     uint32 const BONK_JUDGED_MS               = 6000;
     float const BONK_JUDGED_BONUS             = 1.2f;
-    float const BONK_COMMAND_RADIUS           = 5.0f;
     float const BONK_JUDGEMENT_RIGHTEOUS      = 1.5f;
     float const BONK_RIGHTEOUS_SHARE          = 20.0f;
     float const BONK_MAX_RIGHTEOUS_SHARE      = 60.0f;
@@ -87,9 +85,7 @@ namespace
     float const BONK_WRATH_SPEED              = 35.0f;
     float const BONK_JUSTICE_SPEED            = 40.0f;
     float const BONK_EXECUTIONER_HEALTH       = 35.0f;
-    float const BONK_SANCTIFIED_WRATH_RADIUS  = 5.0f;
     float const BONK_SANCTIFIED_WRATH_SHARE   = 0.5f;
-    float const BONK_LIGHTS_HAMMER_RADIUS     = 5.0f;
     int32 const BONK_LIGHTS_HAMMER_LIFT_MS    = 200;
     int32 const BONK_LIGHTS_HAMMER_FALL_MS    = 350;
     float const BONK_LIGHTS_HAMMER_HEIGHT     = 12.0f;
@@ -110,7 +106,6 @@ namespace
     float const BONK_EXORCISM_ELITE           = 2.0f;
     uint32 const BONK_ART_OF_WAR_EVERY_MS     = 1000;
     uint32 const BONK_FAST_ART_OF_WAR_MS      = 500;
-    float const BONK_ART_OF_WAR_SPLASH_RADIUS = 5.0f;
     float const BONK_ART_OF_WAR_SPLASH_SHARE  = 0.5f;
     uint32 const BONK_ILLUMINATED_EXORCISMS   = 2;
     float const BONK_JUDGEMENT_CRIT_FACTOR    = 2.0f;
@@ -127,8 +122,6 @@ namespace
     int32 const BONK_DIVINE_FLASH_MS          = 600;
     int32 const BONK_ARDENT_DEFENDER_MS       = 2000;
     uint32 const BONK_ARDENT_DEFENDER_EVERY_MS = 30000;
-    float const BONK_HOLY_SHIELD_RADIUS       = 10.0f;
-    float const BONK_RIGHTEOUS_HAMMER_RADIUS  = 6.0f;
     float const BONK_LAY_ON_HANDS_HEALTH      = 30.0f;
     uint32 const BONK_LAY_ON_HANDS_EVERY_MS   = 90000;
     float const BONK_ARDENT_DEFENDER_HEALTH   = 30.0f;
@@ -275,7 +268,7 @@ void BonkRun::BurstSealOfCommand(Creature* target)
         return;
     target->SendPlaySpellVisualKit(BONK_KIT_HOLY_BURST);
     float const damage = GetWeaponDamage(*command);
-    std::vector<Creature*> struck = GetMobsInRange(BONK_COMMAND_RADIUS * GetWeaponArea(*command), target);
+    std::vector<Creature*> struck = GetMobsInRange(GetWeaponRadius(*command), target);
     if (target->IsAlive())
         struck.push_back(target);
     bool const stuns = command->weapon.id == BONK_WEAPON_SEAL_OF_JUSTICE;
@@ -353,7 +346,7 @@ void BonkRun::LandCrusaderStrike(OwnedWeapon& owned, SpellEntry const* spellInfo
         if (!target || !target->IsAlive())
             continue;
         target->SendPlaySpellVisualKit(BONK_KIT_CRUSADER_IMPACT);
-        for (Creature* mob : GetMobsInRange(BONK_CRUSADER_SPLASH_RADIUS * GetWeaponArea(owned), target))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
             if (splashed.insert(mob->GetObjectGuid()).second)
                 HitAsPaladin(spellInfo, owned.weapon.spellId, mob, cast.damage * cast.splash);
         StrikeAsPaladin(spellInfo, owned.weapon.spellId, target, cast.damage, twice);
@@ -480,7 +473,7 @@ void BonkRun::LandHammerOfWrath(OwnedWeapon& owned, SpellEntry const* spellInfo,
 void BonkRun::BurstSanctifiedWrath(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage)
 {
     target->SendPlaySpellVisualKit(BONK_KIT_HOLY_WRATH_IMPACT);
-    for (Creature* mob : GetMobsInRange(BONK_SANCTIFIED_WRATH_RADIUS * GetWeaponArea(owned), target))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
         HitAsPaladin(spellInfo, owned.weapon.spellId, mob, damage * BONK_SANCTIFIED_WRATH_SHARE);
 }
 
@@ -547,8 +540,8 @@ void BonkRun::LaunchLightsHammer(OwnedWeapon const& owned, PendingCast const& ca
 void BonkRun::LandLightsHammer(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast)
 {
     bool const explodes = cast.radius > 0.0f;
-    float const radius = explodes ? cast.radius : BONK_LIGHTS_HAMMER_RADIUS;
-    std::vector<Creature*> mobs = GetMobsNear(cast.x, cast.y, radius * GetWeaponArea(owned));
+    float const radius = explodes ? cast.radius * GetWeaponArea(owned) : GetWeaponRadius(owned);
+    std::vector<Creature*> mobs = GetMobsNear(cast.x, cast.y, radius);
     if (mobs.empty())
         return;
     if (explodes)
@@ -650,7 +643,7 @@ void BonkRun::CastExorcism(OwnedWeapon& owned, SpellEntry const* spellInfo)
             damage *= BONK_EXORCISM_ELITE;
         ShowStrike(m_player, spellInfo, target);
         if (owned.weapon.id == BONK_WEAPON_ART_OF_WAR)
-            for (Creature* mob : GetMobsInRange(BONK_ART_OF_WAR_SPLASH_RADIUS * GetWeaponArea(owned), target))
+            for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
                 HitAsPaladin(spellInfo, owned.weapon.spellId, mob, damage * BONK_ART_OF_WAR_SPLASH_SHARE);
         StrikeAsPaladin(spellInfo, owned.weapon.spellId, target, damage, twice);
     }
@@ -659,7 +652,7 @@ void BonkRun::CastExorcism(OwnedWeapon& owned, SpellEntry const* spellInfo)
 
 void BonkRun::SpinDivineStorm(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    std::vector<Creature*> mobs = GetMobsInRange(owned.weapon.range * GetWeaponArea(owned));
+    std::vector<Creature*> mobs = GetMobsInRange(GetWeaponRadius(owned));
     if (mobs.empty())
     {
         owned.timer = BONK_PALADIN_RETRY_MS;
@@ -695,7 +688,7 @@ void BonkRun::SpinDivineStorm(OwnedWeapon& owned, SpellEntry const* spellInfo)
 
 void BonkRun::PulseRetributionAura(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    std::vector<Creature*> mobs = GetMobsInRange(owned.weapon.range * GetWeaponArea(owned));
+    std::vector<Creature*> mobs = GetMobsInRange(GetWeaponRadius(owned));
     if (mobs.empty())
     {
         owned.timer = BONK_PALADIN_RETRY_MS;
@@ -789,7 +782,7 @@ void BonkRun::LandJusticeHammer(OwnedWeapon& owned, SpellEntry const* spellInfo,
         return;
     float const damage = GetWeaponDamage(owned);
     if (owned.weapon.id == BONK_WEAPON_HAMMER_OF_THE_RIGHTEOUS)
-        for (Creature* mob : GetMobsInRange(BONK_RIGHTEOUS_HAMMER_RADIUS * GetWeaponArea(owned), target))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
             HitAsPaladin(spellInfo, owned.weapon.spellId, mob, damage);
     StrikeAsPaladin(spellInfo, owned.weapon.spellId, target, damage, GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE));
     if (!cast.stunMs)
@@ -819,7 +812,7 @@ bool BonkRun::BlockWithDivineShield(uint32 damage)
         if (SpellEntry const* look = sSpellMgr.GetSpellEntry(shield->weapon.spellId))
         {
             m_player->SendPlaySpellVisualKit(BONK_KIT_HOLY_WRATH_CAST);
-            for (Creature* mob : GetMobsInRange(BONK_HOLY_SHIELD_RADIUS * GetWeaponArea(*shield)))
+            for (Creature* mob : GetMobsInRange(GetWeaponRadius(*shield)))
                 DealShamanHit(look, shield->weapon.spellId, mob, GetWeaponDamage(*shield));
         }
     return true;

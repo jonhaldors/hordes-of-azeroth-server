@@ -215,7 +215,7 @@ void BonkRun::DrainLife(OwnedWeapon& owned, SpellEntry const* spellInfo)
 
 void BonkRun::BurnHellfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
 {
-    std::vector<Creature*> const mobs = GetMobsInRange(owned.weapon.range * GetWeaponArea(owned) * GetHellfireReach(owned));
+    std::vector<Creature*> const mobs = GetMobsInRange(GetWeaponRadius(owned) * GetHellfireReach(owned));
     if (mobs.empty())
     {
         owned.timer = BONK_WARLOCK_POLL_MS;

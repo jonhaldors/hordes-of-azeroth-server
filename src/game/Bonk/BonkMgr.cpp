@@ -83,6 +83,30 @@ namespace
         return -1;
     }
 
+    float GetLargestSpellRadius(SpellEntry const* spellInfo)
+    {
+        float radius = 0.0f;
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (spellInfo->EffectRadiusIndex[i])
+                radius = std::max(radius, Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[i])));
+        return radius;
+    }
+
+    void SettleWeaponRadius(BonkWeapon& weapon, SpellEntry const* spellInfo)
+    {
+        bool const ground = weapon.target == BONK_TARGET_GROUND;
+        if (weapon.behavior != BONK_BEHAVIOR_TRAP)
+            weapon.spellRadius = ground ? weapon.groundRadius : GetLargestSpellRadius(spellInfo);
+        bool const needsRadius = ground || weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE;
+        if (needsRadius && weapon.radius <= 0.0f)
+        {
+            weapon.radius = ground ? weapon.groundRadius : weapon.range;
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: area weapon %u has no radius; it uses %g yards.", weapon.id, weapon.radius);
+        }
+        if (ground)
+            weapon.groundRadius = weapon.radius;
+    }
+
     std::string FormatScaled(float value)
     {
         char buffer[32];
@@ -777,7 +801,7 @@ void BonkMgr::LoadWeapons()
         "SELECT `id`, `name`, `icon`, `description`, `spell_id`, `target`, `cooldown_ms`, `range`, `damage_fraction`, "
         "`class_mask`, `starter_class_mask`, `evolves_from`, `heal_pct`, `duration_ms`, "
         "`chains`, `behavior`, `behavior_value`, `tick_ms`, `base_targets`, `alt_spell_id`, `alt_every`, `alt_damage`, `base_jumps`, `kill_below_pct`, `flags`, "
-        "`applies`, `apply_stacks`, `uses`, `uses_pct`, `starter_option_mask`, `spec` "
+        "`applies`, `apply_stacks`, `uses`, `uses_pct`, `starter_option_mask`, `spec`, `radius` "
         "FROM `bonk_weapon`"));
 
     if (!result)
@@ -822,6 +846,7 @@ void BonkMgr::LoadWeapons()
         weapon.usesPct = fields[28].GetFloat();
         weapon.starterOptionMask = fields[29].GetUInt32();
         weapon.spec = fields[30].GetUInt32();
+        weapon.radius = std::max(0.0f, fields[31].GetFloat());
 
         if (weapon.applies != BONK_KEYWORD_NONE && !GetKeyword(weapon.applies))
         {
@@ -898,7 +923,12 @@ void BonkMgr::LoadWeapons()
             }
         if (weapon.behavior == BONK_BEHAVIOR_TRAP)
         {
-            weapon.groundRadius = weapon.range;
+            if (weapon.radius <= 0.0f)
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: trap %u has no radius; it uses its range.", weapon.id);
+                weapon.radius = weapon.range;
+            }
+            weapon.groundRadius = weapon.radius;
             if (!sObjectMgr.GetGameObjectTemplate(uint32(weapon.behaviorValue)))
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: trap %u uses unknown gameobject %u; skipped.", weapon.id, uint32(weapon.behaviorValue));
@@ -917,6 +947,7 @@ void BonkMgr::LoadWeapons()
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_weapon`: ground weapon %u uses spell %u, which has no damaging ground effect; skipped.", weapon.id, weapon.spellId);
             continue;
         }
+        SettleWeaponRadius(weapon, spellInfo);
 
         weapon.lasting = weapon.target == BONK_TARGET_GROUND || weapon.tickEffectIndex >= 0 || weapon.durationMs ||
             (weapon.damageEffectIndex >= 0 && spellInfo->EffectApplyAuraName[weapon.damageEffectIndex] == SPELL_AURA_PERIODIC_DAMAGE);
@@ -1015,7 +1046,10 @@ std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& 
     std::string spec = tree ? tree->name : "";
     if (spec.empty() && weapon.behavior == BONK_BEHAVIOR_PET)
         spec = "Pet";
-    return school + "~" + spec + "~" + (weapon.HasFlag(BONK_WEAPON_FLAG_AOE) ? "1" : "0");
+    bool const aimed = weapon.target == BONK_TARGET_NEAREST || weapon.target == BONK_TARGET_RANDOM ||
+        weapon.target == BONK_TARGET_STRONGEST || weapon.target == BONK_TARGET_FARTHEST;
+    return school + "~" + spec + "~" + (weapon.HasFlag(BONK_WEAPON_FLAG_AOE) ? "1" : "0") + "~" + FormatScaled(weapon.radius) + "~" +
+        FormatScaled(aimed ? weapon.range : 0.0f);
 }
 
 std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount)

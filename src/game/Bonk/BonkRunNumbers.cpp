@@ -690,7 +690,7 @@ std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string tex
     if (weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
     {
         float const area = GetWeaponArea(owned);
-        float const radius = weapon.groundRadius > 0.0f ? weapon.groundRadius : weapon.range;
+        float const radius = weapon.radius > 0.0f ? weapon.radius : weapon.range;
         std::string const base = TrimNumber(radius);
         if (area > BONK_SHOWN_BETTER && radius > 0.0f)
             MarkNumberAfter(text, "within ", base, MarkNumber(TrimNumber(radius * area), true));

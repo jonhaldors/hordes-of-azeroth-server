@@ -95,20 +95,15 @@ namespace
     int32 const BONK_CALTROPS_PULSE_MS        = 1000;
     size_t const BONK_CALTROPS_ALIVE          = 3;
     int32 const BONK_CALTROPS_SLOW_MS         = 1500;
-    float const BONK_VENOM_SPLASH_REACH       = 8.0f;
-    float const BONK_EXSANGUINATE_REACH       = 10.0f;
     uint32 const BONK_EXSANGUINATE_SECONDS    = 4;
     uint32 const BONK_SHURIKEN_STORM_JUMPS    = 2;
     float const BONK_SHURIKEN_STORM_REACH     = 10.0f;
     int32 const BONK_SHADOWY_SHURIKEN_MS      = 1500;
-    float const BONK_SHADOWY_SHURIKEN_RADIUS  = 5.0f;
     int32 const BONK_CHEAP_SHOT_MS            = 1000;
     uint32 const BONK_FIND_WEAKNESS_MS        = 6000;
     float const BONK_FIND_WEAKNESS_BONUS      = 1.2f;
     uint32 const BONK_AMBUSH_REPEAT_MS        = 1000;
-    float const BONK_VANISH_RADIUS            = 10.0f;
     int32 const BONK_VANISH_MS                = 2000;
-    float const BONK_SYMBOLS_RANGE            = 14.0f;
     size_t const BONK_SYMBOLS_TARGETS         = 5;
     size_t const BONK_RIPOSTE_PER_SEC         = 5;
     uint32 const BONK_SMOKE_BOMB_MS           = 5000;
@@ -530,7 +525,7 @@ void BonkRun::StartShadowDance(OwnedWeapon& owned)
     if (owned.weapon.id == BONK_WEAPON_VANISH)
     {
         SpellEntry const* sap = sSpellMgr.GetSpellEntry(BONK_SPELL_SAP);
-        for (Creature* mob : GetMobsInRange(BONK_VANISH_RADIUS * GetWeaponArea(owned)))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned)))
         {
             int32 durationMs = BONK_VANISH_MS;
             if (IsRogueNormalMob(mob) && LimitStun(mob, durationMs))
@@ -543,7 +538,7 @@ void BonkRun::StartShadowDance(OwnedWeapon& owned)
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_SHADOW_STRIKE);
     if (!look)
         return;
-    std::vector<Creature*> mobs = GetMobsInRange(BONK_SYMBOLS_RANGE * GetWeaponArea(owned));
+    std::vector<Creature*> mobs = GetMobsInRange(GetWeaponRadius(owned));
     SortStrongestFirst(mobs);
     float const damage = GetWeaponDamage(owned);
     size_t struck = 0;
@@ -562,7 +557,7 @@ void BonkRun::StartShadowDance(OwnedWeapon& owned)
 
 void BonkRun::StartKillingSpree(OwnedWeapon& owned)
 {
-    if (GetMobsInRange(owned.weapon.range * GetWeaponArea(owned)).empty())
+    if (GetMobsInRange(GetWeaponRadius(owned)).empty())
     {
         owned.timer = BONK_ROGUE_RETRY_MS;
         return;
@@ -588,7 +583,7 @@ void BonkRun::QueueSpreeStrike(OwnedWeapon const& owned, int32 delayMs, bool las
 void BonkRun::StrikeSpree(OwnedWeapon& owned, SpellEntry const* spellInfo, bool last)
 {
     std::vector<Creature*> mobs;
-    for (Creature* mob : GetMobsInRange(owned.weapon.range * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned)))
         if (m_player->IsWithinLOSInMap(mob))
             mobs.push_back(mob);
     if (!mobs.empty())
@@ -630,7 +625,7 @@ void BonkRun::FireRogueFinishers()
 void BonkRun::ThrowFanOfKnives(OwnedWeapon& owned, SpellEntry const* spellInfo, bool fresh)
 {
     std::vector<Creature*> mobs;
-    for (Creature* mob : GetMobsInRange(owned.weapon.range * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned)))
         if (m_player->IsWithinLOSInMap(mob))
             mobs.push_back(mob);
 
@@ -656,7 +651,7 @@ void BonkRun::ThrowFanOfKnives(OwnedWeapon& owned, SpellEntry const* spellInfo, 
             StartKeywordCloud(owned, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
     }
 
-    ShowMissilesAround(spellInfo, owned.weapon.range * GetWeaponArea(owned), BONK_FAN_KNIVES);
+    ShowMissilesAround(spellInfo, GetWeaponRadius(owned), BONK_FAN_KNIVES);
     float const damage = GetWeaponDamage(owned);
     for (Creature* mob : mobs)
     {
@@ -751,7 +746,7 @@ void BonkRun::CastEnvenom(OwnedWeapon& owned, SpellEntry const* spellInfo)
 void BonkRun::SplashVenom(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target)
 {
     float const damage = GetWeaponDamage(owned);
-    for (Creature* mob : GetMobsInRange(BONK_VENOM_SPLASH_REACH * GetWeaponArea(owned), target))
+    for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
     {
         if (mob == target || !GetKeywordStacks(mob, BONK_KEYWORD_POISON))
             continue;
@@ -767,7 +762,7 @@ void BonkRun::Exsanguinate(OwnedWeapon& owned, SpellEntry const* spellInfo, Crea
     if (!poison || !poison->tickMs)
         return;
     float const perStack = float(GetKeywordPoints(*poison)) * BONK_EXSANGUINATE_SECONDS * IN_MILLISECONDS / poison->tickMs;
-    std::vector<Creature*> mobs = GetMobsInRange(BONK_EXSANGUINATE_REACH * GetWeaponArea(owned), target);
+    std::vector<Creature*> mobs = GetMobsInRange(GetWeaponRadius(owned), target);
     mobs.push_back(target);
     for (Creature* mob : mobs)
         if (uint32 const stacks = GetKeywordStacks(mob, BONK_KEYWORD_POISON))
@@ -878,7 +873,7 @@ void BonkRun::BurstShadowyShuriken(OwnedWeapon& owned, PendingCast const& cast)
     if (!look)
         return;
     float const damage = GetWeaponDamage(owned);
-    for (Creature* mob : GetMobsNear(cast.x, cast.y, BONK_SHADOWY_SHURIKEN_RADIUS * GetWeaponArea(owned)))
+    for (Creature* mob : GetMobsNear(cast.x, cast.y, GetWeaponRadius(owned)))
     {
         ShowStrike(m_player, look, mob);
         DealShamanHit(look, owned.weapon.spellId, mob, damage);
@@ -897,7 +892,7 @@ void BonkRun::Evade(OwnedWeapon& owned)
     {
         m_smokeX = m_player->GetPositionX();
         m_smokeY = m_player->GetPositionY();
-        m_smokeRadius = std::max(0.0f, owned.weapon.behaviorValue) * GetWeaponArea(owned);
+        m_smokeRadius = GetWeaponRadius(owned);
         m_smokeUntilMs = m_totalMs + uint32(BONK_SMOKE_BOMB_MS * GetWeaponDurationScale(owned));
         StartKeywordCloud(owned, m_smokeX, m_smokeY, m_player->GetPositionZ());
     }

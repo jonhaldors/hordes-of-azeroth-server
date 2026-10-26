@@ -602,6 +602,7 @@ struct BonkWeapon
     BonkWeaponTarget target = BONK_TARGET_NEAREST;
     uint32 cooldownMs = 2000;
     float range = 30.0f;
+    float radius = 0.0f;
     float damageFraction = 0.5f;
     uint32 classMask = 0;
     uint32 starterClassMask = 0;
@@ -630,10 +631,12 @@ struct BonkWeapon
     int32 damageEffectIndex = -1;
     int32 tickEffectIndex = -1;
     float groundRadius = 0.0f;
+    float spellRadius = 0.0f;
     bool weaponDamage = false;
     bool lasting = false;
 
     bool HasFlag(BonkWeaponFlags flag) const { return (flags & flag) != 0; }
+    float SpellRadiusScale() const { return radius > 0.0f && spellRadius > 0.0f ? radius / spellRadius : 1.0f; }
     bool IsKeywordOnly() const { return damageEffectIndex < 0 && !weaponDamage; }
     bool IsMeleeStrike() const
     {

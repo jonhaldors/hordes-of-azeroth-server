@@ -67,7 +67,6 @@ namespace
     float const BONK_SPELL_LOCK_RADIUS           = 8.0f;
     uint32 const BONK_DEVOUR_AFFIX_MS            = 6000;
     uint32 const BONK_DEVOUR_AFFIX_EVERY_MS      = 10000;
-    float const BONK_SEED_RADIUS                 = 6.0f;
     float const BONK_SEED_SHARE                  = 0.15f;
     uint32 const BONK_SEED_MAX_DEPTH             = 2;
     uint32 const BONK_SEED_HIT_GAP_MS            = 1000;
@@ -84,11 +83,9 @@ namespace
     float const BONK_DARK_PACT_DAMAGE            = 1.3f;
     float const BONK_DEMONOLOGIST_PER_DEMON      = 0.1f;
     uint32 const BONK_CHAOS_BOLT_EVERY           = 4;
-    float const BONK_CHAOS_BOLT_RADIUS           = 8.0f;
     float const BONK_CHAOS_BOLT_SHARE            = 1.5f;
     uint32 const BONK_SHADOW_BARRAGE_JUMPS       = 2;
     float const BONK_SHADOW_BARRAGE_SHARE        = 0.5f;
-    float const BONK_CONFLAGRATE_RADIUS          = 5.0f;
     float const BONK_CONFLAGRATE_SHARE           = 0.5f;
     float const BONK_INFERNO_GROWTH              = 0.6f;
     float const BONK_DEMONIC_IMMOLATION_RADIUS   = 6.0f;
@@ -258,14 +255,14 @@ void BonkRun::OnWarlockStrike(OwnedWeapon& owned, SpellEntry const* spellInfo, C
     {
         if (SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_CHAOS_LOOK))
             ShowStrike(m_player, look, target);
-        std::vector<Creature*> struck = GetMobsInRange(BONK_CHAOS_BOLT_RADIUS * GetWeaponArea(owned), target);
+        std::vector<Creature*> struck = GetMobsInRange(GetWeaponRadius(owned), target);
         struck.push_back(target);
         for (Creature* mob : struck)
             if (mob->IsAlive())
                 DealSpellHit(spellInfo, mob, GetWeaponDamage(owned) * share * BONK_CHAOS_BOLT_SHARE, nullptr, true);
     }
     if (id == BONK_WEAPON_CONFLAGRATE)
-        for (Creature* mob : GetMobsInRange(BONK_CONFLAGRATE_RADIUS * GetWeaponArea(owned), target))
+        for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), target))
         {
             DealShamanHit(spellInfo, owned.weapon.spellId, mob, GetWeaponDamage(owned) * share * BONK_CONFLAGRATE_SHARE);
             if (mob->IsAlive())
@@ -482,7 +479,7 @@ void BonkRun::BurstSeeds()
         OwnedWeapon* owned = FindOwned(seed.weaponId);
         if (!owned || !look)
             continue;
-        for (Creature* mob : GetMobsNear(seed.x, seed.y, BONK_SEED_RADIUS * GetWeaponArea(*owned)))
+        for (Creature* mob : GetMobsNear(seed.x, seed.y, GetWeaponRadius(*owned)))
         {
             uint32& readyMs = m_seedHitReadyMs[mob->GetObjectGuid()];
             if (int32(readyMs - m_totalMs) > 0)
