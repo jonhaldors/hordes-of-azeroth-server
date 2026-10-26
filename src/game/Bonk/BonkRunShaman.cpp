@@ -41,7 +41,8 @@ namespace
     uint32 const BONK_SPELL_STATIC_DISCHARGE  = 16614;
     uint32 const BONK_SPELL_LIGHTNING_ZAP     = 26364;
     uint32 const BONK_SPELL_LIGHTNING_LOOK    = 403;
-    uint32 const BONK_SPELL_STORMSTRIKE_LOOK  = 17364;
+    uint32 const BONK_KIT_STORMSTRIKE_IMPACT  = 317;
+    uint32 const BONK_KIT_FLAMETONGUE_IMPACT  = 145;
     uint32 const BONK_SPELL_LIGHTNING_SHIELD  = 324;
     uint32 const BONK_SPELL_HEALING_STREAM    = 5672;
     uint32 const BONK_SPELL_FLAMETONGUE       = 10444;
@@ -266,9 +267,8 @@ void BonkRun::OnShamanStrike(OwnedWeapon& owned, SpellEntry const*, Creature* ta
     ApplyShamanKeyword(owned, target, BONK_KEYWORD_STATIC, BONK_STORMSTRIKE_STATIC);
 
     bool const lava = weapon.id == BONK_WEAPON_LAVA_LASH;
-    SpellEntry const* look = sSpellMgr.GetSpellEntry(lava ? BONK_SPELL_FLAMETONGUE : BONK_SPELL_STORMSTRIKE_LOOK);
     SpellEntry const* hitInfo = sSpellMgr.GetSpellEntry(lava ? BONK_SPELL_FLAMETONGUE : BONK_SPELL_LIGHTNING_ZAP);
-    if (!look || !hitInfo)
+    if (!hitInfo)
         return;
     float damage = GetWeaponDamage(owned) * share;
     if (lava)
@@ -277,7 +277,7 @@ void BonkRun::OnShamanStrike(OwnedWeapon& owned, SpellEntry const*, Creature* ta
             damage *= BONK_LAVA_LASH_BURNING;
         ApplyShamanKeyword(owned, target, BONK_KEYWORD_BURNING, BONK_LAVA_LASH_STACKS);
     }
-    ShowStrike(m_player, look, target);
+    target->SendPlaySpellVisualKit(lava ? BONK_KIT_FLAMETONGUE_IMPACT : BONK_KIT_STORMSTRIKE_IMPACT);
     DealShamanHit(hitInfo, weapon.spellId, target, damage);
 
     if (weapon.id != BONK_WEAPON_CRASH_LIGHTNING)
@@ -298,7 +298,7 @@ void BonkRun::BurnWithFlametongue(OwnedWeapon& owned, Creature* target, uint32 s
     SpellEntry const* flame = sSpellMgr.GetSpellEntry(BONK_SPELL_FLAMETONGUE);
     if (!flame || !target || !target->IsAlive())
         return;
-    ShowStrike(m_player, flame, target);
+    target->SendPlaySpellVisualKit(BONK_KIT_FLAMETONGUE_IMPACT);
     DealShamanHit(flame, owned.weapon.spellId, target, GetWeaponDamage(owned) * BONK_FLAMETONGUE_SHARE);
     ApplyShamanKeyword(owned, target, BONK_KEYWORD_BURNING, stacks);
 }
