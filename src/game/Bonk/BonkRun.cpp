@@ -6524,7 +6524,11 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
 
     if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo) || FireWarlockSpell(owned, spellInfo) ||
         FireDruidSpell(owned, spellInfo))
+    {
+        if (owned.timer == int32(GetWeaponCooldown(owned)))
+            OnTalentCastDone(owned);
         return;
+    }
 
     if (weapon.IsShieldBlock() || weapon.behavior == BONK_BEHAVIOR_WARD)
     {

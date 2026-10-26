@@ -64,6 +64,8 @@ namespace
     uint32 const BONK_MUTILATE_STABS          = 2;
     uint32 const BONK_BLINDSIDE_STABS         = 3;
     float const BONK_BLINDSIDE_HEALTH         = 35.0f;
+    float const BONK_SECRET_TECHNIQUE_RADIUS  = 8.0f;
+    float const BONK_VENDETTA_CAP             = 15.0f;
     float const BONK_MUTILATE_POISONED        = 1.3f;
     uint32 const BONK_TOXIC_BLADE_STACKS      = 2;
     uint32 const BONK_ENVENOM_EXTRA_POISON    = 2;
@@ -307,7 +309,7 @@ void BonkRun::PoisonFromCoatings(Creature* target)
             ApplyKeyword(target, BONK_KEYWORD_POISON, 1);
         return;
     }
-    uint32 stacks = envenom ? BONK_ENVENOM_EXTRA_POISON : 0;
+    uint32 stacks = envenom ? BONK_ENVENOM_EXTRA_POISON + uint32(m_mastery.Special(BONK_SPECIAL_VENOMOUS_WOUNDS)) : 0;
     if (deadly)
         stacks += deadly->weapon.applyStacks + uint32(GetSpellUpgrade(*deadly, BONK_SPELL_UPGRADE_STACKS));
     if (masterPoisoner)
@@ -337,6 +339,10 @@ void BonkRun::OpenOnRogueTarget(Creature* target, bool forced)
     float const damage = GetWeaponDamage(*ambush);
     ShowStrike(m_player, look, target);
     DealShamanHit(look, ambush->weapon.spellId, target, damage);
+    if (fresh && !IsRogueNormalMob(target))
+        for (uint32 extra = uint32(m_mastery.Special(BONK_SPECIAL_PREMEDITATION)); extra && target->IsAlive(); --extra)
+            DealShamanHit(look, ambush->weapon.spellId, target, damage);
+    OnDanseMacabre();
     float const twice = GetSpellUpgrade(*ambush, BONK_SPELL_UPGRADE_HIT_TWICE);
     if (twice > 0.0f && roll_chance_f(twice))
         DealShamanHit(look, ambush->weapon.spellId, target, damage);
@@ -435,6 +441,8 @@ void BonkRun::StabNearest(OwnedWeapon& owned, SpellEntry const* spellInfo)
             continue;
         }
         StabRogue(owned, spellInfo, mob, 1.0f, true);
+        if (GetRootWeapon(owned.weapon) == BONK_WEAPON_SINISTER_STRIKE && mob->IsAlive() && roll_chance_f(m_mastery.Special(BONK_SPECIAL_DREADBLADES)))
+            StabRogue(owned, spellInfo, mob, 1.0f, true);
         if (owned.weapon.id == BONK_WEAPON_MAIN_GAUCHE)
             StabOffHand(owned, spellInfo, mob, targets);
         else if (owned.weapon.id == BONK_WEAPON_SABER_SLASH)
@@ -516,6 +524,9 @@ void BonkRun::StartShadowDance(OwnedWeapon& owned)
 {
     if (!OpenRogueWindow(owned, m_shadowDanceUntilMs, 0))
         return;
+    if (m_mastery.Special(BONK_SPECIAL_SECRET_TECHNIQUE) > 0.0f)
+        for (Creature* mob : GetMobsInRange(BONK_SECRET_TECHNIQUE_RADIUS))
+            OpenOnRogueTarget(mob, true);
     if (owned.weapon.id == BONK_WEAPON_VANISH)
     {
         SpellEntry const* sap = sSpellMgr.GetSpellEntry(BONK_SPELL_SAP);
@@ -726,6 +737,8 @@ void BonkRun::CastEnvenom(OwnedWeapon& owned, SpellEntry const* spellInfo)
     {
         Creature* target = mobs[i];
         StabRogue(owned, spellInfo, target, 1.0f, true);
+        if (m_mastery.Special(BONK_SPECIAL_DEATHMARK) > 0.0f && target->IsAlive())
+            StabRogue(owned, spellInfo, target, 1.0f, true);
         if (owned.weapon.id == BONK_WEAPON_VENOM_SPLASH)
             SplashVenom(owned, spellInfo, target);
         else if (owned.weapon.id == BONK_WEAPON_EXSANGUINATE)
@@ -905,6 +918,8 @@ bool BonkRun::IsHiddenInSmoke() const
 void BonkRun::OnRogueDodge(Unit* attacker)
 {
     Creature* mob = attacker ? attacker->ToCreature() : nullptr;
+    if (mob && mob->IsAlive() && m_mastery.Special(BONK_SPECIAL_MASTER_OF_SHADOWS) > 0.0f)
+        OpenOnRogueTarget(mob, true);
     OwnedWeapon* riposte = FindOwned(BONK_WEAPON_RIPOSTE);
     if (!riposte || !mob || !mob->IsAlive() || !TakeRateSlot(m_riposteTimes, BONK_RIPOSTE_PER_SEC))
         return;
@@ -928,6 +943,9 @@ float BonkRun::GetRogueDamageMultiplier(Unit const* victim) const
     OwnedWeapon const* deadly = FindOwnedByBehavior(BONK_BEHAVIOR_DEADLY_POISON);
     if (deadly && deadly->weapon.id == BONK_WEAPON_CRIPPLING_POISON && GetKeywordStacks(victim, BONK_KEYWORD_POISON))
         multiplier *= BONK_CRIPPLING_BONUS;
+    float const vendetta = m_mastery.Special(BONK_SPECIAL_VENDETTA);
+    if (vendetta > 0.0f)
+        multiplier *= 1.0f + std::min(BONK_VENDETTA_CAP, vendetta * float(GetKeywordStacks(victim, BONK_KEYWORD_POISON))) / 100.0f;
     return multiplier;
 }
 

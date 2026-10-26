@@ -33,6 +33,9 @@ namespace
     float const BONK_MONGOOSE_RADIUS            = 10.0f;
     uint32 const BONK_MONGOOSE_MAX_STACKS       = 10;
     uint32 const BONK_BULWARK_MAX_STACKS        = 10;
+    uint32 const BONK_SLICE_AND_DICE_MS         = 5000;
+    uint32 const BONK_DANSE_MACABRE_MS          = 8000;
+    size_t const BONK_DANSE_MACABRE_STACKS      = 10;
     float const BONK_BESTIAL_WRATH_FRENZY       = 1.5f;
     float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.7f;
     float const BONK_TRUESHOT_MARKED            = 1.4f;
@@ -122,6 +125,12 @@ float BonkRun::GetTalentDamagePercent() const
     }
     percent += m_mastery.Special(BONK_SPECIAL_PACK_HUNTER) * float(CountLivingPets());
     percent += m_mastery.Special(BONK_SPECIAL_BULWARK) * float(m_bulwarkStacks);
+    float const danse = m_mastery.Special(BONK_SPECIAL_DANSE_MACABRE);
+    if (danse > 0.0f)
+    {
+        uint32 const now = m_totalMs;
+        percent += danse * float(std::count_if(m_danseUntil.begin(), m_danseUntil.end(), [now](uint32 until) { return until > now; }));
+    }
     float const unbreakable = m_mastery.Special(BONK_SPECIAL_UNBREAKABLE);
     if (unbreakable > 0.0f && m_spellShield >= uint32(m_player->GetMaxHealth() * BONK_UNBREAKABLE_SHIELD))
         percent += unbreakable;
@@ -418,6 +427,18 @@ void BonkRun::OnTalentCastDone(OwnedWeapon& owned)
     if (root == BONK_WEAPON_LIGHTS_HAMMER && roll_chance_f(m_mastery.Special(BONK_SPECIAL_DIVINE_PURPOSE)))
         owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_FLOOR_MS);
 
+    if (root == BONK_WEAPON_EVISCERATE)
+    {
+        float const restless = m_mastery.Special(BONK_SPECIAL_RESTLESS_BLADES);
+        if (restless > 0.0f)
+            ReduceTimer(BONK_WEAPON_KILLING_SPREE, int32(restless * IN_MILLISECONDS));
+        float const adrenaline = m_mastery.Special(BONK_SPECIAL_ADRENALINE_RUSH);
+        if (adrenaline > 0.0f)
+            ReduceTimer(BONK_WEAPON_BLADE_FLURRY, int32(adrenaline * IN_MILLISECONDS));
+        if (m_mastery.Special(BONK_SPECIAL_SLICE_AND_DICE) > 0.0f)
+            m_sliceAndDiceUntil = m_totalMs + BONK_SLICE_AND_DICE_MS;
+    }
+
     if (root == BONK_WEAPON_HUNTERS_MARK && m_mastery.Special(BONK_SPECIAL_RAPID_FIRE) > 0.0f)
         m_rapidFireUntil = m_totalMs + BONK_RAPID_FIRE_MS;
 
@@ -445,6 +466,8 @@ float BonkRun::GetTalentHaste() const
     float haste = m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) * float(m_mongooseStacks);
     if (m_rapidFireUntil > now)
         haste += m_mastery.Special(BONK_SPECIAL_RAPID_FIRE);
+    if (m_sliceAndDiceUntil > now)
+        haste += m_mastery.Special(BONK_SPECIAL_SLICE_AND_DICE);
     for (auto const& itr : m_castHasteUntil)
     {
         auto value = m_mastery.castHaste.find(itr.first);
@@ -613,10 +636,27 @@ void BonkRun::OnTalentDamage(Unit* victim, SpellEntry const* spell)
         ReduceTimer(BONK_WEAPON_DIVINE_STORM, BONK_INSTANT_RECHARGE_MS);
 }
 
+void BonkRun::OnDanseMacabre()
+{
+    if (m_mastery.Special(BONK_SPECIAL_DANSE_MACABRE) <= 0.0f)
+        return;
+    uint32 const now = m_totalMs;
+    m_danseUntil.erase(std::remove_if(m_danseUntil.begin(), m_danseUntil.end(), [now](uint32 until) { return until <= now; }), m_danseUntil.end());
+    m_danseUntil.push_back(now + BONK_DANSE_MACABRE_MS);
+    if (m_danseUntil.size() > BONK_DANSE_MACABRE_STACKS)
+        m_danseUntil.erase(m_danseUntil.begin());
+}
+
 void BonkRun::OnTalentKill(Unit* victim)
 {
     float const share = m_mastery.Special(BONK_SPECIAL_GLACIAL_FRAGMENTS);
     Creature* dead = victim ? victim->ToCreature() : nullptr;
+    float const venomRush = m_mastery.Special(BONK_SPECIAL_VENOM_RUSH);
+    if (venomRush > 0.0f && dead && GetKeywordStacks(dead, BONK_KEYWORD_POISON))
+        ReduceTimer(BONK_WEAPON_ENVENOM, int32(venomRush * IN_MILLISECONDS));
+    float const deepening = m_mastery.Special(BONK_SPECIAL_DEEPENING_SHADOWS);
+    if (deepening > 0.0f && m_shadowDanceUntilMs > m_totalMs)
+        ReduceTimer(BONK_WEAPON_SHADOW_DANCE, int32(deepening * IN_MILLISECONDS));
     if (share <= 0.0f || !dead || !IsFrozen(dead))
         return;
     SpellEntry const* shards = sSpellMgr.GetSpellEntry(BONK_SPELL_GLACIAL_FRAGMENTS);

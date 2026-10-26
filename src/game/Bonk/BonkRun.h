@@ -1582,6 +1582,7 @@ class BonkRun
         void BeginTalentCast(OwnedWeapon const& owned);
         void EndTalentCast();
         void OnTalentCastDone(OwnedWeapon& owned);
+        void OnDanseMacabre();
         void OnTalentKill(Unit* victim);
         float GetTalentHaste() const;
         float GetTormentBonus(uint32 rootWeapon, Unit const* victim) const;
@@ -2413,6 +2414,8 @@ class BonkRun
         uint32 m_bulwarkStacks = 0;
         std::vector<uint32> m_bloodsurgeUntil;
         uint32 m_rapidFireUntil = 0;
+        uint32 m_sliceAndDiceUntil = 0;
+        std::vector<uint32> m_danseUntil;
         uint32 m_mongooseStacks = 0;
         int32 m_mongooseTimer = 0;
         bool m_fingersReady = false;
