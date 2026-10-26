@@ -33,7 +33,6 @@ namespace
         { "max_health",   BONK_PASSIVE_MAX_HEALTH },
         { "armor",        BONK_PASSIVE_ARMOR },
         { "dodge",        BONK_PASSIVE_DODGE },
-        { "hit",          BONK_PASSIVE_HIT },
         { "crit",         BONK_PASSIVE_CRIT },
         { "crit_damage",  BONK_PASSIVE_CRIT_DAMAGE },
         { "shield",       BONK_PASSIVE_SHIELD },
@@ -318,7 +317,7 @@ void BonkMgr::LoadTiers()
         "SELECT `id`, `key`, `name`, `health_multiplier`, `damage_multiplier`, `stage_health_growth`, `stage_damage_growth`, "
         "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
-        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_dodge`, `elite_affixes`, "
+        "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_affixes`, "
         "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth`, `details`, `opening_crowd`, `opening_sec` FROM `bonk_tier`"));
 
     if (!result)
@@ -353,21 +352,20 @@ void BonkMgr::LoadTiers()
         tier.masteryXpMinute = fields[18].GetUInt32();
         tier.masteryXpMiniboss = fields[19].GetUInt32();
         tier.masteryXpBoss = fields[20].GetUInt32();
-        tier.eliteDodge = fields[21].GetFloat();
-        tier.eliteAffixes = fields[22].GetUInt8();
-        tier.stageDamageAccel = fields[23].GetFloat();
-        tier.minAliveMultiplier = fields[24].GetFloat();
-        tier.maxAlive = std::max(1u, fields[25].GetUInt32());
-        tier.maxBruisers = fields[26].GetUInt32();
-        tier.firstEliteSecond = fields[27].GetUInt32();
-        tier.chargeIntervalMs = fields[28].GetUInt32();
-        tier.stages = fields[29].GetUInt32();
-        tier.endless = fields[30].GetUInt8() != 0;
-        tier.veteranChance = fields[31].GetFloat();
-        tier.chestCostMinuteGrowth = fields[32].GetFloat();
-        tier.details = fields[33].GetCppString();
-        tier.openingCrowd = std::min(1.0f, std::max(0.0f, fields[34].GetFloat()));
-        tier.openingMs = fields[35].GetUInt32() * IN_MILLISECONDS;
+        tier.eliteAffixes = fields[21].GetUInt8();
+        tier.stageDamageAccel = fields[22].GetFloat();
+        tier.minAliveMultiplier = fields[23].GetFloat();
+        tier.maxAlive = std::max(1u, fields[24].GetUInt32());
+        tier.maxBruisers = fields[25].GetUInt32();
+        tier.firstEliteSecond = fields[26].GetUInt32();
+        tier.chargeIntervalMs = fields[27].GetUInt32();
+        tier.stages = fields[28].GetUInt32();
+        tier.endless = fields[29].GetUInt8() != 0;
+        tier.veteranChance = fields[30].GetFloat();
+        tier.chestCostMinuteGrowth = fields[31].GetFloat();
+        tier.details = fields[32].GetCppString();
+        tier.openingCrowd = std::min(1.0f, std::max(0.0f, fields[33].GetFloat()));
+        tier.openingMs = fields[34].GetUInt32() * IN_MILLISECONDS;
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());

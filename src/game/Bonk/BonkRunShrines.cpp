@@ -79,7 +79,6 @@ namespace
         { BONK_PASSIVE_MAX_HEALTH,  15.0f, "Maximum Health",         "maximum health",                          "Spell_Holy_WordFortitude",    false },
         { BONK_PASSIVE_ARMOR,       10.0f, "Armor",                  "Armor",                                   "Spell_Holy_DevotionAura",     true },
         { BONK_PASSIVE_DODGE,        6.0f, "Dodge Chance",           "chance to dodge enemy swings",            "Spell_Shadow_ShadowWard",     false },
-        { BONK_PASSIVE_HIT,         10.0f, "Hit Chance",             "hit chance against elites and bosses",    "Ability_Marksmanship",        false },
         { BONK_PASSIVE_CRIT,         8.0f, "Critical Strike Chance", "critical strike chance",                  "Ability_CriticalStrike",      false },
         { BONK_PASSIVE_CRIT_DAMAGE, 25.0f, "Critical Strike Damage", "critical strike damage",                  "Spell_Holy_PowerInfusion",    false },
         { BONK_PASSIVE_SHIELD,      15.0f, "Shield",                 "of your maximum health as a Shield",      "Spell_Holy_InnerFire",        false },

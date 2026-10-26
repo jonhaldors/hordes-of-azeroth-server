@@ -180,7 +180,6 @@ class BonkRun
         static uint32 GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed);
         BonkSpot const& GetHeroPositionThisTick() const { return m_heroNow; }
         void ReportSandboxSwing(Creature const* mob) const;
-        bool RollDodge(Unit const* victim) const;
         float GetCritChance(SpellEntry const* spell = nullptr, Unit const* victim = nullptr, Unit const* attacker = nullptr) const;
         float GetSummonDamageMultiplier(Unit const* attacker) const;
         float GetMobDamageMultiplier(Creature const* mob) const;

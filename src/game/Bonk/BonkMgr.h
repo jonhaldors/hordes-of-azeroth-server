@@ -272,7 +272,6 @@ struct BonkTier
     float shardChanceElite = 12.0f;
     uint32 shardsMiniboss = 1;
     uint32 shardsBoss = 2;
-    float eliteDodge = 0.0f;
     uint8 eliteAffixes = 1;
     uint32 chargeIntervalMs = 8000;
     uint32 masteryXpMinute = 10;
@@ -850,7 +849,6 @@ inline std::string JoinBonkLines(std::string text)
     return text;
 }
 float const BONK_MAX_DODGE          = 60.0f;
-float const BONK_MAX_HIT            = 100.0f;
 float const BONK_MAX_COUNT          = 5.0f;
 float const BONK_MAX_AREA           = 60.0f;
 float const BONK_MAX_MOVE_SPEED     = 50.0f;
@@ -860,7 +858,6 @@ float CurveHaste(float raw);
 uint32 const BONK_MAX_COUNT_PULSES  = 2;
 float const BONK_MAX_GEAR_HASTE     = 20.0f;
 float const BONK_BASE_CRIT          = 5.0f;
-float const BONK_BOSS_EXTRA_DODGE   = 5.0f;
 uint32 const BONK_SHIELD_REGEN_DELAY_MS = 4000;
 
 struct BonkPassive

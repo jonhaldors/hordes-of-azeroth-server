@@ -3934,18 +3934,6 @@ uint32 BonkRun::GetMissileDelay(SpellCaster const* caster, Unit const* target, f
     return std::max(1u, uint32(t * IN_MILLISECONDS));
 }
 
-bool BonkRun::RollDodge(Unit const* victim) const
-{
-    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(victim->AI());
-    if (!ai || ai->GetKind() == BONK_SPAWN_NORMAL)
-        return false;
-
-    float chance = m_tier.eliteDodge - GetStat(BONK_PASSIVE_HIT);
-    if (ai->GetKind() != BONK_SPAWN_ELITE)
-        chance += BONK_BOSS_EXTRA_DODGE;
-    return chance > 0.0f && roll_chance_f(chance);
-}
-
 float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit const* attacker) const
 {
     float const chance = BONK_BASE_CRIT + GetPassiveTotal(BONK_PASSIVE_CRIT) + GetTalentCritChance(victim, attacker);
@@ -4951,7 +4939,6 @@ float BonkRun::GetStatCap(BonkPassiveEffect effect)
     switch (effect)
     {
         case BONK_PASSIVE_DODGE:  return BONK_MAX_DODGE;
-        case BONK_PASSIVE_HIT:    return BONK_MAX_HIT;
         case BONK_PASSIVE_AMOUNT: return BONK_MAX_COUNT;
         case BONK_PASSIVE_MOVE_SPEED: return BONK_MAX_MOVE_SPEED;
         default:                  return 0.0f;
