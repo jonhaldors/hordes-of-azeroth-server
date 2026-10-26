@@ -539,11 +539,12 @@ bool ChatHandler::HandleBonkMasteryCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkGodCommand(char*)
+bool ChatHandler::HandleBonkGodCommand(char* args)
 {
     Player* player = m_session->GetPlayer();
     BonkPlayer* bonk = player->GetBonkPlayer();
-    bool const on = !bonk->IsTestGod();
+    std::string const wanted = args ? args : "";
+    bool const on = wanted == "on" ? true : wanted == "off" ? false : !bonk->IsTestGod();
     bonk->SetTestGod(on);
     player->SetCheatGod(on);
     SendSysMessage(on ? "God mode on: damage stops at 1 health." : "God mode off.");
@@ -985,7 +986,7 @@ bool ChatHandler::HandleBonkScalingCommand(char*)
     return true;
 }
 
-bool ChatHandler::HandleBonkStressCommand(char*)
+bool ChatHandler::HandleBonkStressCommand(char* args)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run || !run->IsActive())
@@ -995,7 +996,11 @@ bool ChatHandler::HandleBonkStressCommand(char*)
         return false;
     }
 
-    run->ToggleStress();
+    std::string const wanted = args ? args : "";
+    if (wanted == "on" || wanted == "off")
+        run->SetStress(wanted == "on");
+    else
+        run->ToggleStress();
     return true;
 }
 

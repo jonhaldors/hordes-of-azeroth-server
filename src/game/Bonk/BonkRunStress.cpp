@@ -70,6 +70,12 @@ void BonkRun::ToggleStress()
         StartStress();
 }
 
+void BonkRun::SetStress(bool on)
+{
+    if (on != m_stress.on)
+        ToggleStress();
+}
+
 void BonkRun::StartStress()
 {
     m_stress = Stress();

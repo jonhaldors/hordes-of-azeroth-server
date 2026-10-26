@@ -278,6 +278,7 @@ class BonkRun
         void SendStats() const;
         std::vector<std::string> DescribeScaling() const;
         void ToggleStress();
+        void SetStress(bool on);
         bool Pick(uint32 choice, std::string& error);
         bool Reroll(std::string& error);
         bool Banish(uint32 choice, std::string& error);
