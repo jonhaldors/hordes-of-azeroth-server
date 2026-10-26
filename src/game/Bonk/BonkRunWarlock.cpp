@@ -323,12 +323,12 @@ void BonkRun::BurstConsumedShadows()
             ShowStrike(pet, spellInfo, pet);
             OnConsumedBurst(owned);
             float const hit = GetPetBiteDamage(owned, *family) * BONK_CONSUME_BURST_BITES * (1.0f + m_mastery.Special(BONK_SPECIAL_FEL_SUNDER) / 100.0f);
-            float const powerShare = GetPowerShare(pet);
+            float const minionScale = GetMinionScale(pet);
             bool const stuns = m_mastery.Special(BONK_SPECIAL_SHADOWFURY) > 0.0f;
             for (Creature* mob : GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), BONK_CONSUME_BURST_RADIUS * GetSummonReach(owned)))
                 if (pet->IsWithinLOSInMap(mob))
                 {
-                    DealExactHit(spellInfo, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(nullptr, mob, powerShare))), pet);
+                    DealExactHit(spellInfo, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(nullptr, mob, minionScale))), pet);
                     if (stuns && mob->IsAlive())
                         m_pendingStuns.push_back(mob->GetObjectGuid());
                 }

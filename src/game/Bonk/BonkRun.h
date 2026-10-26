@@ -171,10 +171,10 @@ class BonkRun
         uint32 MitigateDamage(uint32 damage);
         void HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, SpellEffectIndex effectIndex, WeaponAttackType attackType);
         void AddNecroticStack();
-        float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare = 1.0f, float extraPower = 0.0f) const;
+        float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float minionScale = 1.0f, float extraPower = 0.0f) const;
         float RollDamageSpread() const;
         void FloatSummonDamage(Unit* victim, uint32 damage, SpellEntry const* spellInfo) const;
-        float GetPowerShare(Unit const* attacker) const;
+        float GetMinionScale(Unit const* attacker) const;
 
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
         static uint32 GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed);

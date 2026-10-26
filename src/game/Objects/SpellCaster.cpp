@@ -41,7 +41,7 @@ namespace
         BonkRun const* run = player ? player->GetBonkPlayer()->GetRun() : nullptr;
         if (!run)
             return 1.0f;
-        float const multiplier = run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetPowerShare(attacker));
+        float const multiplier = run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetMinionScale(attacker));
         return attacker->IsPlayer() ? multiplier : multiplier * run->GetSummonDamageMultiplier(attacker);
     }
 

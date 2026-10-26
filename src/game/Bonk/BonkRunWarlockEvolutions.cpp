@@ -335,7 +335,7 @@ void BonkRun::OnWarlockEvolvedPetStrike(OwnedWeapon& owned, Creature* pet, Creat
                 if (jumps++ >= BONK_FEL_IMPS_JUMPS)
                     break;
                 ShowStrike(prey, bolt, mob);
-                DealExactHit(bolt, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(bolt, mob, GetPowerShare(pet)))), pet);
+                DealExactHit(bolt, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(bolt, mob, GetMinionScale(pet)))), pet);
             }
         }
     }
@@ -581,7 +581,7 @@ void BonkRun::SlamVoid()
         float const hit = GetPetBiteDamage(*owned, *family) * BONK_VOID_SLAM_BITES;
         for (Creature* mob : mobs)
         {
-            DealExactHit(look, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(look, mob, GetPowerShare(pet)))), pet);
+            DealExactHit(look, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(look, mob, GetMinionScale(pet)))), pet);
             if (mob->IsAlive() && IsNormalMob(mob))
                 KnockBack(mob);
         }

@@ -3963,19 +3963,19 @@ float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
     return multiplier;
 }
 
-float BonkRun::GetPowerShare(Unit const* attacker) const
+float BonkRun::GetMinionScale(Unit const* attacker) const
 {
-    return IsSummon(attacker) ? BONK_SUMMON_POWER_SHARE + GetPackPowerShare() : 1.0f;
+    return IsSummon(attacker) ? 1.0f + GetPackPowerShare() : 1.0f;
 }
 
-float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float powerShare, float extraPower) const
+float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float minionScale, float extraPower) const
 {
-    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower) * powerShare;
+    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower);
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
         GetPaladinDamageMultiplier(victim);
     if (!spell)
-        return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim);
+        return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim) * minionScale;
 
     uint32 const school = spell->GetSpellSchoolMask();
     auto root = m_spellRoots.find(spell->Id);
@@ -4012,7 +4012,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
                     percent += bonus.second;
     }
 
-    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(true, victim);
+    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(true, victim) * minionScale;
 
     if (victim)
         for (OwnedWeapon const& owned : m_weapons)
@@ -8861,7 +8861,7 @@ void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkP
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM) && abilityInfo)
     {
         ShowStrike(pet, abilityInfo, prey);
-        DealTotemHit(owned, abilityInfo, prey, uint32(std::max(1.0f, damage * GetDamageMultiplier(abilityInfo, prey, GetPowerShare(pet)))));
+        DealTotemHit(owned, abilityInfo, prey, uint32(std::max(1.0f, damage * GetDamageMultiplier(abilityInfo, prey, GetMinionScale(pet)))));
     }
     else
         pet->CastCustomSpell(prey, abilitySpell, damage, {}, {}, true);
@@ -8905,7 +8905,7 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
     float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
     uint32 const root = GetRootWeapon(owned.weapon);
     float const hit = GetPetBiteDamage(owned, *family) * ability.damage * frenzy;
-    float const powerShare = GetPowerShare(pet);
+    float const minionScale = GetMinionScale(pet);
     PendingKeyword keyword;
     bool const applies = ability.stacks && (GetWeaponKeyword(owned, keyword) || GetPetAbilityKeyword(owned, ability, keyword));
     auto talentStacks = m_mastery.spellStacks.find(root);
@@ -8915,7 +8915,7 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
     {
         if (!pet->IsWithinLOSInMap(mob))
             continue;
-        uint32 const amount = uint32(std::max(1.0f, hit * GetDamageMultiplier(nullptr, mob, powerShare)));
+        uint32 const amount = uint32(std::max(1.0f, hit * GetDamageMultiplier(nullptr, mob, minionScale)));
         if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM))
             DealTotemHit(owned, spellInfo, mob, amount);
         else

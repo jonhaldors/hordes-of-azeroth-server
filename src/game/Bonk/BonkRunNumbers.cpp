@@ -328,8 +328,8 @@ float BonkRun::GetShownHit(OwnedWeapon const& owned, float extraPower) const
         BonkPetFamily const* family = GetPetFamily(owned);
         if (!family)
             return 0.0f;
-        float const powerShare = BONK_SUMMON_POWER_SHARE + GetPackPowerShare();
-        return GetPetBiteDamage(owned, *family) * GetPetSwingFactor(owned) * GetDamageMultiplier(nullptr, nullptr, powerShare, extraPower) *
+        float const minionScale = 1.0f + GetPackPowerShare();
+        return GetPetBiteDamage(owned, *family) * GetPetSwingFactor(owned) * GetDamageMultiplier(nullptr, nullptr, minionScale, extraPower) *
             (1.0f + GetSpecDamage(owned.weapon.id) / 100.0f);
     }
 
