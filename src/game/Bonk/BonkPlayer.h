@@ -118,6 +118,8 @@ class BonkPlayer
         uint32 GetMasteryLevel() const;
         uint32 GetMasteryPoints() const;
         BonkMasteryNode const* FindLearnedRival(BonkMasteryNode const& node) const;
+        bool HasLearnedParent(BonkMasteryNode const& node, uint32 ignoredId) const;
+        uint32 GetMasterySpentAbove(uint32 treeId, uint8 row) const;
         uint32 GetFloorTalentPoints() const;
         uint32 GetClassFloor() const { return m_classFloor; }
         void RecordClassFloor(uint32 floor);

@@ -3993,7 +3993,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
         auto bonus = m_mastery.spellDamage.find(root->second);
         if (bonus != m_mastery.spellDamage.end())
             percent += bonus->second;
-        percent += GetSpecDamage(root->second);
+        percent += GetSpecDamage(root->second) + GetTormentBonus(root->second, victim);
     }
     percent += GetTalentDamagePercent();
     for (auto const& bonus : m_mastery.schoolDamage)
@@ -4984,7 +4984,7 @@ float BonkRun::GetHasteRate() const
 
 float BonkRun::GetRawWeaponHaste(OwnedWeapon const& owned) const
 {
-    return std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_HASTE)) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HASTE);
+    return std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_HASTE)) + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HASTE) + GetTalentHaste();
 }
 
 void BonkRun::SendStats() const
@@ -5072,8 +5072,8 @@ void BonkRun::UpdateWeapons(uint32 diff)
 float BonkRun::GetWeaponArea(OwnedWeapon const& owned) const
 {
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
-        return std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f);
-    return 1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_REACH) / 100.0f;
+        return std::max(0.1f, 1.0f + GetStat(BONK_PASSIVE_AREA) / 100.0f) * GetTalentReach(owned);
+    return (1.0f + GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_REACH) / 100.0f) * GetTalentReach(owned);
 }
 
 uint32 BonkRun::GetWeaponTargets(OwnedWeapon const& owned) const
@@ -6508,6 +6508,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     if (!spellInfo)
         return;
     owned.killed = false;
+    TalentCastScope talentCast(*this, owned);
 
     if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo) || FireWarlockSpell(owned, spellInfo) ||
         FireDruidSpell(owned, spellInfo))
@@ -6992,8 +6993,11 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     if (weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER)
         SpendThunder(owned);
 
-    if ((m_mastery.clearcasting > 0.0f && roll_chance_f(m_mastery.clearcasting)) ||
-        (owned.killed && weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL)))
+    OnTalentCastDone(owned);
+    bool const clearcast = m_mastery.clearcasting > 0.0f && roll_chance_f(m_mastery.clearcasting);
+    if (clearcast && m_mastery.Special(BONK_SPECIAL_CLEARCASTING_BOOST) > 0.0f)
+        m_clearcastBoostReady = true;
+    if (clearcast || (owned.killed && weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL)))
         owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_DELAY_MS);
 }
 
@@ -7320,7 +7324,15 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
             {
                 FiringWeapon firing(m_player->GetBonkPlayer());
                 StrikeWith(*owned, info, target, cast.share, true);
+                if (cast.arcaneEcho)
+                    EchoMissile(*owned, info, target, cast.share);
             }
+            continue;
+        }
+
+        if (cast.freezingWinds)
+        {
+            BlowFreezingWinds(cast);
             continue;
         }
 
@@ -8271,6 +8283,18 @@ void BonkRun::SpringTrap(OwnedWeapon& owned, float x, float y, float z)
     GetBasePoints(owned, spellInfo, 1.0f, basePoints);
     CastAtGround(m_player, spellInfo, basePoints, x, y, z);
     SpringEntrapment(owned, x, y, radius);
+    if (m_mastery.Special(BONK_SPECIAL_FREEZING_WINDS) > 0.0f && GetRootWeapon(weapon) == BONK_WEAPON_BLIZZARD)
+    {
+        PendingCast winds;
+        winds.weaponId = weapon.id;
+        winds.spellId = weapon.spellId;
+        winds.leftMs = int32(weapon.durationMs * GetWeaponDurationScale(owned));
+        winds.freezingWinds = true;
+        winds.x = x;
+        winds.y = y;
+        winds.z = z;
+        m_pendingCasts.push_back(winds);
+    }
     if (weapon.HasFlag(BONK_WEAPON_FLAG_CLUSTER_BOMBS))
         ScatterBomblets(owned, spellInfo, x, y, z);
     if (weapon.HasFlag(BONK_WEAPON_FLAG_SHATTER))

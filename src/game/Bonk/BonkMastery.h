@@ -52,7 +52,38 @@ enum BonkMasteryEffect : uint8
     BONK_MASTERY_ENTRAPMENT     = 36,
     BONK_MASTERY_TRAP_DURATION  = 37,
     BONK_MASTERY_CAPSTONE       = 38,
+    BONK_MASTERY_SPELL_STACKS   = 39,
+    BONK_MASTERY_SPELL_DURATION = 40,
+    BONK_MASTERY_SPELL_REACH    = 41,
+    BONK_MASTERY_KEYWORD_DURATION = 42,
+    BONK_MASTERY_KEYWORD_CAP    = 43,
+    BONK_MASTERY_CAST_HASTE     = 44,
+    BONK_MASTERY_SPECIAL        = 45,
+    BONK_MASTERY_SPELL_BEHAVIOR = 46,
     MAX_BONK_MASTERY_EFFECT
+};
+
+enum BonkTalentSpecial : uint8
+{
+    BONK_SPECIAL_NONE                    = 0,
+    BONK_SPECIAL_CLEARCASTING_BOOST      = 1,
+    BONK_SPECIAL_ARCANE_POTENCY          = 2,
+    BONK_SPECIAL_ARCANE_POTENCY_LONG     = 3,
+    BONK_SPECIAL_TORMENT_THE_WEAK        = 4,
+    BONK_SPECIAL_ARCANE_ECHO             = 5,
+    BONK_SPECIAL_TEMPORAL_FLUX           = 6,
+    BONK_SPECIAL_KINDLING                = 7,
+    BONK_SPECIAL_KINDLING_FLAMESTRIKE    = 8,
+    BONK_SPECIAL_SEARING_BURST           = 9,
+    BONK_SPECIAL_PYROCLASM_BURNING       = 10,
+    BONK_SPECIAL_CONFLAGRATION           = 11,
+    BONK_SPECIAL_WINTERS_CHILL           = 12,
+    BONK_SPECIAL_FINGERS_OF_FROST        = 13,
+    BONK_SPECIAL_GLACIAL_FRAGMENTS       = 14,
+    BONK_SPECIAL_GLACIAL_FRAGMENTS_CHILL = 15,
+    BONK_SPECIAL_FREEZING_WINDS          = 16,
+    BONK_SPECIAL_SPLINTERING_COLD        = 17,
+    MAX_BONK_SPECIAL
 };
 
 enum BonkCapstone : uint8
@@ -93,6 +124,28 @@ uint32 const BONK_MASTERY_XP_BASE   = 50;
 uint32 const BONK_MASTERY_XP_STEP   = 8;
 uint32 const BONK_MASTERY_XP_CURVE  = 1;
 uint32 const BONK_MASTERY_POINTS_PER_ROW = 5;
+uint8 const BONK_MASTERY_LAYOUT_GRID = 0;
+uint32 const BONK_TREE_ARCANE = 801;
+uint32 const BONK_TREE_FIRE   = 802;
+uint32 const BONK_WEAPON_FROSTBOLT  = 400;
+uint32 const BONK_WEAPON_BLIZZARD   = 401;
+uint32 const BONK_WEAPON_FLAMESTRIKE = 404;
+uint32 const BONK_WEAPON_PYROBLAST  = 405;
+uint32 const BONK_WEAPON_FIRE_BLAST = 406;
+uint8 const BONK_MASTERY_LAYOUT_FREE = 1;
+uint8 const BONK_MASTERY_FREE_ROWS = 9;
+uint32 const BONK_MASTERY_FREE_GATES[BONK_MASTERY_FREE_ROWS] = { 0, 0, 0, 5, 10, 10, 15, 15, 21 };
+
+enum BonkMasteryShape : uint8
+{
+    BONK_MASTERY_SHAPE_SQUARE   = 0,
+    BONK_MASTERY_SHAPE_ROUND    = 1,
+    BONK_MASTERY_SHAPE_CHOICE   = 2,
+    BONK_MASTERY_SHAPE_CAPSTONE = 3,
+    BONK_MASTERY_SHAPE_ONE_WAY  = 4,
+    BONK_MASTERY_SHAPE_STARTER  = 5,
+    MAX_BONK_MASTERY_SHAPE
+};
 
 struct BonkMasteryTree
 {
@@ -101,6 +154,9 @@ struct BonkMasteryTree
     std::string name;
     std::string background;
     uint8 order = 0;
+    uint8 layout = BONK_MASTERY_LAYOUT_GRID;
+
+    bool IsFree() const { return layout == BONK_MASTERY_LAYOUT_FREE; }
 };
 
 struct BonkMasteryNode
@@ -117,6 +173,9 @@ struct BonkMasteryNode
     uint32 requiredId = 0;
     uint8 requiredRank = 0;
     uint32 excludes = 0;
+    BonkMasteryShape shape = BONK_MASTERY_SHAPE_SQUARE;
+    float position = 0.0f;
+    std::vector<uint32> parents;
     BonkMasteryEffect effect = BONK_MASTERY_PASSIVE;
     uint32 target = 0;
     uint32 param = 0;
@@ -168,9 +227,20 @@ struct BonkMasteryBonuses
     float iceBlock = 0.0f;
     float blinkShield = 0.0f;
     float trapDuration = 0.0f;
+    std::map<uint32, float> spellStacks;
+    std::map<uint32, float> spellDuration;
+    std::map<uint32, float> spellReach;
+    std::map<uint32, float> spellBehavior;
+    std::map<uint32, float> keywordDuration;
+    std::map<uint32, float> keywordCap;
+    uint32 castHasteTree = 0;
+    float castHaste = 0.0f;
+    uint32 castHasteStacks = 0;
+    float specials[MAX_BONK_SPECIAL] = {};
     BonkCapstone capstone = BONK_CAPSTONE_NONE;
 
     bool Has(BonkCapstone which) const { return capstone == which; }
+    float Special(BonkTalentSpecial which) const { return specials[which]; }
 };
 
 class BonkMastery
@@ -184,6 +254,8 @@ class BonkMastery
         BonkMasteryNode const* FindStarterUnlock(uint8 classId, uint32 weaponId) const;
         std::map<uint32, BonkMasteryNode> const& GetNodes() const { return m_nodes; }
         bool HasTrees(uint8 classId) const;
+        uint32 GetRowGate(BonkMasteryNode const& node) const;
+        bool IsFreeNode(BonkMasteryNode const& node) const { return node.shape == BONK_MASTERY_SHAPE_STARTER; }
 
         static uint32 GetLevel(uint32 xp);
         static uint32 GetXpIntoLevel(uint32 xp);

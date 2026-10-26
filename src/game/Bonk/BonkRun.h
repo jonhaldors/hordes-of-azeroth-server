@@ -242,6 +242,7 @@ class BonkRun
         void OnWeaponHit(Unit* victim, SpellEntry const* spell);
         void OnPetBite(Creature* pet, Unit* victim);
         void OnKillingBlow(Unit* victim);
+        void OnTalentDamage(Unit* victim, SpellEntry const* spell);
         bool ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs = 0, float damageScale = 1.0f, uint32 sourceSpellId = 0);
         void CreditDamageOverTime(Unit const* victim, uint32 spellId, uint32 damage, std::vector<std::pair<uint32, uint32>>& credits) const;
         uint32 GetKeywordStacks(Unit const* victim, BonkKeyword keyword) const;
@@ -1374,6 +1375,8 @@ class BonkRun
             bool pyroblastSplash = false;
             bool iceShard = false;
             bool frostShatter = false;
+            bool arcaneEcho = false;
+            bool freezingWinds = false;
             bool livingBomb = false;
             bool meteor = false;
             bool meteorShower = false;
@@ -1560,6 +1563,9 @@ class BonkRun
         uint32 GetExtraSpreadTargets(uint32 keyword) const;
         uint32 GetChillFreezeStacks(BonkKeywordInfo const& chill) const;
         uint32 GetChillTalentMs() const;
+        uint32 GetKeywordTalentMs(BonkKeyword keyword) const;
+        uint32 GetKeywordTalentCap(uint32 keyword) const;
+        float GetTalentReach(OwnedWeapon const& owned) const;
         void QueueTalentStun(OwnedWeapon const& owned, Unit* victim);
         void ApplyPendingStuns();
         uint32 GetSpellShieldCap() const;
@@ -1573,6 +1579,25 @@ class BonkRun
         void UpdateTalents();
         void OnTalentDash();
         void OnTalentBlink();
+        void BeginTalentCast(OwnedWeapon const& owned);
+        void EndTalentCast();
+        void OnTalentCastDone(OwnedWeapon& owned);
+        void OnTalentKill(Unit* victim);
+        float GetTalentHaste() const;
+        float GetTormentBonus(uint32 rootWeapon, Unit const* victim) const;
+        void ReduceTimer(uint32 rootWeapon, int32 ms);
+        void EchoMissile(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
+        void BlowFreezingWinds(PendingCast const& cast);
+
+        class TalentCastScope
+        {
+            public:
+                TalentCastScope(BonkRun& run, OwnedWeapon const& owned) : m_run(run) { run.BeginTalentCast(owned); }
+                ~TalentCastScope() { m_run.EndTalentCast(); }
+
+            private:
+                BonkRun& m_run;
+        };
         bool IsTalentBlinkDash() const;
         float GetTrapTalentDuration(OwnedWeapon const& owned) const;
         void SpringEntrapment(OwnedWeapon const& owned, float x, float y, float radius);
@@ -2372,6 +2397,14 @@ class BonkRun
         uint32 m_presenceOfMindMs = 0;
         void BankMissiles(OwnedWeapon const& owned);
         uint32 m_bankedMissiles = 0;
+        float m_castDamageBonus = 0.0f;
+        float m_castCritBonus = 0.0f;
+        bool m_clearcastBoostReady = false;
+        uint32 m_potencyCasts = 0;
+        std::vector<uint32> m_castHasteUntil;
+        bool m_fingersReady = false;
+        bool m_searingBurstArmed = false;
+        uint32 m_talentCritsSeen = 0;
         float GetArcanePowerMultiplier() const;
         uint32 m_arcanePowerUntilMs = 0;
         void PlantHydra(Creature* pet);

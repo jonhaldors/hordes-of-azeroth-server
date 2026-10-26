@@ -2,8 +2,10 @@
 #include "Database/DatabaseEnv.h"
 #include "Log.h"
 #include "Policies/SingletonImp.h"
+#include "Util.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 INSTANTIATE_SINGLETON_1(BonkMastery);
 
@@ -38,7 +40,7 @@ void BonkMastery::Load()
     m_trees.clear();
     m_nodes.clear();
 
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `id`, `class`, `name`, `background`, `order` FROM `bonk_mastery_tree`"));
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `id`, `class`, `name`, `background`, `order`, `layout` FROM `bonk_mastery_tree`"));
     if (result)
     {
         do
@@ -50,12 +52,13 @@ void BonkMastery::Load()
             tree.name = fields[2].GetCppString();
             tree.background = fields[3].GetCppString();
             tree.order = fields[4].GetUInt8();
+            tree.layout = fields[5].GetUInt8();
             m_trees[tree.id] = std::move(tree);
         } while (result->NextRow());
     }
 
     result = WorldDatabase.Query("SELECT `id`, `class`, `tree`, `row`, `column`, `icon`, `name`, `description`, `max_rank`, "
-        "`required_id`, `required_rank`, `effect`, `target`, `value_per_rank`, `param`, `excludes` FROM `bonk_mastery`");
+        "`required_id`, `required_rank`, `effect`, `target`, `value_per_rank`, `param`, `excludes`, `shape`, `position`, `parents` FROM `bonk_mastery`");
     if (result)
     {
         do
@@ -78,6 +81,11 @@ void BonkMastery::Load()
             node.valuePerRank = fields[13].GetFloat();
             node.param = fields[14].GetUInt32();
             node.excludes = fields[15].GetUInt32();
+            node.shape = BonkMasteryShape(std::min<uint8>(fields[16].GetUInt8(), MAX_BONK_MASTERY_SHAPE - 1));
+            node.position = fields[17].GetFloat();
+            for (std::string const& parent : StrSplit(fields[18].GetCppString(), ","))
+                if (uint32 parentId = uint32(std::strtoul(parent.c_str(), nullptr, 10)))
+                    node.parents.push_back(parentId);
 
             auto tree = m_trees.find(node.tree);
             if (tree == m_trees.end() || tree->second.classId != node.classId)
@@ -110,17 +118,27 @@ void BonkMastery::Load()
                 case BONK_MASTERY_SPELL_STUN:
                 case BONK_MASTERY_STRUCK_CAST:
                 case BONK_MASTERY_ENTRAPMENT:
+                case BONK_MASTERY_SPELL_STACKS:
+                case BONK_MASTERY_SPELL_DURATION:
+                case BONK_MASTERY_SPELL_REACH:
+                case BONK_MASTERY_SPELL_BEHAVIOR:
                     targetOk = sBonkMgr.GetWeapon(node.target) != nullptr;
                     break;
                 case BONK_MASTERY_SPELL_APPLIES:
                     targetOk = sBonkMgr.GetWeapon(node.target) != nullptr && sBonkMgr.GetKeyword(BonkKeyword(node.param)) != nullptr;
                     break;
                 case BONK_MASTERY_SPEC_DAMAGE:
+                case BONK_MASTERY_CAST_HASTE:
                     targetOk = m_trees.count(node.target) != 0;
+                    break;
+                case BONK_MASTERY_SPECIAL:
+                    targetOk = node.target > BONK_SPECIAL_NONE && node.target < MAX_BONK_SPECIAL;
                     break;
                 case BONK_MASTERY_KEYWORD_DAMAGE:
                 case BONK_MASTERY_CRIT_VS_KEYWORD:
                 case BONK_MASTERY_SPREAD_TARGETS:
+                case BONK_MASTERY_KEYWORD_DURATION:
+                case BONK_MASTERY_KEYWORD_CAP:
                     targetOk = sBonkMgr.GetKeyword(BonkKeyword(node.target)) != nullptr;
                     break;
                 case BONK_MASTERY_CAPSTONE:
@@ -135,7 +153,10 @@ void BonkMastery::Load()
                 continue;
             }
 
-            if (node.row < 1 || node.row > BONK_SHOP_ROWS || node.column < 1 || node.column > BONK_SHOP_COLUMNS)
+            BonkMasteryTree const& owner = m_trees[node.tree];
+            bool const outside = owner.IsFree() ? node.row >= BONK_MASTERY_FREE_ROWS || node.position < -1.5f || node.position > 5.5f :
+                node.row < 1 || node.row > BONK_SHOP_ROWS || node.column < 1 || node.column > BONK_SHOP_COLUMNS;
+            if (outside)
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_mastery`: node %u sits outside its tree (row %u, column %u), skipped.",
                     node.id, uint32(node.row), uint32(node.column));
@@ -177,6 +198,14 @@ std::vector<BonkMasteryTree const*> BonkMastery::GetTrees(uint8 classId) const
         return a->order != b->order ? a->order < b->order : a->id < b->id;
     });
     return trees;
+}
+
+uint32 BonkMastery::GetRowGate(BonkMasteryNode const& node) const
+{
+    BonkMasteryTree const* tree = GetTree(node.tree);
+    if (tree && tree->IsFree())
+        return node.row < BONK_MASTERY_FREE_ROWS ? BONK_MASTERY_FREE_GATES[node.row] : BONK_MASTERY_FREE_GATES[BONK_MASTERY_FREE_ROWS - 1];
+    return uint32(std::max<uint8>(node.row, 1) - 1) * BONK_MASTERY_POINTS_PER_ROW;
 }
 
 bool BonkMastery::HasTrees(uint8 classId) const
@@ -275,6 +304,18 @@ BonkMasteryBonuses BonkMastery::Evaluate(std::map<uint32, uint8> const& ranks) c
             case BONK_MASTERY_KEYWORD_DAMAGE: bonuses.keywordDamage[node->target] += value; break;
             case BONK_MASTERY_CRIT_VS_KEYWORD: bonuses.critVsKeyword[node->target] += value; break;
             case BONK_MASTERY_USES_BONUS:     bonuses.usesBonus[node->target] += value; break;
+            case BONK_MASTERY_SPELL_STACKS:   bonuses.spellStacks[node->target] += value; break;
+            case BONK_MASTERY_SPELL_DURATION: bonuses.spellDuration[node->target] += value; break;
+            case BONK_MASTERY_SPELL_REACH:    bonuses.spellReach[node->target] += value; break;
+            case BONK_MASTERY_SPELL_BEHAVIOR: bonuses.spellBehavior[node->target] += value; break;
+            case BONK_MASTERY_KEYWORD_DURATION: bonuses.keywordDuration[node->target] += value; break;
+            case BONK_MASTERY_KEYWORD_CAP:    bonuses.keywordCap[node->target] += value; break;
+            case BONK_MASTERY_CAST_HASTE:
+                bonuses.castHasteTree = node->target;
+                bonuses.castHaste += value;
+                bonuses.castHasteStacks = std::max(bonuses.castHasteStacks, node->param);
+                break;
+            case BONK_MASTERY_SPECIAL:        bonuses.specials[node->target] += value; break;
             case BONK_MASTERY_SPELL_APPLIES:
             {
                 BonkMasteryApply& apply = bonuses.spellApplies[node->target];

@@ -403,13 +403,40 @@ uint32 BonkPlayer::GetMasterySpentInTree(uint32 treeId) const
 
 uint8 BonkPlayer::GetMasteryRank(uint32 nodeId) const
 {
+    if (BonkMasteryNode const* node = sBonkMastery.GetNode(nodeId))
+        if (sBonkMastery.IsFreeNode(*node))
+            return node->maxRank;
     auto itr = m_masteryRanks.find(nodeId);
     return itr != m_masteryRanks.end() ? itr->second : 0;
 }
 
 BonkMasteryBonuses BonkPlayer::GetMasteryBonuses() const
 {
-    return sBonkMastery.Evaluate(m_masteryRanks);
+    std::map<uint32, uint8> ranks = m_masteryRanks;
+    for (auto const& itr : sBonkMastery.GetNodes())
+        if (itr.second.classId == m_player->GetClass() && sBonkMastery.IsFreeNode(itr.second))
+            ranks[itr.first] = itr.second.maxRank;
+    return sBonkMastery.Evaluate(ranks);
+}
+
+bool BonkPlayer::HasLearnedParent(BonkMasteryNode const& node, uint32 ignoredId) const
+{
+    if (node.parents.empty())
+        return true;
+    for (uint32 parentId : node.parents)
+        if (parentId != ignoredId && GetMasteryRank(parentId))
+            return true;
+    return false;
+}
+
+uint32 BonkPlayer::GetMasterySpentAbove(uint32 treeId, uint8 row) const
+{
+    uint32 spent = 0;
+    for (auto const& itr : m_masteryRanks)
+        if (BonkMasteryNode const* placed = sBonkMastery.GetNode(itr.first))
+            if (placed->tree == treeId && placed->row < row)
+                spent += itr.second;
+    return spent;
 }
 
 void BonkPlayer::SendMasteryState() const
@@ -465,10 +492,22 @@ bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
         return false;
     }
 
-    uint32 const treePoints = (node->row - 1) * BONK_MASTERY_POINTS_PER_ROW;
+    if (sBonkMastery.IsFreeNode(*node))
+    {
+        message = node->name + " is always yours.";
+        return false;
+    }
+
+    uint32 const treePoints = sBonkMastery.GetRowGate(*node);
     if (GetMasterySpentInTree(node->tree) < treePoints)
     {
         message = "Requires " + std::to_string(treePoints) + " points in this tree.";
+        return false;
+    }
+
+    if (!HasLearnedParent(*node, 0))
+    {
+        message = "Learn a talent that leads to " + node->name + " first.";
         return false;
     }
 
@@ -573,14 +612,15 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
             return false;
         }
 
+        if (rank == 1 && std::find(other->parents.begin(), other->parents.end(), nodeId) != other->parents.end() && !HasLearnedParent(*other, nodeId))
+        {
+            message = "Refund " + other->name + " first, because it leads from this one.";
+            return false;
+        }
+
         if (other->tree == node->tree && other->row > node->row)
         {
-            uint32 above = 0;
-            for (auto const& inner : m_masteryRanks)
-                if (BonkMasteryNode const* placed = sBonkMastery.GetNode(inner.first))
-                    if (placed->tree == other->tree && placed->row < other->row)
-                        above += inner.second;
-            if (above - 1 < uint32(other->row - 1) * BONK_MASTERY_POINTS_PER_ROW)
+            if (GetMasterySpentAbove(other->tree, other->row) - 1 < sBonkMastery.GetRowGate(*other))
             {
                 message = "Refund " + other->name + " first, because it needs these points spent in this tree.";
                 return false;
@@ -1512,7 +1552,13 @@ void BonkPlayer::SendShop(bool open) const
             GetClassName() + "~" + std::to_string(BONK_MASTERY_POINTS_PER_ROW));
 
         for (BonkMasteryTree const* tree : sBonkMastery.GetTrees(classId))
-            SendAddon("tree~" + std::to_string(tree->id) + "~" + tree->name + "~" + tree->background);
+        {
+            std::string gates;
+            for (uint8 row = 0; row < BONK_MASTERY_FREE_ROWS; ++row)
+                gates += (row ? "," : "") + std::to_string(tree->IsFree() ? BONK_MASTERY_FREE_GATES[row] : uint32(std::max<uint8>(row, 1) - 1) * BONK_MASTERY_POINTS_PER_ROW);
+            SendAddon("tree~" + std::to_string(tree->id) + "~" + tree->name + "~" + tree->background + "~" + std::to_string(uint32(tree->layout)) + "~" + gates +
+                "~" + std::to_string(GetMasterySpentInTree(tree->id)));
+        }
 
         for (auto const& itr : sBonkMastery.GetNodes())
         {
@@ -1524,6 +1570,10 @@ void BonkPlayer::SendShop(bool open) const
             line << "node~" << node.tree << '~' << node.id << '~' << uint32(node.row) << '~' << uint32(node.column) << '~' << node.icon
                  << '~' << uint32(rank) << '~' << uint32(node.maxRank) << '~' << (rank < node.maxRank ? 1 : 0)
                  << '~' << node.requiredId << '~' << uint32(node.requiredRank) << "~0~0~" << node.name << '~' << node.description << "~0~~" << FormatStat(node.valuePerRank) << '~' << (rank ? 1 : 0);
+            std::string parents;
+            for (uint32 parentId : node.parents)
+                parents += (parents.empty() ? "" : ",") + std::to_string(parentId);
+            line << '~' << uint32(node.shape) << '~' << FormatStat(node.position) << '~' << parents << '~' << node.excludes;
             SendAddon(line.str());
         }
 
