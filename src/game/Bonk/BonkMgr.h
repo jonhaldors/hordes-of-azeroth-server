@@ -1063,6 +1063,14 @@ struct BonkTalent
     uint32 GetCost(uint8 ownedRanks) const;
 };
 
+uint32 const BONK_FORTUNE_ROW_GATES[] = { 0, 0, 10, 30 };
+
+inline uint32 GetFortuneRowGate(uint8 row)
+{
+    size_t const count = sizeof(BONK_FORTUNE_ROW_GATES) / sizeof(BONK_FORTUNE_ROW_GATES[0]);
+    return BONK_FORTUNE_ROW_GATES[std::min<size_t>(row, count - 1)];
+}
+
 struct BonkRunBonuses
 {
     float passives[MAX_BONK_PASSIVE_EFFECT] = {};

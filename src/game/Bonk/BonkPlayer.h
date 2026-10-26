@@ -101,6 +101,8 @@ class BonkPlayer
         uint8 GetUpgradeRank(uint32 upgradeId) const;
         float GetUpgradeUtility(BonkUpgradeUtility utility) const;
         uint8 GetTalentRank(uint32 talentId) const;
+        uint32 GetFortuneSpentAbove(uint8 row, uint32 refundedId = 0) const;
+        uint32 GetFortuneSpent(uint32 tree) const;
         bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
         uint32 CountDarkFortunes() const { return uint32(m_enabledTalents.size()); }
         bool BuyUpgrade(uint32 upgradeId, std::string& message);
