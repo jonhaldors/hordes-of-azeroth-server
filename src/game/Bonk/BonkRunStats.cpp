@@ -102,7 +102,7 @@ namespace
             {
                 DBCFileLoader::Record row = file.getRecord(i);
                 char const* texture = row.getString(1);
-                if (!texture || _strnicmp(texture, BONK_ICON_PREFIX, prefixLength) != 0)
+                if (!texture || !StringStartsWithCaseInsensitive(texture, BONK_ICON_PREFIX))
                     continue;
                 icons[row.getUInt(0)] = texture + prefixLength;
             }
