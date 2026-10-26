@@ -306,6 +306,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "shapeshift",     SEC_PLAYER,         false, &ChatHandler::HandleBonkShapeshiftCommand,      "", nullptr },
         { "sandbox",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkSandboxCommand,         "", nullptr },
         { "mobinfo",        SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkMobInfoCommand,         "", nullptr },
+        { "killboss",       SEC_GAMEMASTER,     false, &ChatHandler::HandleBonkKillBossCommand,        "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 

@@ -1405,7 +1405,7 @@ void BonkRun::StartStage()
         bossIn = std::to_string(minutes) + (minutes == 1 ? " minute" : " minutes");
     if (seconds || !minutes)
         bossIn += (minutes ? " and " : "") + std::to_string(seconds) + (seconds == 1 ? " second" : " seconds");
-    m_player->GetBonkPlayer()->Notify("Stage " + std::to_string(m_stage) + " begins in " + m_map.name + ". The boss arrives in " + bossIn + ".");
+    m_player->GetBonkPlayer()->Notify((IsMythic() ? "Mythic floor " : "Stage ") + std::to_string(m_stage) + " begins in " + m_map.name + ". The boss arrives in " + bossIn + ".");
 }
 
 void BonkRun::SendFullState() const

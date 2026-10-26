@@ -1084,6 +1084,21 @@ bool ChatHandler::HandleBonkShapeshiftCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkKillBossCommand(char*)
+{
+    Player* player = m_session->GetPlayer();
+    BonkRun* run = player->GetBonkPlayer()->GetRun();
+    Creature* boss = run ? player->GetMap()->GetCreature(run->GetBossGuid()) : nullptr;
+    if (!boss || !boss->IsAlive())
+    {
+        SendSysMessage("There is no stage boss alive.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    PSendSysMessage("%s had %u of %u health.", boss->GetName(), boss->GetHealth(), boss->GetMaxHealth());
+    return HandleDieHelper(boss);
+}
+
 bool ChatHandler::HandleBonkMobInfoCommand(char*)
 {
     Player* player = m_session->GetPlayer();

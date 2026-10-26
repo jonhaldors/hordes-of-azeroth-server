@@ -155,6 +155,7 @@ class BonkRun
         BonkMap const& GetMap() const { return m_map; }
         BonkTier const& GetTier() const { return m_tier; }
         uint32 GetEliteAffixes() const { return m_tier.eliteAffixes + m_bonuses.eliteAffixes + GetMilestoneAffixes(); }
+        ObjectGuid const& GetBossGuid() const { return m_bossGuid; }
         uint32 GetFloorMilestones() const;
         uint32 GetMilestoneAffixes() const;
         float GetMilestoneVeteranChance() const;

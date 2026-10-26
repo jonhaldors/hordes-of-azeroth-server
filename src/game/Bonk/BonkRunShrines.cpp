@@ -62,7 +62,7 @@ namespace
         "Click it to earn 5% more gold and Darkmoon Tickets for the rest of the run, but more enemies will come. Each totem you use adds more.",
         "Click it to face elite guards with two affixes. Beat them for a free chest.",
         "Click it to heal 8% of your health every second for 10 seconds while you stand in it. Enemies you kill inside it give double experience.",
-        "Click it to summon this stage's boss early. Defeat it for the usual boss rewards. The stage keeps going afterward.",
+        "Click it to summon this stage's boss early. Defeat it to open the portal and skip the rest of the stage.",
     };
 
     struct LeyStat
