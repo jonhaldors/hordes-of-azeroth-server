@@ -6670,7 +6670,8 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
                 ++itr;
         }
 
-    bool const reachGrows = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE || weapon.behavior == BONK_BEHAVIOR_CLEAVE;
+    bool const reachGrows = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE || weapon.behavior == BONK_BEHAVIOR_CLEAVE ||
+        weapon.IsMeleeStrike();
     bool const thrown = weapon.behavior == BONK_BEHAVIOR_TRAP && weapon.target == BONK_TARGET_GROUND;
     bool const radial = weapon.target == BONK_TARGET_SELF_AREA || weapon.target == BONK_TARGET_CONE;
     float const range = thrown ? BONK_TRAP_THROW_RANGE : radial ? weapon.radius * areaScale : weapon.range * (reachGrows ? areaScale : 1.0f);
@@ -11873,7 +11874,8 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIf
         description += " " + DescribeThunderCount(owned);
     bool faster = false;
     std::string const header = DescribeSpellHeader(owned, interval, faster);
-    std::string const radius = std::to_string(std::round(GetWeaponRadius(owned) * 10.0f) / 10.0f);
+    std::string const radius = std::to_string(std::round(GetWeaponRadius(owned) * 10.0f) / 10.0f) + "~" +
+        std::to_string(std::round(weapon.range * (weapon.IsMeleeStrike() ? GetWeaponArea(owned) : 1.0f) * 10.0f) / 10.0f);
     std::string const shown = description + "~" + header + "~" + picks + "~" + DescribeShownDamage(owned) + "~" + radius;
     if (onlyIfChanged && shown == owned.shownTip)
         return;
