@@ -55,7 +55,7 @@ void BonkMastery::Load()
     }
 
     result = WorldDatabase.Query("SELECT `id`, `class`, `tree`, `row`, `column`, `icon`, `name`, `description`, `max_rank`, "
-        "`required_id`, `required_rank`, `effect`, `target`, `value_per_rank`, `param` FROM `bonk_mastery`");
+        "`required_id`, `required_rank`, `effect`, `target`, `value_per_rank`, `param`, `excludes` FROM `bonk_mastery`");
     if (result)
     {
         do
@@ -77,6 +77,7 @@ void BonkMastery::Load()
             node.target = fields[12].GetUInt32();
             node.valuePerRank = fields[13].GetFloat();
             node.param = fields[14].GetUInt32();
+            node.excludes = fields[15].GetUInt32();
 
             auto tree = m_trees.find(node.tree);
             if (tree == m_trees.end() || tree->second.classId != node.classId)

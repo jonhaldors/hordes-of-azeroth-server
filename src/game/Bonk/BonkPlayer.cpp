@@ -173,6 +173,7 @@ void BonkPlayer::OnLogin()
     LoadStarter();
     sBonkQuests.OnLogin(m_player);
     ReconcileMastery();
+    TakeTalentResetNotice();
 
     ResetCharacter();
     ClearAuras();
@@ -326,6 +327,16 @@ void BonkPlayer::ReconcileMastery()
             (earned == 1 ? " talent point" : " talent points") + " to spend again.";
 }
 
+void BonkPlayer::TakeTalentResetNotice()
+{
+    uint32 const accountId = GetProgressAccount();
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `talent_reset` FROM `bonk_account` WHERE `account` = %u", accountId));
+    if (!result || !result->Fetch()[0].GetUInt8())
+        return;
+    CharacterDatabase.PExecute("UPDATE `bonk_account` SET `talent_reset` = 0 WHERE `account` = %u", accountId);
+    m_masteryNotice = "Your talents were reset for the new trees. All points have been refunded.";
+}
+
 void BonkPlayer::FlushMasteryNotice()
 {
     if (m_masteryNotice.empty())
@@ -468,6 +479,14 @@ bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
         return false;
     }
 
+    if (BonkMasteryNode const* rival = FindLearnedRival(*node))
+    {
+        message = node->effect == BONK_MASTERY_CAPSTONE && rival->effect == BONK_MASTERY_CAPSTONE ?
+            "You can only have one capstone. Unlearn " + rival->name + " first." :
+            node->name + " can't be learned with " + rival->name + ". Unlearn it first.";
+        return false;
+    }
+
     if (GetMasterySpent() >= GetMasteryPoints())
     {
         message = "You have no talent points left. Level up your Mastery to earn more.";
@@ -480,6 +499,21 @@ bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
     message = "You learned " + node->name + (node->maxRank > 1 ? " (rank " + std::to_string(rank + 1) + ")." : ".");
     SendMasteryState();
     return true;
+}
+
+BonkMasteryNode const* BonkPlayer::FindLearnedRival(BonkMasteryNode const& node) const
+{
+    for (auto const& itr : m_masteryRanks)
+    {
+        BonkMasteryNode const* learned = sBonkMastery.GetNode(itr.first);
+        if (!learned || !itr.second || learned->id == node.id)
+            continue;
+        if (learned->id == node.excludes || learned->excludes == node.id)
+            return learned;
+        if (learned->effect == BONK_MASTERY_CAPSTONE && node.effect == BONK_MASTERY_CAPSTONE)
+            return learned;
+    }
+    return nullptr;
 }
 
 bool BonkPlayer::ResetMastery(std::string& message)

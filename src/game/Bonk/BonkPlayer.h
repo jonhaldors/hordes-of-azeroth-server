@@ -23,6 +23,7 @@ enum BonkQuestReward : uint8;
 enum BonkUpgradeUtility : uint8;
 struct BonkMap;
 struct BonkMasteryBonuses;
+struct BonkMasteryNode;
 struct BonkRunBonuses;
 struct BonkRunChoice;
 struct BonkTier;
@@ -116,9 +117,11 @@ class BonkPlayer
         uint32 GetMasteryXp() const { return m_masteryXp; }
         uint32 GetMasteryLevel() const;
         uint32 GetMasteryPoints() const;
+        BonkMasteryNode const* FindLearnedRival(BonkMasteryNode const& node) const;
         uint32 GetFloorTalentPoints() const;
         uint32 GetClassFloor() const { return m_classFloor; }
         void RecordClassFloor(uint32 floor);
+        void TakeTalentResetNotice();
         uint32 GetMasterySpent() const;
         uint32 GetMasterySpentInTree(uint32 treeId) const;
         uint8 GetMasteryRank(uint32 nodeId) const;

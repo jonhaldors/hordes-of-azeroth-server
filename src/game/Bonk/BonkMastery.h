@@ -116,6 +116,7 @@ struct BonkMasteryNode
     uint8 maxRank = 1;
     uint32 requiredId = 0;
     uint8 requiredRank = 0;
+    uint32 excludes = 0;
     BonkMasteryEffect effect = BONK_MASTERY_PASSIVE;
     uint32 target = 0;
     uint32 param = 0;
