@@ -507,8 +507,6 @@ void BonkRun::DropLightsHammers(OwnedWeapon& owned, SpellEntry const* spellInfo)
         hammer.z = target->GetPositionZ();
         hammer.leftMs = BONK_LIGHTS_HAMMER_LIFT_MS;
         hammer.lightsHammerLaunch = true;
-        if (Creature* source = TakeShotSource(hammer.x, hammer.y, hammer.z + BONK_LIGHTS_HAMMER_HEIGHT))
-            hammer.source = source->GetObjectGuid();
         m_pendingCasts.push_back(hammer);
     }
     if (owned.weapon.id == BONK_WEAPON_HAMMER_OF_LIGHT && ++m_lightsHammerVolleys % BONK_EXPLODING_HAMMER_EVERY == 0)
@@ -526,17 +524,13 @@ void BonkRun::DropExplodingHammer(OwnedWeapon const& owned)
     hammer.lightsHammerLaunch = true;
     hammer.radius = BONK_EXPLODING_HAMMER_RADIUS;
     hammer.share = BONK_EXPLODING_HAMMER_SHARE;
-    if (Creature* source = TakeShotSource(hammer.x, hammer.y, hammer.z + BONK_LIGHTS_HAMMER_HEIGHT))
-        hammer.source = source->GetObjectGuid();
     m_pendingCasts.push_back(hammer);
 }
 
 void BonkRun::LaunchLightsHammer(OwnedWeapon const& owned, PendingCast const& cast)
 {
-    Creature* source = cast.source.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(cast.source);
-    SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_FALLING_HAMMER);
-    if (source && look)
-        ShowMissileFrom(source, look, cast.x, cast.y, cast.z);
+    if (SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_FALLING_HAMMER))
+        ShowMissileBetween(look, cast.x, cast.y, cast.z + BONK_LIGHTS_HAMMER_HEIGHT, cast.x, cast.y, cast.z);
     PendingCast landing = cast;
     landing.lightsHammerLaunch = false;
     landing.lightsHammer = true;

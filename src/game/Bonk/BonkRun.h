@@ -701,7 +701,8 @@ class BonkRun
         void SpringTrap(OwnedWeapon& owned, float x, float y, float z);
         void DespawnTraps();
         void ThrowTrap(OwnedWeapon& owned, float x, float y, float z);
-        void ShowTrapSprung(OwnedWeapon const& owned, ObjectGuid const& standIn);
+        void ShowTrapSprung(OwnedWeapon const& owned, uint32 prop, float x, float y, float z);
+        uint32 PlaceTrapProp(uint32 display, float x, float y, float z);
         void DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster = nullptr, bool forceCrit = false);
         std::vector<Creature*> GetMobsInLine(OwnedWeapon const& owned, float range, float angle) const;
         bool Howl(OwnedWeapon& owned);
@@ -1352,6 +1353,7 @@ class BonkRun
             bool field = false;
             bool springTrap = false;
             bool releaseLook = false;
+            uint32 prop = 0;
             bool petCleave = false;
             bool pounce = false;
             bool ricochet = false;
@@ -1693,6 +1695,16 @@ class BonkRun
         Creature* TakeShotSource(float x, float y, float z);
         void UpdateShotSources(uint32 diff);
         void DespawnShotSources();
+        struct PooledMarker
+        {
+            ObjectGuid guid;
+            uint32 freeAtMs = 0;
+        };
+        Creature* TakePooledMarker(std::vector<PooledMarker>& pool, float x, float y, float z, uint32 busyMs, void (*install)(Creature*));
+        void FreePooledMarker(std::vector<PooledMarker>& pool, ObjectGuid const& guid, uint32 afterMs);
+        void DespawnPooledMarkers(std::vector<PooledMarker>& pool);
+        std::vector<PooledMarker> m_boltTargets;
+        std::vector<PooledMarker> m_hazardSources;
         std::vector<ObjectGuid> m_shotSources;
         std::set<ObjectGuid> m_heldShotSources;
         size_t m_nextShotSource = 0;
@@ -1707,7 +1719,7 @@ class BonkRun
         std::vector<WeaponOrb> m_weaponOrbs;
         struct Projectile
         {
-            ObjectGuid creature;
+            uint32 flightId = 0;
             uint32 weaponId = 0;
             uint32 spellId = 0;
             float damageShare = 1.0f;
@@ -1750,7 +1762,7 @@ class BonkRun
         struct Trap
         {
             uint32 weaponId = 0;
-            ObjectGuid standIn;
+            uint32 prop = 0;
             ObjectGuid object;
             float x = 0.0f, y = 0.0f, z = 0.0f;
             int32 armMs = 0;
@@ -2448,6 +2460,7 @@ class BonkRun
         void DealExactHit(SpellEntry const* spellInfo, Unit* target, uint32 damage, Unit* attacker = nullptr);
         void ShowFallingAt(SpellEntry const* spellInfo, float x, float y, float z);
         void ShowMissileFrom(Unit* source, SpellEntry const* spellInfo, float x, float y, float z);
+        void ShowMissileBetween(SpellEntry const* spellInfo, float fromX, float fromY, float fromZ, float toX, float toY, float toZ);
         void ShowThrowAtSpot(Unit* source, SpellEntry const* spellInfo, Unit const* target);
         void ShowMissilesAround(SpellEntry const* spellInfo, float radius, uint32 count);
         void PlaceAreaLook(uint32 spellId, float x, float y, float z, float radius, uint32 durationMs);

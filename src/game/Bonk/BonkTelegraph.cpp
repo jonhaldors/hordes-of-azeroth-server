@@ -123,6 +123,12 @@ void SendBonkLanding(Player* player, uint32 id)
     SendBonkDraw(player, "land~" + std::to_string(id));
 }
 
+void SendBonkMissile(Player* player, uint32 spellId, float fromX, float fromY, float fromZ, float toX, float toY, float toZ, uint32 holdMs)
+{
+    SendBonkDraw(player, "msl~" + std::to_string(spellId) + "~" + FormatPoint(fromX, fromY, fromZ) + "~" + FormatPoint(toX, toY, toZ) + "~" +
+        std::to_string(holdMs));
+}
+
 void SendBonkMark(Player* player, std::string const& key, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
     uint32 durationMs, bool outlineOnly, uint8 style, ObjectGuid const& follow, std::string const& texture, uint32 doneMs)
 {
@@ -144,6 +150,17 @@ void SendBonkAuraAt(Player* player, uint32 key, uint32 spellId, float x, float y
 void SendBonkAuraGone(Player* player, uint32 key)
 {
     SendBonkDraw(player, "aurax~" + std::to_string(key));
+}
+
+void SendBonkProp(Player* player, uint32 key, uint32 display, float x, float y, float z, float orientation, float scale)
+{
+    SendBonkDraw(player, "prop~" + std::to_string(key) + "~" + std::to_string(display) + "~" + FormatPoint(x, y, z) + "~" + FormatFloat(orientation) +
+        "~" + FormatFloat(scale));
+}
+
+void SendBonkPropGone(Player* player, uint32 key)
+{
+    SendBonkDraw(player, "propx~" + std::to_string(key));
 }
 
 uint32 NextBonkAuraKey()

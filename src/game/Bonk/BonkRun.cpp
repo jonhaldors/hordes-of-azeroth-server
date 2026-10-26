@@ -488,6 +488,8 @@ namespace
     uint32 const BONK_IMPACT_RING_MIN      = 4;
     uint32 const BONK_IMPACT_RING_MAX      = 8;
     uint32 const BONK_HAZARD_MS            = 1000;
+    uint32 const BONK_BOLT_TARGET_FREE_MS  = 500;
+    size_t const BONK_MARKER_POOL_MAX      = 32;
     float const BONK_MOBINFO_STRIKE_RANGE  = 10.0f;
 
     float const BONK_ELITE_CHEST_CHANCE    = 15.0f;
@@ -5548,6 +5550,8 @@ void BonkRun::UpdateShotSources(uint32 diff)
 
 void BonkRun::DespawnShotSources()
 {
+    DespawnPooledMarkers(m_boltTargets);
+    DespawnPooledMarkers(m_hazardSources);
     m_heldShotSources.clear();
     if (Map* map = m_player->FindMap())
         for (ObjectGuid const& guid : m_shotSources)
@@ -5596,8 +5600,7 @@ void BonkRun::PlayKitAt(ObjectGuid const& guid, float x, float y, float z, uint3
         mob->SendPlaySpellVisualKit(kit);
         return;
     }
-    if (Creature* source = TakeShotSource(x, y, atFeet ? z - BONK_PROJECTILE_HEIGHT : z))
-        source->SendPlaySpellVisualKit(kit);
+    SendBonkKitAt(m_player, kit, x, y, atFeet ? z : z + BONK_PROJECTILE_HEIGHT, 0.0f, BONK_ERUPTION_LOOK_MS);
 }
 
 void BonkRun::QueueDetonations(OwnedWeapon const& owned, SpellEntry const* spellInfo, float share, std::vector<Creature*> struck)
@@ -6151,14 +6154,13 @@ void BonkRun::ScatterBomblets(OwnedWeapon const& owned, SpellEntry const* spellI
     std::sort(spots.begin(), spots.end(), [](Spot const& a, Spot const& b) { return a.distance < b.distance; });
 
     SpellEntry const* tossInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_BOMBLET_TOSS);
-    Creature* source = tossInfo ? TakeShotSource(x, y, z) : nullptr;
     int32 delay = BONK_BOMBLET_FIRST_MS - BONK_BOMBLET_GAP_MS;
     for (Spot const& spot : spots)
     {
         int32 landed = 0;
-        if (source)
+        if (tossInfo)
         {
-            ShowMissileAt(source, tossInfo, spot.x, spot.y, spot.z);
+            ShowMissileBetween(tossInfo, x, y, z + BONK_PROJECTILE_HEIGHT, spot.x, spot.y, spot.z);
             if (tossInfo->speed > 0.0f)
                 landed = int32(spot.distance / tossInfo->speed * IN_MILLISECONDS);
         }
@@ -7068,7 +7070,7 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
     {
         if (cast.releaseLook)
         {
-            m_telegraphs.Release(m_player, cast.target);
+            SendBonkPropGone(m_player, cast.prop);
             continue;
         }
 
@@ -7083,14 +7085,14 @@ void BonkRun::UpdatePendingCasts(uint32 diff)
         if (!owned || !info || !m_player->IsAlive())
         {
             if (cast.springTrap)
-                m_telegraphs.Release(m_player, cast.target);
+                SendBonkPropGone(m_player, cast.prop);
             m_heldShotSources.erase(cast.source);
             continue;
         }
 
         if (cast.springTrap)
         {
-            ShowTrapSprung(*owned, cast.target);
+            ShowTrapSprung(*owned, cast.prop, cast.x, cast.y, cast.z);
             SpringTrap(*owned, cast.x, cast.y, cast.z);
             continue;
         }
@@ -7478,18 +7480,9 @@ void BonkRun::LaunchProjectile(OwnedWeapon& owned, BonkProjectileInfo const& inf
         return;
 
     uint32 const flightMs = uint32(flight / info.speed * IN_MILLISECONDS);
-    s_nextHelperLevel = m_player->GetLevel();
-    Creature* missile = m_player->SummonCreature(BONK_PROJECTILE, x, y, z, angle, TEMPSUMMON_TIMED_DESPAWN, flightMs + 2000, false, 0, &InstallProjectileAI);
-    if (!missile)
-        return;
-    missile->SetDisplayId(info.displayId);
-    missile->SetObjectScale(info.scale);
-    missile->SetFactionTemplateId(m_player->GetFactionTemplateId());
-    missile->SetOwnerGuid(m_player->GetObjectGuid());
-    missile->MonsterMoveWithSpeed(ex, ey, ez, angle, info.speed, MOVE_FLY_MODE);
-
     Projectile projectile;
-    projectile.creature = missile->GetObjectGuid();
+    projectile.flightId = NextBonkFlightId();
+    SendBonkFlight(m_player, projectile.flightId, x, y, z, ex, ey, ez, flightMs, info.displayId, info.scale);
     projectile.weaponId = owned.weapon.id;
     projectile.spellId = spellId;
     projectile.damageShare = damageShare;
@@ -7514,10 +7507,9 @@ void BonkRun::UpdateProjectiles(uint32 diff)
     for (auto itr = m_projectiles.begin(); itr != m_projectiles.end();)
     {
         Projectile& projectile = *itr;
-        Creature* missile = map->GetCreature(projectile.creature);
         OwnedWeapon* owned = FindOwned(projectile.weaponId);
         SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(projectile.spellId);
-        bool done = !missile || !owned || !spellInfo;
+        bool done = !owned || !spellInfo;
 
         if (!done)
         {
@@ -7549,7 +7541,10 @@ void BonkRun::UpdateProjectiles(uint32 diff)
             {
                 projectile.struck.push_back(hit.second->GetObjectGuid());
                 owned->killed = false;
-                StrikeWith(*owned, spellInfo, hit.second, projectile.damageShare, false, missile);
+                float const along = hit.first;
+                Creature* source = TakeShotSource(projectile.x + along * projectile.dirX, projectile.y + along * projectile.dirY,
+                    projectile.z - BONK_PROJECTILE_HEIGHT);
+                StrikeWith(*owned, spellInfo, hit.second, projectile.damageShare, false, source);
                 if (owned->killed && owned->weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL))
                     owned->timer = std::min<int32>(owned->timer, BONK_CLEARCAST_DELAY_MS);
                 if (!projectile.pierce)
@@ -7568,24 +7563,15 @@ void BonkRun::UpdateProjectiles(uint32 diff)
             ++itr;
             continue;
         }
-        if (missile)
-        {
-            missile->StopMoving();
-            missile->SetDisplayId(BONK_DISPLAY_INVISIBLE);
-            missile->DespawnOrUnsummon(1000);
-        }
+        SendBonkLanding(m_player, projectile.flightId);
         itr = m_projectiles.erase(itr);
     }
 }
 
 void BonkRun::DespawnProjectiles()
 {
-    if (Map* map = m_player->FindMap())
-    {
-        for (Projectile const& projectile : m_projectiles)
-            if (Creature* missile = map->GetCreature(projectile.creature))
-                missile->DespawnOrUnsummon();
-    }
+    for (Projectile const& projectile : m_projectiles)
+        SendBonkLanding(m_player, projectile.flightId);
     for (EnemyMissile const& missile : m_enemyMissiles)
         if (missile.flightId)
             SendBonkLanding(m_player, missile.flightId);
@@ -7789,7 +7775,58 @@ void BonkRun::ShowAttackLook(BonkEnemyHit const& hit, BonkTelegraphShape shape, 
 
 Creature* BonkRun::SummonHazard(float x, float y, float z)
 {
-    return m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_HAZARD_MS, false, 0, &InstallOrbAI);
+    return TakePooledMarker(m_hazardSources, x, y, z, BONK_HAZARD_MS, &InstallOrbAI);
+}
+
+Creature* BonkRun::TakePooledMarker(std::vector<PooledMarker>& pool, float x, float y, float z, uint32 busyMs, void (*install)(Creature*))
+{
+    Map* map = m_player->GetMap();
+    for (PooledMarker& marker : pool)
+    {
+        if (marker.freeAtMs > m_totalMs)
+            continue;
+        Creature* creature = map->GetCreature(marker.guid);
+        if (!creature || !creature->IsAlive())
+        {
+            creature = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_SHOT_SOURCE_LIFETIME_MS, false, 0,
+                install);
+            if (!creature)
+                return nullptr;
+            marker.guid = creature->GetObjectGuid();
+        }
+        else
+            creature->NearTeleportTo(x, y, z, creature->GetOrientation());
+        marker.freeAtMs = m_totalMs + busyMs;
+        return creature;
+    }
+    if (pool.size() >= BONK_MARKER_POOL_MAX)
+        return m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, busyMs, false, 0, install);
+    Creature* creature = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, BONK_SHOT_SOURCE_LIFETIME_MS, false, 0,
+        install);
+    if (creature)
+        pool.push_back({ creature->GetObjectGuid(), m_totalMs + busyMs });
+    return creature;
+}
+
+void BonkRun::FreePooledMarker(std::vector<PooledMarker>& pool, ObjectGuid const& guid, uint32 afterMs)
+{
+    for (PooledMarker& marker : pool)
+        if (marker.guid == guid)
+        {
+            marker.freeAtMs = std::min(marker.freeAtMs, m_totalMs + afterMs);
+            return;
+        }
+    if (Creature* creature = guid.IsEmpty() ? nullptr : m_player->GetMap()->GetCreature(guid))
+        creature->DespawnOrUnsummon(afterMs);
+}
+
+void BonkRun::DespawnPooledMarkers(std::vector<PooledMarker>& pool)
+{
+    if (Map* map = m_player->FindMap())
+        for (PooledMarker const& marker : pool)
+            if (Creature* creature = map->GetCreature(marker.guid))
+                creature->DespawnOrUnsummon();
+    pool.clear();
 }
 
 void BonkRun::Erupt(BonkEnemyHit const& hit, float x, float y, float z, float radius, bool burst, bool showImpact)
@@ -7890,7 +7927,7 @@ bool BonkRun::ReserveBolt(uint32 landMs)
 
 ObjectGuid BonkRun::PlaceBoltTarget(float x, float y, float z, uint32 lifetimeMs)
 {
-    Creature* target = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, lifetimeMs, false, 0, &InstallBoltTargetAI);
+    Creature* target = TakePooledMarker(m_boltTargets, x, y, z, lifetimeMs, &InstallBoltTargetAI);
     if (!target)
         return ObjectGuid();
 
@@ -7905,7 +7942,7 @@ void BonkRun::LandBolt(BonkEnemyHit const& hit, ObjectGuid targetGuid, float x, 
     Map* map = m_player->GetMap();
     Creature* target = map->GetCreature(targetGuid);
     if (target)
-        target->DespawnOrUnsummon(500);
+        FreePooledMarker(m_boltTargets, targetGuid, BONK_BOLT_TARGET_FREE_MS);
     if (hit.impactKit && m_state == STATE_RUNNING)
         ShowKitAt(hit.impactKit, x, y, target ? target->GetPositionZ() : m_player->GetPositionZ());
 
@@ -8075,37 +8112,40 @@ void BonkRun::DropTraps(OwnedWeapon& owned, bool armed)
         trap.armMs = armed ? 0 : BONK_TRAP_ARM_MS;
         trap.leftMs = lifetime;
         if (look)
-            trap.standIn = m_telegraphs.Borrow(m_player, x, y, z, look->set);
-        if (trap.standIn.IsEmpty())
-            if (GameObject* go = PlaceObject(uint32(weapon.behaviorValue), x, y, z, lifetime / IN_MILLISECONDS + 5))
-                trap.object = go->GetObjectGuid();
+            trap.prop = PlaceTrapProp(look->set, x, y, z);
+        else if (GameObject* go = PlaceObject(uint32(weapon.behaviorValue), x, y, z, lifetime / IN_MILLISECONDS + 5))
+            trap.object = go->GetObjectGuid();
         m_traps.push_back(trap);
     }
 }
 
+uint32 BonkRun::PlaceTrapProp(uint32 display, float x, float y, float z)
+{
+    uint32 const key = NextBonkAuraKey();
+    SendBonkProp(m_player, key, display, x, y, z, 0.0f);
+    return key;
+}
+
 void BonkRun::PutAwayTrap(Trap const& trap)
 {
-    if (!trap.standIn.IsEmpty())
-        m_telegraphs.Release(m_player, trap.standIn);
+    if (trap.prop)
+        SendBonkPropGone(m_player, trap.prop);
     else if (Map* map = m_player->FindMap())
         if (GameObject* go = map->GetGameObject(trap.object))
             go->Delete();
 }
 
-void BonkRun::ShowTrapSprung(OwnedWeapon const& owned, ObjectGuid const& standIn)
+void BonkRun::ShowTrapSprung(OwnedWeapon const& owned, uint32 prop, float x, float y, float z)
 {
     TrapLook const* look = GetTrapLook(uint32(owned.weapon.behaviorValue));
+    SendBonkPropGone(m_player, prop);
     if (!look)
-    {
-        m_telegraphs.Release(m_player, standIn);
         return;
-    }
-    m_telegraphs.Dress(m_player, standIn, look->sprung);
     PendingCast release;
     release.weaponId = owned.weapon.id;
     release.spellId = owned.weapon.spellId;
     release.releaseLook = true;
-    release.target = standIn;
+    release.prop = PlaceTrapProp(look->sprung, x, y, z);
     release.leftMs = int32(look->sprungMs);
     m_pendingCasts.push_back(release);
 }
@@ -8141,7 +8181,7 @@ void BonkRun::UpdateTraps(uint32 diff)
         }
         if (springs)
             sprung.push_back(*itr);
-        if (!springs || itr->standIn.IsEmpty())
+        if (!springs || !itr->prop)
             PutAwayTrap(*itr);
         itr = m_traps.erase(itr);
     }
@@ -8154,8 +8194,8 @@ void BonkRun::UpdateTraps(uint32 diff)
             PutAwayTrap(trap);
             continue;
         }
-        if (!trap.standIn.IsEmpty())
-            ShowTrapSprung(*owned, trap.standIn);
+        if (trap.prop)
+            ShowTrapSprung(*owned, trap.prop, trap.x, trap.y, trap.z);
         SpringTrap(*owned, trap.x, trap.y, trap.z);
     }
 }
@@ -8243,8 +8283,7 @@ void BonkRun::DespawnTraps()
 void BonkRun::ThrowTrap(OwnedWeapon& owned, float x, float y, float z)
 {
     TrapLook const* look = GetTrapLook(uint32(owned.weapon.behaviorValue));
-    ObjectGuid const standIn = look ? m_telegraphs.Borrow(m_player, x, y, z, look->set) : ObjectGuid();
-    if (standIn.IsEmpty())
+    if (!look)
     {
         SpringTrap(owned, x, y, z);
         return;
@@ -8255,7 +8294,7 @@ void BonkRun::ThrowTrap(OwnedWeapon& owned, float x, float y, float z)
     spring.spellId = owned.weapon.spellId;
     spring.leftMs = int32(BONK_THROWN_TRAP_ARM_MS);
     spring.springTrap = true;
-    spring.target = standIn;
+    spring.prop = PlaceTrapProp(look->set, x, y, z);
     spring.x = x;
     spring.y = y;
     spring.z = z;
@@ -8999,13 +9038,19 @@ std::vector<Creature*> BonkRun::PickGroupCenters(std::vector<Creature*> const& m
 
 void BonkRun::ShowFallingAt(SpellEntry const* spellInfo, float x, float y, float z)
 {
-    if (Creature* source = TakeShotSource(x, y, z))
-        ShowMissileAt(source, spellInfo, x, y, z);
+    ShowMissileBetween(spellInfo, x, y, z + BONK_PROJECTILE_HEIGHT, x, y, z);
 }
 
 void BonkRun::ShowMissileFrom(Unit* source, SpellEntry const* spellInfo, float x, float y, float z)
 {
     ShowMissileAt(source, spellInfo, x, y, z);
+}
+
+void BonkRun::ShowMissileBetween(SpellEntry const* spellInfo, float fromX, float fromY, float fromZ, float toX, float toY, float toZ)
+{
+    float const distance = std::sqrt((toX - fromX) * (toX - fromX) + (toY - fromY) * (toY - fromY) + (toZ - fromZ) * (toZ - fromZ));
+    uint32 const flightMs = spellInfo->speed > 0.0f ? uint32(distance / spellInfo->speed * IN_MILLISECONDS) : 0;
+    SendBonkMissile(m_player, GetQuietStrikeLook(spellInfo->Id), fromX, fromY, fromZ, toX, toY, toZ, flightMs + BONK_ERUPTION_LOOK_MS);
 }
 
 void BonkRun::RefreshHeroPositionNow()
