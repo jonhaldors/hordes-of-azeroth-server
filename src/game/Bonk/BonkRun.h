@@ -850,6 +850,7 @@ class BonkRun
         void DescribeOfferDamage(Offer const& offer, std::string& before, std::string& after, std::string& label) const;
         void DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const;
         void AddCurvedTotal(BonkPassiveEffect effect, float gain, std::vector<BonkStatChange>& stats) const;
+        static bool IsUpgradeShownInNumbers(BonkSpellUpgrade upgrade);
         void AddDamageStats(OwnedWeapon const& owned, OwnedWeapon const& next, std::vector<BonkStatChange>& stats) const;
         void AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next, bool hasDamage, std::vector<BonkStatChange>& stats) const;
         void GetSpellUpgrades(OwnedWeapon const* owned, float* upgrades) const;

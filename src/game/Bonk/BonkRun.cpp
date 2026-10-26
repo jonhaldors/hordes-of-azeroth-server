@@ -11838,6 +11838,23 @@ void BonkRun::RefreshChangedWeaponInfo() const
         SendWeaponInfo(++index, owned, true);
 }
 
+bool BonkRun::IsUpgradeShownInNumbers(BonkSpellUpgrade upgrade)
+{
+    switch (upgrade)
+    {
+        case BONK_SPELL_UPGRADE_HASTE:
+        case BONK_SPELL_UPGRADE_DURATION:
+        case BONK_SPELL_UPGRADE_PET_DAMAGE:
+        case BONK_SPELL_UPGRADE_STACKS:
+        case BONK_SPELL_UPGRADE_REACH:
+        case BONK_SPELL_UPGRADE_TARGETS:
+        case BONK_SPELL_UPGRADE_ECHO:
+            return true;
+        default:
+            return false;
+    }
+}
+
 void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIfChanged) const
 {
     BonkWeapon const& weapon = owned.weapon;
@@ -11858,7 +11875,7 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIf
     for (uint8 upgrade = BONK_SPELL_UPGRADE_NONE + 1; upgrade < MAX_BONK_SPELL_UPGRADE; ++upgrade)
         if (float const amount = GetSpellUpgrade(owned, BonkSpellUpgrade(upgrade)))
         {
-            if (strengthens && upgrade == strength.folded)
+            if ((strengthens && upgrade == strength.folded) || IsUpgradeShownInNumbers(BonkSpellUpgrade(upgrade)))
                 continue;
             std::string const added = DescribeBonkSpellUpgrade(weapon, BonkSpellUpgrade(upgrade), amount);
             if (!added.empty())

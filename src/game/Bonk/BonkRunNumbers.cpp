@@ -104,9 +104,9 @@ namespace
     char const* const BONK_DAMAGE_ADJECTIVES[] = { "", "heavy ", "massive ", "extra " };
     char const* const BONK_TARGET_NOUNS[] = { "enem", "random", "nearest", "strongest", "target", "pack", "spirit" };
 
-    std::string MarkNumber(std::string const& text, bool better)
+    std::string MarkNumber(std::string const& text, bool)
     {
-        return (better ? "|cff20ff20" : "|cffffffff") + text + "|r";
+        return "|cffffffff" + text + "|r";
     }
 
     std::string MarkRange(float hit, float spread, bool better)
