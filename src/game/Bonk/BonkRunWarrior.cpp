@@ -382,6 +382,11 @@ void BonkRun::SpinWhirlwind(OwnedWeapon const& owned, SpellEntry const* spellInf
     spin.leftMs = int32(owned.weapon.behaviorValue);
     spin.selfArea = true;
     m_pendingCasts.push_back(spin);
+    if (m_mastery.Special(BONK_SPECIAL_RAMPAGE) > 0.0f)
+    {
+        spin.leftMs = int32(owned.weapon.behaviorValue * 2.0f);
+        m_pendingCasts.push_back(spin);
+    }
 }
 
 void BonkRun::ShowWhirlwindSpin()
@@ -592,6 +597,7 @@ void BonkRun::UpdateBloodAuraRing()
 
 void BonkRun::OnBleedingDeath(Creature const* dead)
 {
+    OnTalentBleedingDeath();
     OwnedWeapon const* pool = FindOwnedByBehavior(BONK_BEHAVIOR_BLOOD_POOL);
     if (!pool || !TakeRateSlot(m_bloodPoolTimes, BONK_MAX_NEW_BLOOD_POOLS))
         return;

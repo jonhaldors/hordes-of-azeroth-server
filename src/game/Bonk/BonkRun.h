@@ -154,7 +154,11 @@ class BonkRun
         bool IsPortalOpen() const { return m_state == STATE_PORTAL; }
         BonkMap const& GetMap() const { return m_map; }
         BonkTier const& GetTier() const { return m_tier; }
-        uint32 GetEliteAffixes() const { return m_tier.eliteAffixes + m_bonuses.eliteAffixes; }
+        uint32 GetEliteAffixes() const { return m_tier.eliteAffixes + m_bonuses.eliteAffixes + GetMilestoneAffixes(); }
+        ObjectGuid const& GetBossGuid() const { return m_bossGuid; }
+        uint32 GetFloorMilestones() const;
+        uint32 GetMilestoneAffixes() const;
+        float GetMilestoneVeteranChance() const;
         uint32 GetEvolveRank() const;
         void BringBossEarlier();
         uint32 GetStage() const { return m_stage; }
@@ -237,6 +241,7 @@ class BonkRun
         void OnWeaponHit(Unit* victim, SpellEntry const* spell);
         void OnPetBite(Creature* pet, Unit* victim);
         void OnKillingBlow(Unit* victim);
+        void OnTalentDamage(Unit* victim, SpellEntry const* spell);
         bool ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs = 0, float damageScale = 1.0f, uint32 sourceSpellId = 0);
         void CreditDamageOverTime(Unit const* victim, uint32 spellId, uint32 damage, std::vector<std::pair<uint32, uint32>>& credits) const;
         uint32 GetKeywordStacks(Unit const* victim, BonkKeyword keyword) const;
@@ -495,6 +500,9 @@ class BonkRun
         void DespawnPools();
         void RunEvent(BonkMapEvent const& event);
         void OpenPortal(Creature* boss);
+        void RewardMythicFloor();
+        bool IsMythic() const { return m_tier.key == "mythic"; }
+        float GetFloorRewardScale() const;
         void PlacePortal(float x, float y, float baseZ);
 
         void PruneMobs();
@@ -1231,7 +1239,6 @@ class BonkRun
         uint32 m_overtimeWaves = 0;
         int32 m_overtimeTimer = 0;
         float m_spawnDamageScale = 1.0f;
-        float m_spawnHealthScale = 1.0f;
         uint32 m_boundaryTimer = 0;
         uint32 m_nativeTimer = 0;
         uint32 m_recoveryTimer = 0;
@@ -1239,6 +1246,8 @@ class BonkRun
         int32 m_endTimer = 0;
 
         bool m_bossSpawned = false;
+        bool m_stoneBoss = false;
+        float m_scalingMinuteOverride = -1.0f;
         ObjectGuid m_bossGuid;
         std::vector<ObjectGuid> m_mobs;
         uint32 m_lastPlateId = 0;
@@ -1364,6 +1373,8 @@ class BonkRun
             bool pyroblastSplash = false;
             bool iceShard = false;
             bool frostShatter = false;
+            bool arcaneEcho = false;
+            bool freezingWinds = false;
             bool livingBomb = false;
             bool meteor = false;
             bool meteorShower = false;
@@ -1549,6 +1560,9 @@ class BonkRun
         uint32 GetExtraSpreadTargets(uint32 keyword) const;
         uint32 GetChillFreezeStacks(BonkKeywordInfo const& chill) const;
         uint32 GetChillTalentMs() const;
+        uint32 GetKeywordTalentMs(BonkKeyword keyword) const;
+        uint32 GetKeywordTalentCap(uint32 keyword) const;
+        float GetTalentReach(OwnedWeapon const& owned) const;
         void QueueTalentStun(OwnedWeapon const& owned, Unit* victim);
         void ApplyPendingStuns();
         uint32 GetSpellShieldCap() const;
@@ -1562,6 +1576,40 @@ class BonkRun
         void UpdateTalents();
         void OnTalentDash();
         void OnTalentBlink();
+        void BeginTalentCast(OwnedWeapon const& owned);
+        void EndTalentCast();
+        void OnTalentCastDone(OwnedWeapon& owned);
+        void OnDanseMacabre();
+        void OnTalentWindfury();
+        void OnTalentStaticDischarge();
+        bool IsNearOwnTotem() const;
+        void OnTalentHarvestSoul();
+        uint32 GetConsumeStacks() const;
+        uint32 CountDemonFamilies() const;
+        void OnTalentKill(Unit* victim);
+        float GetTalentHaste() const;
+        float GetTormentBonus(uint32 rootWeapon, Unit const* victim) const;
+        bool IsFreshMeat(SpellEntry const* spell, Unit const* victim) const;
+        void OnTalentBleedingDeath();
+        float GetTalentMoveSpeed() const;
+        void OnTalentPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey, SpellEntry const* abilityInfo, int32 damage);
+        float GetClawRate(OwnedWeapon const& owned) const;
+        uint32 CountLivingPets() const;
+        void OnTalentHowl(Creature* wolf);
+        void UpdateTalents(uint32 diff);
+        void ReduceTimer(uint32 rootWeapon, int32 ms);
+        void EchoMissile(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
+        void BlowFreezingWinds(PendingCast const& cast);
+
+        class TalentCastScope
+        {
+            public:
+                TalentCastScope(BonkRun& run, OwnedWeapon const& owned) : m_run(run) { run.BeginTalentCast(owned); }
+                ~TalentCastScope() { m_run.EndTalentCast(); }
+
+            private:
+                BonkRun& m_run;
+        };
         bool IsTalentBlinkDash() const;
         float GetTrapTalentDuration(OwnedWeapon const& owned) const;
         void SpringEntrapment(OwnedWeapon const& owned, float x, float y, float radius);
@@ -2360,6 +2408,33 @@ class BonkRun
         uint32 m_presenceOfMindMs = 0;
         void BankMissiles(OwnedWeapon const& owned);
         uint32 m_bankedMissiles = 0;
+        float m_castDamageBonus = 0.0f;
+        float m_castCritBonus = 0.0f;
+        bool m_clearcastBoostReady = false;
+        uint32 m_potencyCasts = 0;
+        std::map<uint32, std::vector<uint32>> m_castHasteUntil;
+        uint32 m_bulwarkStacks = 0;
+        std::vector<uint32> m_bloodsurgeUntil;
+        uint32 m_rapidFireUntil = 0;
+        uint32 m_sliceAndDiceUntil = 0;
+        uint32 m_borrowedTimeUntil = 0;
+        uint32 m_flurryUntil = 0;
+        uint32 m_shadowBoltHits = 0;
+        uint32 m_bloodtalonsStacks = 0;
+        std::vector<uint32> m_starlordUntil;
+        std::vector<uint32> m_forestUntil;
+        std::vector<uint32> m_harvestUntil;
+        std::vector<uint32> m_unrelentingUntil;
+        std::vector<uint32> m_forcefulUntil;
+        uint32 m_smiteCount = 0;
+        uint32 m_madnessStacks = 0;
+        std::map<ObjectGuid, uint32> m_schismUntil;
+        std::vector<uint32> m_danseUntil;
+        uint32 m_mongooseStacks = 0;
+        int32 m_mongooseTimer = 0;
+        bool m_fingersReady = false;
+        bool m_searingBurstArmed = false;
+        uint32 m_talentCritsSeen = 0;
         float GetArcanePowerMultiplier() const;
         uint32 m_arcanePowerUntilMs = 0;
         void PlantHydra(Creature* pet);

@@ -23,6 +23,7 @@ enum BonkQuestReward : uint8;
 enum BonkUpgradeUtility : uint8;
 struct BonkMap;
 struct BonkMasteryBonuses;
+struct BonkMasteryNode;
 struct BonkRunBonuses;
 struct BonkRunChoice;
 struct BonkTier;
@@ -53,6 +54,13 @@ class BonkPlayer
         uint32 GetBestStage(uint32 tierId) const;
         bool IsTierUnlocked(BonkTier const& tier) const;
         bool IsTierCleared(BonkTier const& tier) const;
+        bool IsTierCleared(char const* tierKey) const;
+        uint32 GetMythicFloorsCleared() const;
+        uint8 GetTrainingRankCap() const;
+        std::string GetTrainingCapHint() const;
+        uint8 GetDetermination() const;
+        void AddDetermination();
+        void SendDetermination() const;
         bool CanBuyGear(uint32 itemEntry) const;
         bool ShowsGearItem(Creature const* vendor, uint32 itemEntry) const;
         void SendGearTabs(Creature const* vendor) const;
@@ -109,6 +117,13 @@ class BonkPlayer
         uint32 GetMasteryXp() const { return m_masteryXp; }
         uint32 GetMasteryLevel() const;
         uint32 GetMasteryPoints() const;
+        BonkMasteryNode const* FindLearnedRival(BonkMasteryNode const& node) const;
+        bool HasLearnedParent(BonkMasteryNode const& node, uint32 ignoredId) const;
+        uint32 GetMasterySpentAbove(uint32 treeId, uint8 row) const;
+        uint32 GetFloorTalentPoints() const;
+        uint32 GetClassFloor() const { return m_classFloor; }
+        void RecordClassFloor(uint32 floor);
+        void TakeTalentResetNotice();
         uint32 GetMasterySpent() const;
         uint32 GetMasterySpentInTree(uint32 treeId) const;
         uint8 GetMasteryRank(uint32 nodeId) const;
@@ -317,7 +332,9 @@ class BonkPlayer
         std::map<uint32, uint8> m_talentRanks;
         std::set<uint32> m_enabledTalents;
         uint32 m_shards = 0;
+        uint8 m_determination = 0;
         uint32 m_masteryXp = 0;
+        uint32 m_classFloor = 0;
         std::map<uint32, uint8> m_masteryRanks;
         uint32 m_starterChoice = 0;
         BonkShop m_shop{};

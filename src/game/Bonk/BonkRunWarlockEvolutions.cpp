@@ -10,6 +10,8 @@
 
 namespace
 {
+    uint32 const BONK_EMPOWERMENT_EVERY_MS     = 10000;
+    uint32 const BONK_EMPOWERMENT_MS           = 4000;
     uint32 const BONK_WEAPON_FEL_IMPS            = 911;
     uint32 const BONK_WEAPON_IMP_SWARM           = 912;
     uint32 const BONK_WEAPON_SACRIFICE           = 913;
@@ -200,13 +202,21 @@ bool BonkRun::HasWarlockSpell(uint32 weaponId) const
 float BonkRun::GetDemonDamageScale() const
 {
     float const pact = int32(m_darkPactUntilMs - m_totalMs) > 0 ? BONK_DARK_PACT_DAMAGE : 1.0f;
-    return pact * (1.0f + BONK_DEMONOLOGIST_PER_DEMON * CountDemonTypes());
+    float empowered = 1.0f;
+    float const empowerment = m_mastery.Special(BONK_SPECIAL_DEMONIC_EMPOWERMENT);
+    uint32 const empoweredMs = BONK_EMPOWERMENT_MS + uint32(m_mastery.Special(BONK_SPECIAL_IMPROVED_EMPOWERMENT) * IN_MILLISECONDS);
+    if (empowerment > 0.0f && m_totalMs % BONK_EMPOWERMENT_EVERY_MS < empoweredMs)
+        empowered += empowerment / 100.0f;
+    return pact * empowered * (1.0f + BONK_DEMONOLOGIST_PER_DEMON * CountDemonTypes());
 }
 
 uint32 BonkRun::CountDemonTypes() const
 {
-    if (!m_mastery.Has(BONK_CAPSTONE_MASTER_DEMONOLOGIST))
-        return 0;
+    return m_mastery.Has(BONK_CAPSTONE_MASTER_DEMONOLOGIST) ? CountDemonFamilies() : 0;
+}
+
+uint32 BonkRun::CountDemonFamilies() const
+{
     std::set<uint32> families;
     for (OwnedWeapon const& owned : m_weapons)
         if (uint32 const family = GetWarlockPetFamily(owned))

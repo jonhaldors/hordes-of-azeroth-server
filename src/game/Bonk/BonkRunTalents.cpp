@@ -5,11 +5,71 @@
 #include "Map.h"
 #include "Player.h"
 #include "SpellMgr.h"
+#include "Util.h"
+#include "Utilities/Random.h"
 
 #include <algorithm>
 
 namespace
 {
+    uint32 const BONK_CAST_HASTE_MS             = 6000;
+    int32 const BONK_SPLINTER_DELAY_MS          = 150;
+    int32 const BONK_CLEARCAST_FLOOR_MS         = 300;
+    int32 const BONK_INSTANT_RECHARGE_MS        = 600000;
+    float const BONK_CONFLAGRATION_RADIUS       = 8.0f;
+    uint32 const BONK_SPELL_GLACIAL_FRAGMENTS   = 122;
+    float const BONK_GLACIAL_FRAGMENTS_RADIUS   = 5.0f;
+    float const BONK_ARCANE_ECHO_RADIUS         = 8.0f;
+    uint32 const BONK_ARCANE_POTENCY_CASTS      = 3;
+    uint32 const BONK_BLOODSURGE_MS             = 8000;
+    size_t const BONK_BLOODSURGE_STACKS         = 10;
+    float const BONK_UNBREAKABLE_SHIELD         = 0.3f;
+    uint32 const BONK_OVERPOWER_BLEED           = 10;
+    int32 const BONK_THUNDERLORD_DELAY_MS       = 400;
+    float const BONK_BEAST_CLEAVE_RADIUS        = 3.0f;
+    float const BONK_INTIMIDATING_ROAR_RADIUS   = 10.0f;
+    uint32 const BONK_RAPID_FIRE_MS             = 5000;
+    int32 const BONK_MONGOOSE_REFRESH_MS        = 500;
+    float const BONK_MONGOOSE_RADIUS            = 10.0f;
+    uint32 const BONK_MONGOOSE_MAX_STACKS       = 10;
+    uint32 const BONK_BULWARK_MAX_STACKS        = 10;
+    uint32 const BONK_SLICE_AND_DICE_MS         = 5000;
+    uint32 const BONK_DANSE_MACABRE_MS          = 8000;
+    size_t const BONK_DANSE_MACABRE_STACKS      = 10;
+    uint32 const BONK_BORROWED_TIME_MS          = 4000;
+    uint32 const BONK_SCHISM_MS                 = 6000;
+    float const BONK_SHINING_FORCE_RADIUS       = 6.0f;
+    uint32 const BONK_ANSWERED_PRAYERS_EVERY    = 8;
+    float const BONK_ANCIENT_MADNESS_RADIUS     = 20.0f;
+    uint32 const BONK_ANCIENT_MADNESS_MAX_STACKS = 10;
+    uint32 const BONK_UNRELENTING_STORM_MS      = 6000;
+    size_t const BONK_UNRELENTING_STORM_STACKS  = 10;
+    uint32 const BONK_FLURRY_MS                 = 4000;
+    uint32 const BONK_FORCEFUL_WINDS_MS         = 8000;
+    size_t const BONK_FORCEFUL_WINDS_STACKS     = 5;
+    float const BONK_CALL_OF_THE_ELEMENTS_RANGE = 15.0f;
+    uint32 const BONK_HARVESTER_MS              = 8000;
+    size_t const BONK_HARVESTER_STACKS          = 10;
+    uint32 const BONK_SOUL_FIRE_EVERY           = 5;
+    uint32 const BONK_SOUL_FIRE_BURNING         = 3;
+    uint32 const BONK_STARLORD_MS               = 8000;
+    size_t const BONK_STARLORD_STACKS           = 3;
+    uint32 const BONK_SOUL_OF_THE_FOREST_MS     = 8000;
+    size_t const BONK_SOUL_OF_THE_FOREST_STACKS = 10;
+    uint32 const BONK_BLOODTALONS_MAX_STACKS    = 10;
+
+    void PushTimedStack(std::vector<uint32>& stacks, uint32 now, uint32 lengthMs, size_t cap)
+    {
+        stacks.erase(std::remove_if(stacks.begin(), stacks.end(), [now](uint32 until) { return until <= now; }), stacks.end());
+        stacks.push_back(now + lengthMs);
+        if (stacks.size() > cap)
+            stacks.erase(stacks.begin());
+    }
+
+    float CountTimedStacks(std::vector<uint32> const& stacks, uint32 now)
+    {
+        return float(std::count_if(stacks.begin(), stacks.end(), [now](uint32 until) { return until > now; }));
+    }
     float const BONK_BESTIAL_WRATH_FRENZY       = 1.5f;
     float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.7f;
     float const BONK_TRUESHOT_MARKED            = 1.4f;
@@ -51,6 +111,18 @@ void BonkRun::ApplyMasteryTo(BonkWeapon& weapon) const
     if (uses != m_mastery.usesBonus.end() && weapon.uses != BONK_KEYWORD_NONE)
         weapon.usesPct += uses->second;
 
+    auto stacks = m_mastery.spellStacks.find(root);
+    if (stacks != m_mastery.spellStacks.end() && weapon.applies != BONK_KEYWORD_NONE)
+        weapon.applyStacks += uint8(stacks->second);
+
+    auto duration = m_mastery.spellDuration.find(root);
+    if (duration != m_mastery.spellDuration.end() && weapon.durationMs)
+        weapon.durationMs += uint32(duration->second * IN_MILLISECONDS);
+
+    auto behavior = m_mastery.spellBehavior.find(root);
+    if (behavior != m_mastery.spellBehavior.end())
+        weapon.behaviorValue += behavior->second;
+
     auto heal = m_mastery.spellHeal.find(root);
     if (heal != m_mastery.spellHeal.end())
         weapon.healPct += heal->second;
@@ -78,7 +150,35 @@ float BonkRun::GetSpecDamage(uint32 weaponId) const
 
 float BonkRun::GetTalentDamagePercent() const
 {
-    float percent = 0.0f;
+    float percent = m_castDamageBonus;
+    float const surge = m_mastery.Special(BONK_SPECIAL_BLOODSURGE);
+    if (surge > 0.0f)
+    {
+        uint32 const now = m_totalMs;
+        percent += surge * float(std::count_if(m_bloodsurgeUntil.begin(), m_bloodsurgeUntil.end(), [now](uint32 until) { return until > now; }));
+    }
+    percent += m_mastery.Special(BONK_SPECIAL_PACK_HUNTER) * float(CountLivingPets());
+    percent += m_mastery.Special(BONK_SPECIAL_BULWARK) * float(m_bulwarkStacks);
+    percent += m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) * float(m_madnessStacks);
+    percent += m_mastery.Special(BONK_SPECIAL_BLOODTALONS) * float(m_bloodtalonsStacks);
+    percent += m_mastery.Special(BONK_SPECIAL_FORCEFUL_WINDS) * CountTimedStacks(m_forcefulUntil, m_totalMs);
+    if (m_mastery.Special(BONK_SPECIAL_DEMONIC_PACT) > 0.0f)
+        percent += m_mastery.Special(BONK_SPECIAL_DEMONIC_PACT) * float(CountDemonFamilies());
+    if (m_mastery.Special(BONK_SPECIAL_CALL_OF_THE_ELEMENTS) > 0.0f && IsNearOwnTotem())
+        percent += m_mastery.Special(BONK_SPECIAL_CALL_OF_THE_ELEMENTS);
+    if (m_spellShield)
+        percent += m_mastery.Special(BONK_SPECIAL_POWER_INFUSION);
+    if (m_player->GetHealth() >= m_player->GetMaxHealth())
+        percent += m_mastery.Special(BONK_SPECIAL_DIVINE_PROVIDENCE);
+    float const danse = m_mastery.Special(BONK_SPECIAL_DANSE_MACABRE);
+    if (danse > 0.0f)
+    {
+        uint32 const now = m_totalMs;
+        percent += danse * float(std::count_if(m_danseUntil.begin(), m_danseUntil.end(), [now](uint32 until) { return until > now; }));
+    }
+    float const unbreakable = m_mastery.Special(BONK_SPECIAL_UNBREAKABLE);
+    if (unbreakable > 0.0f && m_spellShield >= uint32(m_player->GetMaxHealth() * BONK_UNBREAKABLE_SHIELD))
+        percent += unbreakable;
     if (IsEnraged())
         percent += m_mastery.enrageDamage;
     if (IsHowlFrenzied())
@@ -125,7 +225,7 @@ float BonkRun::GetSummonDamageMultiplier(Unit const* attacker) const
 
 float BonkRun::GetTalentCritChance(Unit const* victim, Unit const* attacker) const
 {
-    float chance = 0.0f;
+    float chance = m_castCritBonus;
     if (victim)
         for (auto const& itr : m_mastery.critVsKeyword)
             if (GetKeywordStacks(victim, BonkKeyword(itr.first)))
@@ -210,10 +310,30 @@ void BonkRun::RechargeJuggernautShield(uint32 diff, uint32 max)
     RefillShield(std::min(max, m_spellShield + gained));
 }
 
+uint32 BonkRun::GetKeywordTalentMs(BonkKeyword keyword) const
+{
+    auto itr = m_mastery.keywordDuration.find(keyword);
+    return itr != m_mastery.keywordDuration.end() ? uint32(itr->second * IN_MILLISECONDS) : 0;
+}
+
+uint32 BonkRun::GetKeywordTalentCap(uint32 keyword) const
+{
+    auto itr = m_mastery.keywordCap.find(keyword);
+    return itr != m_mastery.keywordCap.end() ? uint32(itr->second) : 0;
+}
+
+float BonkRun::GetTalentReach(OwnedWeapon const& owned) const
+{
+    auto itr = m_mastery.spellReach.find(GetRootWeapon(owned.weapon));
+    return itr != m_mastery.spellReach.end() ? 1.0f + itr->second / 100.0f : 1.0f;
+}
+
 uint32 BonkRun::ApplyTalentDamageTaken(uint32 damage) const
 {
     if (m_mastery.Has(BONK_CAPSTONE_BERSERKER))
         damage = uint32(damage * BONK_BERSERKER_DAMAGE_TAKEN);
+    if (m_bonuses.damageTakenCut > 0.0f)
+        damage = uint32(damage * std::max(0.0f, 1.0f - m_bonuses.damageTakenCut / 100.0f));
     return damage;
 }
 
@@ -310,8 +430,419 @@ void BonkRun::OnTalentDash()
             DropTraps(owned, true);
 }
 
+void BonkRun::BeginTalentCast(OwnedWeapon const& owned)
+{
+    m_castDamageBonus = m_clearcastBoostReady ? m_mastery.Special(BONK_SPECIAL_CLEARCASTING_BOOST) : 0.0f;
+    m_castCritBonus = m_potencyCasts ? m_mastery.Special(BONK_SPECIAL_ARCANE_POTENCY) : 0.0f;
+    m_searingBurstArmed = m_mastery.Special(BONK_SPECIAL_SEARING_BURST) > 0.0f && GetRootWeapon(owned.weapon) == BONK_WEAPON_FIRE_BLAST;
+}
+
+void BonkRun::EndTalentCast()
+{
+    m_castDamageBonus = 0.0f;
+    m_castCritBonus = 0.0f;
+    m_searingBurstArmed = false;
+}
+
+void BonkRun::OnTalentCastDone(OwnedWeapon& owned)
+{
+    uint32 const root = GetRootWeapon(owned.weapon);
+    if (m_castDamageBonus > 0.0f)
+        m_clearcastBoostReady = false;
+    if (m_castCritBonus > 0.0f && m_potencyCasts)
+        --m_potencyCasts;
+
+    uint32 const spec = BonkMastery::GetSpec(owned.weapon.id);
+    auto haste = m_mastery.castHaste.find(spec);
+    if (haste != m_mastery.castHaste.end() && haste->second > 0.0f)
+    {
+        uint32 const now = m_totalMs;
+        std::vector<uint32>& stacks = m_castHasteUntil[spec];
+        stacks.erase(std::remove_if(stacks.begin(), stacks.end(), [now](uint32 until) { return until <= now; }), stacks.end());
+        stacks.push_back(now + BONK_CAST_HASTE_MS);
+        auto cap = m_mastery.castHasteStacks.find(spec);
+        if (stacks.size() > std::max(1u, cap != m_mastery.castHasteStacks.end() ? cap->second : 1u))
+            stacks.erase(stacks.begin());
+    }
+
+    if (root == BONK_WEAPON_EXORCISM && m_mastery.Special(BONK_SPECIAL_AWAKENING) > 0.0f)
+        ReduceTimer(BONK_WEAPON_LIGHTS_HAMMER, int32(m_mastery.Special(BONK_SPECIAL_AWAKENING) * IN_MILLISECONDS));
+    if (root == BONK_WEAPON_HAMMER_OF_JUSTICE && m_mastery.Special(BONK_SPECIAL_RIGHTEOUS_PROTECTOR) > 0.0f)
+        ReduceTimer(BONK_WEAPON_DIVINE_SHIELD, int32(m_mastery.Special(BONK_SPECIAL_RIGHTEOUS_PROTECTOR) * IN_MILLISECONDS));
+    if (root == BONK_WEAPON_LIGHTS_HAMMER && roll_chance_f(m_mastery.Special(BONK_SPECIAL_DIVINE_PURPOSE)))
+        owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_FLOOR_MS);
+
+    if (root == BONK_WEAPON_STARFIRE && m_mastery.Special(BONK_SPECIAL_STARLORD) > 0.0f)
+        PushTimedStack(m_starlordUntil, m_totalMs, BONK_STARLORD_MS, BONK_STARLORD_STACKS);
+
+    if (root == BONK_WEAPON_POWER_WORD_SHIELD)
+    {
+        if (m_mastery.Special(BONK_SPECIAL_BORROWED_TIME) > 0.0f)
+            m_borrowedTimeUntil = m_totalMs + BONK_BORROWED_TIME_MS;
+        if (m_mastery.Special(BONK_SPECIAL_SHINING_FORCE) > 0.0f)
+            for (Creature* mob : GetMobsInRange(BONK_SHINING_FORCE_RADIUS))
+                m_pendingStuns.push_back(mob->GetObjectGuid());
+    }
+
+    if (root == BONK_WEAPON_SMITE && m_mastery.Special(BONK_SPECIAL_ANSWERED_PRAYERS) > 0.0f && ++m_smiteCount % BONK_ANSWERED_PRAYERS_EVERY == 0)
+        ReduceTimer(BONK_WEAPON_HALO, BONK_INSTANT_RECHARGE_MS);
+
+    if (root == BONK_WEAPON_EVISCERATE)
+    {
+        float const restless = m_mastery.Special(BONK_SPECIAL_RESTLESS_BLADES);
+        if (restless > 0.0f)
+            ReduceTimer(BONK_WEAPON_KILLING_SPREE, int32(restless * IN_MILLISECONDS));
+        float const adrenaline = m_mastery.Special(BONK_SPECIAL_ADRENALINE_RUSH);
+        if (adrenaline > 0.0f)
+            ReduceTimer(BONK_WEAPON_BLADE_FLURRY, int32(adrenaline * IN_MILLISECONDS));
+        if (m_mastery.Special(BONK_SPECIAL_SLICE_AND_DICE) > 0.0f)
+            m_sliceAndDiceUntil = m_totalMs + BONK_SLICE_AND_DICE_MS;
+    }
+
+    if (root == BONK_WEAPON_HUNTERS_MARK && m_mastery.Special(BONK_SPECIAL_RAPID_FIRE) > 0.0f)
+        m_rapidFireUntil = m_totalMs + BONK_RAPID_FIRE_MS;
+
+    if (root == BONK_WEAPON_THUNDER_CLAP && m_mastery.Special(BONK_SPECIAL_THUNDERLORD) > 0.0f)
+    {
+        PendingCast again;
+        again.weaponId = owned.weapon.id;
+        again.spellId = owned.weapon.spellId;
+        again.leftMs = BONK_THUNDERLORD_DELAY_MS;
+        again.selfArea = true;
+        m_pendingCasts.push_back(again);
+    }
+
+    if (root == BONK_WEAPON_FROSTBOLT)
+    {
+        m_fingersReady = roll_chance_f(m_mastery.Special(BONK_SPECIAL_FINGERS_OF_FROST));
+        if (roll_chance_f(m_mastery.Special(BONK_SPECIAL_SPLINTERING_COLD)))
+            owned.timer = std::min<int32>(owned.timer, BONK_SPLINTER_DELAY_MS);
+    }
+}
+
+float BonkRun::GetTalentHaste() const
+{
+    uint32 const now = m_totalMs;
+    float haste = m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) * float(m_mongooseStacks);
+    if (m_rapidFireUntil > now)
+        haste += m_mastery.Special(BONK_SPECIAL_RAPID_FIRE);
+    if (m_sliceAndDiceUntil > now)
+        haste += m_mastery.Special(BONK_SPECIAL_SLICE_AND_DICE);
+    if (m_borrowedTimeUntil > now)
+        haste += m_mastery.Special(BONK_SPECIAL_BORROWED_TIME);
+    if (m_flurryUntil > now)
+        haste += m_mastery.Special(BONK_SPECIAL_FLURRY);
+    haste += m_mastery.Special(BONK_SPECIAL_UNRELENTING_STORM) * CountTimedStacks(m_unrelentingUntil, now);
+    haste += m_mastery.Special(BONK_SPECIAL_HARVESTER_OF_SOULS) * CountTimedStacks(m_harvestUntil, now);
+    haste += m_mastery.Special(BONK_SPECIAL_STARLORD) * CountTimedStacks(m_starlordUntil, now);
+    haste += m_mastery.Special(BONK_SPECIAL_SOUL_OF_THE_FOREST) * CountTimedStacks(m_forestUntil, now);
+    for (auto const& itr : m_castHasteUntil)
+    {
+        auto value = m_mastery.castHaste.find(itr.first);
+        if (value != m_mastery.castHaste.end())
+            haste += value->second * float(std::count_if(itr.second.begin(), itr.second.end(), [now](uint32 until) { return until > now; }));
+    }
+    return haste;
+}
+
+void BonkRun::OnTalentPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey, SpellEntry const* abilityInfo, int32 damage)
+{
+    if (GetRootWeapon(owned.weapon) != BONK_WEAPON_CALL_PET || !prey->IsAlive())
+        return;
+    if (m_mastery.Special(BONK_SPECIAL_INTIMIDATION) > 0.0f)
+        m_pendingStuns.push_back(prey->GetObjectGuid());
+    float const cleave = m_mastery.Special(BONK_SPECIAL_BEAST_CLEAVE);
+    if (cleave > 0.0f && abilityInfo)
+        for (Creature* mob : GetMobsNear(prey->GetPositionX(), prey->GetPositionY(), BONK_BEAST_CLEAVE_RADIUS))
+            if (mob != prey)
+                DealSpellHit(abilityInfo, mob, damage * cleave / 100.0f, pet);
+}
+
+float BonkRun::GetClawRate(OwnedWeapon const& owned) const
+{
+    if (GetRootWeapon(owned.weapon) != BONK_WEAPON_CALL_PET)
+        return 1.0f;
+    return 1.0f / (1.0f + m_mastery.Special(BONK_SPECIAL_CLAW_HASTE) / 100.0f);
+}
+
+uint32 BonkRun::CountLivingPets() const
+{
+    uint32 count = 0;
+    Map* map = m_player->GetMap();
+    for (OwnedWeapon const& owned : m_weapons)
+        for (ObjectGuid const& guid : owned.pets)
+            if (Creature* pet = map->GetCreature(guid))
+                if (pet->IsAlive())
+                    ++count;
+    return count;
+}
+
+void BonkRun::OnTalentHowl(Creature* wolf)
+{
+    float const slow = m_mastery.Special(BONK_SPECIAL_INTIMIDATING_ROAR);
+    if (slow <= 0.0f)
+        return;
+    for (Creature* mob : GetMobsNear(wolf->GetPositionX(), wolf->GetPositionY(), BONK_INTIMIDATING_ROAR_RADIUS))
+        if (BonkMobAI const* ai = GetRunAI(mob))
+            if (ai->GetKind() == BONK_SPAWN_NORMAL)
+                m_pendingSlows.emplace_back(mob->GetObjectGuid(), slow);
+}
+
+void BonkRun::UpdateTalents(uint32 diff)
+{
+    bool const mongoose = m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) > 0.0f;
+    bool const bulwark = m_mastery.Special(BONK_SPECIAL_BULWARK) > 0.0f;
+    bool const madness = m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) > 0.0f;
+    bool const bloodtalons = m_mastery.Special(BONK_SPECIAL_BLOODTALONS) > 0.0f;
+    if (!mongoose && !bulwark && !madness && !bloodtalons)
+        return;
+    m_mongooseTimer -= int32(diff);
+    if (m_mongooseTimer > 0)
+        return;
+    m_mongooseTimer = BONK_MONGOOSE_REFRESH_MS;
+    std::vector<Creature*> const around = GetMobsInRange(BONK_MONGOOSE_RADIUS);
+    uint32 poisoned = 0;
+    uint32 bleeding = 0;
+    for (Creature* mob : around)
+    {
+        if (GetKeywordStacks(mob, BONK_KEYWORD_POISON))
+            ++poisoned;
+        if (GetKeywordStacks(mob, BONK_KEYWORD_BLEED))
+            ++bleeding;
+    }
+    m_bloodtalonsStacks = bloodtalons ? std::min(bleeding, BONK_BLOODTALONS_MAX_STACKS) : 0;
+    m_mongooseStacks = mongoose ? std::min(poisoned, BONK_MONGOOSE_MAX_STACKS) : 0;
+    m_bulwarkStacks = bulwark ? std::min(uint32(around.size()), BONK_BULWARK_MAX_STACKS) : 0;
+    uint32 decaying = 0;
+    if (madness)
+        for (Creature* mob : GetMobsInRange(BONK_ANCIENT_MADNESS_RADIUS))
+            if (GetKeywordStacks(mob, BONK_KEYWORD_DECAY))
+                ++decaying;
+    m_madnessStacks = std::min(decaying, BONK_ANCIENT_MADNESS_MAX_STACKS);
+}
+
+bool BonkRun::IsFreshMeat(SpellEntry const* spell, Unit const* victim) const
+{
+    float const threshold = m_mastery.Special(BONK_SPECIAL_FRESH_MEAT);
+    if (threshold <= 0.0f || !spell || !victim || victim->GetHealthPercent() <= threshold)
+        return false;
+    auto root = m_spellRoots.find(spell->Id);
+    return root != m_spellRoots.end() && root->second == BONK_WEAPON_BLOODTHIRST;
+}
+
+void BonkRun::OnTalentBleedingDeath()
+{
+    if (m_mastery.Special(BONK_SPECIAL_BLOODSURGE) <= 0.0f)
+        return;
+    uint32 const now = m_totalMs;
+    m_bloodsurgeUntil.erase(std::remove_if(m_bloodsurgeUntil.begin(), m_bloodsurgeUntil.end(), [now](uint32 until) { return until <= now; }),
+        m_bloodsurgeUntil.end());
+    m_bloodsurgeUntil.push_back(now + BONK_BLOODSURGE_MS);
+    if (m_bloodsurgeUntil.size() > BONK_BLOODSURGE_STACKS)
+        m_bloodsurgeUntil.erase(m_bloodsurgeUntil.begin());
+}
+
+float BonkRun::GetTalentMoveSpeed() const
+{
+    return IsEnraged() ? m_mastery.Special(BONK_SPECIAL_FRENZY) : 0.0f;
+}
+
+float BonkRun::GetTormentBonus(uint32 rootWeapon, Unit const* victim) const
+{
+    float const overpower = m_mastery.Special(BONK_SPECIAL_OVERPOWER);
+    if (overpower > 0.0f && victim && rootWeapon == BONK_WEAPON_MORTAL_STRIKE && GetKeywordStacks(victim, BONK_KEYWORD_BLEED) >= BONK_OVERPOWER_BLEED)
+        return overpower;
+    float const bonus = m_mastery.Special(BONK_SPECIAL_TORMENT_THE_WEAK);
+    if (bonus <= 0.0f || !victim || BonkMastery::GetSpec(rootWeapon) != BONK_TREE_ARCANE)
+        return 0.0f;
+    return victim->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) || GetKeywordStacks(victim, BONK_KEYWORD_CHILL) ? bonus : 0.0f;
+}
+
+void BonkRun::ReduceTimer(uint32 rootWeapon, int32 ms)
+{
+    for (OwnedWeapon& owned : m_weapons)
+        if (GetRootWeapon(owned.weapon) == rootWeapon)
+        {
+            owned.timer = std::max<int32>(std::min<int32>(owned.timer, BONK_CLEARCAST_FLOOR_MS), owned.timer - ms);
+            owned.pieResync = true;
+        }
+}
+
+void BonkRun::OnTalentDamage(Unit* victim, SpellEntry const* spell)
+{
+    bool const crit = m_crits != m_talentCritsSeen;
+    m_talentCritsSeen = m_crits;
+    if (!spell || !victim || m_state != STATE_RUNNING)
+        return;
+    auto rootItr = m_spellRoots.find(spell->Id);
+    if (rootItr == m_spellRoots.end())
+        return;
+    uint32 const root = rootItr->second;
+
+    if (crit && BonkMastery::GetSpec(root) == BONK_TREE_FIRE)
+    {
+        int32 const kindling = int32(m_mastery.Special(BONK_SPECIAL_KINDLING) * IN_MILLISECONDS);
+        if (kindling > 0)
+            ReduceTimer(BONK_WEAPON_PYROBLAST, kindling);
+        int32 const flamestrike = int32(m_mastery.Special(BONK_SPECIAL_KINDLING_FLAMESTRIKE) * IN_MILLISECONDS);
+        if (flamestrike > 0)
+            ReduceTimer(BONK_WEAPON_FLAMESTRIKE, flamestrike);
+    }
+
+    float const backlash = m_mastery.Special(BONK_SPECIAL_BACKLASH);
+    if (crit && backlash > 0.0f)
+        ReduceTimer(BONK_WEAPON_RAIN_OF_FIRE, int32(backlash * IN_MILLISECONDS));
+    if (root == BONK_WEAPON_SHADOW_BOLT)
+    {
+        Creature* mob = victim->ToCreature();
+        if (mob && mob->IsAlive() && crit && m_mastery.Special(BONK_SPECIAL_IMPROVED_SHADOW_BOLT) > 0.0f)
+            ApplyKeyword(mob, BONK_KEYWORD_SHADOW_VULNERABILITY, 1, 0, 1.0f, spell->Id);
+        if (mob && mob->IsAlive() && m_mastery.Special(BONK_SPECIAL_SOUL_FIRE) > 0.0f && ++m_shadowBoltHits % BONK_SOUL_FIRE_EVERY == 0)
+            ApplyKeyword(mob, BONK_KEYWORD_BURNING, BONK_SOUL_FIRE_BURNING, 0, 1.0f, spell->Id);
+    }
+
+    if (root == BONK_WEAPON_PENANCE && m_mastery.Special(BONK_SPECIAL_SCHISM) > 0.0f)
+        m_schismUntil[victim->GetObjectGuid()] = m_totalMs + BONK_SCHISM_MS;
+
+    if (root == BONK_WEAPON_FIRE_BLAST)
+    {
+        if (crit && m_searingBurstArmed)
+        {
+            m_searingBurstArmed = false;
+            ReduceTimer(BONK_WEAPON_PYROBLAST, BONK_INSTANT_RECHARGE_MS);
+        }
+        uint32 const spread = uint32(m_mastery.Special(BONK_SPECIAL_CONFLAGRATION));
+        Creature* source = victim->ToCreature();
+        uint32 const burning = source ? GetKeywordStacks(source, BONK_KEYWORD_BURNING) : 0;
+        if (spread && burning)
+        {
+            uint32 given = 0;
+            for (Creature* mob : GetMobsNear(source->GetPositionX(), source->GetPositionY(), BONK_CONFLAGRATION_RADIUS))
+                if (mob != source && given < spread && ApplyKeyword(mob, BONK_KEYWORD_BURNING, burning, 0, 1.0f, spell->Id))
+                    ++given;
+        }
+    }
+
+    if (root == BONK_WEAPON_FROSTBOLT)
+        m_fingersReady = false;
+
+    if (crit && ((root == BONK_WEAPON_JUDGEMENT && m_mastery.Special(BONK_SPECIAL_RIGHTEOUS_VERDICT) > 0.0f) ||
+        (root == BONK_WEAPON_DIVINE_STORM && m_mastery.Special(BONK_SPECIAL_FINAL_RECKONING) > 0.0f)))
+        ReduceTimer(BONK_WEAPON_HAMMER_OF_WRATH, BONK_INSTANT_RECHARGE_MS);
+    if (root == BONK_WEAPON_SEAL_COMMAND && roll_chance_f(m_mastery.Special(BONK_SPECIAL_EMPYREAN_POWER)))
+        ReduceTimer(BONK_WEAPON_DIVINE_STORM, BONK_INSTANT_RECHARGE_MS);
+}
+
+void BonkRun::OnTalentWindfury()
+{
+    if (m_mastery.Special(BONK_SPECIAL_FLURRY) > 0.0f)
+        m_flurryUntil = m_totalMs + BONK_FLURRY_MS;
+    if (m_mastery.Special(BONK_SPECIAL_FORCEFUL_WINDS) > 0.0f)
+        PushTimedStack(m_forcefulUntil, m_totalMs, BONK_FORCEFUL_WINDS_MS, BONK_FORCEFUL_WINDS_STACKS);
+}
+
+void BonkRun::OnTalentHarvestSoul()
+{
+    if (m_mastery.Special(BONK_SPECIAL_HARVESTER_OF_SOULS) > 0.0f)
+        PushTimedStack(m_harvestUntil, m_totalMs, BONK_HARVESTER_MS, BONK_HARVESTER_STACKS);
+}
+
+void BonkRun::OnTalentStaticDischarge()
+{
+    if (m_mastery.Special(BONK_SPECIAL_UNRELENTING_STORM) > 0.0f)
+        PushTimedStack(m_unrelentingUntil, m_totalMs, BONK_UNRELENTING_STORM_MS, BONK_UNRELENTING_STORM_STACKS);
+}
+
+bool BonkRun::IsNearOwnTotem() const
+{
+    Map* map = m_player->GetMap();
+    for (OwnedWeapon const& owned : m_weapons)
+        if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM))
+            for (ObjectGuid const& guid : owned.pets)
+                if (Creature* totem = map->GetCreature(guid))
+                    if (totem->IsAlive() && m_player->IsWithinDistInMap(totem, BONK_CALL_OF_THE_ELEMENTS_RANGE))
+                        return true;
+    return false;
+}
+
+void BonkRun::OnDanseMacabre()
+{
+    if (m_mastery.Special(BONK_SPECIAL_DANSE_MACABRE) <= 0.0f)
+        return;
+    uint32 const now = m_totalMs;
+    m_danseUntil.erase(std::remove_if(m_danseUntil.begin(), m_danseUntil.end(), [now](uint32 until) { return until <= now; }), m_danseUntil.end());
+    m_danseUntil.push_back(now + BONK_DANSE_MACABRE_MS);
+    if (m_danseUntil.size() > BONK_DANSE_MACABRE_STACKS)
+        m_danseUntil.erase(m_danseUntil.begin());
+}
+
+void BonkRun::OnTalentKill(Unit* victim)
+{
+    float const share = m_mastery.Special(BONK_SPECIAL_GLACIAL_FRAGMENTS);
+    Creature* dead = victim ? victim->ToCreature() : nullptr;
+    float const venomRush = m_mastery.Special(BONK_SPECIAL_VENOM_RUSH);
+    if (venomRush > 0.0f && dead && GetKeywordStacks(dead, BONK_KEYWORD_POISON))
+        ReduceTimer(BONK_WEAPON_ENVENOM, int32(venomRush * IN_MILLISECONDS));
+    if (dead && m_mastery.Special(BONK_SPECIAL_SOUL_OF_THE_FOREST) > 0.0f && dead->HasAuraType(SPELL_AURA_MOD_ROOT))
+        PushTimedStack(m_forestUntil, m_totalMs, BONK_SOUL_OF_THE_FOREST_MS, BONK_SOUL_OF_THE_FOREST_STACKS);
+    float const deepening = m_mastery.Special(BONK_SPECIAL_DEEPENING_SHADOWS);
+    if (deepening > 0.0f && m_shadowDanceUntilMs > m_totalMs)
+        ReduceTimer(BONK_WEAPON_SHADOW_DANCE, int32(deepening * IN_MILLISECONDS));
+    if (share <= 0.0f || !dead || !IsFrozen(dead))
+        return;
+    SpellEntry const* shards = sSpellMgr.GetSpellEntry(BONK_SPELL_GLACIAL_FRAGMENTS);
+    if (!shards)
+        return;
+    float const damage = dead->GetMaxHealth() * share / 100.0f;
+    uint32 const chill = uint32(m_mastery.Special(BONK_SPECIAL_GLACIAL_FRAGMENTS_CHILL));
+    FiringWeapon firing(m_player->GetBonkPlayer());
+    for (Creature* mob : GetMobsNear(dead->GetPositionX(), dead->GetPositionY(), BONK_GLACIAL_FRAGMENTS_RADIUS))
+        if (mob != dead)
+        {
+            DealSpellHit(shards, mob, damage);
+            if (chill)
+                ApplyKeyword(mob, BONK_KEYWORD_CHILL, chill, 0, 1.0f, shards->Id);
+        }
+}
+
+void BonkRun::BlowFreezingWinds(PendingCast const& cast)
+{
+    OwnedWeapon const* owned = FindOwned(cast.weaponId);
+    if (!owned)
+        return;
+    float const radius = owned->weapon.groundRadius * GetWeaponArea(*owned);
+    for (Creature* mob : GetMobsNear(cast.x, cast.y, radius))
+        if (BonkMobAI const* ai = GetRunAI(mob))
+            if (ai->GetKind() == BONK_SPAWN_NORMAL)
+                ApplyKeyword(mob, BONK_KEYWORD_FROZEN, 1, 0, 1.0f, cast.spellId);
+}
+
+void BonkRun::EchoMissile(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share)
+{
+    uint32 const extra = uint32(m_mastery.Special(BONK_SPECIAL_ARCANE_ECHO));
+    uint32 struck = 0;
+    for (Creature* mob : GetMobsNear(target->GetPositionX(), target->GetPositionY(), BONK_ARCANE_ECHO_RADIUS))
+        if (mob != target && struck < extra)
+        {
+            StrikeWith(owned, spellInfo, mob, share, true);
+            ++struck;
+        }
+}
+
 void BonkRun::OnTalentBlink()
 {
+    float const potency = m_mastery.Special(BONK_SPECIAL_ARCANE_POTENCY);
+    if (potency > 0.0f)
+        m_potencyCasts = BONK_ARCANE_POTENCY_CASTS + uint32(m_mastery.Special(BONK_SPECIAL_ARCANE_POTENCY_LONG));
+
+    int32 const flux = int32(m_mastery.Special(BONK_SPECIAL_TEMPORAL_FLUX) * IN_MILLISECONDS);
+    if (flux > 0)
+        for (OwnedWeapon& owned : m_weapons)
+        {
+            owned.timer = std::max<int32>(std::min<int32>(owned.timer, BONK_CLEARCAST_FLOOR_MS), owned.timer - flux);
+            owned.pieResync = true;
+        }
+
     if (m_mastery.blinkShield > 0.0f)
     {
         SupportScope scope(*this, TalentSupport(BONK_MASTERY_BLINK_SHIELD));
@@ -368,7 +899,9 @@ void BonkRun::PreferMarked(std::vector<Creature*>& mobs) const
 
 float BonkRun::GetPackPowerShare() const
 {
-    return HasBehavior(BONK_BEHAVIOR_WRATH) ? m_mastery.packPower / 100.0f : 0.0f;
+    if (HasBehavior(BONK_BEHAVIOR_WRATH))
+        return m_mastery.packPower / 100.0f;
+    return m_mastery.packPower * m_mastery.Special(BONK_SPECIAL_KINDRED_SPIRITS) / 10000.0f;
 }
 
 bool BonkRun::IsPetFrenzied() const

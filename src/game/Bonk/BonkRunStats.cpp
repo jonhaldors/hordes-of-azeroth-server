@@ -549,6 +549,8 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (credits.empty())
             credits.emplace_back(spellProto ? spellProto->Id : 0, dealt);
 
+        if (!owner)
+            run->OnTalentDamage(victim, spellProto);
         if (damage >= health && !victim->GetInvincibilityHpThreshold())
             run->OnKillingBlow(victim);
         else

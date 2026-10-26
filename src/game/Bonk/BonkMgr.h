@@ -989,6 +989,18 @@ enum BonkUpgradeUtility : uint8
     MAX_BONK_UPGRADE_UTILITY
 };
 uint8 const BONK_UPGRADE_UTILITY_BASE = 100;
+uint32 const BONK_TRAINING_TREE = 7;
+uint8 const BONK_TRAINING_OPEN_RANKS = 3;
+uint8 const BONK_TRAINING_HEROIC_RANKS = 3;
+uint8 const BONK_TRAINING_MYTHIC_RANKS = 4;
+uint32 const BONK_TRAINING_FLOORS_PER_RANK = 4;
+uint8 const BONK_DETERMINATION_MAX_STACKS = 5;
+uint32 const BONK_FLOORS_PER_TALENT_POINT = 2;
+uint32 const BONK_FLOOR_TALENT_POINTS_MAX = 10;
+uint32 const BONK_MYTHIC_MILESTONE_FLOORS = 5;
+float const BONK_FLOOR_GOLD_GROWTH = 0.1f;
+uint32 const BONK_FLOOR_TICKETS_BASE = 3;
+float const BONK_DETERMINATION_PER_STACK = 3.0f;
 
 struct BonkUpgrade
 {
@@ -1071,6 +1083,7 @@ struct BonkRunBonuses
     float healingCut = 0.0f;
     uint32 earlierBossSeconds = 0;
     uint32 eliteAffixes = 0;
+    float damageTakenCut = 0.0f;
 };
 
 struct BonkItemStat

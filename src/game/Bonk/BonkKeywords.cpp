@@ -98,6 +98,7 @@ void BonkRun::OnKillingBlow(Unit* victim)
 {
     if (m_state != STATE_RUNNING || !GetRunAI(victim))
         return;
+    OnTalentKill(victim);
     OnShamanKill(victim);
     OnWarlockKill(victim);
 
@@ -221,7 +222,8 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
         return true;
     }
 
-    uint32 const length = (durationMs ? durationMs : info->durationMs) + (keyword == BONK_KEYWORD_CHILL ? GetChillTalentMs() : 0);
+    uint32 const length = (durationMs ? durationMs : info->durationMs) + (keyword == BONK_KEYWORD_CHILL ? GetChillTalentMs() : 0) +
+        GetKeywordTalentMs(keyword);
 
     if (info->IsDamageOverTime())
     {
@@ -262,8 +264,9 @@ void BonkRun::AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 st
             held.untilMs = stack.untilMs;
     list.insert(list.end(), stacks, stack);
 
-    if (list.size() > BONK_MAX_DOT_STACKS)
-        list.erase(list.begin(), list.begin() + (list.size() - BONK_MAX_DOT_STACKS));
+    size_t const cap = BONK_MAX_DOT_STACKS + GetKeywordTalentCap(info.id);
+    if (list.size() > cap)
+        list.erase(list.begin(), list.begin() + (list.size() - cap));
     SyncDotAura(mob, info, list);
 }
 

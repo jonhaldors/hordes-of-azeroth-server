@@ -196,7 +196,8 @@ bool BonkRun::IsFrostSpellOnFrozen(SpellEntry const* spell, Unit const* victim) 
 {
     if (!spell || !victim || !(spell->GetSpellSchoolMask() & SPELL_SCHOOL_MASK_FROST))
         return false;
-    return FindOwnedBySpell(spell->Id) && IsFrozen(victim);
+    OwnedWeapon const* owned = FindOwnedBySpell(spell->Id);
+    return owned && (IsFrozen(victim) || (m_fingersReady && GetRootWeapon(owned->weapon) == BONK_WEAPON_FROSTBOLT));
 }
 
 BonkRun::OwnedWeapon const* BonkRun::FindOwnedWhere(bool (BonkWeapon::*test)() const) const
@@ -339,6 +340,7 @@ void BonkRun::QueueMissiles(OwnedWeapon const& owned, SpellEntry const* spellInf
         follow.target = target->GetObjectGuid();
         follow.strike = true;
         follow.share = share;
+        follow.arcaneEcho = missile + 1 == missiles && m_mastery.Special(BONK_SPECIAL_ARCANE_ECHO) > 0.0f;
         m_pendingCasts.push_back(follow);
     }
 }
@@ -434,9 +436,14 @@ void BonkRun::SplashPyroblast(OwnedWeapon& owned, SpellEntry const* spellInfo, P
     float const damage = GetWeaponDamage(owned) * cast.share;
     float const radius = BONK_PYROBLAST_SPLASH_RADIUS * GetWeaponArea(owned);
     FiringWeapon firing(m_player->GetBonkPlayer());
+    uint32 const burning = uint32(m_mastery.Special(BONK_SPECIAL_PYROCLASM_BURNING));
     for (Creature* mob : GetMobsNear(x, y, radius))
         if (mob->GetObjectGuid() != cast.target)
+        {
             DealSpellHit(spellInfo, mob, damage);
+            if (burning)
+                ApplyKeyword(mob, BONK_KEYWORD_BURNING, burning, 0, 1.0f, spellInfo->Id);
+        }
 }
 
 uint32 BonkRun::GetElementalFamily() const

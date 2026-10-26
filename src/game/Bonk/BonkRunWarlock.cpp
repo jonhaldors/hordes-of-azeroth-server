@@ -13,7 +13,6 @@ namespace
     uint32 const BONK_WEAPON_VOIDWALKER       = 901;
     uint32 const BONK_WEAPON_SUCCUBUS         = 902;
     uint32 const BONK_WEAPON_FELHUNTER        = 903;
-    uint32 const BONK_WEAPON_SHADOW_BOLT      = 907;
 
     uint32 const BONK_SPELL_DRAIN_BEAM        = 755;
     uint32 const BONK_SPELL_IMP_FIREBOLT      = 11763;
@@ -39,6 +38,8 @@ namespace
     uint32 const BONK_IMP_VOLLEY_GAP_MS       = 300;
     float const BONK_SHADOW_BITE_PER_AFFLICTION = 0.1f;
     int32 const BONK_WARLOCK_POLL_MS          = 250;
+    int32 const BONK_EXHAUSTION_SLOW          = -30;
+    int32 const BONK_EXHAUSTION_SLOW_MS       = 2000;
 
     BonkKeyword const BONK_WARLOCK_AFFLICTIONS[] = { BONK_KEYWORD_DECAY, BONK_KEYWORD_AGONY, BONK_KEYWORD_BURNING };
 }
@@ -104,8 +105,14 @@ void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spell
         ShowStrike(m_player, spellInfo, mob);
         uint32 const opening = GetKeywordStacks(mob, keyword) ? 0 : BONK_WARLOCK_OPENING_STACKS;
         ApplyKeyword(mob, keyword, stacks + opening, durationMs, strength, owned.weapon.spellId);
+        if (keyword == BONK_KEYWORD_DECAY && m_mastery.Special(BONK_SPECIAL_CONTAGION) > 0.0f)
+            ApplyKeyword(mob, BONK_KEYWORD_AGONY, uint32(m_mastery.Special(BONK_SPECIAL_CONTAGION)), 0, strength, owned.weapon.spellId);
         if (keyword == BONK_KEYWORD_AGONY)
+        {
             OnAgonyCurse(owned, mob);
+            if (m_mastery.Special(BONK_SPECIAL_CURSE_OF_EXHAUSTION) > 0.0f)
+                SlowNormalMob(mob, spellInfo, &BONK_EXHAUSTION_SLOW, BONK_EXHAUSTION_SLOW_MS);
+        }
     }
 }
 
@@ -232,6 +239,8 @@ void BonkRun::OnWarlockKill(Unit* victim)
         [this, victim](BonkKeyword keyword) { return GetKeywordStacks(victim, keyword) > 0; });
     if (afflicted && FindOwnedByRoot(BONK_WEAPON_SHADOW_BOLT))
         m_nightfallQueue.push_back(victim->GetObjectGuid());
+    if (afflicted)
+        OnTalentHarvestSoul();
 
     Creature* nearest = nullptr;
     for (OwnedWeapon& owned : m_weapons)
@@ -250,7 +259,7 @@ void BonkRun::OnWarlockKill(Unit* victim)
     if (nearest)
     {
         uint32& stacks = m_consumedShadows[nearest->GetObjectGuid()];
-        stacks = std::min(stacks + 1, BONK_CONSUME_STACKS);
+        stacks = std::min(stacks + 1, GetConsumeStacks());
     }
 }
 
@@ -308,18 +317,29 @@ void BonkRun::BurstConsumedShadows()
         {
             auto stacks = m_consumedShadows.find(guid);
             Creature* pet = m_player->GetMap()->GetCreature(guid);
-            if (stacks == m_consumedShadows.end() || stacks->second < BONK_CONSUME_STACKS || !pet || !pet->IsAlive())
+            if (stacks == m_consumedShadows.end() || stacks->second < GetConsumeStacks() || !pet || !pet->IsAlive())
                 continue;
             m_consumedShadows.erase(stacks);
             ShowStrike(pet, spellInfo, pet);
             OnConsumedBurst(owned);
-            float const hit = GetPetBiteDamage(owned, *family) * BONK_CONSUME_BURST_BITES;
+            float const hit = GetPetBiteDamage(owned, *family) * BONK_CONSUME_BURST_BITES * (1.0f + m_mastery.Special(BONK_SPECIAL_FEL_SUNDER) / 100.0f);
             float const powerShare = GetPowerShare(pet);
+            bool const stuns = m_mastery.Special(BONK_SPECIAL_SHADOWFURY) > 0.0f;
             for (Creature* mob : GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), BONK_CONSUME_BURST_RADIUS * GetSummonReach(owned)))
                 if (pet->IsWithinLOSInMap(mob))
+                {
                     DealExactHit(spellInfo, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(nullptr, mob, powerShare))), pet);
+                    if (stuns && mob->IsAlive())
+                        m_pendingStuns.push_back(mob->GetObjectGuid());
+                }
         }
     }
+}
+
+uint32 BonkRun::GetConsumeStacks() const
+{
+    uint32 const fewer = std::min(BONK_CONSUME_STACKS - 1, uint32(m_mastery.Special(BONK_SPECIAL_IMPROVED_VOIDWALKER)));
+    return BONK_CONSUME_STACKS - fewer;
 }
 
 float BonkRun::GetWarlockPetStrikeScale(OwnedWeapon const& owned, Creature const* prey) const
@@ -340,7 +360,8 @@ void BonkRun::QueueImpVolley(OwnedWeapon const& owned, Creature* pet, Creature* 
     others.erase(std::remove(others.begin(), others.end(), prey), others.end());
 
     uint32 const now = WorldTimer::getMSTime();
-    for (uint32 bolt = 1; bolt < BONK_IMP_VOLLEY_BOLTS; ++bolt)
+    uint32 const bolts = BONK_IMP_VOLLEY_BOLTS + uint32(m_mastery.Special(BONK_SPECIAL_IMPROVED_IMP));
+    for (uint32 bolt = 1; bolt < bolts; ++bolt)
     {
         Creature* target = bolt - 1 < others.size() ? others[bolt - 1] : prey;
         m_impVolleys.push_back({ pet->GetObjectGuid(), target->GetObjectGuid(), owned.weapon.id, abilityIndex, now + bolt * BONK_IMP_VOLLEY_GAP_MS });

@@ -594,6 +594,7 @@ bool ChatHandler::HandleBonkHelloCommand(char*)
     bonk->FlushMasteryNotice();
     bonk->SendWallet();
     bonk->SendDash();
+    bonk->SendDetermination();
     sBonkQuests.SendLog(m_session->GetPlayer(), "");
     if (BonkRun* run = bonk->GetRun())
         run->SendFullState();
@@ -1086,6 +1087,21 @@ bool ChatHandler::HandleBonkShapeshiftCommand(char* args)
     bool const picksForm = args && *args && m_session->GetSecurity() >= SEC_GAMEMASTER;
     run->Shapeshift(picksForm ? args : nullptr);
     return true;
+}
+
+bool ChatHandler::HandleBonkKillBossCommand(char*)
+{
+    Player* player = m_session->GetPlayer();
+    BonkRun* run = player->GetBonkPlayer()->GetRun();
+    Creature* boss = run ? player->GetMap()->GetCreature(run->GetBossGuid()) : nullptr;
+    if (!boss || !boss->IsAlive())
+    {
+        SendSysMessage("There is no stage boss alive.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    PSendSysMessage("%s had %u of %u health.", boss->GetName(), boss->GetHealth(), boss->GetMaxHealth());
+    return HandleDieHelper(boss);
 }
 
 bool ChatHandler::HandleBonkMobInfoCommand(char*)
