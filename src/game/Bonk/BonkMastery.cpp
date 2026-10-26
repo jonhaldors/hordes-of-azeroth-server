@@ -311,9 +311,8 @@ BonkMasteryBonuses BonkMastery::Evaluate(std::map<uint32, uint8> const& ranks) c
             case BONK_MASTERY_KEYWORD_DURATION: bonuses.keywordDuration[node->target] += value; break;
             case BONK_MASTERY_KEYWORD_CAP:    bonuses.keywordCap[node->target] += value; break;
             case BONK_MASTERY_CAST_HASTE:
-                bonuses.castHasteTree = node->target;
-                bonuses.castHaste += value;
-                bonuses.castHasteStacks = std::max(bonuses.castHasteStacks, node->param);
+                bonuses.castHaste[node->target] += value;
+                bonuses.castHasteStacks[node->target] = std::max(bonuses.castHasteStacks[node->target], node->param);
                 break;
             case BONK_MASTERY_SPECIAL:        bonuses.specials[node->target] += value; break;
             case BONK_MASTERY_SPELL_APPLIES:

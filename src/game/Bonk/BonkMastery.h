@@ -102,6 +102,13 @@ enum BonkTalentSpecial : uint8
     BONK_SPECIAL_RAPID_FIRE              = 34,
     BONK_SPECIAL_KILL_SHOT               = 35,
     BONK_SPECIAL_MONGOOSE_FURY           = 36,
+    BONK_SPECIAL_AWAKENING               = 37,
+    BONK_SPECIAL_DIVINE_PURPOSE          = 38,
+    BONK_SPECIAL_RIGHTEOUS_PROTECTOR     = 39,
+    BONK_SPECIAL_BULWARK                 = 40,
+    BONK_SPECIAL_RIGHTEOUS_VERDICT       = 41,
+    BONK_SPECIAL_FINAL_RECKONING         = 42,
+    BONK_SPECIAL_EMPYREAN_POWER          = 43,
     MAX_BONK_SPECIAL
 };
 
@@ -157,6 +164,14 @@ uint32 const BONK_WEAPON_THUNDER_CLAP  = 308;
 uint32 const BONK_WEAPON_CALL_PET      = 201;
 uint32 const BONK_WEAPON_AIMED_SHOT    = 203;
 uint32 const BONK_WEAPON_HUNTERS_MARK  = 205;
+uint32 const BONK_WEAPON_JUDGEMENT     = 801;
+uint32 const BONK_WEAPON_SEAL_COMMAND = 802;
+uint32 const BONK_WEAPON_EXORCISM      = 805;
+uint32 const BONK_WEAPON_DIVINE_STORM  = 806;
+uint32 const BONK_WEAPON_DIVINE_SHIELD = 809;
+uint32 const BONK_WEAPON_HAMMER_OF_JUSTICE = 811;
+uint32 const BONK_WEAPON_LIGHTS_HAMMER = 812;
+uint32 const BONK_WEAPON_HAMMER_OF_WRATH = 813;
 uint8 const BONK_MASTERY_LAYOUT_FREE = 1;
 uint8 const BONK_MASTERY_FREE_ROWS = 9;
 uint32 const BONK_MASTERY_FREE_GATES[BONK_MASTERY_FREE_ROWS] = { 0, 0, 0, 5, 10, 10, 15, 15, 21 };
@@ -258,9 +273,8 @@ struct BonkMasteryBonuses
     std::map<uint32, float> spellBehavior;
     std::map<uint32, float> keywordDuration;
     std::map<uint32, float> keywordCap;
-    uint32 castHasteTree = 0;
-    float castHaste = 0.0f;
-    uint32 castHasteStacks = 0;
+    std::map<uint32, float> castHaste;
+    std::map<uint32, uint32> castHasteStacks;
     float specials[MAX_BONK_SPECIAL] = {};
     BonkCapstone capstone = BONK_CAPSTONE_NONE;
 

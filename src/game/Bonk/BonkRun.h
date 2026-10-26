@@ -2409,7 +2409,8 @@ class BonkRun
         float m_castCritBonus = 0.0f;
         bool m_clearcastBoostReady = false;
         uint32 m_potencyCasts = 0;
-        std::vector<uint32> m_castHasteUntil;
+        std::map<uint32, std::vector<uint32>> m_castHasteUntil;
+        uint32 m_bulwarkStacks = 0;
         std::vector<uint32> m_bloodsurgeUntil;
         uint32 m_rapidFireUntil = 0;
         uint32 m_mongooseStacks = 0;
