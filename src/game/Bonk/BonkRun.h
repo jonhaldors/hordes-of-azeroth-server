@@ -150,6 +150,7 @@ class BonkRun
         uint32 GetGlyphDashCharges() const { return uint32(GetGlyphValue(BONK_GLYPH_DASH, 0)); }
         float GetGlyphDashRecharge() const { return 1.0f + GetGlyphValue(BONK_GLYPH_DASH, 1) / 100.0f; }
         void SetMenuOpen(bool open);
+        void ResyncPause();
         bool IsFinished() const { return m_state == STATE_FINISHED; }
         bool IsPortalOpen() const { return m_state == STATE_PORTAL; }
         BonkMap const& GetMap() const { return m_map; }

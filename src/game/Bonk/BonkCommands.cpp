@@ -304,6 +304,13 @@ bool ChatHandler::HandleBonkMenuCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkResyncCommand(char* )
+{
+    if (BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun())
+        run->ResyncPause();
+    return true;
+}
+
 bool ChatHandler::HandleBonkVaultCommand(char* args)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();

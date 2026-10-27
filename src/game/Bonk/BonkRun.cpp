@@ -12148,6 +12148,58 @@ void BonkRun::SetPaused(bool paused)
         m_objectives.ResendTimed(m_player);
         SendCardCooldowns();
     }
+
+    if (m_player->GetBonkPlayer()->IsAddonReady())
+        m_player->GetBonkPlayer()->SendAddon(std::string("paused~") + (paused ? "1" : "0"));
+}
+
+void BonkRun::ResyncPause()
+{
+    char const* resent = "nothing open, unpaused";
+    bool const menuWasOpen = m_menuOpen;
+    if (!m_paused)
+        resent = "not paused";
+    else if (!m_offer.empty())
+    {
+        resent = "offer";
+        SendOffer();
+    }
+    else if (!m_leyOffer.empty())
+    {
+        resent = "ley line";
+        SendLeyOffer();
+    }
+    else if (!m_glyphOffer.empty())
+    {
+        resent = "glyph";
+        SendGlyphOffer();
+    }
+    else if (m_gearOfferEntry)
+    {
+        resent = "gear";
+        SendGearOffer();
+    }
+    else if (m_vendorOpen)
+    {
+        resent = "vendor";
+        SendVendor();
+    }
+    else if (m_vaultOpen)
+    {
+        resent = "vault";
+        SendVault();
+    }
+    else
+    {
+        m_menuOpen = false;
+        SetPaused(false);
+        UpdateOffers();
+    }
+
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC, "Bonk resync: %s at run minute %.2f (stage %u, %s, %s): %s, menu flag %s",
+        m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), resent, menuWasOpen ? "set" : "clear");
+    if (!m_paused && m_player->GetBonkPlayer()->IsAddonReady())
+        m_player->GetBonkPlayer()->SendAddon("paused~0");
 }
 
 void BonkRun::HoldPet(Creature* pet, bool hold, bool planted)
