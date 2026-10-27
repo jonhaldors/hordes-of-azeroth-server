@@ -22,6 +22,7 @@ class BonkMobAI : public CreatureAI
         static void Install(Creature* creature);
         static bool UsesExactPoints(SpellCaster const* caster);
         static bool BlocksTriggeredSpell(SpellCaster const* caster, SpellEntry const* triggeredBy);
+        void RemoveSlows(Player* owner, SpellEntry const* spellInfo);
         static void SetNextPlateId(uint32 id) { s_nextPlateId = id; }
         static void SetNextAffixCount(int32 count) { s_nextAffixCount = count; }
         static void SetNextPlateIcon(char const* icon) { s_nextPlateIcon = icon; }

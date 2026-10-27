@@ -1128,6 +1128,23 @@ void BonkMobAI::Cast(BonkMobAbility const& ability, Player* owner, bool triggere
     if (target != m_creature)
         m_creature->SetFacingToObject(target);
     m_creature->CastCustomSpell(target, spellInfo, basePoints[0], basePoints[1], basePoints[2], triggered);
+    RemoveSlows(owner, spellInfo);
+}
+
+void BonkMobAI::RemoveSlows(Player* owner, SpellEntry const* spellInfo)
+{
+    for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        switch (spellInfo->EffectApplyAuraName[i])
+        {
+            case SPELL_AURA_MOD_DECREASE_SPEED:
+            case SPELL_AURA_MOD_MELEE_HASTE:
+            case SPELL_AURA_MOD_RANGED_HASTE:
+            case SPELL_AURA_MOD_ATTACKSPEED:
+                owner->RemoveSingleAuraFromSpellAuraHolder(spellInfo->Id, SpellEffectIndex(i), m_creature->GetObjectGuid());
+                break;
+            default:
+                break;
+        }
 }
 
 void BonkMobAI::AimBolt(BonkMobAbility const& ability, SpellEntry const* spellInfo, Player* owner, BonkRun* run)
