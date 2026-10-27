@@ -274,6 +274,14 @@ void BonkRun::OnDash()
                 }
     }
 
+    if (IsTalentBlinkDash())
+        for (OwnedWeapon& explosion : m_weapons)
+            if (explosion.weapon.spellId == BONK_SPELL_ARCANE_EXPLOSION)
+            {
+                explosion.timer = std::min(explosion.timer, BONK_BLINK_LAND_MS);
+                explosion.pieResync = true;
+            }
+
     if (HasBehavior(BONK_BEHAVIOR_ARCANE_POWER))
         m_arcanePowerUntilMs = m_totalMs + BONK_ARCANE_POWER_MS;
 

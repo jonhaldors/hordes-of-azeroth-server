@@ -108,8 +108,10 @@ namespace
     size_t const BONK_RIPOSTE_PER_SEC         = 5;
     uint32 const BONK_SMOKE_BOMB_MS           = 5000;
     float const BONK_SMOKE_BOMB_MISS          = 50.0f;
-    float const BONK_SUBTLETY_SPLASH_RADIUS   = 5.0f;
-    float const BONK_SUBTLETY_SPLASH_SHARE    = 0.5f;
+    float const BONK_SUBTLETY_SPLASH_RADIUS   = 8.0f;
+    float const BONK_SUBTLETY_SPLASH_SHARE    = 1.0f;
+    uint32 const BONK_BLADE_DANCER_EXTRA      = 2;
+    float const BONK_BLADE_DANCER_SHARE       = 0.6f;
 
     void SetAuraLength(Player* player, uint32 spellId, int32 durationMs)
     {
@@ -367,8 +369,9 @@ void BonkRun::FlurryFrom(Creature* target, float damage, uint32 creditSpellId)
     OwnedWeapon const* flurry = FindOwnedByBehavior(BONK_BEHAVIOR_BLADE_FLURRY);
     bool const active = flurry && IsBladeFlurryActive(*flurry);
     uint32 extra = active ? uint32(std::max(0.0f, flurry->weapon.behaviorValue)) : 0;
-    if (m_mastery.Has(BONK_CAPSTONE_BLADE_DANCER))
-        ++extra;
+    bool const dancer = m_mastery.Has(BONK_CAPSTONE_BLADE_DANCER);
+    if (dancer)
+        extra += BONK_BLADE_DANCER_EXTRA;
     if (!target || !extra)
         return;
     bool const shadow = active && flurry->weapon.id == BONK_WEAPON_SHADOW_BLADES;
@@ -376,7 +379,7 @@ void BonkRun::FlurryFrom(Creature* target, float damage, uint32 creditSpellId)
     SpellEntry const* look = sSpellMgr.GetSpellEntry(shadow ? BONK_SPELL_SHADOW_STRIKE : BONK_SPELL_SINISTER_STRIKE);
     if (!look)
         return;
-    float const share = damage * BONK_FLURRY_DAMAGE_SHARE;
+    float const share = damage * (dancer ? BONK_BLADE_DANCER_SHARE : BONK_FLURRY_DAMAGE_SHARE);
     uint32 hit = 0;
     for (Creature* mob : GetMobsInRange(BONK_FLURRY_RADIUS, target))
     {

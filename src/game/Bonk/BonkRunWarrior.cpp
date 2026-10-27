@@ -185,7 +185,7 @@ bool BonkRun::IsPeriodicHit()
 
 float BonkRun::GetEnrageHaste() const
 {
-    return IsEnraged() ? BONK_ENRAGE_HASTE + m_mastery.enrageHaste : 0.0f;
+    return IsEnraged() ? (BONK_ENRAGE_HASTE + m_mastery.enrageHaste) * m_mastery.EnrageBoost() : 0.0f;
 }
 
 void BonkRun::Enrage()

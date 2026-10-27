@@ -293,7 +293,7 @@ class BonkRun
         void LandWarning(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
         static std::string DescribeStriker(Creature const* attacker);
         std::vector<std::string> DescribeMob(Creature const* mob) const;
-        float RollCritMultiplier(bool weaponAttack, Unit const* victim = nullptr) const;
+        float RollCritMultiplier(bool weaponAttack, Unit const* victim = nullptr, SpellEntry const* spell = nullptr) const;
 
         void SendStats() const;
         std::vector<std::string> DescribeScaling() const;
@@ -1620,6 +1620,8 @@ class BonkRun
         OwnedWeapon const* FindSummonOwner(Unit const* unit) const;
         float GetTalentCritChance(Unit const* victim, Unit const* attacker) const;
         bool IsWeaponMasterStrike(SpellEntry const* spell) const;
+        float GetCapstoneCritDamage(SpellEntry const* spell) const;
+        bool IsCapstoneEmpowered() const;
         float GetKeywordTalentDamage(uint32 keyword) const;
         uint32 GetExtraSpreadTargets(uint32 keyword) const;
         uint32 GetChillFreezeStacks(BonkKeywordInfo const& chill) const;

@@ -60,7 +60,7 @@ namespace
     float const BONK_CRUSADER_SPLASH_SHARE    = 0.3f;
     float const BONK_ZEAL_SPLASH_SHARE        = 0.5f;
     float const BONK_AVENGING_HAMMER_CHANCE   = 15.0f;
-    uint32 const BONK_VERDICT_EVERY           = 5;
+    uint32 const BONK_VERDICT_EVERY           = 4;
     float const BONK_VERDICT_DAMAGE           = 3.0f;
     uint32 const BONK_COMMAND_EVERY           = 3;
     uint32 const BONK_CRUSADER_COMMAND_EVERY  = 2;

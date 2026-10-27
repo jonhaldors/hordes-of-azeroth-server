@@ -71,18 +71,19 @@ namespace
         return float(std::count_if(stacks.begin(), stacks.end(), [now](uint32 until) { return until > now; }));
     }
     float const BONK_BESTIAL_WRATH_FRENZY       = 1.5f;
-    float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.7f;
-    float const BONK_TRUESHOT_MARKED            = 1.4f;
-    float const BONK_TRUESHOT_UNMARKED          = 0.75f;
-    float const BONK_SHATTERLORD_UNFROZEN       = 0.85f;
+    float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.85f;
+    float const BONK_TRUESHOT_MARKED            = 1.3f;
+    float const BONK_CAPSTONE_EMPOWERED         = 1.2f;
     uint32 const BONK_SHATTERLORD_FREEZE_STACKS = 6;
     float const BONK_BERSERKER_DAMAGE_TAKEN     = 1.15f;
     float const BONK_SPELL_SHIELD_CAP           = 0.5f;
     float const BONK_JUGGERNAUT_SHIELD_CAP      = 1.0f;
     float const BONK_JUGGERNAUT_REGEN_PER_SEC   = 0.1f;
-    uint32 const BONK_WEAPON_MASTER_EVERY       = 5;
+    uint32 const BONK_WEAPON_MASTER_EVERY       = 4;
+    float const BONK_WEAPON_MASTER_CRIT_DAMAGE  = 0.25f;
+    float const BONK_PRIMAL_FURY_CAT_CRIT_DAMAGE = 0.25f;
+    float const BONK_TRAPMASTER_DASH_RECHARGE   = 1.3f;
     float const BONK_ARCANE_SURGE_RECHARGE      = 2.0f;
-    float const BONK_ARCANE_SURGE_HEALTH_COST   = 3.0f;
     float const BONK_LOW_HEALTH_GUARD           = 20.0f;
     float const BONK_ICE_BLOCK_RADIUS           = 10.0f;
     uint32 const BONK_ICE_BLOCK_CHILL           = 10;
@@ -114,6 +115,8 @@ void BonkRun::ApplyMasteryTo(BonkWeapon& weapon) const
     auto stacks = m_mastery.spellStacks.find(root);
     if (stacks != m_mastery.spellStacks.end() && weapon.applies != BONK_KEYWORD_NONE)
         weapon.applyStacks += uint8(stacks->second);
+    if (m_mastery.Has(BONK_CAPSTONE_SHADOWFORM) && weapon.applies == BONK_KEYWORD_DECAY && weapon.applyStacks)
+        ++weapon.applyStacks;
 
     auto duration = m_mastery.spellDuration.find(root);
     if (duration != m_mastery.spellDuration.end() && weapon.durationMs)
@@ -180,7 +183,7 @@ float BonkRun::GetTalentDamagePercent() const
     if (unbreakable > 0.0f && m_spellShield >= uint32(m_player->GetMaxHealth() * BONK_UNBREAKABLE_SHIELD))
         percent += unbreakable;
     if (IsEnraged())
-        percent += m_mastery.enrageDamage;
+        percent += m_mastery.enrageDamage * m_mastery.EnrageBoost();
     if (IsHowlFrenzied())
         percent += m_mastery.frenzyDamage;
     return percent;
@@ -191,13 +194,31 @@ float BonkRun::GetCapstoneDamageMultiplier(bool ownSpell, Unit const* victim) co
     float multiplier = 1.0f;
     if (ownSpell && m_mastery.Has(BONK_CAPSTONE_BESTIAL_WRATH))
         multiplier *= BONK_BESTIAL_WRATH_OWN_DAMAGE;
+    if (IsCapstoneEmpowered())
+        multiplier *= BONK_CAPSTONE_EMPOWERED;
     if (!victim || !GetRunAI(victim))
         return multiplier;
-    if (m_mastery.Has(BONK_CAPSTONE_TRUESHOT))
-        multiplier *= GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK) ? BONK_TRUESHOT_MARKED : BONK_TRUESHOT_UNMARKED;
-    if (m_mastery.Has(BONK_CAPSTONE_SHATTERLORD) && !IsFrozen(victim))
-        multiplier *= BONK_SHATTERLORD_UNFROZEN;
+    if (m_mastery.Has(BONK_CAPSTONE_TRUESHOT) && GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK))
+        multiplier *= BONK_TRUESHOT_MARKED;
     return multiplier;
+}
+
+bool BonkRun::IsCapstoneEmpowered() const
+{
+    if (m_mastery.Has(BONK_CAPSTONE_JUGGERNAUT))
+        return m_spellShield * 2 > GetSpellShieldCap();
+    if (m_mastery.Has(BONK_CAPSTONE_PAIN_SUPPRESSION))
+        return m_spellShield > 0;
+    if (m_mastery.Has(BONK_CAPSTONE_GUARDIAN_OF_THE_LIGHT))
+        return IsStandingInConsecration();
+    return false;
+}
+
+float BonkRun::GetCapstoneCritDamage(SpellEntry const* spell) const
+{
+    if (m_mastery.Has(BONK_CAPSTONE_PRIMAL_FURY) && m_druidForm == BonkDruidForm::Cat)
+        return BONK_PRIMAL_FURY_CAT_CRIT_DAMAGE;
+    return IsWeaponMasterStrike(spell) ? BONK_WEAPON_MASTER_CRIT_DAMAGE : 0.0f;
 }
 
 BonkRun::OwnedWeapon const* BonkRun::FindSummonOwner(Unit const* unit) const
@@ -644,7 +665,7 @@ void BonkRun::OnTalentBleedingDeath()
 
 float BonkRun::GetTalentMoveSpeed() const
 {
-    return IsEnraged() ? m_mastery.Special(BONK_SPECIAL_FRENZY) : 0.0f;
+    return IsEnraged() ? m_mastery.Special(BONK_SPECIAL_FRENZY) * m_mastery.EnrageBoost() : 0.0f;
 }
 
 float BonkRun::GetTormentBonus(uint32 rootWeapon, Unit const* victim) const
@@ -849,13 +870,6 @@ void BonkRun::OnTalentBlink()
         AddSpellShield(uint32(m_player->GetMaxHealth() * m_mastery.blinkShield / 100.0f));
     }
 
-    if (m_mastery.Has(BONK_CAPSTONE_ARCANE_SURGE))
-    {
-        uint32 const cost = uint32(m_player->GetMaxHealth() * BONK_ARCANE_SURGE_HEALTH_COST / 100.0f);
-        uint32 const health = m_player->GetHealth();
-        if (health > 1)
-            m_player->ModifyHealth(-int32(std::min(cost, health - 1)));
-    }
 }
 
 bool BonkRun::IsTalentBlinkDash() const
@@ -868,6 +882,8 @@ float BonkRun::GetDashRechargeRate() const
     float rate = GetBlinkRechargeRate() * (1.0f + m_mastery.dashRecharge / 100.0f);
     if (m_mastery.Has(BONK_CAPSTONE_ARCANE_SURGE))
         rate *= BONK_ARCANE_SURGE_RECHARGE;
+    if (m_mastery.Has(BONK_CAPSTONE_TRAPMASTER))
+        rate *= BONK_TRAPMASTER_DASH_RECHARGE;
     return rate;
 }
 

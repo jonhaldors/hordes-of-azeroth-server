@@ -4005,14 +4005,14 @@ float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit c
     return GetPaladinCritChance(spell, GetRogueCritChance(spell, chance));
 }
 
-float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim) const
+float BonkRun::RollCritMultiplier(bool weaponAttack, Unit const* victim, SpellEntry const* spell) const
 {
     float bonus = (weaponAttack ? 1.0f : 0.5f) + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_CRIT_DAMAGE)) / 100.0f;
     if (victim && (IsFrozen(victim) || (victim->HasAuraType(SPELL_AURA_MOD_ROOT) && HasBehavior(BONK_BEHAVIOR_FREEZE))))
         bonus += BONK_FROZEN_CRIT_BONUS + m_mastery.Special(BONK_SPECIAL_WINTERS_CHILL) / 100.0f;
     if (IsEnraged())
-        bonus += m_mastery.Special(BONK_SPECIAL_RECKLESS_ABANDON) / 100.0f;
-    float multiplier = 1.0f + bonus;
+        bonus += m_mastery.Special(BONK_SPECIAL_RECKLESS_ABANDON) * m_mastery.EnrageBoost() / 100.0f;
+    float multiplier = (1.0f + bonus) * (1.0f + GetCapstoneCritDamage(spell));
     ++m_crits;
 
     float const overcrit = GetCritChance() - 100.0f;

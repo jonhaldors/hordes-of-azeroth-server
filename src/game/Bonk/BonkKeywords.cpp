@@ -54,6 +54,15 @@ void BonkRun::OnWeaponHit(Unit* victim, SpellEntry const* spell)
     if (slow != m_mastery.spellSlow.end())
         m_pendingSlows.emplace_back(victim->GetObjectGuid(), slow->second);
     QueueTalentStun(*owned, victim);
+    if (m_mastery.Has(BONK_CAPSTONE_TRUESHOT) && !GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK))
+    {
+        PendingKeyword mark;
+        mark.mob = victim->GetObjectGuid();
+        mark.keyword = BONK_KEYWORD_HUNTERS_MARK;
+        mark.stacks = 1;
+        mark.spellId = spell->Id;
+        m_pendingKeywords.push_back(mark);
+    }
 
     if (owned->weapon.HasFlag(BONK_WEAPON_FLAG_CONSUME))
     {

@@ -35,7 +35,7 @@ namespace
     float const BONK_STARFALL_RANGE           = 30.0f;
     size_t const BONK_STARFALL_STARS          = 3;
     size_t const BONK_ALIGNMENT_EXTRA_STARS   = 2;
-    float const BONK_PRIMAL_FURY_CAT_TAKEN    = 0.8f;
+    float const BONK_PRIMAL_FURY_BEAR_TAKEN   = 0.8f;
     float const BONK_HEART_OF_THE_WILD_PER_TREE = 0.15f;
     float const BONK_HEART_OF_THE_WILD_ATTACK = 0.65f;
     uint32 const BONK_SPELL_STARFALL_LOOK     = 2912;
@@ -471,7 +471,7 @@ void BonkRun::HitAsDruid(OwnedWeapon const& owned, SpellEntry const* spellInfo, 
     float const twice = GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_HIT_TWICE);
     if (twice > 0.0f && target->IsAlive() && roll_chance_f(twice))
         crit |= DealShamanHit(spellInfo, credit, target, damage);
-    bool const clawsBleed = m_druidForm == BonkDruidForm::Cat || (m_druidForm == BonkDruidForm::Bear && m_mastery.Has(BONK_CAPSTONE_PRIMAL_FURY));
+    bool const clawsBleed = m_druidForm == BonkDruidForm::Cat;
     if (crit && clawsBleed && target->IsAlive())
         ApplyWeaponKeyword(owned, target, BONK_KEYWORD_BLEED, BONK_CAT_CRIT_BLEED);
 }
@@ -882,11 +882,10 @@ void BonkRun::OnDruidStruck(Creature* attacker)
 
 uint32 BonkRun::ApplyDruidDamageTaken(uint32 damage) const
 {
-    if (m_druidForm == BonkDruidForm::Cat && m_mastery.Has(BONK_CAPSTONE_PRIMAL_FURY))
-        return std::max(1u, uint32(damage * BONK_PRIMAL_FURY_CAT_TAKEN));
     if (m_druidForm != BonkDruidForm::Bear)
         return damage;
-    return std::max(1u, uint32(damage * BONK_BEAR_TAKEN));
+    float const furious = m_mastery.Has(BONK_CAPSTONE_PRIMAL_FURY) ? BONK_PRIMAL_FURY_BEAR_TAKEN : 1.0f;
+    return std::max(1u, uint32(damage * BONK_BEAR_TAKEN * furious));
 }
 
 uint32 BonkRun::GetDruidPetFamily(OwnedWeapon const& owned) const
