@@ -706,7 +706,8 @@ int32 BonkRun::GetKeywordPoints(BonkKeywordInfo const& info) const
         case BONK_KEYWORD_AGONY:
         case BONK_KEYWORD_MOONFIRE:
         {
-            float const scale = (info.id == BONK_KEYWORD_POISON ? GetPoisonDamageScale() : 1.0f) + GetKeywordTalentDamage(info.id) / 100.0f;
+            float const scale = ((info.id == BONK_KEYWORD_POISON ? GetPoisonDamageScale() : 1.0f) + GetKeywordTalentDamage(info.id) / 100.0f) *
+                GetDotCardScale();
             return std::max(1, int32(GetMobHealth(GetMobLevel()) * info.valuePerStack * info.tickMs / IN_MILLISECONDS * scale));
         }
         default:

@@ -21,9 +21,6 @@ namespace
 {
     uint32 const BONK_TEXT_QUEST_BOARD = 900005;
 
-    uint32 const BONK_UNLOCK_BASE_PRICE = 2500;
-    uint32 const BONK_CARD_UNLOCK_TICKETS[MAX_BONK_RARITY] = { 8, 12, 18, 25, 35 };
-    uint32 const BONK_GLYPH_UNLOCK_TICKETS[MAX_BONK_RARITY] = { 10, 15, 20, 30, 40 };
 
     char const* const CATEGORY_KEYS[MAX_BONK_QUEST_CATEGORY] = { "slayer", "victory", "mastery", "challenge", "discovery", "collection" };
 
@@ -131,6 +128,8 @@ void BonkQuests::Load()
             case BONK_REWARD_TITLE:     rewardExists = m_titles.count(quest.rewardValue) != 0; break;
             case BONK_REWARD_CARD:      rewardExists = sBonkMgr.GetCard(quest.rewardValue) != nullptr; break;
             case BONK_REWARD_GLYPH:     rewardExists = sBonkMgr.GetGlyph(quest.rewardValue) != nullptr; break;
+            case BONK_REWARD_CARD_BAN:
+            case BONK_REWARD_GLYPH_BAN: rewardExists = quest.rewardValue != 0; break;
             default: break;
         }
         if (!rewardExists)
@@ -162,21 +161,6 @@ void BonkQuests::OnLogin(Player* player)
         } while (result->NextRow());
     }
 
-    std::set<uint64> owned;
-    uint32 paid = 0;
-    result = CharacterDatabase.PQuery("SELECT `type`, `id`, `paid` FROM `bonk_account_unlock` WHERE `account` = %u", account);
-    if (result)
-    {
-        do
-        {
-            Field* fields = result->Fetch();
-            BonkQuestReward const type = BonkQuestReward(fields[0].GetUInt8());
-            owned.insert(UnlockKey(type, fields[1].GetUInt32()));
-            if (fields[2].GetUInt8() && !IsTicketUnlock(type))
-                ++paid;
-        } while (result->NextRow());
-    }
-
     std::set<uint64> disabled;
     result = CharacterDatabase.PQuery("SELECT `type`, `id` FROM `bonk_account_disabled` WHERE `account` = %u", account);
     if (result)
@@ -191,8 +175,6 @@ void BonkQuests::OnLogin(Player* player)
     {
         std::lock_guard<std::mutex> guard(m_lock);
         m_accounts[account] = std::move(loaded);
-        m_owned[account] = std::move(owned);
-        m_paid[account] = paid;
         m_disabled[account] = std::move(disabled);
     }
 
@@ -235,19 +217,19 @@ bool BonkQuests::SetDisabled(uint32 account, BonkQuestReward type, uint32 id, bo
 {
     if (disabled && !IsTogglable(type))
     {
-        error = "Only Darkmoon Cards and Glyphs can be switched off.";
+        error = "Only Darkmoon Cards and Glyphs can be banned.";
         return false;
     }
     if (disabled && IsLocked(account, type, id))
     {
-        error = "You can only switch off Darkmoon Cards and Glyphs you have unlocked.";
+        error = "You can only ban Darkmoon Cards and Glyphs you have unlocked.";
         return false;
     }
-    if (disabled && GetDisabled(account).size() >= slots)
+    if (disabled && CountDisabled(account, type) >= slots)
     {
-        error = slots ? "You can only switch off " + std::to_string(slots) + (slots == 1 ? " Darkmoon Card or Glyph" : " Darkmoon Cards or Glyphs") +
-            ". More ranks of Stacked Deck at the Upgrades vendor let you switch off more." :
-            "Buy Stacked Deck at the Upgrades vendor to switch Darkmoon Cards and Glyphs off.";
+        char const* kind = type == BONK_REWARD_CARD ? "Darkmoon Card" : "Glyph";
+        error = slots ? "All your " + std::string(kind) + " ban slots are in use. Allow a banned one first, or earn another slot." :
+            "You have no " + std::string(kind) + " ban slots yet.";
         return false;
     }
     {
@@ -264,12 +246,43 @@ bool BonkQuests::SetDisabled(uint32 account, BonkQuestReward type, uint32 id, bo
     return true;
 }
 
-void BonkQuests::TrimDisabled(uint32 account, uint32 slots)
+void BonkQuests::TrimDisabled(uint32 account, BonkQuestReward type, uint32 slots)
 {
-    std::vector<std::pair<BonkQuestReward, uint32>> const disabled = GetDisabled(account);
+    std::vector<std::pair<BonkQuestReward, uint32>> kept;
+    for (auto const& off : GetDisabled(account))
+        if (off.first == type)
+            kept.push_back(off);
     std::string error;
-    for (size_t i = slots; i < disabled.size(); ++i)
-        SetDisabled(account, disabled[i].first, disabled[i].second, false, slots, error);
+    for (size_t i = slots; i < kept.size(); ++i)
+        SetDisabled(account, kept[i].first, kept[i].second, false, slots, error);
+}
+
+uint32 BonkQuests::CountDisabled(uint32 account, BonkQuestReward type) const
+{
+    uint32 count = 0;
+    for (auto const& off : GetDisabled(account))
+        if (off.first == type)
+            ++count;
+    return count;
+}
+
+std::vector<BonkQuest const*> BonkQuests::GetRewardQuests(BonkQuestReward type) const
+{
+    std::vector<BonkQuest const*> quests;
+    for (auto const& itr : m_quests)
+        if (itr.second.rewardType == type)
+            quests.push_back(&itr.second);
+    return quests;
+}
+
+bool BonkQuests::IsCompleted(uint32 account, uint32 questId) const
+{
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto itr = m_accounts.find(account);
+    if (itr == m_accounts.end())
+        return false;
+    auto progress = itr->second.find(questId);
+    return progress != itr->second.end() && progress->second.completed;
 }
 
 std::vector<std::pair<BonkQuestReward, uint32>> BonkQuests::GetDisabled(uint32 account) const
@@ -302,70 +315,7 @@ bool BonkQuests::IsLocked(uint32 account, BonkQuestReward type, uint32 id) const
         if (progress == itr->second.end() || !progress->second.completed)
             return true;
     }
-    return IsTicketUnlock(type) && !IsOwned(account, type, id);
-}
-
-bool BonkQuests::IsForSale(uint32 account, BonkQuestReward type, uint32 id) const
-{
-    if (!IsTicketUnlock(type) || !GetUnlockingQuest(type, id) || !IsLocked(account, type, id))
-        return false;
-    BonkQuest const* quest = GetUnlockingQuest(type, id);
-    std::lock_guard<std::mutex> guard(m_lock);
-    auto itr = m_accounts.find(account);
-    if (itr == m_accounts.end())
-        return false;
-    auto progress = itr->second.find(quest->id);
-    return progress != itr->second.end() && progress->second.completed;
-}
-
-bool BonkQuests::IsOwned(uint32 account, BonkQuestReward type, uint32 id) const
-{
-    std::lock_guard<std::mutex> guard(m_lock);
-    auto itr = m_owned.find(account);
-    return itr != m_owned.end() && itr->second.count(UnlockKey(type, id)) != 0;
-}
-
-uint32 BonkQuests::GetUnlockPrice(uint32 account, BonkQuestReward type, uint32 id) const
-{
-    switch (type)
-    {
-        case BONK_REWARD_WEAPON:
-        case BONK_REWARD_PASSIVE:
-            break;
-        case BONK_REWARD_CARD:
-        {
-            BonkCard const* card = sBonkMgr.GetCard(id);
-            return card ? BONK_CARD_UNLOCK_TICKETS[std::min<uint32>(card->rarity, MAX_BONK_RARITY - 1)] : 0;
-        }
-        case BONK_REWARD_GLYPH:
-        {
-            BonkGlyph const* glyph = sBonkMgr.GetGlyph(id);
-            return glyph ? BONK_GLYPH_UNLOCK_TICKETS[std::min<uint32>(glyph->rarity, MAX_BONK_RARITY - 1)] : 0;
-        }
-        default:
-            return 0;
-    }
-
-    float paid = 0.0f;
-    {
-        std::lock_guard<std::mutex> guard(m_lock);
-        auto itr = m_paid.find(account);
-        if (itr != m_paid.end())
-            paid = float(itr->second);
-    }
-    float const copper = BONK_UNLOCK_BASE_PRICE * (1.0f + 0.5f * paid + 0.05f * paid * paid);
-    return std::max(100u, uint32(copper / 100.0f + 0.5f) * 100);
-}
-
-void BonkQuests::Buy(uint32 account, BonkQuestReward type, uint32 id)
-{
-    {
-        std::lock_guard<std::mutex> guard(m_lock);
-        m_owned[account].insert(UnlockKey(type, id));
-        if (!IsTicketUnlock(type))
-            ++m_paid[account];
-    }
-    CharacterDatabase.PExecute("REPLACE INTO `bonk_account_unlock` (`account`, `type`, `id`, `paid`) VALUES (%u, %u, %u, 1)", account, uint32(type), id);
+    return false;
 }
 
 BonkQuest const* BonkQuests::GetUnlockingQuest(BonkQuestReward type, uint32 id) const
@@ -733,16 +683,22 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkCard const* card = sBonkMgr.GetCard(quest.rewardValue))
             {
                 *icon = card->icon;
-                return "Unlocks " + (card->name.compare(0, 13, "Darkmoon Card") == 0 ? card->name : "the Darkmoon Card " + card->name) + " at Sayge";
+                return "Unlocks " + (card->name.compare(0, 13, "Darkmoon Card") == 0 ? card->name : "the Darkmoon Card " + card->name);
             }
             break;
         case BONK_REWARD_GLYPH:
             if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(quest.rewardValue))
             {
                 *icon = glyph->icon;
-                return "Unlocks " + glyph->name + " at Sayge";
+                return "Unlocks " + glyph->name;
             }
             break;
+        case BONK_REWARD_CARD_BAN:
+            *icon = "INV_Misc_Ticket_Tarot_Stack_01";
+            return quest.rewardValue == 1 ? "A Darkmoon Card ban slot" : std::to_string(quest.rewardValue) + " Darkmoon Card ban slots";
+        case BONK_REWARD_GLYPH_BAN:
+            *icon = "INV_Misc_Ticket_Tarot_Stack_01";
+            return quest.rewardValue == 1 ? "A Glyph ban slot" : std::to_string(quest.rewardValue) + " Glyph ban slots";
         case BONK_REWARD_TITLE:
         {
             auto const title = m_titles.find(quest.rewardValue);

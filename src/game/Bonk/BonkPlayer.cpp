@@ -1154,67 +1154,6 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
     return true;
 }
 
-bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message)
-{
-    std::string name;
-    switch (type)
-    {
-        case BONK_REWARD_WEAPON:
-            if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(id))
-                name = weapon->name;
-            break;
-        case BONK_REWARD_PASSIVE:
-            if (BonkPassive const* passive = sBonkMgr.GetPassive(id))
-                name = passive->name;
-            break;
-        case BONK_REWARD_CARD:
-            if (BonkCard const* card = sBonkMgr.GetCard(id))
-                name = card->name;
-            break;
-        case BONK_REWARD_GLYPH:
-            if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
-                name = glyph->name;
-            break;
-        default:
-            break;
-    }
-    if (name.empty())
-    {
-        message = "You can't unlock that.";
-        return false;
-    }
-    if (BonkQuests::IsTicketUnlock(type) && !IsVisitingShop(BONK_SHOP_TALENTS))
-    {
-        message = type == BONK_REWARD_CARD ? "Visit Sayge at the Inn to unlock Darkmoon Cards." : "Visit Sayge at the Inn to unlock Glyphs.";
-        return false;
-    }
-    if (!BonkQuests::IsTicketUnlock(type) && !IsAtSpellbook())
-    {
-        message = "Visit the Spellbook Keeper at the Inn to unlock " + name + ".";
-        return false;
-    }
-
-    uint32 const account = GetProgressAccount();
-    if (!sBonkQuests.IsForSale(account, type, id))
-    {
-        if (!sBonkQuests.IsLocked(account, type, id))
-            message = "You already have " + name + ".";
-        else if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(type, id))
-            message = "Finish the quest \"" + quest->name + "\" to unlock " + name + ".";
-        return false;
-    }
-
-    uint32 const price = sBonkQuests.GetUnlockPrice(account, type, id);
-    bool const paid = BonkQuests::IsTicketUnlock(type) ? SpendShards(price, message) : Spend(price, message);
-    if (!paid)
-        return false;
-    sBonkQuests.Buy(account, type, id);
-    message = name + " unlocked!";
-    if (BonkQuests::IsTicketUnlock(type))
-        SendShop(false);
-    return true;
-}
-
 bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
 {
     BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
@@ -2225,14 +2164,46 @@ void BonkPlayer::SendAddon(std::string const& line) const
     ChatHandler(m_player).SendSysMessage(("BONK~" + line).c_str());
 }
 
-uint32 BonkPlayer::GetPoolToggleSlots() const
+std::vector<BonkPlayer::BanSource> BonkPlayer::GetBanSources(BonkQuestReward type) const
 {
-    return uint32(GetUpgradeUtility(BONK_UTILITY_POOL_TOGGLES));
+    bool const cards = type == BONK_REWARD_CARD;
+    uint32 const account = GetProgressAccount();
+    std::vector<BanSource> sources;
+
+    for (BonkQuest const* quest : sBonkQuests.GetRewardQuests(cards ? BONK_REWARD_CARD_BAN : BONK_REWARD_GLYPH_BAN))
+        for (uint32 i = 0; i < quest->rewardValue; ++i)
+            sources.push_back({ "Quest: " + quest->name, quest->description, sBonkQuests.IsCompleted(account, quest->id), 0 });
+
+    uint32 const cleared = GetMythicFloorsCleared();
+    for (uint32 floor : cards ? std::vector<uint32>{ 5, 10 } : std::vector<uint32>{ 15, 20 })
+        sources.push_back({ "Mythic floor " + std::to_string(floor), "Clear floor " + std::to_string(floor), cleared >= floor, 0 });
+
+    BonkTalentEffect const effect = cards ? BONK_TALENT_CARD_BANS : BONK_TALENT_GLYPH_BANS;
+    for (auto const& itr : sBonkMgr.GetTalents())
+    {
+        BonkTalent const& talent = itr.second;
+        if (talent.effect != effect)
+            continue;
+        uint8 const owned = GetTalentRank(talent.id);
+        for (uint8 rank = 0; rank < talent.maxRank; ++rank)
+            sources.push_back({ "Sayge: " + talent.name, "", rank < owned, talent.GetCost(rank) });
+    }
+    return sources;
+}
+
+uint32 BonkPlayer::GetBanSlots(BonkQuestReward type) const
+{
+    uint32 slots = 0;
+    for (BanSource const& source : GetBanSources(type))
+        if (source.earned)
+            ++slots;
+    return slots;
 }
 
 void BonkPlayer::TrimPoolToggles() const
 {
-    sBonkQuests.TrimDisabled(GetProgressAccount(), GetPoolToggleSlots());
+    sBonkQuests.TrimDisabled(GetProgressAccount(), BONK_REWARD_CARD, GetBanSlots(BONK_REWARD_CARD));
+    sBonkQuests.TrimDisabled(GetProgressAccount(), BONK_REWARD_GLYPH, GetBanSlots(BONK_REWARD_GLYPH));
 }
 
 void BonkPlayer::SendGlyphInfo() const

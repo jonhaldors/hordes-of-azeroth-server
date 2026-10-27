@@ -4031,7 +4031,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
     float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower);
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
-        GetPaladinDamageMultiplier(victim);
+        GetPaladinDamageMultiplier(victim) * GetCastChargeMultiplier(spell, victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim) * minionScale;
 
@@ -5025,10 +5025,6 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     total += m_stress.bonuses[effect];
     total += m_cardStats[effect];
     total += m_shrineBonuses[effect];
-    if (effect == BONK_PASSIVE_HASTE && m_glyphHasteUntilMs > m_totalMs)
-        total += GetGlyphValue(BONK_GLYPH_KILL_HASTE, 1);
-    if (effect == BONK_PASSIVE_HASTE && IsLastStand())
-        total += GetGlyphValue(BONK_GLYPH_LAST_STAND, 1);
     if (effect == BONK_PASSIVE_MOVE_SPEED)
         total -= GetGlyphValue(BONK_GLYPH_TURTLE, 2);
     if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && GetGlyph(BONK_GLYPH_HALF_ARMOR))
@@ -5065,7 +5061,7 @@ float BonkRun::GetStat(BonkPassiveEffect effect) const
 {
     float const total = GetPassiveTotal(effect);
     if (effect == BONK_PASSIVE_HASTE)
-        return CurveHaste(total);
+        return CurveHaste(total) + GetBurstHaste();
     if (effect == BONK_PASSIVE_AREA)
         return CurveStat(total, BONK_MAX_AREA);
     float const cap = GetStatCap(effect);
@@ -5131,7 +5127,7 @@ float BonkRun::GetWeaponDurationScale(OwnedWeapon const& owned) const
 
 float BonkRun::GetWeaponHasteRate(OwnedWeapon const& owned) const
 {
-    return 1.0f + CurveHaste(GetRawWeaponHaste(owned)) / 100.0f;
+    return 1.0f + (CurveHaste(GetRawWeaponHaste(owned)) + GetBurstHaste()) / 100.0f;
 }
 
 uint32 BonkRun::GetWeaponCooldown(OwnedWeapon const& owned) const
@@ -5140,7 +5136,7 @@ uint32 BonkRun::GetWeaponCooldown(OwnedWeapon const& owned) const
     auto itr = m_mastery.spellCooldown.find(GetRootWeapon(owned.weapon));
     if (itr != m_mastery.spellCooldown.end())
         mastery = itr->second;
-    float const rate = 1.0f + CurveHaste(GetRawWeaponHaste(owned) + mastery) / 100.0f;
+    float const rate = 1.0f + (CurveHaste(GetRawWeaponHaste(owned) + mastery) + GetBurstHaste()) / 100.0f;
     float const steady = IsSteadyAiming(owned) ? BONK_STEADY_RATE : 1.0f;
     float const trigger = 1.0f - GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_TRIGGER_COOLDOWN) / 100.0f;
     return std::max(200u, uint32(owned.weapon.cooldownMs * trigger / (rate * steady)));
@@ -6634,6 +6630,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     if (!spellInfo)
         return;
     owned.killed = false;
+    RollCastCharges(owned);
     TalentCastScope talentCast(*this, owned);
 
     if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo) || FireWarlockSpell(owned, spellInfo) ||
@@ -10814,10 +10811,7 @@ std::string BonkRun::DescribeEvolutionChance(OwnedWeapon const& owned, uint32& c
         if (!sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, evolved->id))
             continue;
         BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(BONK_REWARD_WEAPON, evolved->id);
-        if (sBonkQuests.IsForSale(account, BONK_REWARD_WEAPON, evolved->id))
-            locks.push_back("Buy " + evolved->name + " at the Spellbook to unlock it.");
-        else
-            locks.push_back((quest ? "Finish the quest \"" + quest->name + "\"" : std::string("Finish its quest")) + " to unlock " + evolved->name + ".");
+        locks.push_back((quest ? "Finish the quest \"" + quest->name + "\"" : std::string("Finish its quest")) + " to unlock " + evolved->name + ".");
     }
 
     if (!CanEvolve(owned))

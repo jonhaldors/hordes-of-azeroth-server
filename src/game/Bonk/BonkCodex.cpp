@@ -34,11 +34,6 @@ void BonkCodex::Send(Player* player, std::string const& npc)
     auto lockState = [account](BonkQuestReward type, uint32 id, uint32& price)
     {
         price = 0;
-        if (sBonkQuests.IsForSale(account, type, id))
-        {
-            price = sBonkQuests.GetUnlockPrice(account, type, id);
-            return "2";
-        }
         return sBonkQuests.IsLocked(account, type, id) ? "1" : "0";
     };
 
@@ -82,9 +77,16 @@ void BonkCodex::Send(Player* player, std::string const& npc)
     }
 
     bonk->TrimPoolToggles();
-    uint32 const slots = bonk->GetPoolToggleSlots();
-    bonk->SendAddon("cdxpool~" + std::string(slots ? "1" : "0") + "~" + std::to_string(sBonkQuests.GetDisabled(account).size()) + "~" +
-        std::to_string(slots));
+    for (BonkQuestReward type : { BONK_REWARD_CARD, BONK_REWARD_GLYPH })
+    {
+        char const* kind = type == BONK_REWARD_CARD ? "c" : "g";
+        bonk->SendAddon("cdxpool~" + std::string(kind) + "~" + std::to_string(sBonkQuests.CountDisabled(account, type)) + "~" +
+            std::to_string(bonk->GetBanSlots(type)));
+        for (BonkPlayer::BanSource const& source : bonk->GetBanSources(type))
+            bonk->SendAddon("cdxban~" + std::string(kind) + "~" + (source.earned ? "1" : "0") + "~" + std::to_string(source.tickets) + "~" +
+                source.label + "~" + source.detail);
+    }
+    bonk->SendAddon("cdxtickets~" + std::to_string(bonk->GetShards()));
     for (auto const& off : sBonkQuests.GetDisabled(account))
     {
         char const* kind = off.first == BONK_REWARD_WEAPON ? "w" : off.first == BONK_REWARD_PASSIVE ? "p" : off.first == BONK_REWARD_CARD ? "c" : "g";

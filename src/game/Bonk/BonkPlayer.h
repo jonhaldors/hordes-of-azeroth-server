@@ -112,7 +112,6 @@ class BonkPlayer
         bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
         uint32 CountDarkFortunes() const { return uint32(m_enabledTalents.size()); }
         bool BuyUpgrade(uint32 upgradeId, std::string& message);
-        bool BuyUnlock(BonkQuestReward type, uint32 id, std::string& message);
         void VisitSpellbook(Creature const* keeper);
         bool BuyTalent(uint32 talentId, std::string& message);
         bool ResetUpgrades(std::string& message);
@@ -231,7 +230,15 @@ class BonkPlayer
         void Notify(std::string const& text) const;
         void NotifyFind(std::string const& text) const;
         void SendGlyphInfo() const;
-        uint32 GetPoolToggleSlots() const;
+        struct BanSource
+        {
+            std::string label;
+            std::string detail;
+            bool earned = false;
+            uint32 tickets = 0;
+        };
+        std::vector<BanSource> GetBanSources(BonkQuestReward type) const;
+        uint32 GetBanSlots(BonkQuestReward type) const;
         void TrimPoolToggles() const;
 
         bool Dash();

@@ -1,6 +1,7 @@
 #include "BonkRunStats.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
+#include "BonkQuests.h"
 #include "BonkRun.h"
 #include "CellImpl.h"
 #include "Creature.h"
@@ -554,7 +555,11 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (!owner)
             run->OnTalentDamage(victim, spellProto);
         if (damage >= health && !victim->GetInvincibilityHpThreshold())
+        {
             run->OnKillingBlow(victim);
+            if (dotSpellId)
+                sBonkQuests.OnProgress(player, BONK_QUEST_DOT_KILLS, 0, 1);
+        }
         else
             run->OnWeaponHit(victim, spellProto);
         if (owner && swing)

@@ -335,35 +335,6 @@ bool ChatHandler::HandleBonkVaultCommand(char* args)
     return true;
 }
 
-bool ChatHandler::HandleBonkUnlockCommand(char* args)
-{
-    char* kind = ExtractLiteralArg(&args);
-    uint32 id = 0;
-    BonkQuestReward type = MAX_BONK_REWARD;
-    if (kind && !strcmp(kind, "w"))
-        type = BONK_REWARD_WEAPON;
-    else if (kind && !strcmp(kind, "p"))
-        type = BONK_REWARD_PASSIVE;
-    else if (kind && !strcmp(kind, "c"))
-        type = BONK_REWARD_CARD;
-    else if (kind && !strcmp(kind, "g"))
-        type = BONK_REWARD_GLYPH;
-    if (type == MAX_BONK_REWARD || !ExtractUInt32(&args, id))
-    {
-        SendSysMessage("Use .bonk unlock w|p|c|g <id>.");
-        SetSentErrorMessage(true);
-        return false;
-    }
-
-    Player* player = m_session->GetPlayer();
-    BonkPlayer* bonk = player->GetBonkPlayer();
-    std::string message;
-    bool const bought = bonk->BuyUnlock(type, id, message);
-    bonk->Notify(message);
-    BonkCodex::Send(player, "");
-    return bought;
-}
-
 bool ChatHandler::HandleBonkPoolCommand(char* args)
 {
     char* kind = ExtractLiteralArg(&args);
@@ -396,7 +367,7 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
     }
     std::string error;
     bool const done = sBonkQuests.SetDisabled(player->GetBonkPlayer()->GetProgressAccount(), type, id, !strcmp(state, "off"),
-        player->GetBonkPlayer()->GetPoolToggleSlots(), error);
+        player->GetBonkPlayer()->GetBanSlots(type), error);
     if (!done)
         player->GetBonkPlayer()->Notify(error);
     BonkCodex::Send(player, "");

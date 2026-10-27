@@ -2118,7 +2118,7 @@ void BonkMobAI::DamageDeal(Unit* victim, uint32& damage)
             }
             float const multiplier = GetHitScale(run);
             run->OnHeroStruck(m_creature);
-            damage = std::max(1u, uint32(damage * multiplier));
+            damage = std::max(1u, uint32(damage * multiplier * run->GetChampionDamageTaken(m_kind)));
             if (HasAffix(AFFIX_NECROTIC))
                 run->AddNecroticStack();
             damage = run->MitigateDamage(damage);

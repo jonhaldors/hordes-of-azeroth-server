@@ -215,6 +215,9 @@ class BonkRun
         void ModifyHeroHit(Unit* victim, uint32& damage);
         void OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell);
         bool GiveCard(uint32 cardId, std::string& error);
+        static float GetCopyWeight(uint32 copy);
+        static float GetCopySum(uint32 copies);
+        float GetChampionDamageTaken(BonkSpawnKind kind) const;
         bool ForceEvolve(uint32 weaponId, std::string& error);
         bool GivePassive(uint32 passiveId, std::string& error);
 
@@ -355,6 +358,8 @@ class BonkRun
             bool killed = false;
             bool held = false;
             bool pieResync = false;
+            uint32 castCharges = 0;
+            uint32 castChargesSpent = 0;
             mutable uint32 shownIntervalMs = 0;
             mutable std::string shownDamage;
             mutable std::string shownTip;
@@ -932,7 +937,12 @@ class BonkRun
         void UpdateCards(uint32 diff);
         void HealHero(uint32 amount, uint32 textSpellId = 0);
         void RegenerateHero(uint32 amount);
-        bool RollCardProc(BonkCardEffect effect, uint32 spellId);
+        void RollCastCharges(OwnedWeapon& owned);
+        bool IsCastCharged(OwnedWeapon const& owned, BonkCardEffect effect) const { return (owned.castCharges & (1u << effect)) != 0; }
+        bool SpendCastCharge(OwnedWeapon& owned, BonkCardEffect effect);
+        float GetCastChargeMultiplier(SpellEntry const* spell, Unit const* victim) const;
+        float GetBurstHaste() const;
+        float GetDotCardScale() const;
         bool IsCardImmune() const { return m_cardImmuneUntilMs > m_totalMs; }
         void OnCardHitTaken();
         void OnShieldBroken();
@@ -952,7 +962,7 @@ class BonkRun
         int32 m_cardCooldowns[MAX_BONK_CARD_EFFECT] = {};
         uint32 m_cardTickMs = 0;
         bool m_regenerating = false;
-        std::map<uint64, uint32> m_cardRollMs;
+        uint32 m_cardHasteUntilMs = 0;
         uint32 m_cardImmuneUntilMs = 0;
         uint32 m_cardSwiftUntilMs = 0;
         uint32 m_cardSurgeUntilMs = 0;
