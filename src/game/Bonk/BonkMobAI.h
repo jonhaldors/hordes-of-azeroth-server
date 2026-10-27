@@ -150,6 +150,8 @@ class BonkMobAI : public CreatureAI
         void StartLanes(Player* owner);
         void EruptLaneWave(BonkRun* run);
         void UpdateBossBlink(uint32 diff, Player* owner, BonkRun* run);
+        void StartBossBlink(Player* owner);
+        void FinishBossBlink(Player* owner, BonkRun* run);
         bool BlinkToHero(Player* owner, BonkRun* run);
         void PlayCastKit(BonkMobAbility const& ability, Player* owner);
         void LaunchBarrage(Player* owner, BonkRun* run, BonkEnemyHit const& hit, uint32 count, float size, uint32 warnMs, uint32 missileSpell = 0);
@@ -228,7 +230,7 @@ class BonkMobAI : public CreatureAI
         float m_laneAngle = 0.0f;
         bool m_lanesAnnounced = false;
         uint32 m_bossBlinkFarMs = 0;
-        bool m_bossBlinkAnnounced = false;
+        bool m_bossBlinkCharging = false;
         bool m_frozen = false;
         bool m_cried = false;
         bool m_areaWinding = false;

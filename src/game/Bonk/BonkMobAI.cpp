@@ -296,6 +296,10 @@ namespace
     int32 const BONK_LANE_FIRST_MS      = 4000;
     float const BONK_BLINK_LANDING      = 6.0f;
     int32 const BONK_BLINK_RETRY_MS     = 1000;
+    uint32 const BONK_BLINK_WINDUP_MS   = 500;
+    uint32 const BONK_BLINK_KIT_HOLD_MS = 1000;
+    uint32 const BONK_KIT_BLINK_LEAVE   = 267;
+    uint32 const BONK_KIT_BLINK_ARRIVE  = 3394;
 
     enum BossTune : uint8
     {
@@ -2370,6 +2374,11 @@ void BonkMobAI::EruptLaneWave(BonkRun* run)
 
 void BonkMobAI::UpdateBossBlink(uint32 diff, Player* owner, BonkRun* run)
 {
+    if (m_bossBlinkCharging)
+    {
+        FinishBossBlink(owner, run);
+        return;
+    }
     uint32 const delayMs = TuneMs(TUNE_BLINK_DELAY);
     float const range = Tune(TUNE_FAR_RANGE);
     if (!delayMs || range <= 0.0f || m_creature->IsWithinDistInMap(owner, range))
@@ -2381,18 +2390,28 @@ void BonkMobAI::UpdateBossBlink(uint32 diff, Player* owner, BonkRun* run)
     if (m_bossBlinkFarMs < delayMs || IsBusyWindingUp() || IsDancing() || m_chargeState != CHARGE_NONE || m_landingTimer > 0 ||
         m_creature->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED))
         return;
+    StartBossBlink(owner);
+}
+
+void BonkMobAI::StartBossBlink(Player* owner)
+{
+    m_bossBlinkCharging = true;
+    m_creature->SetFacingToObject(owner);
+    m_creature->SendPlaySpellVisualKit(BONK_KIT_BLINK_LEAVE);
+    Hold(BONK_BLINK_WINDUP_MS);
+    owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " blinks to you when you stay out of reach.");
+}
+
+void BonkMobAI::FinishBossBlink(Player* owner, BonkRun* run)
+{
+    m_bossBlinkCharging = false;
     if (!BlinkToHero(owner, run))
     {
-        m_bossBlinkFarMs = delayMs - BONK_BLINK_RETRY_MS;
+        m_bossBlinkFarMs = TuneMs(TUNE_BLINK_DELAY) - BONK_BLINK_RETRY_MS;
         return;
     }
     m_bossBlinkFarMs = 0;
     m_farMs = 0;
-    if (!m_bossBlinkAnnounced)
-    {
-        m_bossBlinkAnnounced = true;
-        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " blinks to you when you stay out of reach.");
-    }
 }
 
 bool BonkMobAI::BlinkToHero(Player* owner, BonkRun* run)
@@ -2406,7 +2425,8 @@ bool BonkMobAI::BlinkToHero(Player* owner, BonkRun* run)
 
     uint32 const warnMs = std::max(250u, TuneMs(TUNE_BLINK_WARN));
     float const radius = std::max(1.0f, Tune(TUNE_BLINK_RADIUS));
-    ShowArrivalFlash();
+    if (!run->ShowKitOnStandIn(BONK_KIT_BLINK_ARRIVE, x, y, z, BONK_BLINK_KIT_HOLD_MS))
+        m_creature->SendPlaySpellVisualKit(BONK_KIT_BLINK_ARRIVE);
     m_creature->NearTeleportTo(x, y, z, m_creature->GetAngle(owner));
     Hold(warnMs);
     BonkEnemyHit const hit = MakeHit(run, 0, uint32(std::max(1.0f, GetMeleeHit() * Tune(TUNE_BLINK_DAMAGE))));
