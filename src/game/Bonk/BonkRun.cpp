@@ -80,6 +80,8 @@ namespace
     uint32 const BONK_STAGE_CROWD_GROWTH_STAGES = 2;
     float const BONK_MILESTONE_VETERAN_CHANCE = 5.0f;
     float const BONK_VETERAN_HEALTH        = 2.5f;
+    float const BONK_ARMOR_HALF            = 200.0f;
+    float const BONK_ARMOR_MAX_REDUCTION   = 0.6f;
     float const BONK_VETERAN_DAMAGE        = 1.25f;
     float const BONK_VETERAN_REWARD        = 3.5f;
     float const BONK_VETERAN_SIZE          = 1.2f;
@@ -2071,6 +2073,8 @@ float BonkRun::GetStageCrowdFloor() const
 
 float BonkRun::GetStageCrowdScale() const
 {
+    if (m_tier.stageCompound)
+        return 1.0f;
     return 1.0f + BONK_STAGE_CROWD_GROWTH * float(std::min(m_stage > 1 ? m_stage - 1 : 0, BONK_STAGE_CROWD_GROWTH_STAGES));
 }
 
@@ -3433,14 +3437,25 @@ float BonkRun::GetMobHealth(uint32 level) const
     return 40.0f * level;
 }
 
+float BonkRun::CompoundStageScale(uint32 stage, float growth, float lateGrowth, uint32 knee)
+{
+    uint32 const steps = stage > 1 ? stage - 1 : 0;
+    uint32 const early = knee ? std::min(steps, knee - 1) : steps;
+    return std::pow(1.0f + growth, float(early)) * std::pow(1.0f + lateGrowth, float(steps - early));
+}
+
 float BonkRun::TierHealthScale(BonkTier const& tier, uint32 stage)
 {
+    if (tier.stageCompound)
+        return tier.healthMultiplier * CompoundStageScale(stage, tier.stageHealthGrowth, tier.lateHealthGrowth, tier.floorKnee);
     float const stages = float(stage - 1);
     return tier.healthMultiplier * (1.0f + tier.stageHealthGrowth * stages + tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f));
 }
 
 float BonkRun::TierDamageScale(BonkTier const& tier, uint32 stage)
 {
+    if (tier.stageCompound)
+        return tier.damageMultiplier * CompoundStageScale(stage, tier.stageDamageGrowth, tier.lateDamageGrowth, tier.floorKnee);
     float const stages = float(stage - 1);
     return tier.damageMultiplier * (1.0f + tier.stageDamageGrowth * stages + tier.stageDamageAccel * stages * std::max(0.0f, stages - 1.0f));
 }
@@ -3482,7 +3497,8 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     if (float const armor = std::max(0.0f, GetStat(BONK_PASSIVE_ARMOR)))
     {
         uint32 const before = damage;
-        damage = std::max(1u, uint32(damage / (1.0f + armor / 100.0f)));
+        float const reduction = std::min(BONK_ARMOR_MAX_REDUCTION, armor / (armor + BONK_ARMOR_HALF));
+        damage = std::max(1u, uint32(damage * (1.0f - reduction)));
         m_armorUnreported += before - damage;
     }
 

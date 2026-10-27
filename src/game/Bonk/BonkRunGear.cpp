@@ -97,10 +97,10 @@ namespace
     float const BONK_GEAR_CHANCE_ELITE     = 20.0f;
     float const BONK_GEAR_CHANCE_PER_AFFIX = 5.0f;
     float const BONK_GEAR_STAGE_UPGRADE    = 25.0f;
-    float const BONK_GEAR_LEGENDARY_CHANCE = 10.0f;
-    float const BONK_GEAR_LEGENDARY_PER_STAGE = 2.0f;
-    float const BONK_GEAR_LEGENDARY_PER_MILESTONE = 5.0f;
-    float const BONK_GEAR_LEGENDARY_MAX    = 40.0f;
+    float const BONK_GEAR_LEGENDARY_CHANCE = 4.0f;
+    float const BONK_GEAR_LEGENDARY_PER_STAGE = 1.0f;
+    float const BONK_GEAR_LEGENDARY_PER_MILESTONE = 2.0f;
+    float const BONK_GEAR_LEGENDARY_MAX    = 20.0f;
     float const BONK_INVASION_UPGRADE_CHANCE = 50.0f;
 
     struct GearOdds

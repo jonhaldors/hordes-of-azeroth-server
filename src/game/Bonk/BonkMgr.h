@@ -256,6 +256,10 @@ struct BonkTier
     float stageDamageGrowth = 0.25f;
     float stageHealthAccel = 0.05f;
     float stageDamageAccel = 0.05f;
+    bool stageCompound = false;
+    uint32 floorKnee = 0;
+    float lateHealthGrowth = 0.0f;
+    float lateDamageGrowth = 0.0f;
     float minAliveMultiplier = 1.0f;
     float openingCrowd = 1.0f;
     uint32 openingMs = 0;
