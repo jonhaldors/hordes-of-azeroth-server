@@ -2050,6 +2050,21 @@ void BonkPlayer::SendGearTabs(Creature const* vendor) const
     SendAddon(line);
 }
 
+void BonkPlayer::SendRefitOffer() const
+{
+    std::vector<Item*> const foreign = GetForeignTierPieces();
+    SendAddon("qmrefit~" + std::to_string(foreign.size()) + "~" + std::to_string(GetTierExchangeFee(foreign)));
+}
+
+void BonkPlayer::RefitAtQuartermaster()
+{
+    Creature* vendor = m_player->FindNearestCreature(BONK_TIER_VENDOR, BONK_GEAR_VENDOR_RANGE);
+    if (!vendor)
+        return;
+    ExchangeTierPieces();
+    m_player->GetSession()->SendListInventory(vendor->GetObjectGuid());
+}
+
 void BonkPlayer::SelectGearTab(uint32 group)
 {
     Creature* vendor = m_player->FindNearestCreature(BONK_GEAR_VENDOR, BONK_GEAR_VENDOR_RANGE);

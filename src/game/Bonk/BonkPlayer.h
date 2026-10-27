@@ -72,6 +72,8 @@ class BonkPlayer
         void ExchangeTierPieces();
         void SendGearTabs(Creature const* vendor) const;
         void SelectGearTab(uint32 group);
+        void SendRefitOffer() const;
+        void RefitAtQuartermaster();
         std::string GetUnlockHint(BonkTier const& tier) const;
         void RecordStage(uint32 tierId, uint32 stage);
 

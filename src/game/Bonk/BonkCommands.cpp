@@ -421,6 +421,11 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
         m_session->GetPlayer()->GetBonkPlayer()->SelectGearTab(uint32(atoi(tab.c_str() + 4)));
         return true;
     }
+    if (tab == "refit")
+    {
+        m_session->GetPlayer()->GetBonkPlayer()->RefitAtQuartermaster();
+        return true;
+    }
 
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)

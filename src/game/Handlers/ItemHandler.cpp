@@ -729,6 +729,7 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid, uint8 menu_type)
         if (bonk->IsTierVendor(pCreature))
         {
             bonk->SendAddon("quartermaster~" + std::to_string(bonk->GetStockTier()));
+            bonk->SendRefitOffer();
             std::vector<uint32> const stock = bonk->GetTierStock();
             WorldPacket data(SMSG_LIST_INVENTORY, (8 + 1 + stock.size() * 7 * 4));
             data << ObjectGuid(vendorguid);
