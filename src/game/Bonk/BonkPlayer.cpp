@@ -2424,13 +2424,12 @@ namespace
         if (tier.key != "mythic")
             return "";
         std::vector<std::string> rewards;
-        bool const milestone = floor % BONK_MYTHIC_MILESTONE_FLOORS == 0 && floor <= BONK_MYTHIC_MILESTONE_FLOORS * 4;
         if (floor % BONK_FLOORS_PER_TALENT_POINT == 0 && floor / BONK_FLOORS_PER_TALENT_POINT <= BONK_FLOOR_TALENT_POINTS_MAX)
             rewards.push_back("+1 talent point");
-        if (milestone)
+        if (uint32 const tickets = GetFloorFirstClearTickets(floor))
+            rewards.push_back(FormatBonkShards(tickets));
+        if (IsMythicMilestoneFloor(floor))
             rewards.push_back("increased legendary drop chance");
-        else if (floor % 2 == 1)
-            rewards.push_back(FormatBonkShards(BONK_FLOOR_TICKETS_BASE + floor / 2));
         if (floor % BONK_TRAINING_FLOORS_PER_RANK == 0 && floor / BONK_TRAINING_FLOORS_PER_RANK <= BONK_TRAINING_MYTHIC_RANKS)
             rewards.push_back("Account Training rank cap +1");
         std::string text;

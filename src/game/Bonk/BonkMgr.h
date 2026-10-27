@@ -1013,6 +1013,20 @@ uint32 const BONK_FLOOR_TALENT_POINTS_MAX = 10;
 uint32 const BONK_MYTHIC_MILESTONE_FLOORS = 5;
 float const BONK_FLOOR_GOLD_GROWTH = 0.1f;
 uint32 const BONK_FLOOR_TICKETS_BASE = 3;
+uint32 const BONK_MILESTONE_TICKET_FACTOR = 2;
+
+inline bool IsMythicMilestoneFloor(uint32 floor)
+{
+    return floor % BONK_MYTHIC_MILESTONE_FLOORS == 0 && floor <= BONK_MYTHIC_MILESTONE_FLOORS * 4;
+}
+
+inline uint32 GetFloorFirstClearTickets(uint32 floor)
+{
+    uint32 const tickets = BONK_FLOOR_TICKETS_BASE + floor / 2;
+    if (IsMythicMilestoneFloor(floor))
+        return tickets * BONK_MILESTONE_TICKET_FACTOR;
+    return floor % 2 == 1 ? tickets : 0;
+}
 float const BONK_DETERMINATION_PER_STACK = 3.0f;
 
 struct BonkUpgrade

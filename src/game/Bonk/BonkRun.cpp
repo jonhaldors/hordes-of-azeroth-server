@@ -4751,14 +4751,13 @@ void BonkRun::RewardMythicFloor()
         return;
 
     std::string const floor = "Mythic floor " + std::to_string(m_stage);
-    if (m_stage % BONK_MYTHIC_MILESTONE_FLOORS == 0 && m_stage <= BONK_MYTHIC_MILESTONE_FLOORS * 4)
-        bonk->Notify("You cleared " + floor + " for the first time! Legendary gear drops more often from now on.");
-    else if (m_stage % 2 == 1)
-    {
-        uint32 const tickets = BONK_FLOOR_TICKETS_BASE + m_stage / 2;
+    uint32 const tickets = GetFloorFirstClearTickets(m_stage);
+    if (tickets)
         bonk->AddShards(tickets);
+    if (IsMythicMilestoneFloor(m_stage))
+        bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "! Legendary gear drops more often from now on.");
+    else if (tickets)
         bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "!");
-    }
 
     if (m_stage % BONK_TRAINING_FLOORS_PER_RANK == 0 && bonk->IsTierCleared("heroic") &&
         m_stage / BONK_TRAINING_FLOORS_PER_RANK <= BONK_TRAINING_MYTHIC_RANKS)
