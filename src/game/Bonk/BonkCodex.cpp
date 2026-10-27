@@ -4,6 +4,7 @@
 #include "BonkQuests.h"
 #include "BonkRun.h"
 #include "Creature.h"
+#include "CreatureAI.h"
 #include "Database/DatabaseEnv.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
@@ -238,6 +239,87 @@ void BonkCodex::SendKeywordGlossary(BonkPlayer* bonk)
     SendTermGlossary(bonk);
 }
 
+namespace
+{
+    uint32 const BONK_SHELF_BROWSE_MS = 10000;
+    uint32 const BONK_SHELF_KNEEL_MS  = 4000;
+    uint32 const BONK_SHELF_PONDER_MS = 3000;
+
+    class BonkShelfKeeperAI : public CreatureAI
+    {
+        public:
+            explicit BonkShelfKeeperAI(Creature* creature) : CreatureAI(creature)
+            {
+                Browse();
+            }
+
+            void MoveInLineOfSight(Unit*) override {}
+            void AttackStart(Unit*) override {}
+            void EnterEvadeMode() override {}
+
+            void UpdateAI(uint32 const diff) override
+            {
+                if (m_timer > diff)
+                {
+                    m_timer -= diff;
+                    return;
+                }
+                switch (m_step)
+                {
+                    case STEP_BROWSE:
+                        Kneel();
+                        break;
+                    case STEP_KNEEL:
+                        Ponder();
+                        break;
+                    default:
+                        Browse();
+                        break;
+                }
+            }
+
+        private:
+            enum Step
+            {
+                STEP_BROWSE,
+                STEP_KNEEL,
+                STEP_PONDER
+            };
+
+            void Browse()
+            {
+                m_creature->SetStandState(UNIT_STAND_STATE_STAND);
+                m_creature->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_USESTANDING_NOSHEATHE);
+                m_step = STEP_BROWSE;
+                m_timer = BONK_SHELF_BROWSE_MS;
+            }
+
+            void Kneel()
+            {
+                m_creature->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_ONESHOT_NONE);
+                m_creature->SetStandState(UNIT_STAND_STATE_KNEEL);
+                m_step = STEP_KNEEL;
+                m_timer = BONK_SHELF_KNEEL_MS;
+            }
+
+            void Ponder()
+            {
+                m_creature->SetStandState(UNIT_STAND_STATE_STAND);
+                m_creature->HandleEmote(EMOTE_ONESHOT_QUESTION);
+                m_step = STEP_PONDER;
+                m_timer = BONK_SHELF_PONDER_MS;
+            }
+
+            Step m_step = STEP_BROWSE;
+            uint32 m_timer = 0;
+    };
+}
+
+CreatureAI* GetAI_npc_bonk_codex(Creature* creature)
+{
+    return new BonkShelfKeeperAI(creature);
+}
+
 bool GossipHello_npc_bonk_codex(Player* player, Creature* creature)
 {
     player->GetBonkPlayer()->VisitSpellbook(creature);
@@ -261,6 +343,7 @@ void AddSC_bonk_codex()
     Script* newscript = new Script;
     newscript->Name = "npc_bonk_codex";
     newscript->pGossipHello = &GossipHello_npc_bonk_codex;
+    newscript->GetAI = &GetAI_npc_bonk_codex;
     newscript->RegisterSelf();
 
     newscript = new Script;
