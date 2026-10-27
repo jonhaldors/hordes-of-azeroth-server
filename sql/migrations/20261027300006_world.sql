@@ -25,7 +25,7 @@ INSERT INTO `tier_map` VALUES (904320, 16834, 5, 6, 2), (904321, 16836, 4, 6, 2)
 DROP TEMPORARY TABLE IF EXISTS `tier_items`;
 CREATE TEMPORARY TABLE `tier_items` AS SELECT m.`new_entry`, m.`tier`, m.`armor_type`, t.* FROM `tier_map` m JOIN `item_template` t ON t.`entry` = m.`src_entry` AND t.`patch` = m.`src_patch`;
 UPDATE `tier_items` SET `entry` = `new_entry`, `patch` = 0, `subclass` = `armor_type`, `description` = CONCAT('Tier ', `tier`), `quality` = 4, `flags` = 0,
-    `buy_count` = 1, `buy_price` = ROUND(1000000 * POW(1.2, `tier` - 1)), `sell_price` = ROUND(1000000 * POW(1.2, `tier` - 1) / 10),
+    `buy_count` = 1, `buy_price` = ROUND(60000 * POW(1.11, `tier` - 1)), `sell_price` = ROUND(60000 * POW(1.11, `tier` - 1) / 10),
     `item_level` = 60 + `tier`, `required_level` = 0, `allowable_race` = -1, `required_reputation_faction` = 0, `required_reputation_rank` = 0,
     `required_honor_rank` = 0, `max_count` = 0, `armor` = 0, `holy_res` = 0, `fire_res` = 0, `nature_res` = 0, `frost_res` = 0, `shadow_res` = 0, `arcane_res` = 0,
     `stat_type1` = 0, `stat_value1` = 0, `stat_type2` = 0, `stat_value2` = 0, `stat_type3` = 0, `stat_value3` = 0, `stat_type4` = 0, `stat_value4` = 0, `stat_type5` = 0, `stat_value5` = 0, `stat_type6` = 0, `stat_value6` = 0, `stat_type7` = 0, `stat_value7` = 0, `stat_type8` = 0, `stat_value8` = 0, `stat_type9` = 0, `stat_value9` = 0, `stat_type10` = 0, `stat_value10` = 0,
