@@ -63,6 +63,9 @@ class BonkPlayer
         void SendDetermination() const;
         bool CanBuyGear(uint32 itemEntry) const;
         bool ShowsGearItem(Creature const* vendor, uint32 itemEntry) const;
+        bool IsTierVendor(Creature const* vendor) const;
+        uint32 GetStockTier() const;
+        std::vector<uint32> GetTierStock() const;
         void SendGearTabs(Creature const* vendor) const;
         void SelectGearTab(uint32 group);
         std::string GetUnlockHint(BonkTier const& tier) const;

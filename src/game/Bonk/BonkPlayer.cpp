@@ -1958,6 +1958,33 @@ bool BonkPlayer::ShowsGearItem(Creature const* vendor, uint32 itemEntry) const
     return tabs.size() < 2 || GetGearGroup(itemEntry) == GetShownGearTab(tabs);
 }
 
+bool BonkPlayer::IsTierVendor(Creature const* vendor) const
+{
+    return vendor && vendor->GetEntry() == BONK_TIER_VENDOR;
+}
+
+uint32 BonkPlayer::GetStockTier() const
+{
+    return std::min(BONK_TIER_GEAR_TIERS, std::max(1u, GetMythicFloorsCleared()));
+}
+
+std::vector<uint32> BonkPlayer::GetTierStock() const
+{
+    std::vector<uint32> stock;
+    if (!IsTierCleared("heroic"))
+        return stock;
+    uint8 const* classes = std::begin(BONK_TIER_GEAR_CLASSES);
+    uint8 const* found = std::find(classes, std::end(BONK_TIER_GEAR_CLASSES), m_player->GetClass());
+    if (found == std::end(BONK_TIER_GEAR_CLASSES))
+        return stock;
+    uint32 const first = BONK_TIER_GEAR_FIRST + uint32(found - classes) * BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS +
+        (GetStockTier() - 1) * BONK_TIER_GEAR_SLOTS;
+    for (uint32 slot = 0; slot < BONK_TIER_GEAR_SLOTS; ++slot)
+        if (sObjectMgr.GetItemPrototype(first + slot))
+            stock.push_back(first + slot);
+    return stock;
+}
+
 void BonkPlayer::SendGearTabs(Creature const* vendor) const
 {
     if (vendor->GetEntry() != BONK_GEAR_VENDOR)
@@ -2161,8 +2188,16 @@ void BonkPlayer::NotifyFind(std::string const& text) const
 
 void BonkPlayer::SendGearInfo() const
 {
+    uint32 const tierGearEnd = BONK_TIER_GEAR_FIRST + uint32(std::size(BONK_TIER_GEAR_CLASSES)) * BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
     for (auto const& itr : sBonkMgr.GetItemStats())
-        SendAddon("gear~" + std::to_string(itr.first) + "~" + std::to_string(itr.second.setId) + "~" + FormatStatList(itr.second.stats));
+        if (itr.first < BONK_TIER_GEAR_FIRST || itr.first >= tierGearEnd)
+            SendAddon("gear~" + std::to_string(itr.first) + "~" + std::to_string(itr.second.setId) + "~" + FormatStatList(itr.second.stats));
+
+    SendAddon("tiergear~" + std::to_string(BONK_TIER_GEAR_FIRST) + "~" + std::to_string(BONK_TIER_GEAR_TIERS) + "~" +
+        std::to_string(BONK_TIER_GEAR_SLOTS) + "~" + std::to_string(std::size(BONK_TIER_GEAR_CLASSES)));
+    for (uint32 tier = 1; tier <= BONK_TIER_GEAR_TIERS; ++tier)
+        if (BonkItemStat const* stat = sBonkMgr.GetItemStat(BONK_TIER_GEAR_FIRST + (tier - 1) * BONK_TIER_GEAR_SLOTS))
+            SendAddon("tierstats~" + std::to_string(tier) + "~" + FormatStatList(stat->stats));
 
     for (auto const& itr : sBonkMgr.GetItemSets())
     {

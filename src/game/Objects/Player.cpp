@@ -18426,37 +18426,55 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
         return false;
     }
 
-    VendorItemData const* vItems = pCreature->GetVendorItems();
-    VendorItemData const* tItems = pCreature->GetVendorTemplateItems();
-
-    if ((!vItems || vItems->Empty()) && (!tItems || tItems->Empty()))
-    {
-        SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
-        return false;
-    }
-
+    bool const tierVendor = m_bonkPlayer && m_bonkPlayer->IsTierVendor(pCreature);
+    VendorItem const tierItem(item, 0, 0, 0, 0);
+    VendorItemData const* vItems = tierVendor ? nullptr : pCreature->GetVendorItems();
+    VendorItemData const* tItems = tierVendor ? nullptr : pCreature->GetVendorTemplateItems();
     uint32 vCount = vItems ? vItems->GetItemCount() : 0;
     uint32 tCount = tItems ? tItems->GetItemCount() : 0;
+    size_t vendorslot = 0;
+    VendorItem const* crItem = nullptr;
 
-    size_t vendorslot = vItems ? vItems->FindItemSlot(item) : vCount;
-
-    // If item was not found in npc_vendor, check npc_vendor_template.
-    if (vendorslot >= vCount)
+    if (tierVendor)
     {
-        vendorslot = tItems ? tItems->FindItemSlot(item) + vCount : tCount + vCount;
+        std::vector<uint32> const tierStock = m_bonkPlayer->GetTierStock();
+        auto const stocked = std::find(tierStock.begin(), tierStock.end(), item);
+        if (stocked == tierStock.end())
+        {
+            SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
+            return false;
+        }
+        vendorslot = size_t(stocked - tierStock.begin());
+        crItem = &tierItem;
     }
-
-    if (vendorslot >= vCount + tCount)
+    else
     {
-        SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
-        return false;
-    }
+        if ((!vItems || vItems->Empty()) && (!tItems || tItems->Empty()))
+        {
+            SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
+            return false;
+        }
 
-    VendorItem const* crItem = vendorslot < vCount ? vItems->GetItem(vendorslot) : tItems->GetItem(vendorslot - vCount);
-    if (!crItem || crItem->item != item || !IsVendorItemVisible(pCreature, crItem, pProto))
-    {
-        SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
-        return false;
+        vendorslot = vItems ? vItems->FindItemSlot(item) : vCount;
+
+        // If item was not found in npc_vendor, check npc_vendor_template.
+        if (vendorslot >= vCount)
+        {
+            vendorslot = tItems ? tItems->FindItemSlot(item) + vCount : tCount + vCount;
+        }
+
+        if (vendorslot >= vCount + tCount)
+        {
+            SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
+            return false;
+        }
+
+        crItem = vendorslot < vCount ? vItems->GetItem(vendorslot) : tItems->GetItem(vendorslot - vCount);
+        if (!crItem || crItem->item != item || !IsVendorItemVisible(pCreature, crItem, pProto))
+        {
+            SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
+            return false;
+        }
     }
 
     uint32 totalCount = pProto->BuyCount * count;
@@ -18555,8 +18573,8 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
 
     // SMSG_LIST_INVENTORY numbers only visible rows. Report that same
     // compact slot so the client updates the item it just purchased.
-    uint32 clientVendorSlot = 0;
-    for (size_t i = 0; i <= vendorslot; ++i)
+    uint32 clientVendorSlot = tierVendor ? uint32(vendorslot + 1) : 0;
+    for (size_t i = 0; !tierVendor && i <= vendorslot; ++i)
     {
         VendorItem const* listedItem = i < vCount ? vItems->GetItem(i) : tItems->GetItem(i - vCount);
         ItemPrototype const* listedProto = listedItem ? sObjectMgr.GetItemPrototype(listedItem->item) : nullptr;
