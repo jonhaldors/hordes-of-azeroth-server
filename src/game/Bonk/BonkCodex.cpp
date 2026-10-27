@@ -2,6 +2,7 @@
 #include "BonkMgr.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
+#include "BonkRun.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
@@ -15,6 +16,93 @@
 namespace
 {
     uint32 const BONK_TEXT_SPELLBOOK = 900006;
+
+    std::string Number(float value)
+    {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), value >= 10.0f ? "%.0f" : "%.2f", value);
+        std::string text = buffer;
+        if (text.find('.') != std::string::npos)
+        {
+            while (text.back() == '0')
+                text.pop_back();
+            if (text.back() == '.')
+                text.pop_back();
+        }
+        return text;
+    }
+
+    std::string DescribeStat(BonkPassiveEffect stat, float value)
+    {
+        switch (stat)
+        {
+            case BONK_PASSIVE_POWER:        return "+" + Number(value) + "% Power";
+            case BONK_PASSIVE_HASTE:        return "+" + Number(value) + "% Haste";
+            case BONK_PASSIVE_MOVE_SPEED:   return "+" + Number(value) + "% movement speed";
+            case BONK_PASSIVE_MAX_HEALTH:   return "+" + Number(value) + "% maximum health";
+            case BONK_PASSIVE_RECOVERY:     return Number(value) + "% health a second";
+            case BONK_PASSIVE_GROWTH:       return "+" + Number(value) + "% experience";
+            case BONK_PASSIVE_AREA:         return "+" + Number(value) + "% Area";
+            case BONK_PASSIVE_ARMOR:        return "+" + Number(value) + " Armor";
+            case BONK_PASSIVE_DODGE:        return "+" + Number(value) + "% Dodge";
+            case BONK_PASSIVE_CRIT:         return "+" + Number(value) + "% crit";
+            case BONK_PASSIVE_CRIT_DAMAGE:  return "+" + Number(value) + "% crit damage";
+            case BONK_PASSIVE_SHIELD:       return Number(value) + "% Shield";
+            default:                        return "+" + Number(value);
+        }
+    }
+
+    std::string DescribeCardStack(BonkCard const& card, uint32 copies)
+    {
+        float const sum = BonkRun::GetCopySum(copies);
+        auto chance = [&card, copies]() { return Number(BonkRun::GetStackedChance(card.values[0], copies)) + "% chance"; };
+        auto cooldown = [&card, copies]() { return Number(card.cooldownMs * BonkRun::GetCopyWeight(copies) / 1000.0f) + " sec cooldown"; };
+        switch (card.effect)
+        {
+            case BONK_CARD_HEALTHSTONE:
+            case BONK_CARD_HIT_IMMUNE:
+            case BONK_CARD_SWIFTNESS:
+            case BONK_CARD_MAGNET:
+                return cooldown();
+            case BONK_CARD_BANDAGE:
+            case BONK_CARD_CAMPFIRE:
+                return Number(card.values[0] * sum) + "% health a second";
+            case BONK_CARD_JERKY:
+                return "+" + Number(card.values[0] * sum) + "% turkey legs";
+            case BONK_CARD_CRIT_HEAL:
+                return "up to " + Number(card.values[2] * sum) + "% health a second";
+            case BONK_CARD_OVERHEAL:
+                return "Shield up to " + Number(card.values[0] * sum) + "%";
+            case BONK_CARD_THORNS:
+                return Number(card.values[0] * sum) + "% reflected";
+            case BONK_CARD_FIRE_BURST:
+            case BONK_CARD_CHAIN:
+            case BONK_CARD_DEATH_RAY:
+            case BONK_CARD_ECHO:
+            case BONK_CARD_FREE_CHEST:
+                return chance();
+            case BONK_CARD_HASTE_BURST:
+                return chance() + ", +" + Number(card.values[1] * sum) + "% Haste";
+            case BONK_CARD_KILL_POWER:
+            case BONK_CARD_UNHIT_POWER:
+                return "up to +" + Number(card.values[1] * sum) + "% Power";
+            case BONK_CARD_POWER_SURGE:
+                return "+" + Number(card.values[0] * sum) + "% Power";
+            case BONK_CARD_BIG_GAME:
+                return "+" + Number(card.values[0] * sum) + "% damage";
+            case BONK_CARD_VALOR:
+                return "+" + Number(card.values[0] * sum) + "% Valor";
+            case BONK_CARD_DOT_DAMAGE:
+                return "+" + Number(card.values[0] * sum) + "% damage over time";
+            default:
+                break;
+        }
+        std::string text;
+        for (uint8 i = 0; i < 2; ++i)
+            if (card.stats[i] < MAX_BONK_PASSIVE_EFFECT)
+                text += (text.empty() ? "" : ", ") + DescribeStat(card.stats[i], card.statValues[i] * sum);
+        return text;
+    }
 
     void SendLock(BonkPlayer* bonk, char const* kind, uint32 id, BonkQuestReward type)
     {
@@ -73,6 +161,9 @@ void BonkCodex::Send(Player* player, std::string const& npc, bool deck)
         bonk->SendAddon("cdxc~" + id + "~" + card.name + "~" + card.icon + "~" + std::to_string(uint32(card.rarity)) + "~" +
             std::to_string(uint32(card.maxCopies)) + "~" + locked + "~" + std::to_string(price));
         bonk->SendAddon("cdxcd~" + id + "~" + card.description);
+        std::string const one = DescribeCardStack(card, 1);
+        if (card.maxCopies != 1 && !one.empty())
+            bonk->SendAddon("cdxcs~" + id + "~" + one + "~" + DescribeCardStack(card, 5));
         if (locked == "1")
             SendLock(bonk, "c", card.id, BONK_REWARD_CARD);
     }

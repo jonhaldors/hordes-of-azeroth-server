@@ -1,3 +1,12 @@
+DROP PROCEDURE IF EXISTS add_migration;
+DELIMITER ??
+CREATE PROCEDURE `add_migration`()
+BEGIN
+DECLARE v INT DEFAULT 1;
+SET v = (SELECT COUNT(*) FROM `migrations` WHERE `id`='20261027710000');
+IF v = 0 THEN
+INSERT INTO `migrations` VALUES ('20261027710000');
+
 UPDATE `bonk_card` SET `max_copies` = 0 WHERE `in_chests` = 1;
 
 UPDATE `bonk_card` SET `stat1_value` = 0.4, `description` = 'Regain 0.4% of your health every second.' WHERE `id` = 2;
@@ -83,3 +92,19 @@ DROP TEMPORARY TABLE `bonk_go_copy`;
 DELETE FROM `gameobject` WHERE `guid` = 3999100;
 INSERT INTO `gameobject` (`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, `orientation`, `rotation0`, `rotation1`, `rotation2`, `rotation3`, `spawntimesecsmin`, `spawntimesecsmax`, `animprogress`, `state`, `spawn_flags`, `visibility_mod`, `patch_min`, `patch_max`) VALUES
 (3999100, 900063, 1, 16251.8, 16311.0, 20.845, 0.46, 0, 0, 0.228, 0.974, 900, 900, 100, 1, 0, 0, 0, 10);
+
+DELETE FROM `creature` WHERE `guid` = 900100;
+DELETE FROM `creature_template` WHERE `entry` = 900170;
+DROP TEMPORARY TABLE IF EXISTS `bonk_deck_glow`;
+CREATE TEMPORARY TABLE `bonk_deck_glow` AS SELECT * FROM `creature_template` WHERE `entry` = 900129;
+UPDATE `bonk_deck_glow` SET `entry` = 900170, `auras` = '33647';
+INSERT INTO `creature_template` SELECT * FROM `bonk_deck_glow`;
+DROP TEMPORARY TABLE `bonk_deck_glow`;
+INSERT INTO `creature` (`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, `orientation`, `wander_distance`, `movement_type`) VALUES
+(900100, 900170, 1, 16251.8, 16311.0, 20.845, 0, 0, 0);
+
+END IF;
+END??
+DELIMITER ;
+CALL add_migration();
+DROP PROCEDURE IF EXISTS add_migration;

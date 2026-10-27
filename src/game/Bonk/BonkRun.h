@@ -217,6 +217,7 @@ class BonkRun
         bool GiveCard(uint32 cardId, std::string& error);
         static float GetCopyWeight(uint32 copy);
         static float GetCopySum(uint32 copies);
+        static float GetStackedChance(float percent, uint32 copies);
         float GetChampionDamageTaken(BonkSpawnKind kind) const;
         bool ForceEvolve(uint32 weaponId, std::string& error);
         bool GivePassive(uint32 passiveId, std::string& error);

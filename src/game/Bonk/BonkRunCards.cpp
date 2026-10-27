@@ -74,6 +74,11 @@ float BonkRun::GetCopyWeight(uint32 copy)
     return std::max(BONK_CARD_COPY_FLOOR, std::pow(BONK_CARD_COPY_DECAY, float(copy - 1)));
 }
 
+float BonkRun::GetStackedChance(float percent, uint32 copies)
+{
+    return StackChance(percent, copies);
+}
+
 float BonkRun::GetCopySum(uint32 copies)
 {
     float sum = 0.0f;
