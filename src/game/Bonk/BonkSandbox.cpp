@@ -1535,6 +1535,17 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
     }
     else if (verb == "boss" || verb == "miniboss" || verb == "bosshealth" || verb == "ability")
         return RunSandboxBossVerb(verb, first, error);
+    else if (verb == "elite")
+    {
+        std::vector<SandboxEnemy> const elites = ListEnemies(ENEMY_ELITE);
+        if (elites.empty())
+        {
+            error = "No elites are on any run map.";
+            return false;
+        }
+        for (uint32 i = 0; i < std::max(1u, first); ++i)
+            SpawnSandboxEnemy(elites[urand(0, uint32(elites.size()) - 1)].entry);
+    }
     else if (verb == "quiet")
     {
         m_sandboxQuietLevels = !m_sandboxQuietLevels;
