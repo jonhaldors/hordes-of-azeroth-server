@@ -401,14 +401,14 @@ uint32 BonkQuests::GetMasteryPoints(uint32 account, uint8 classId) const
     return points;
 }
 
-uint32 BonkQuests::GetRootWeapon(uint32 spellId) const
+uint32 BonkQuests::GetRootWeapon(uint32 spellId, uint32 classMask) const
 {
     if (!spellId)
         return 0;
 
     for (auto const& itr : sBonkMgr.GetWeapons())
     {
-        if (itr.second.spellId != spellId)
+        if (itr.second.spellId != spellId || (itr.second.classMask && !(itr.second.classMask & classMask)))
             continue;
 
         BonkWeapon const* weapon = &itr.second;
@@ -497,7 +497,7 @@ void BonkQuests::OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell,
     if (player->GetBonkPlayer()->IsInSandbox())
         return;
 
-    uint32 const weapon = GetRootWeapon(killingSpell);
+    uint32 const weapon = GetRootWeapon(killingSpell, player->GetClassMask());
     uint32 const level = player->GetLevel();
     SpellEntry const* spellInfo = killingSpell ? sSpellMgr.GetSpellEntry(killingSpell) : nullptr;
     uint32 const school = spellInfo ? spellInfo->School + 1 : 0;

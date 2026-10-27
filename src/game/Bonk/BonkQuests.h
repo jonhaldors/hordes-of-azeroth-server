@@ -157,7 +157,7 @@ class BonkQuests
         static bool Counts(Player const* player, BonkQuest const& quest);
         static uint32 GetShownProgress(BonkQuest const& quest, Progress const& entry);
         std::string DescribeReward(BonkQuest const& quest, std::string* icon) const;
-        uint32 GetRootWeapon(uint32 spellId) const;
+        uint32 GetRootWeapon(uint32 spellId, uint32 classMask) const;
 
         std::map<uint32, BonkQuest> m_quests;
         std::map<uint32, std::string> m_titles;
