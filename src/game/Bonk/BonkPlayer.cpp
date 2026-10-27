@@ -2442,6 +2442,11 @@ namespace
 
 void BonkPlayer::SendFloorPreview(BonkTier const& tier, BonkRunBonuses const& bonuses) const
 {
+    static char const* const CASTER_AIM[] = { "Poor", "Good", "Precise" };
+    static char const* const BOSS_ATTACKS[] = { "Normal", "More attacks", "Relentless" };
+    uint32 const step = std::min(2u, tier.eliteAffixes ? tier.eliteAffixes - 1u : 0u);
+    SendAddon("tierinfo~" + std::to_string(tier.id) + "~" + CASTER_AIM[step] + "~" + BOSS_ATTACKS[step] + "~" +
+        std::to_string((tier.chargeIntervalMs + 500) / 1000) + "~" + std::to_string(tier.maxAlive));
     uint32 const cleared = GetMythicFloorsCleared();
     uint32 const floors = std::min(tier.stages, BONK_MYTHIC_MILESTONE_FLOORS * 4);
     for (uint32 floor = 1; floor <= floors; ++floor)
