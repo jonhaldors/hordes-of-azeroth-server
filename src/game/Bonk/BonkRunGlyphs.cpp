@@ -480,7 +480,7 @@ void BonkRun::DressSkeletons()
         skeleton->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, bite * 0.9f);
         skeleton->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, bite * 1.1f);
         skeleton->UpdateDamagePhysical(BASE_ATTACK);
-        skeleton->SetAttackTime(BASE_ATTACK, BONK_SKELETON_ATTACK_MS);
+        skeleton->SetAttackTime(BASE_ATTACK, BONK_SKELETON_ATTACK_MS, false);
     }
 }
 
