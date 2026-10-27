@@ -2,6 +2,7 @@
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
+#include "BonkRunStats.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "Player.h"
@@ -23,7 +24,7 @@ namespace
     float const BONK_GLYPH_LUCK[MAX_BONK_RARITY] = { 0.0f, 0.5f, 1.0f, 1.5f, 2.0f };
 
     float const BONK_GLYPH_STRIKE_RANGE  = 35.0f;
-    uint32 const BONK_SPELL_GLYPH_STORM  = 403;
+    uint32 const BONK_SPELL_GLYPH_STORM  = 26415;
     uint32 const BONK_SPELL_GLYPH_METEOR = 20476;
     uint32 const BONK_KIT_LIGHTNING      = 283;
     uint32 const BONK_KIT_EXPLOSION      = 286;
@@ -32,9 +33,29 @@ namespace
     uint32 const BONK_KIT_FROST_NOVA     = 160;
     uint32 const BONK_KIT_SHADOW_HIT     = 2350;
     uint32 const BONK_KIT_CLEAVE_HIT     = 220;
-    uint32 const BONK_SPELL_GLYPH_CORPSE = 13342;
-    uint32 const BONK_SPELL_GLYPH_CLEAVE = 845;
-    uint32 const BONK_SPELL_GLYPH_SOULS  = 16583;
+    uint32 const BONK_SPELL_GLYPH_CORPSE = 17616;
+    uint32 const BONK_SPELL_GLYPH_CLEAVE = 20569;
+    uint32 const BONK_SPELL_GLYPH_SOULS  = 28447;
+    uint32 const BONK_SPELL_RAISE_DEAD   = 28353;
+    uint32 const BONK_SKELETON_ATTACK_MS = 1500;
+    float const BONK_SKELETON_HUNT_RANGE = 30.0f;
+    float const BONK_SKELETON_LEASH_RANGE = 60.0f;
+
+    struct GlyphDamageSpell
+    {
+        BonkGlyphEffect effect;
+        uint32 spellId;
+    };
+
+    GlyphDamageSpell const BONK_GLYPH_DAMAGE_SPELLS[] =
+    {
+        { BONK_GLYPH_STORM, BONK_SPELL_GLYPH_STORM },
+        { BONK_GLYPH_METEOR, BONK_SPELL_GLYPH_METEOR },
+        { BONK_GLYPH_CORPSE_BLAST, BONK_SPELL_GLYPH_CORPSE },
+        { BONK_GLYPH_CLEAVE, BONK_SPELL_GLYPH_CLEAVE },
+        { BONK_GLYPH_SHADOWMOURNE, BONK_SPELL_GLYPH_SOULS },
+        { BONK_GLYPH_RAISE_DEAD, BONK_SPELL_RAISE_DEAD },
+    };
     uint32 const BONK_SHADOWMOURNE_SHOW_STEP = 5;
     size_t const BONK_MAX_GLYPH_BURSTS   = 64;
     size_t const BONK_GLYPH_BURST_KITS   = 6;
@@ -415,6 +436,137 @@ void BonkRun::ReleaseGlyphBursts()
     }
 }
 
+void BonkRun::RaiseSkeleton(Creature const* corpse)
+{
+    BonkGlyph const* raise = GetGlyph(BONK_GLYPH_RAISE_DEAD);
+    if (!raise || m_state != STATE_RUNNING)
+        return;
+    Map* map = m_player->GetMap();
+    while (!m_skeletons.empty() && m_skeletons.size() >= std::max(1u, uint32(raise->values[1])))
+    {
+        if (Creature* oldest = map->GetCreature(m_skeletons.front().guid))
+            oldest->DespawnOrUnsummon();
+        m_skeletons.erase(m_skeletons.begin());
+    }
+
+    Creature* skeleton = SummonGlyphHelper(BONK_SKELETON, corpse->GetPositionX(), corpse->GetPositionY(), corpse->GetPositionZ(), corpse->GetOrientation());
+    if (!skeleton)
+        return;
+    skeleton->SetUInt32Value(UNIT_CREATED_BY_SPELL, BONK_SPELL_RAISE_DEAD);
+    skeleton->SetHealth(skeleton->GetMaxHealth());
+    skeleton->SetInvincibilityHpThreshold(skeleton->GetMaxHealth());
+    RisenSkeleton risen;
+    risen.guid = skeleton->GetObjectGuid();
+    risen.untilMs = m_totalMs + uint32(raise->values[0]);
+    m_skeletons.push_back(risen);
+    DressSkeletons();
+}
+
+void BonkRun::DressSkeletons()
+{
+    BonkGlyph const* raise = GetGlyph(BONK_GLYPH_RAISE_DEAD);
+    if (!raise)
+        return;
+    Map* map = m_player->GetMap();
+    float const bite = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * raise->values[2] / 100.0f;
+    float const speed = GetPetRunSpeed();
+    for (RisenSkeleton const& risen : m_skeletons)
+    {
+        Creature* skeleton = map->GetCreature(risen.guid);
+        if (!skeleton || !skeleton->IsAlive())
+            continue;
+        if (skeleton->GetBaseRunSpeedRate() != speed)
+            skeleton->SetBaseSpeedRate(MOVE_RUN, speed);
+        skeleton->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, bite * 0.9f);
+        skeleton->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, bite * 1.1f);
+        skeleton->UpdateDamagePhysical(BASE_ATTACK);
+        skeleton->SetAttackTime(BASE_ATTACK, BONK_SKELETON_ATTACK_MS);
+    }
+}
+
+void BonkRun::UpdateSkeletons()
+{
+    if (m_skeletons.empty())
+        return;
+    Map* map = m_player->GetMap();
+    bool const kept = GetGlyph(BONK_GLYPH_RAISE_DEAD) != nullptr;
+    m_skeletons.erase(std::remove_if(m_skeletons.begin(), m_skeletons.end(), [this, map, kept](RisenSkeleton const& risen)
+    {
+        Creature* skeleton = map->GetCreature(risen.guid);
+        if (skeleton && skeleton->IsAlive() && kept && int32(risen.untilMs - m_totalMs) > 0)
+            return false;
+        if (skeleton)
+            skeleton->DespawnOrUnsummon();
+        return true;
+    }), m_skeletons.end());
+    if (m_paused)
+        return;
+
+    DressSkeletons();
+    for (RisenSkeleton const& risen : m_skeletons)
+    {
+        Creature* skeleton = map->GetCreature(risen.guid);
+        if (!skeleton)
+            continue;
+        if (!skeleton->IsWithinDistInMap(m_player, BONK_SKELETON_LEASH_RANGE))
+        {
+            skeleton->AttackStop();
+            skeleton->NearTeleportTo(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), m_player->GetOrientation());
+            continue;
+        }
+        Unit* victim = skeleton->GetVictim();
+        if (victim && victim->IsAlive())
+            continue;
+        Creature* target = nullptr;
+        float best = 0.0f;
+        for (Creature* mob : GetMobsInRange(BONK_SKELETON_HUNT_RANGE))
+        {
+            float const distance = skeleton->GetDistance(mob);
+            if (!target || distance < best)
+            {
+                target = mob;
+                best = distance;
+            }
+        }
+        if (target)
+            skeleton->AI()->AttackStart(target);
+        else if (skeleton->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+        {
+            skeleton->AttackStop();
+            skeleton->GetMotionMaster()->Clear(false);
+            skeleton->GetMotionMaster()->MoveFollow(m_player, 2.0f, frand(0.0f, 2.0f * M_PI_F));
+        }
+    }
+}
+
+void BonkRun::DespawnSkeletons()
+{
+    if (Map* map = m_player->FindMap())
+        for (RisenSkeleton const& risen : m_skeletons)
+            if (Creature* skeleton = map->GetCreature(risen.guid))
+                skeleton->DespawnOrUnsummon();
+    m_skeletons.clear();
+}
+
+bool BonkRun::IsSkeleton(ObjectGuid const& guid) const
+{
+    return std::any_of(m_skeletons.begin(), m_skeletons.end(), [&guid](RisenSkeleton const& risen) { return risen.guid == guid; });
+}
+
+std::string BonkRun::DescribeGlyphStats() const
+{
+    std::string text;
+    for (GlyphDamageSpell const& source : BONK_GLYPH_DAMAGE_SPELLS)
+        if (BonkGlyph const* glyph = GetGlyph(source.effect))
+        {
+            BonkRunStats::Spell const totals = BonkStats::GetSpellStats(m_player->GetObjectGuid(), source.spellId);
+            if (totals.damage)
+                text += std::to_string(glyph->id) + ":" + std::to_string(totals.damage) + ":" + std::to_string(totals.kills) + ":" +
+                    BonkStats::DescribeDamageTypes(m_player->GetObjectGuid(), source.spellId) + ",";
+        }
+    return text;
+}
+
 void BonkRun::UpdateShadowmourne()
 {
     BonkGlyph const* mourne = GetGlyph(BONK_GLYPH_SHADOWMOURNE);
@@ -479,6 +631,8 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
     if (GetGlyph(BONK_GLYPH_SOUL_SIPHON))
         ++m_soulSiphonKills;
     UpdateShadowmourne();
+    if (kind == BONK_SPAWN_ELITE && GetGlyph(BONK_GLYPH_RAISE_DEAD))
+        RaiseSkeleton(mob);
     if (BonkGlyph const* corpse = GetGlyph(BONK_GLYPH_CORPSE_BLAST))
         if (roll_chance_f(corpse->values[0]))
             QueueGlyphBurst(*corpse, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), corpse->values[2],

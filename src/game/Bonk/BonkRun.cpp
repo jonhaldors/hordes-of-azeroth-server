@@ -8761,7 +8761,20 @@ bool BonkRun::IsSummon(Unit const* unit) const
     for (OwnedWeapon const& owned : m_weapons)
         if (std::find(owned.pets.begin(), owned.pets.end(), unit->GetObjectGuid()) != owned.pets.end())
             return true;
-    return IsSnake(unit->GetObjectGuid()) || IsBeast(unit->GetObjectGuid());
+    return IsSnake(unit->GetObjectGuid()) || IsBeast(unit->GetObjectGuid()) || IsSkeleton(unit->GetObjectGuid());
+}
+
+Creature* BonkRun::SummonGlyphHelper(uint32 entry, float x, float y, float z, float orientation)
+{
+    s_nextHelperLevel = m_player->GetLevel();
+    Creature* helper = m_player->SummonCreature(entry, x, y, z, orientation, TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS,
+        false, 0, &InstallPetAI);
+    if (!helper)
+        return nullptr;
+    helper->SetOwnerGuid(m_player->GetObjectGuid());
+    helper->SetFactionTemplateId(m_player->GetFactionTemplateId());
+    helper->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+    return helper;
 }
 
 Creature* BonkRun::SummonPet(OwnedWeapon const& owned, uint32 entry, float x, float y, float z, float orientation)
@@ -9077,6 +9090,7 @@ void BonkRun::UpdatePetTargets(uint32 diff)
     if (m_petTimer < BONK_PET_CHECK_MS)
         return;
     m_petTimer = 0;
+    UpdateSkeletons();
 
     if (IsPetFrenzied() != m_petsFrenzied)
     {
@@ -9207,6 +9221,7 @@ void BonkRun::DespawnPets()
     }
     DespawnSnakes();
     DespawnBeasts();
+    DespawnSkeletons();
     m_petStates.clear();
     m_petFrenzyUntil = 0;
 }
@@ -11867,6 +11882,7 @@ void BonkRun::SendState() const
         std::to_string(m_coins) + "~" + std::to_string(GetChestPrice()) + "~" + std::to_string(m_stage) + "~" + (m_state == STATE_PORTAL ? "1" : "0") + "~" +
         std::to_string(m_shardsEarned) + "~" + DescribeWeaponStats() + "~" + std::to_string(m_totalMs / IN_MILLISECONDS) + "~" + damageTypes);
     m_player->GetBonkPlayer()->SendAddon("support~" + DescribeSupport());
+    m_player->GetBonkPlayer()->SendAddon("gmeter~" + DescribeGlyphStats());
 }
 
 std::string BonkRun::DescribeWeaponStats() const
@@ -12252,6 +12268,8 @@ void BonkRun::SetPaused(bool paused)
             hold(released.guid, false);
         for (Beast const& beast : m_beasts)
             hold(beast.guid, false);
+        for (RisenSkeleton const& risen : m_skeletons)
+            hold(risen.guid, false);
         HoldEnemyMissiles(paused);
         if (!paused)
             ResumeCharges();

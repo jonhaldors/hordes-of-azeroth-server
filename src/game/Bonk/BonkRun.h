@@ -673,6 +673,18 @@ class BonkRun
         void QueueGlyphBurst(BonkGlyph const& glyph, float x, float y, float z, float radius, float damage, bool nearestOnly);
         void ReleaseGlyphBursts();
         void UpdateShadowmourne();
+        void RaiseSkeleton(Creature const* corpse);
+        void DressSkeletons();
+        void UpdateSkeletons();
+        void DespawnSkeletons();
+        bool IsSkeleton(ObjectGuid const& guid) const;
+        std::string DescribeGlyphStats() const;
+        struct RisenSkeleton
+        {
+            ObjectGuid guid;
+            uint32 untilMs = 0;
+        };
+        std::vector<RisenSkeleton> m_skeletons;
         bool IsLastStand() const;
         float GetAmbitionReward(BonkSpawnKind kind) const;
         void StrikeStorm(BonkGlyph const& glyph);
@@ -1781,6 +1793,7 @@ class BonkRun
         void FeedFrenzy();
         void GlowFrenzy();
         Creature* SummonPet(OwnedWeapon const& owned, uint32 entry, float x, float y, float z, float orientation);
+        Creature* SummonGlyphHelper(uint32 entry, float x, float y, float z, float orientation);
         float GetPoisonDamageScale() const;
 
         bool m_keywordlessHits = false;
