@@ -335,6 +335,26 @@ bool ChatHandler::HandleBonkVaultCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkBanSlotCommand(char* args)
+{
+    char* kind = ExtractLiteralArg(&args);
+    BonkQuestReward const type = kind && !strcmp(kind, "c") ? BONK_REWARD_CARD : kind && !strcmp(kind, "g") ? BONK_REWARD_GLYPH : MAX_BONK_REWARD;
+    if (type == MAX_BONK_REWARD)
+    {
+        SendSysMessage("Use .bonk banslot c|g.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    Player* player = m_session->GetPlayer();
+    BonkPlayer* bonk = player->GetBonkPlayer();
+    std::string message;
+    bool const bought = bonk->BuyBanSlot(type, message);
+    bonk->Notify(message);
+    BonkCodex::Send(player, "", bonk->IsAtDeck());
+    return bought;
+}
+
 bool ChatHandler::HandleBonkPoolCommand(char* args)
 {
     char* kind = ExtractLiteralArg(&args);
@@ -370,7 +390,7 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
         player->GetBonkPlayer()->GetBanSlots(type), error);
     if (!done)
         player->GetBonkPlayer()->Notify(error);
-    BonkCodex::Send(player, "");
+    BonkCodex::Send(player, "", player->GetBonkPlayer()->IsAtDeck());
     return done;
 }
 

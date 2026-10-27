@@ -17,6 +17,7 @@
 
 class BonkRun;
 class Creature;
+class GameObject;
 class Player;
 enum BonkShop : uint8;
 enum BonkQuestReward : uint8;
@@ -239,6 +240,9 @@ class BonkPlayer
         };
         std::vector<BanSource> GetBanSources(BonkQuestReward type) const;
         uint32 GetBanSlots(BonkQuestReward type) const;
+        bool BuyBanSlot(BonkQuestReward type, std::string& message);
+        void VisitDeck(GameObject const* table);
+        bool IsAtDeck() const;
         void TrimPoolToggles() const;
 
         bool Dash();
@@ -357,6 +361,7 @@ class BonkPlayer
         BonkShop m_shop{};
         ObjectGuid m_shopNpc;
         ObjectGuid m_spellbookKeeper;
+        ObjectGuid m_deckTable;
         std::string m_shopNpcName;
         std::string m_masteryNotice;
 

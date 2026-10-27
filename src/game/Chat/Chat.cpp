@@ -285,6 +285,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "gear",           SEC_PLAYER,         false, &ChatHandler::HandleBonkGearCommand,            "", nullptr },
         { "glyph",          SEC_PLAYER,         false, &ChatHandler::HandleBonkGlyphCommand,           "", nullptr },
         { "pool",           SEC_PLAYER,         false, &ChatHandler::HandleBonkPoolCommand,            "", nullptr },
+        { "banslot",        SEC_PLAYER,         false, &ChatHandler::HandleBonkBanSlotCommand,         "", nullptr },
         { "menu",           SEC_PLAYER,         false, &ChatHandler::HandleBonkMenuCommand,            "", nullptr },
         { "resync",         SEC_PLAYER,         false, &ChatHandler::HandleBonkResyncCommand,          "", nullptr },
         { "vault",          SEC_PLAYER,         false, &ChatHandler::HandleBonkVaultCommand,           "", nullptr },

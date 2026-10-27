@@ -1448,6 +1448,40 @@ bool BonkPlayer::IsAtSpellbook() const
     return keeper && keeper->IsAlive() && m_player->IsWithinDistInMap(keeper, BONK_SHOP_RANGE);
 }
 
+void BonkPlayer::VisitDeck(GameObject const* table)
+{
+    m_deckTable = table->GetObjectGuid();
+}
+
+bool BonkPlayer::IsAtDeck() const
+{
+    if (m_deckTable.IsEmpty() || !m_player->IsInWorld())
+        return false;
+
+    GameObject const* table = m_player->GetMap()->GetGameObject(m_deckTable);
+    return table && m_player->IsWithinDistInMap(table, BONK_SHOP_RANGE);
+}
+
+bool BonkPlayer::BuyBanSlot(BonkQuestReward type, std::string& message)
+{
+    if (m_run)
+    {
+        message = "You can't do that during a run.";
+        return false;
+    }
+    if (!IsAtDeck())
+    {
+        message = "Visit the Darkmoon Deck at the Inn to buy ban slots.";
+        return false;
+    }
+    BonkTalentEffect const effect = type == BONK_REWARD_CARD ? BONK_TALENT_CARD_BANS : BONK_TALENT_GLYPH_BANS;
+    for (auto const& itr : sBonkMgr.GetTalents())
+        if (itr.second.effect == effect)
+            return BuyTalent(itr.first, message);
+    message = "Sayge has no ban slots for sale.";
+    return false;
+}
+
 bool BonkPlayer::IsAtShop() const
 {
     if (m_shop == BONK_SHOP_NONE || !m_player->IsInWorld())

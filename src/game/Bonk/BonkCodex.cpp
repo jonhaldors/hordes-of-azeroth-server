@@ -3,6 +3,7 @@
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
 #include "Creature.h"
+#include "GameObject.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
@@ -22,14 +23,14 @@ namespace
     }
 }
 
-void BonkCodex::Send(Player* player, std::string const& npc)
+void BonkCodex::Send(Player* player, std::string const& npc, bool deck)
 {
     BonkPlayer* bonk = player->GetBonkPlayer();
     if (!bonk->IsAddonReady())
         return;
 
     uint32 const account = player->GetBonkPlayer()->GetProgressAccount();
-    bonk->SendAddon("cdx~" + npc + "~" + std::to_string(player->GetClassMask()));
+    bonk->SendAddon("cdx~" + npc + "~" + std::to_string(player->GetClassMask()) + "~" + (deck ? "1" : "0"));
 
     auto lockState = [account](BonkQuestReward type, uint32 id, uint32& price)
     {
@@ -134,10 +135,25 @@ bool GossipHello_npc_bonk_codex(Player* player, Creature* creature)
     return true;
 }
 
+bool GOHello_go_bonk_deck(Player* player, GameObject* go)
+{
+    BonkPlayer* bonk = player->GetBonkPlayer();
+    if (bonk->GetRun())
+        return true;
+    bonk->VisitDeck(go);
+    BonkCodex::Send(player, go->GetName(), true);
+    return true;
+}
+
 void AddSC_bonk_codex()
 {
     Script* newscript = new Script;
     newscript->Name = "npc_bonk_codex";
     newscript->pGossipHello = &GossipHello_npc_bonk_codex;
+    newscript->RegisterSelf();
+
+    newscript = new Script;
+    newscript->Name = "go_bonk_deck";
+    newscript->pGOHello = &GOHello_go_bonk_deck;
     newscript->RegisterSelf();
 }
