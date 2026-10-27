@@ -425,7 +425,7 @@ bool BonkRun::SpawnVendorNow(std::string& error)
 {
     if (m_state != STATE_RUNNING)
     {
-        error = "Only a running stage can have a merchant.";
+        error = "Only a running floor can have a merchant.";
         return false;
     }
     if (!m_vendorGuid.IsEmpty())

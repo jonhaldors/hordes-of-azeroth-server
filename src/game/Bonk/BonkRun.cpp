@@ -1407,7 +1407,7 @@ void BonkRun::StartStage()
         bossIn = std::to_string(minutes) + (minutes == 1 ? " minute" : " minutes");
     if (seconds || !minutes)
         bossIn += (minutes ? " and " : "") + std::to_string(seconds) + (seconds == 1 ? " second" : " seconds");
-    m_player->GetBonkPlayer()->Notify((IsMythic() ? "Mythic floor " : "Stage ") + std::to_string(m_stage) + " begins in " + m_map.name + ". The boss arrives in " + bossIn + ".");
+    m_player->GetBonkPlayer()->Notify((IsMythic() ? "Mythic floor " : "Floor ") + std::to_string(m_stage) + " begins in " + m_map.name + ". The boss arrives in " + bossIn + ".");
 }
 
 void BonkRun::SendFullState() const
@@ -4132,7 +4132,7 @@ void BonkRun::Revive(bool soulstone, BonkGlyph const* glyph, bool stillAlive)
     SmiteAroundRevive();
 
     if (glyph)
-        m_player->GetBonkPlayer()->Notify("Glyph of Divine Shield saved you! It will be ready again next stage.");
+        m_player->GetBonkPlayer()->Notify("Glyph of Divine Shield saved you! It will be ready again next floor.");
     else if (soulstone)
         m_player->GetBonkPlayer()->Notify(m_soulstones ? "Your Soulstone saved you! " + std::to_string(m_soulstones) + (m_soulstones == 1 ? " charge left." : " charges left.") :
             "Your Soulstone saved you!");
@@ -4824,13 +4824,13 @@ void BonkRun::OpenPortal(Creature* boss)
 
     if (!last)
         bonk->Notify(IsMythic() ? "You cleared Mythic floor " + std::to_string(m_stage) + "! Take the portal to the next floor, or return to the Inn." :
-            "You cleared stage " + std::to_string(m_stage) + "! Take the portal to the next stage, or return to the Inn.");
+            "You cleared floor " + std::to_string(m_stage) + "! Take the portal to the next floor, or return to the Inn.");
     else if (!m_tier.endless)
         bonk->Notify("Victory! You cleared " + m_tier.name + ". Take the portal home with your loot.");
     else if (m_stage == m_tier.stages)
         bonk->Notify("Victory! You cleared " + m_tier.name + ". Take the portal home, or carry on into Endless mode.");
     else
-        bonk->Notify("You cleared Endless stage " + std::to_string(m_stage) + "! Take the portal home, or go deeper.");
+        bonk->Notify("You cleared Endless floor " + std::to_string(m_stage) + "! Take the portal home, or go deeper.");
     SendState();
 }
 
@@ -4907,7 +4907,7 @@ bool BonkRun::SkipTime(uint32 seconds, std::string& error)
 {
     if (m_state != STATE_RUNNING)
     {
-        error = "Only a running stage can be skipped.";
+        error = "Only a running floor can be skipped.";
         return false;
     }
     if (m_bossSpawned)
@@ -10961,7 +10961,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
 {
     if (m_state != STATE_RUNNING && m_state != STATE_PORTAL)
     {
-        error = "You are not in a running stage.";
+        error = "You are not in a running floor.";
         return false;
     }
 
@@ -12050,7 +12050,7 @@ void BonkRun::Finish(bool wentHome)
             "~" + (m_victory ? "1" : "0") + "~" + (IsMythic() ? "1" : "0") + "~" + std::to_string(bonk->GetClassFloor()) + "~" +
             std::to_string(m_floorBestAtStart));
     else
-        ChatHandler(m_player).PSendSysMessage("%s You reached stage %u in %s with %u kills at level %u, and earned %s and %s.",
+        ChatHandler(m_player).PSendSysMessage("%s You reached floor %u in %s with %u kills at level %u, and earned %s and %s.",
             m_victory ? "Victory!" : wentHome ? "Run complete!" : "Defeated.",
             m_stage, FormatTime(seconds).c_str(), m_kills, m_player->GetLevel(), FormatBonkMoney(m_goldEarned).c_str(), FormatBonkShards(m_shardsEarned).c_str());
 

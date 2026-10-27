@@ -2088,7 +2088,7 @@ std::string BonkPlayer::GetUnlockHint(BonkTier const& tier) const
         return "";
     if (required->stages && tier.unlockStage > required->stages)
         return "Clear " + required->name;
-    return "Reach stage " + std::to_string(tier.unlockStage) + " on " + required->name;
+    return "Reach floor " + std::to_string(tier.unlockStage) + " on " + required->name;
 }
 
 void BonkPlayer::RecordStage(uint32 tierId, uint32 stage)
@@ -2270,7 +2270,7 @@ void BonkPlayer::SendArena(std::string const& npc) const
             SendFloorPreview(tier, GetRunBonuses());
         }
         else if (unlocked)
-            ChatHandler(m_player).PSendSysMessage("  %s (best: stage %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());
+            ChatHandler(m_player).PSendSysMessage("  %s (best: floor %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());
         else
         {
             std::string hint = GetUnlockHint(tier);
