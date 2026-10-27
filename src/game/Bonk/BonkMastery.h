@@ -356,7 +356,7 @@ struct BonkMasteryBonuses
 
     bool Has(BonkCapstone which) const { return capstone == which; }
     float Special(BonkTalentSpecial which) const { return specials[which]; }
-    float EnrageBoost() const { return Has(BONK_CAPSTONE_BERSERKER) ? 1.5f : 1.0f; }
+    float EnrageBoost() const { return Has(BONK_CAPSTONE_BERSERKER) ? 1.25f : 1.0f; }
 };
 
 class BonkMastery
