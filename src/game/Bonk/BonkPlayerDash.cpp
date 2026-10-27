@@ -54,29 +54,19 @@ bool BonkPlayer::IsDashPaused() const
 
 bool BonkPlayer::Dash()
 {
-    MovementInfo const& mi = m_player->m_movementInfo;
-    auto const refuse = [this, &mi](char const* reason)
-    {
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk dash debug: %s refused (%s), spent %u/%u, flags 0x%x", m_player->GetName(), reason,
-            m_dashSpent, GetDashMaxCharges(), mi.moveFlags);
-        return false;
-    };
     if (m_run && ((!m_run->IsActive() && !m_run->IsPortalOpen()) || m_run->IsPaused()))
-        return refuse("run inactive or paused");
+        return false;
     if (m_dashSpent >= GetDashMaxCharges())
-        return refuse("no charges");
+        return false;
     if (!m_player->IsInWorld() || !m_player->IsAlive() || m_player->IsBeingTeleported() || m_player->IsTaxiFlying())
-        return refuse("not in world, dead, teleporting or flying");
-    if (m_player->HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_ROOT))
-        return refuse("stunned or rooted");
-    if (!m_player->movespline->Finalized())
-        return refuse("spline running");
-    if (m_player->HasPendingMovementChange(KNOCK_BACK))
-        return refuse("knockback pending");
+        return false;
+    if (m_player->HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_ROOT) || !m_player->movespline->Finalized() ||
+        m_player->HasPendingMovementChange(KNOCK_BACK))
+        return false;
+
+    MovementInfo const& mi = m_player->m_movementInfo;
     if (mi.moveFlags & (MOVEFLAG_ROOT | MOVEFLAG_SWIMMING | MOVEFLAG_ONTRANSPORT))
-        return refuse("root, swimming or transport flag");
-    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk dash debug: %s dashes, spent %u/%u, flags 0x%x", m_player->GetName(),
-        m_dashSpent, GetDashMaxCharges(), mi.moveFlags);
+        return false;
 
     bool const blink = m_run && m_run->IsBlinkDash();
     if (m_run)
