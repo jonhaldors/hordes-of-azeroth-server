@@ -1398,6 +1398,8 @@ void BonkMgr::CheckShopLayout(char const* table, BonkShop shop, std::map<uint32,
     {
         Entry& entry = itr.second;
         BonkShopNode& node = entry.layout;
+        if (!node.tree)
+            continue;
 
         auto tree = m_shopTrees.find(node.tree);
         if (tree == m_shopTrees.end() || tree->second.shop != shop)

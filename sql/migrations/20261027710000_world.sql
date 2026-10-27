@@ -70,8 +70,8 @@ DELETE FROM `bonk_upgrade` WHERE `id` = 29;
 
 DELETE FROM `bonk_talent` WHERE `id` IN (18, 19);
 INSERT INTO `bonk_talent` (`id`, `name`, `description`, `effect`, `value_per_rank`, `gold_bonus`, `max_rank`, `cost`, `cost_growth`, `icon`, `tree`, `tree_row`, `tree_column`, `required_id`, `required_rank`, `rank_quests`) VALUES
-(18, 'Stacked Deck', '+1 Darkmoon Card ban slot.', 17, 1, 0, 5, 25, 0.5, 'INV_Misc_Ticket_Tarot_Stack_01', 4, 2, 4, 0, 0, ''),
-(19, 'Sealed Glyphs', '+1 Glyph ban slot.', 18, 1, 0, 3, 30, 0.5, 'INV_Misc_Book_11', 4, 3, 4, 0, 0, '');
+(18, 'Stacked Deck', '+1 Darkmoon Card ban slot.', 17, 1, 0, 5, 25, 0.5, 'INV_Misc_Ticket_Tarot_Stack_01', 0, 0, 0, 0, 0, ''),
+(19, 'Sealed Glyphs', '+1 Glyph ban slot.', 18, 1, 0, 3, 30, 0.5, 'INV_Misc_Book_11', 0, 0, 0, 0, 0, '');
 
 DELETE FROM `gameobject_template` WHERE `entry` = 900063;
 DROP TEMPORARY TABLE IF EXISTS `bonk_go_copy`;

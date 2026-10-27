@@ -349,10 +349,10 @@ bool ChatHandler::HandleBonkBanSlotCommand(char* args)
     Player* player = m_session->GetPlayer();
     BonkPlayer* bonk = player->GetBonkPlayer();
     std::string message;
-    bool const bought = bonk->BuyBanSlot(type, message);
+    bonk->BuyBanSlot(type, message);
     bonk->Notify(message);
     BonkCodex::Send(player, "", bonk->IsAtDeck());
-    return bought;
+    return true;
 }
 
 bool ChatHandler::HandleBonkPoolCommand(char* args)
@@ -386,12 +386,11 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
         return false;
     }
     std::string error;
-    bool const done = sBonkQuests.SetDisabled(player->GetBonkPlayer()->GetProgressAccount(), type, id, !strcmp(state, "off"),
-        player->GetBonkPlayer()->GetBanSlots(type), error);
-    if (!done)
+    if (!sBonkQuests.SetDisabled(player->GetBonkPlayer()->GetProgressAccount(), type, id, !strcmp(state, "off"),
+        player->GetBonkPlayer()->GetBanSlots(type), error))
         player->GetBonkPlayer()->Notify(error);
     BonkCodex::Send(player, "", player->GetBonkPlayer()->IsAtDeck());
-    return done;
+    return true;
 }
 
 bool ChatHandler::HandleBonkGlyphCommand(char* args)
