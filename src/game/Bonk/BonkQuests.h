@@ -126,6 +126,7 @@ class BonkQuests
         BonkQuest const* GetUnlockingQuest(BonkQuestReward type, uint32 id) const;
         std::vector<BonkQuest const*> GetRewardQuests(BonkQuestReward type) const;
         bool IsCompleted(uint32 account, uint32 questId) const;
+        uint32 GetProgress(uint32 account, BonkQuest const& quest) const;
         uint32 GetCompletedCount(uint32 account) const { return CountCompleted(account); }
 
         void OnKill(Player* player, BonkSpawnKind kind, uint32 killingSpell, uint32 creatureType, uint32 entry, bool standing);

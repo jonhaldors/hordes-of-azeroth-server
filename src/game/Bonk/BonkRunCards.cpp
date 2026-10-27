@@ -37,6 +37,7 @@ namespace
     uint32 const BONK_KIT_NOVA             = 984;
     uint32 const BONK_KIT_DEATH_RAY        = 419;
     uint32 const BONK_KIT_SHADOW_IMPACT    = 2350;
+    uint32 const BONK_KIT_THORNS_BURST     = 6377;
 
     bool IsCardSpell(SpellEntry const* spell)
     {
@@ -639,13 +640,18 @@ bool BonkRun::RollFreeChest() const
 
 void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
 {
-    if (!damage || !attacker || !attacker->IsAlive() || !HasCard(BONK_CARD_THORNS) || m_cardProc)
+    BonkCard const* choker = m_cardByEffect[BONK_CARD_THORNS];
+    if (!damage || !attacker || !choker || m_cardProc || m_cardCooldowns[BONK_CARD_THORNS] > 0)
         return;
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_THORNS);
     if (!spellInfo)
         return;
+    m_cardCooldowns[BONK_CARD_THORNS] = int32(choker->values[2]);
+    float const burst = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * GetCardTotal(BONK_CARD_THORNS, 0) / 100.0f;
+    m_player->SendPlaySpellVisualKit(BONK_KIT_THORNS_BURST);
     m_cardProc = true;
-    DealSpellHit(spellInfo, attacker, damage * GetCardTotal(BONK_CARD_THORNS, 0) / 100.0f);
+    for (Creature* mob : GetMobsInRange(choker->values[1]))
+        DealSpellHit(spellInfo, mob, burst);
     m_cardProc = false;
 }
 

@@ -74,7 +74,7 @@ namespace
             case BONK_CARD_OVERHEAL:
                 return "Shield up to " + Number(card.values[0] * sum) + "%";
             case BONK_CARD_THORNS:
-                return Number(card.values[0] * sum) + "% reflected";
+                return Number(card.values[0] * sum) + "% of an enemy's health";
             case BONK_CARD_FIRE_BURST:
             case BONK_CARD_CHAIN:
             case BONK_CARD_DEATH_RAY:
@@ -107,7 +107,8 @@ namespace
     void SendLock(BonkPlayer* bonk, char const* kind, uint32 id, BonkQuestReward type)
     {
         if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(type, id))
-            bonk->SendAddon(std::string("cdxq~") + kind + "~" + std::to_string(id) + "~" + quest->name + "~" + quest->description);
+            bonk->SendAddon(std::string("cdxq~") + kind + "~" + std::to_string(id) + "~" + quest->name + "~" + quest->description + "~" +
+                std::to_string(sBonkQuests.GetProgress(bonk->GetProgressAccount(), *quest)) + "~" + std::to_string(quest->amount));
     }
 }
 

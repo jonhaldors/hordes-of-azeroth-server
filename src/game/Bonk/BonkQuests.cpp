@@ -435,6 +435,16 @@ void BonkQuests::AdvanceBit(AccountProgress& progress, BonkQuest const& quest, u
         entry.completed = true;
 }
 
+uint32 BonkQuests::GetProgress(uint32 account, BonkQuest const& quest) const
+{
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto accountItr = m_accounts.find(account);
+    if (accountItr == m_accounts.end())
+        return 0;
+    auto entryItr = accountItr->second.find(quest.id);
+    return entryItr == accountItr->second.end() ? 0 : GetShownProgress(quest, entryItr->second);
+}
+
 uint32 BonkQuests::GetShownProgress(BonkQuest const& quest, Progress const& entry)
 {
     if (entry.completed)
