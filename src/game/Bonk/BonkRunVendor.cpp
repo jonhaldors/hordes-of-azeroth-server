@@ -443,11 +443,7 @@ bool BonkRun::SpawnVendorNow(std::string& error)
 
 void BonkRun::DespawnVendor()
 {
-    if (m_vendorOpen)
-    {
-        m_vendorOpen = false;
-        m_player->GetBonkPlayer()->SendAddon("vendorclose");
-    }
+    CloseVendor();
 
     for (VendorSlot const& slot : m_vendorStock)
         if (slot.locked && slot.state == VENDOR_FOR_SALE)
