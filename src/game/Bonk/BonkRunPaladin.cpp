@@ -43,7 +43,7 @@ namespace
     uint32 const BONK_SPELL_HOLY_NOVA         = 15237;
     uint32 const BONK_SPELL_FALLING_HAMMER    = 17286;
     uint32 const BONK_SPELL_JUSTICE_HAMMER    = 20685;
-    uint32 const BONK_SPELL_DIVINE_SHIELD     = 642;
+    uint32 const BONK_SPELL_DIVINE_SHIELD     = 33463;
     uint32 const BONK_SPELL_HAMMER_OF_WRATH   = 24239;
     uint32 const BONK_SPELL_LAY_ON_HANDS      = 633;
     uint32 const BONK_SPELL_SEAL_OF_LIGHT     = 20165;

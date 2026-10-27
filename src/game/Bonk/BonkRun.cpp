@@ -412,7 +412,7 @@ namespace
     float const BONK_FRENZY_DAMAGE         = 2.0f;
     float const BONK_FRENZY_REACH          = 5.0f;
     float const BONK_FRENZY_ARC            = 2.0f * M_PI_F / 3.0f;
-    uint32 const BONK_SPELL_DETERRENCE     = 19263;
+    uint32 const BONK_SPELL_DETERRENCE     = 33467;
     float const BONK_DETERRENCE_HEALTH     = 35.0f;
     int32 const BONK_DETERRENCE_DODGE      = 50;
     uint32 const BONK_DETERRENCE_MS        = 8000;
@@ -533,7 +533,7 @@ namespace
     uint32 const BONK_ORB_FADE_MS        = 1000;
 
     float const BONK_LEVEL_UP_HEAL       = 0.05f;
-    uint32 const BONK_SPELL_REVIVE_SHIELD = 1022;
+    uint32 const BONK_SPELL_REVIVE_SHIELD = 33468;
     float const BONK_REVIVE_CLEAR_RADIUS  = 15.0f;
     uint32 const BONK_SPELL_REVIVE_NOVA   = 15237;
     uint32 const BONK_KIT_REVIVE_SMITE    = 3153;

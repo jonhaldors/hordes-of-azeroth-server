@@ -16,7 +16,7 @@ namespace
     float const BONK_ENRAGE_HASTE             = 25.0f;
     uint32 const BONK_ENRAGE_MS               = 4000;
     uint32 const BONK_ENRAGE_REFRESH_GAP_MS   = 250;
-    uint32 const BONK_SPELL_ENRAGE_LOOK       = 12686;
+    uint32 const BONK_SPELL_ENRAGE_LOOK       = 33462;
     uint32 const BONK_KIT_WHIRLWIND_SPIN      = 369;
     uint32 const BONK_KIT_BLADESTORM_SPIN     = 7352;
     uint32 const BONK_REVENGE_WINDOW_MS       = 500;
