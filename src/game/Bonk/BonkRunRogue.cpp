@@ -40,7 +40,7 @@ namespace
     uint32 const BONK_KIT_SPREE_SLASH         = 6351;
     uint32 const BONK_SPELL_EVISCERATE        = 2098;
     uint32 const BONK_SPELL_AMBUSH            = 8676;
-    uint32 const BONK_SPELL_BLADE_FLURRY      = 13877;
+    uint32 const BONK_SPELL_BLADE_FLURRY      = 33466;
     uint32 const BONK_SPELL_EVASION           = 5277;
     uint32 const BONK_SPELL_SHADOW_DANCE_LOOK = 11327;
     uint32 const BONK_SPELL_SHADOW_STRIKE     = 26048;

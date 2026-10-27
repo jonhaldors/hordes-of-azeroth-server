@@ -42,7 +42,7 @@ namespace
     uint32 const BONK_SPELL_LIGHTNING_ZAP     = 26364;
     uint32 const BONK_SPELL_LIGHTNING_LOOK    = 403;
     uint32 const BONK_SPELL_STORMSTRIKE_LOOK  = 17364;
-    uint32 const BONK_SPELL_LIGHTNING_SHIELD  = 324;
+    uint32 const BONK_SPELL_LIGHTNING_SHIELD  = 33465;
     uint32 const BONK_SPELL_HEALING_STREAM    = 5672;
     uint32 const BONK_SPELL_FLAMETONGUE       = 10444;
     uint32 const BONK_SPELL_FIRE_NOVA         = 8349;

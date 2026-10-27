@@ -942,6 +942,7 @@ class BonkRun
         bool CanEvolve(OwnedWeapon const& owned) const;
         float GetLegendaryChance(OwnedWeapon const& owned) const;
         std::string DescribeEvolutionChance(OwnedWeapon const& owned, uint32& chance) const;
+        bool HasEvolutionLeft() const;
         OwnedWeapon const* FindAscensionWeapon() const;
         void UseAscension(OwnedWeapon const& owned);
         void ShowAllEvolutions(std::vector<Offer>& cards) const;
