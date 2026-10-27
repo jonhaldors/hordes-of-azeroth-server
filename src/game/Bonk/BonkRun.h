@@ -820,6 +820,7 @@ class BonkRun
         void UpdateHeals(uint32 diff);
         void GiveShards(uint32 count);
         ObjectGuid PlaceMarker(GameObject const* go, uint32 spellId, float scale);
+        ObjectGuid PlaceLootBeam(GameObject const* go, uint8 quality, ObjectGuid& swirl);
         void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid, ObjectGuid const& sparkleGuid = ObjectGuid());
 
         bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr, std::vector<Offer> const* kept = nullptr,
@@ -966,6 +967,7 @@ class BonkRun
             ObjectGuid guid;
             uint32 entry = 0;
             ObjectGuid marker;
+            ObjectGuid swirl;
             bool tierPiece = false;
         };
         void DropGear(Creature const* mob, BonkSpawnKind kind);

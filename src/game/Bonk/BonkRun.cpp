@@ -4682,7 +4682,7 @@ void BonkRun::DespawnObjects()
         for (HealDrop const& drop : m_healDrops)
             RemoveHealDrop(drop, map->GetCreature(drop.guid), false);
         for (GearDrop const& drop : m_gearDrops)
-            RemovePickup(drop.guid, drop.marker);
+            RemovePickup(drop.guid, drop.marker, drop.swirl);
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
             portal->Delete();
     }

@@ -25,6 +25,9 @@ namespace
     uint32 const BONK_SPELL_EPIC_LOOT_BEAM      = 33458;
     uint32 const BONK_SPELL_LEGENDARY_LOOT_BEAM = 33459;
     float const BONK_LOOT_BEAM_SCALE     = 0.35f;
+    uint32 const BONK_SPELL_FIRST_LOOT_CORE  = 33642;
+    uint32 const BONK_SPELL_FIRST_LOOT_SWIRL = 33646;
+    float const BONK_LOOT_SWIRL_SCALE    = 1.0f;
     uint32 const BONK_SPELL_DROP_SPARKLE = 33455;
     uint32 const BONK_SPELL_TICKET_POOL  = 33640;
     uint32 const BONK_SPELL_GLYPH_POOL   = 33641;
@@ -167,6 +170,16 @@ namespace
         }
     }
 
+    uint32 GetLootCoreSpell(uint8 quality)
+    {
+        return quality >= ITEM_QUALITY_UNCOMMON && quality <= ITEM_QUALITY_LEGENDARY ? BONK_SPELL_FIRST_LOOT_CORE + quality - ITEM_QUALITY_UNCOMMON : 0;
+    }
+
+    uint32 GetLootSwirlSpell(uint8 quality)
+    {
+        return quality >= ITEM_QUALITY_RARE && quality <= ITEM_QUALITY_LEGENDARY ? BONK_SPELL_FIRST_LOOT_SWIRL + quality - ITEM_QUALITY_RARE : 0;
+    }
+
     std::string GetItemLink(ItemPrototype const* proto)
     {
         char color[16];
@@ -255,10 +268,21 @@ bool BonkRun::PlaceGearDrop(Creature const* mob, uint32 entry, uint8 quality, bo
     GearDrop drop;
     drop.guid = go->GetObjectGuid();
     drop.entry = entry;
-    drop.marker = PlaceMarker(go, GetLootBeamSpell(quality), BONK_LOOT_BEAM_SCALE);
+    drop.marker = PlaceLootBeam(go, quality, drop.swirl);
     drop.tierPiece = tierPiece;
     m_gearDrops.push_back(drop);
     return true;
+}
+
+ObjectGuid BonkRun::PlaceLootBeam(GameObject const* go, uint8 quality, ObjectGuid& swirl)
+{
+    ObjectGuid const beam = PlaceMarker(go, GetLootBeamSpell(quality), BONK_LOOT_BEAM_SCALE);
+    if (uint32 const core = GetLootCoreSpell(quality))
+        if (Creature* marker = m_player->GetMap()->GetCreature(beam))
+            marker->AddAura(core, ADD_AURA_PERMANENT);
+    if (uint32 const swirlSpell = GetLootSwirlSpell(quality))
+        swirl = PlaceMarker(go, swirlSpell, BONK_LOOT_SWIRL_SCALE);
+    return beam;
 }
 
 bool BonkRun::PlaceDropLooksNow(std::string& error)
@@ -269,18 +293,17 @@ bool BonkRun::PlaceDropLooksNow(std::string& error)
     struct DropLook
     {
         uint32 entry;
-        uint32 spell;
-        float scale;
-        bool sparkle;
+        uint8 quality;
+        uint32 pool;
     };
     DropLook const looks[] =
     {
-        { BONK_GO_LOOT, BONK_SPELL_UNCOMMON_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
-        { BONK_GO_LOOT, BONK_SPELL_RARE_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
-        { BONK_GO_LOOT, BONK_SPELL_EPIC_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
-        { BONK_GO_LOOT, BONK_SPELL_LEGENDARY_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
-        { BONK_GO_SHARD, BONK_SPELL_TICKET_POOL, BONK_DROP_POOL_SCALE, true },
-        { BONK_GO_GLYPH, BONK_SPELL_GLYPH_POOL, BONK_DROP_POOL_SCALE, true },
+        { BONK_GO_LOOT, ITEM_QUALITY_UNCOMMON, 0 },
+        { BONK_GO_LOOT, ITEM_QUALITY_RARE, 0 },
+        { BONK_GO_LOOT, ITEM_QUALITY_EPIC, 0 },
+        { BONK_GO_LOOT, ITEM_QUALITY_LEGENDARY, 0 },
+        { BONK_GO_SHARD, 0, BONK_SPELL_TICKET_POOL },
+        { BONK_GO_GLYPH, 0, BONK_SPELL_GLYPH_POOL },
     };
     size_t const count = sizeof(looks) / sizeof(looks[0]);
     float const facing = m_player->GetOrientation();
@@ -296,9 +319,16 @@ bool BonkRun::PlaceDropLooksNow(std::string& error)
         GameObject* go = PlaceObject(looks[i].entry, x, y, z, BONK_DROP_LOOKS_LIFETIME_SEC);
         if (!go)
             continue;
-        PlaceMarker(go, looks[i].spell, looks[i].scale);
-        if (looks[i].sparkle)
+        if (looks[i].pool)
+        {
+            PlaceMarker(go, looks[i].pool, BONK_DROP_POOL_SCALE);
             PlaceMarker(go, BONK_SPELL_DROP_SPARKLE, 1.0f);
+        }
+        else
+        {
+            ObjectGuid swirl;
+            PlaceLootBeam(go, looks[i].quality, swirl);
+        }
     }
     return true;
 }
@@ -352,7 +382,7 @@ void BonkRun::UpdateGearDrops(uint32 diff)
             SendTierPieceHome(itr->entry);
         else
             m_pendingGear.push_back(itr->entry);
-        RemovePickup(itr->guid, itr->marker);
+        RemovePickup(itr->guid, itr->marker, itr->swirl);
         itr = m_gearDrops.erase(itr);
         taken = true;
     }
@@ -368,7 +398,7 @@ void BonkRun::CollectAllGear()
             SendTierPieceHome(drop.entry);
         else
             m_pendingGear.push_back(drop.entry);
-        RemovePickup(drop.guid, drop.marker);
+        RemovePickup(drop.guid, drop.marker, drop.swirl);
     }
     m_gearDrops.clear();
     UpdateOffers();
