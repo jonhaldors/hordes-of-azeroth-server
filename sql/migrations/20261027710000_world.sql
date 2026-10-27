@@ -95,13 +95,6 @@ INSERT INTO `gameobject` (`guid`, `id`, `map`, `position_x`, `position_y`, `posi
 
 DELETE FROM `creature` WHERE `guid` = 900100;
 DELETE FROM `creature_template` WHERE `entry` = 900170;
-DROP TEMPORARY TABLE IF EXISTS `bonk_deck_glow`;
-CREATE TEMPORARY TABLE `bonk_deck_glow` AS SELECT * FROM `creature_template` WHERE `entry` = 900129;
-UPDATE `bonk_deck_glow` SET `entry` = 900170, `auras` = '33647';
-INSERT INTO `creature_template` SELECT * FROM `bonk_deck_glow`;
-DROP TEMPORARY TABLE `bonk_deck_glow`;
-INSERT INTO `creature` (`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, `orientation`, `wander_distance`, `movement_type`) VALUES
-(900100, 900170, 1, 16251.8, 16311.0, 20.845, 0, 0, 0);
 
 END IF;
 END??
