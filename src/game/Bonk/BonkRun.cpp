@@ -526,8 +526,10 @@ namespace
     uint32 const BONK_HEAL_SPARKLE       = 900135;
     char const* const BONK_CHEST_PIN_ICON = "INV_Box_02";
     char const* const BONK_MAGNET_PIN_ICON = "INV_Stone_15";
-    uint32 const BONK_SPELL_SHARD_BEAM   = 25824;
-    float const BONK_SHARD_BEAM_SCALE    = 0.5f;
+    uint32 const BONK_SPELL_FEET_SPARKLE = 33455;
+    uint32 const BONK_SPELL_TICKET_POOL  = 33640;
+    uint32 const BONK_SPELL_GLYPH_POOL   = 33641;
+    float const BONK_DROP_POOL_SCALE     = 0.3f;
     uint32 const BONK_DISPLAY_INVISIBLE  = 11686;
     uint32 const BONK_ORB_FADE_MS        = 1000;
 
@@ -4674,7 +4676,9 @@ void BonkRun::DespawnObjects()
                 powerup->Delete();
         }
         for (ShardDrop const& drop : m_shardDrops)
-            RemovePickup(drop.guid, drop.marker);
+            RemovePickup(drop.guid, drop.marker, drop.sparkle);
+        for (GlyphDrop const& drop : m_glyphDrops)
+            RemovePickup(drop.guid, drop.marker, drop.sparkle);
         for (HealDrop const& drop : m_healDrops)
             RemoveHealDrop(drop, map->GetCreature(drop.guid), false);
         for (GearDrop const& drop : m_gearDrops)
@@ -4692,6 +4696,7 @@ void BonkRun::DespawnObjects()
     m_voidZones.clear();
     ClearHidden();
     m_shardDrops.clear();
+    m_glyphDrops.clear();
     m_healDrops.clear();
     m_gearDrops.clear();
     m_portalGuid.Clear();
@@ -4922,6 +4927,7 @@ void BonkRun::EnterNextStage()
     }
 
     CollectAllShards();
+    CollectAllGlyphs();
     EndHearth();
     DespawnMiniEvent();
     DespawnObjects();
@@ -10342,7 +10348,8 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
     ShardDrop drop;
     drop.guid = go->GetObjectGuid();
     drop.count = count;
-    drop.marker = PlaceMarker(go, BONK_SPELL_SHARD_BEAM, BONK_SHARD_BEAM_SCALE);
+    drop.marker = PlaceMarker(go, BONK_SPELL_TICKET_POOL, BONK_DROP_POOL_SCALE);
+    drop.sparkle = PlaceMarker(go, BONK_SPELL_FEET_SPARKLE, 1.0f);
     m_shardDrops.push_back(drop);
     m_player->GetBonkPlayer()->Notify(count == 1 ? "A Darkmoon Ticket dropped!" : FormatBonkShards(count) + " dropped!");
 }
@@ -10350,13 +10357,26 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
 void BonkRun::UpdateShards(uint32 diff)
 {
     m_shardTimer += diff;
-    if (m_shardTimer < BONK_SHARD_CHECK_MS || m_shardDrops.empty())
+    if (m_shardTimer < BONK_SHARD_CHECK_MS || (m_shardDrops.empty() && m_glyphDrops.empty()))
         return;
     m_shardTimer = 0;
 
     Map* map = m_player->GetMap();
     float heroX, heroY, heroZ;
     GetHeroPositionNow(m_player, heroX, heroY, heroZ);
+    for (auto itr = m_glyphDrops.begin(); itr != m_glyphDrops.end();)
+    {
+        GameObject* go = map->GetGameObject(itr->guid);
+        if (go && go->isSpawned() && GetHeroDistance(m_player, heroX, heroY, heroZ, go) > BONK_SHARD_PICKUP_RANGE)
+        {
+            ++itr;
+            continue;
+        }
+        RemovePickup(itr->guid, itr->marker, itr->sparkle);
+        itr = m_glyphDrops.erase(itr);
+        QueueGlyphPick();
+    }
+
     uint32 taken = 0;
     for (auto itr = m_shardDrops.begin(); itr != m_shardDrops.end();)
     {
@@ -10368,12 +10388,53 @@ void BonkRun::UpdateShards(uint32 diff)
         }
 
         taken += itr->count;
-        RemovePickup(itr->guid, itr->marker);
+        RemovePickup(itr->guid, itr->marker, itr->sparkle);
         itr = m_shardDrops.erase(itr);
     }
 
     if (taken)
         GiveShards(taken);
+}
+
+void BonkRun::DropGlyph(Creature const* mob)
+{
+    if (!CanGainGlyphPick())
+        return;
+
+    float const angle = frand(0.0f, 2.0f * M_PI_F);
+    float x = mob->GetPositionX() + BONK_SHARD_SCATTER * std::cos(angle);
+    float y = mob->GetPositionY() + BONK_SHARD_SCATTER * std::sin(angle);
+    float z = m_player->GetMap()->GetHeight(x, y, mob->GetPositionZ() + 2.0f, true, 10.0f);
+    if (z <= INVALID_HEIGHT)
+    {
+        x = mob->GetPositionX();
+        y = mob->GetPositionY();
+        z = mob->GetPositionZ();
+    }
+
+    GameObject* go = PlaceObject(BONK_GO_GLYPH, x, y, z, BONK_OBJECT_LIFETIME_SEC);
+    if (!go)
+    {
+        QueueGlyphPick();
+        return;
+    }
+
+    GlyphDrop drop;
+    drop.guid = go->GetObjectGuid();
+    drop.marker = PlaceMarker(go, BONK_SPELL_GLYPH_POOL, BONK_DROP_POOL_SCALE);
+    drop.sparkle = PlaceMarker(go, BONK_SPELL_FEET_SPARKLE, 1.0f);
+    m_glyphDrops.push_back(drop);
+    m_player->GetBonkPlayer()->Notify("A Glyph dropped! Pick it up to choose a Glyph.");
+}
+
+void BonkRun::CollectAllGlyphs()
+{
+    for (GlyphDrop const& drop : m_glyphDrops)
+        RemovePickup(drop.guid, drop.marker, drop.sparkle);
+    uint32 const count = uint32(m_glyphDrops.size());
+    m_glyphDrops.clear();
+    for (uint32 i = 0; i < count; ++i)
+        QueueGlyphPick();
 }
 
 void BonkRun::CollectAllShards()
@@ -10382,7 +10443,7 @@ void BonkRun::CollectAllShards()
     for (ShardDrop const& drop : m_shardDrops)
     {
         taken += drop.count;
-        RemovePickup(drop.guid, drop.marker);
+        RemovePickup(drop.guid, drop.marker, drop.sparkle);
     }
     m_shardDrops.clear();
 
@@ -10542,18 +10603,19 @@ ObjectGuid BonkRun::PlaceMarker(GameObject const* go, uint32 spellId, float scal
     return marker->GetObjectGuid();
 }
 
-void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid)
+void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid, ObjectGuid const& sparkleGuid)
 {
     Map* map = m_player->FindMap();
     if (!map)
         return;
     if (GameObject* go = map->GetGameObject(goGuid))
         go->Delete();
-    if (Creature* marker = map->GetCreature(markerGuid))
-    {
-        marker->RemoveAllAuras();
-        marker->DespawnOrUnsummon();
-    }
+    for (ObjectGuid const& guid : { markerGuid, sparkleGuid })
+        if (Creature* marker = map->GetCreature(guid))
+        {
+            marker->RemoveAllAuras();
+            marker->DespawnOrUnsummon();
+        }
 }
 
 float BonkRun::GetGoldMultiplier() const
@@ -10667,14 +10729,14 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
     ObjectGuid const hiddenBoss = m_hidden.boss;
     OnHiddenKilled(mob);
     if (kind == BONK_SPAWN_MINIBOSS && !m_sandbox && mob->GetObjectGuid() != hiddenBoss && ++m_glyphMiniBosses == 1)
-        QueueGlyphPick();
+        DropGlyph(mob);
 
     if (mob->GetObjectGuid() == m_bossGuid)
     {
         if (m_stoneBoss)
             GiveExperience(GetNextLevelXp());
         if (!m_tier.stages || m_stage < m_tier.stages)
-            QueueGlyphPick();
+            DropGlyph(mob);
         OpenPortal(mob);
     }
 }

@@ -41,10 +41,15 @@ namespace
     }
 }
 
-void BonkRun::QueueGlyphPick()
+bool BonkRun::CanGainGlyphPick() const
 {
     uint32 const picks = BONK_GLYPH_PICKS + (GetUtility(BONK_UTILITY_START_GLYPH) > 0.0f ? 1 : 0);
-    if (m_glyphPicksGiven + m_pendingGlyphPicks >= picks || sBonkMgr.GetGlyphs().empty())
+    return m_glyphPicksGiven + m_pendingGlyphPicks + uint32(m_glyphDrops.size()) < picks && !sBonkMgr.GetGlyphs().empty();
+}
+
+void BonkRun::QueueGlyphPick()
+{
+    if (!CanGainGlyphPick())
         return;
     ++m_pendingGlyphPicks;
     UpdateOffers();

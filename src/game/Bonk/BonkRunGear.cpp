@@ -25,6 +25,13 @@ namespace
     uint32 const BONK_SPELL_EPIC_LOOT_BEAM      = 33458;
     uint32 const BONK_SPELL_LEGENDARY_LOOT_BEAM = 33459;
     float const BONK_LOOT_BEAM_SCALE     = 0.35f;
+    uint32 const BONK_SPELL_DROP_SPARKLE = 33455;
+    uint32 const BONK_SPELL_TICKET_POOL  = 33640;
+    uint32 const BONK_SPELL_GLYPH_POOL   = 33641;
+    float const BONK_DROP_POOL_SCALE     = 0.3f;
+    float const BONK_DROP_LOOKS_DISTANCE = 7.0f;
+    float const BONK_DROP_LOOKS_SPACING  = 3.0f;
+    uint32 const BONK_DROP_LOOKS_LIFETIME_SEC = 180;
     uint32 const BONK_GEAR_CHECK_MS      = 250;
     uint32 const BONK_BANKER_ENTRY       = 900009;
     size_t const BONK_MAX_GEAR_DROPS     = 10;
@@ -251,6 +258,48 @@ bool BonkRun::PlaceGearDrop(Creature const* mob, uint32 entry, uint8 quality, bo
     drop.marker = PlaceMarker(go, GetLootBeamSpell(quality), BONK_LOOT_BEAM_SCALE);
     drop.tierPiece = tierPiece;
     m_gearDrops.push_back(drop);
+    return true;
+}
+
+bool BonkRun::PlaceDropLooksNow(std::string& error)
+{
+    if (!IsActive())
+        return false;
+
+    struct DropLook
+    {
+        uint32 entry;
+        uint32 spell;
+        float scale;
+        bool sparkle;
+    };
+    DropLook const looks[] =
+    {
+        { BONK_GO_LOOT, BONK_SPELL_UNCOMMON_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
+        { BONK_GO_LOOT, BONK_SPELL_RARE_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
+        { BONK_GO_LOOT, BONK_SPELL_EPIC_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
+        { BONK_GO_LOOT, BONK_SPELL_LEGENDARY_LOOT_BEAM, BONK_LOOT_BEAM_SCALE, false },
+        { BONK_GO_SHARD, BONK_SPELL_TICKET_POOL, BONK_DROP_POOL_SCALE, true },
+        { BONK_GO_GLYPH, BONK_SPELL_GLYPH_POOL, BONK_DROP_POOL_SCALE, true },
+    };
+    size_t const count = sizeof(looks) / sizeof(looks[0]);
+    float const facing = m_player->GetOrientation();
+    float const centerX = m_player->GetPositionX() + BONK_DROP_LOOKS_DISTANCE * std::cos(facing);
+    float const centerY = m_player->GetPositionY() + BONK_DROP_LOOKS_DISTANCE * std::sin(facing);
+    for (size_t i = 0; i < count; ++i)
+    {
+        float const offset = (float(i) - float(count - 1) / 2.0f) * BONK_DROP_LOOKS_SPACING;
+        float const x = centerX - offset * std::sin(facing), y = centerY + offset * std::cos(facing);
+        float const z = m_player->GetMap()->GetHeight(x, y, m_player->GetPositionZ() + 5.0f, true, 15.0f);
+        if (z <= INVALID_HEIGHT)
+            continue;
+        GameObject* go = PlaceObject(looks[i].entry, x, y, z, BONK_DROP_LOOKS_LIFETIME_SEC);
+        if (!go)
+            continue;
+        PlaceMarker(go, looks[i].spell, looks[i].scale);
+        if (looks[i].sparkle)
+            PlaceMarker(go, BONK_SPELL_DROP_SPARKLE, 1.0f);
+    }
     return true;
 }
 

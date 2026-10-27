@@ -871,6 +871,20 @@ bool ChatHandler::HandleBonkPowerupCommand(char* args)
     return false;
 }
 
+bool ChatHandler::HandleBonkDropLooksCommand(char* )
+{
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    std::string error = "Drop looks need a run or the sandbox.";
+    if (run && run->PlaceDropLooksNow(error))
+    {
+        SendSysMessage("Every drop look is laid out 10 yards in front of you.");
+        return true;
+    }
+    SendSysMessage(error.c_str());
+    SetSentErrorMessage(true);
+    return false;
+}
+
 bool ChatHandler::HandleBonkLeyPickCommand(char* args)
 {
     uint32 index = 0;

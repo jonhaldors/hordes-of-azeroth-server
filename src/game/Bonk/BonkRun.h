@@ -132,6 +132,7 @@ class BonkRun
         bool StartMiniEventNow(BonkMiniEventType type, std::string& error);
         bool PlaceShrineNow(BonkShrineType type, std::string& error);
         bool PlacePowerupNow(uint32 entry, std::string& error);
+        bool PlaceDropLooksNow(std::string& error);
         void UseShrine(GameObject* go);
         bool PickLeyBuff(uint32 index, std::string& error);
         uint32 GetGreedRewardPercent() const;
@@ -394,6 +395,7 @@ class BonkRun
             ObjectGuid guid;
             uint32 count = 0;
             ObjectGuid marker;
+            ObjectGuid sparkle;
         };
 
         BonkMap const* ChooseNextMap();
@@ -631,6 +633,9 @@ class BonkRun
         void ClearHidden();
 
         void QueueGlyphPick();
+        bool CanGainGlyphPick() const;
+        void DropGlyph(Creature const* mob);
+        void CollectAllGlyphs();
         void OfferGlyphs();
         void SendGlyphOffer() const;
         void SendGlyphs() const;
@@ -815,7 +820,7 @@ class BonkRun
         void UpdateHeals(uint32 diff);
         void GiveShards(uint32 count);
         ObjectGuid PlaceMarker(GameObject const* go, uint32 spellId, float scale);
-        void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid);
+        void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid, ObjectGuid const& sparkleGuid = ObjectGuid());
 
         bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr, std::vector<Offer> const* kept = nullptr,
             std::vector<Offer>* drawn = nullptr);
@@ -1318,6 +1323,13 @@ class BonkRun
         uint32 m_orbMergeTimer = 0;
         uint32 m_lastOrbMergeId = 0;
         std::vector<ShardDrop> m_shardDrops;
+        struct GlyphDrop
+        {
+            ObjectGuid guid;
+            ObjectGuid marker;
+            ObjectGuid sparkle;
+        };
+        std::vector<GlyphDrop> m_glyphDrops;
         struct HealDrop
         {
             ObjectGuid guid;

@@ -26,6 +26,7 @@ uint32 const BONK_GO_PORTAL     = 900003;
 uint32 const BONK_GO_VAULT      = 900041;
 uint32 const BONK_GO_SHARD      = 900007;
 uint32 const BONK_GO_HEAL       = 900008;
+uint32 const BONK_GO_GLYPH      = 900062;
 
 uint32 const BONK_ORB_SMALL = 900100;
 uint32 const BONK_ORB_LARGE = 900101;
