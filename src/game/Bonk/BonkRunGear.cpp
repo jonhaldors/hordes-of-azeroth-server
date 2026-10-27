@@ -285,10 +285,28 @@ ObjectGuid BonkRun::PlaceLootBeam(GameObject const* go, uint8 quality, ObjectGui
     return beam;
 }
 
+void BonkRun::ClearDropLooks()
+{
+    if (Map* map = m_player->FindMap())
+        for (ObjectGuid const& guid : m_dropLooks)
+        {
+            if (GameObject* go = map->GetGameObject(guid))
+                go->Delete();
+            if (Creature* marker = map->GetCreature(guid))
+            {
+                marker->RemoveAllAuras();
+                marker->DespawnOrUnsummon();
+            }
+        }
+    m_dropLooks.clear();
+}
+
 bool BonkRun::PlaceDropLooksNow(std::string& error)
 {
     if (!IsActive())
         return false;
+
+    ClearDropLooks();
 
     struct DropLook
     {
@@ -319,15 +337,17 @@ bool BonkRun::PlaceDropLooksNow(std::string& error)
         GameObject* go = PlaceObject(looks[i].entry, x, y, z, BONK_DROP_LOOKS_LIFETIME_SEC);
         if (!go)
             continue;
+        m_dropLooks.push_back(go->GetObjectGuid());
         if (looks[i].pool)
         {
-            PlaceMarker(go, looks[i].pool, BONK_DROP_POOL_SCALE);
-            PlaceMarker(go, BONK_SPELL_DROP_SPARKLE, 1.0f);
+            m_dropLooks.push_back(PlaceMarker(go, looks[i].pool, BONK_DROP_POOL_SCALE));
+            m_dropLooks.push_back(PlaceMarker(go, BONK_SPELL_DROP_SPARKLE, 1.0f));
         }
         else
         {
             ObjectGuid swirl;
-            PlaceLootBeam(go, looks[i].quality, swirl);
+            m_dropLooks.push_back(PlaceLootBeam(go, looks[i].quality, swirl));
+            m_dropLooks.push_back(swirl);
         }
     }
     return true;

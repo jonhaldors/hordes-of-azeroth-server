@@ -4687,6 +4687,7 @@ void BonkRun::DespawnObjects()
             portal->Delete();
     }
     DespawnVault();
+    ClearDropLooks();
     m_chests.clear();
     m_chestObjectives.clear();
     m_powerups.clear();

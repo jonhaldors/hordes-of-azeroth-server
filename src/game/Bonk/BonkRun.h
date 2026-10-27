@@ -133,6 +133,7 @@ class BonkRun
         bool PlaceShrineNow(BonkShrineType type, std::string& error);
         bool PlacePowerupNow(uint32 entry, std::string& error);
         bool PlaceDropLooksNow(std::string& error);
+        void ClearDropLooks();
         void UseShrine(GameObject* go);
         bool PickLeyBuff(uint32 index, std::string& error);
         uint32 GetGreedRewardPercent() const;
@@ -1332,6 +1333,7 @@ class BonkRun
             ObjectGuid sparkle;
         };
         std::vector<GlyphDrop> m_glyphDrops;
+        std::vector<ObjectGuid> m_dropLooks;
         struct HealDrop
         {
             ObjectGuid guid;
