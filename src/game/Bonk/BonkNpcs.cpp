@@ -22,6 +22,7 @@ namespace
     uint32 const BONK_TEXT_MASTERY_SOON  = 900009;
     uint32 const BONK_TEXT_VAULT_EMPTY   = 900010;
     uint32 const BONK_TEXT_VAULT         = 900011;
+    uint32 const BONK_TEXT_TIER_VENDOR   = 900015;
 
     uint32 const MASTERY_ACTION_RESPEC = GOSSIP_ACTION_INFO_DEF - 1;
 
@@ -66,7 +67,7 @@ bool GossipHello_npc_bonk_run_master(Player* player, Creature* creature)
             text += " (locked: " + hint + ")";
         }
         else if (uint32 const best = bonk->GetBestStage(tier.id))
-            text += " (best: stage " + std::to_string(best) + ")";
+            text += " (best: floor " + std::to_string(best) + ")";
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, text.c_str(), GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + tier.id);
     }
 
@@ -246,6 +247,32 @@ bool GOHello_go_bonk_chest(Player* player, GameObject* go)
     return true;
 }
 
+bool GossipHello_npc_bonk_tier_vendor(Player* player, Creature* creature)
+{
+    BonkPlayer* bonk = player->GetBonkPlayer();
+    std::vector<Item*> const foreign = bonk->GetForeignTierPieces();
+    if (foreign.empty())
+    {
+        player->GetSession()->SendListInventory(creature->GetObjectGuid());
+        return true;
+    }
+    std::string const exchange = "Refit " + std::to_string(foreign.size()) + (foreign.size() == 1 ? " set piece" : " set pieces") +
+        " from another class for yours (" + FormatBonkMoney(bonk->GetTierExchangeFee(foreign)) + ")";
+    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_VENDOR, "Show me your set pieces", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_TRADE);
+    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_MONEY_BAG, exchange.c_str(), GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+    player->SEND_GOSSIP_MENU(BONK_TEXT_TIER_VENDOR, creature->GetObjectGuid());
+    return true;
+}
+
+bool GossipSelect_npc_bonk_tier_vendor(Player* player, Creature* creature, uint32 , uint32 action)
+{
+    player->CLOSE_GOSSIP_MENU();
+    if (action == GOSSIP_ACTION_INFO_DEF)
+        player->GetBonkPlayer()->ExchangeTierPieces();
+    player->GetSession()->SendListInventory(creature->GetObjectGuid());
+    return true;
+}
+
 bool GossipHello_npc_bonk_vendor(Player* player, Creature* creature)
 {
     if (BonkRun* run = player->GetBonkPlayer()->GetRun())
@@ -270,7 +297,7 @@ bool GOHello_go_bonk_portal(Player* player, GameObject* go)
     {
         BonkTier const& tier = run->GetTier();
         bool const endless = tier.stages && run->GetStage() + 1 > tier.stages;
-        std::string const text = std::string(endless ? "Go on to Endless stage " : "Go on to stage ") + std::to_string(run->GetStage() + 1) + ": " + next->name;
+        std::string const text = std::string(endless ? "Go on to Endless floor " : "Go on to floor ") + std::to_string(run->GetStage() + 1) + ": " + next->name;
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, text.c_str(), GOSSIP_SENDER_MAIN, PORTAL_ACTION_NEXT);
     }
     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Return to the Inn (ends the run)", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME);
@@ -372,6 +399,12 @@ void AddSC_bonk_npcs()
     newscript->Name = "npc_bonk_quartermaster";
     newscript->pGossipHello = &GossipHello_npc_bonk_quartermaster;
     newscript->pGossipSelect = &GossipSelect_npc_bonk_quartermaster;
+    newscript->RegisterSelf();
+
+    newscript = new Script;
+    newscript->Name = "npc_bonk_tier_vendor";
+    newscript->pGossipHello = &GossipHello_npc_bonk_tier_vendor;
+    newscript->pGossipSelect = &GossipSelect_npc_bonk_tier_vendor;
     newscript->RegisterSelf();
 
     newscript = new Script;

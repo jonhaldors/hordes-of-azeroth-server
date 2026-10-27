@@ -1,4 +1,5 @@
 #include "BonkPlayer.h"
+#include "Bag.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkQuests.h"
@@ -1973,16 +1974,70 @@ std::vector<uint32> BonkPlayer::GetTierStock() const
     std::vector<uint32> stock;
     if (!IsTierCleared("heroic"))
         return stock;
-    uint8 const* classes = std::begin(BONK_TIER_GEAR_CLASSES);
-    uint8 const* found = std::find(classes, std::end(BONK_TIER_GEAR_CLASSES), m_player->GetClass());
-    if (found == std::end(BONK_TIER_GEAR_CLASSES))
-        return stock;
-    uint32 const first = BONK_TIER_GEAR_FIRST + uint32(found - classes) * BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS +
-        (GetStockTier() - 1) * BONK_TIER_GEAR_SLOTS;
     for (uint32 slot = 0; slot < BONK_TIER_GEAR_SLOTS; ++slot)
-        if (sObjectMgr.GetItemPrototype(first + slot))
-            stock.push_back(first + slot);
+        if (uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), GetStockTier(), slot))
+            stock.push_back(entry);
     return stock;
+}
+
+std::vector<Item*> BonkPlayer::GetForeignTierPieces() const
+{
+    std::vector<Item*> pieces;
+    auto consider = [&](Item* item)
+    {
+        uint8 classId;
+        uint32 tier, slot;
+        if (item && BonkMgr::ReadTierGearEntry(item->GetEntry(), classId, tier, slot) && classId != m_player->GetClass())
+            pieces.push_back(item);
+    };
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        consider(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        if (Bag* container = dynamic_cast<Bag*>(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, bag)))
+            for (uint32 slot = 0; slot < container->GetBagSize(); ++slot)
+                consider(container->GetItemByPos(uint8(slot)));
+    return pieces;
+}
+
+uint32 BonkPlayer::GetTierExchangeFee(std::vector<Item*> const& pieces) const
+{
+    uint32 fee = 0;
+    for (Item* piece : pieces)
+        fee += piece->GetProto()->BuyPrice * BONK_TIER_EXCHANGE_FEE_PERCENT / 100;
+    return fee;
+}
+
+void BonkPlayer::ExchangeTierPieces()
+{
+    uint32 exchanged = 0;
+    for (Item* piece : GetForeignTierPieces())
+    {
+        uint8 classId;
+        uint32 tier, slot;
+        BonkMgr::ReadTierGearEntry(piece->GetEntry(), classId, tier, slot);
+        uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), tier, slot);
+        uint32 const fee = piece->GetProto()->BuyPrice * BONK_TIER_EXCHANGE_FEE_PERCENT / 100;
+        if (!entry || m_player->GetMoney() < fee)
+            break;
+        uint8 const bag = piece->GetBagSlot();
+        uint8 const slotInBag = piece->GetSlot();
+        uint32 const oldEntry = piece->GetEntry();
+        m_player->DestroyItem(bag, slotInBag, true);
+        ItemPosCountVec dest;
+        if (m_player->CanStoreNewItem(bag, slotInBag, dest, entry, 1) != EQUIP_ERR_OK)
+        {
+            ItemPosCountVec back;
+            if (m_player->CanStoreNewItem(bag, slotInBag, back, oldEntry, 1) == EQUIP_ERR_OK)
+                m_player->StoreNewItem(back, oldEntry, true);
+            break;
+        }
+        m_player->ModifyMoney(-int32(fee));
+        if (Item* refit = m_player->StoreNewItem(dest, entry, true))
+            m_player->SendNewItem(refit, 1, true, false);
+        ++exchanged;
+    }
+    Notify(exchanged ? "Refitted " + std::to_string(exchanged) + (exchanged == 1 ? " set piece" : " set pieces") + " for your class." :
+        "You have no set pieces from other classes in your bags, or not enough gold.");
 }
 
 void BonkPlayer::SendGearTabs(Creature const* vendor) const

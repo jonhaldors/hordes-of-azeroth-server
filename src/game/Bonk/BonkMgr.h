@@ -1002,6 +1002,7 @@ uint8 const BONK_TRAINING_HEROIC_RANKS = 3;
 uint8 const BONK_TRAINING_MYTHIC_RANKS = 4;
 uint32 const BONK_TRAINING_FLOORS_PER_RANK = 4;
 uint32 const BONK_TIER_VENDOR = 900150;
+uint32 const BONK_TIER_EXCHANGE_FEE_PERCENT = 10;
 uint32 const BONK_TIER_GEAR_FIRST = 903000;
 uint32 const BONK_TIER_GEAR_TIERS = 20;
 uint32 const BONK_TIER_GEAR_SLOTS = 8;
@@ -1311,6 +1312,8 @@ class BonkMgr
         uint32 GetItemCard(uint32 itemEntry) const;
 
         BonkGear const* GetGear(uint32 entry) const;
+        static uint32 GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot);
+        static bool ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot);
         std::map<uint32, BonkGear> const& GetGear() const { return m_gear; }
 
         std::map<uint32, BonkShopTree> const& GetShopTrees() const { return m_shopTrees; }

@@ -2049,6 +2049,28 @@ void BonkMgr::LoadItemCards()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk item cards", uint32(m_itemCards.size()));
 }
 
+uint32 BonkMgr::GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot)
+{
+    uint8 const* classes = std::begin(BONK_TIER_GEAR_CLASSES);
+    uint8 const* found = std::find(classes, std::end(BONK_TIER_GEAR_CLASSES), classId);
+    if (found == std::end(BONK_TIER_GEAR_CLASSES) || !tier || tier > BONK_TIER_GEAR_TIERS || slot >= BONK_TIER_GEAR_SLOTS)
+        return 0;
+    uint32 const entry = BONK_TIER_GEAR_FIRST + (uint32(found - classes) * BONK_TIER_GEAR_TIERS + tier - 1) * BONK_TIER_GEAR_SLOTS + slot;
+    return sObjectMgr.GetItemPrototype(entry) ? entry : 0;
+}
+
+bool BonkMgr::ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot)
+{
+    uint32 const perClass = BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
+    if (entry < BONK_TIER_GEAR_FIRST || entry >= BONK_TIER_GEAR_FIRST + perClass * uint32(std::size(BONK_TIER_GEAR_CLASSES)))
+        return false;
+    uint32 const index = entry - BONK_TIER_GEAR_FIRST;
+    classId = BONK_TIER_GEAR_CLASSES[index / perClass];
+    tier = (index % perClass) / BONK_TIER_GEAR_SLOTS + 1;
+    slot = index % BONK_TIER_GEAR_SLOTS;
+    return true;
+}
+
 BonkGear const* BonkMgr::GetGear(uint32 entry) const
 {
     auto itr = m_gear.find(entry);

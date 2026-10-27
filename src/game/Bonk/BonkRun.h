@@ -957,8 +957,12 @@ class BonkRun
             ObjectGuid guid;
             uint32 entry = 0;
             ObjectGuid marker;
+            bool tierPiece = false;
         };
         void DropGear(Creature const* mob, BonkSpawnKind kind);
+        void DropTierPiece(Creature const* mob, BonkSpawnKind kind);
+        void SendTierPieceHome(uint32 entry);
+        bool PlaceGearDrop(Creature const* mob, uint32 entry, uint8 quality, bool tierPiece);
         uint8 RollGearQuality(BonkSpawnKind kind) const;
         void UpdateGearDrops(uint32 diff);
         void CollectAllGear();
