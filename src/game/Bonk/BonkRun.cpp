@@ -10266,7 +10266,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
         case BONK_SPAWN_BOSS:     count = m_tier.shardsBoss; break;
         default: break;
     }
-    uint32 const scaled = uint32(count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent()) * GetAmbitionReward(kind));
+    uint32 const scaled = uint32(count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent()) * GetAmbitionReward(kind) * GetFloorRewardScale());
     count = scaled / 100 + (roll_chance_u(scaled % 100) ? 1 : 0);
     if (!count)
         return;
