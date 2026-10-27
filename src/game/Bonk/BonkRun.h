@@ -157,6 +157,13 @@ class BonkRun
         uint32 GetEliteAffixes() const { return m_tier.eliteAffixes + m_bonuses.eliteAffixes + GetMilestoneAffixes(); }
         ObjectGuid const& GetBossGuid() const { return m_bossGuid; }
         uint32 GetFloorMilestones() const;
+        static float TierHealthScale(BonkTier const& tier, uint32 stage);
+        static float TierDamageScale(BonkTier const& tier, uint32 stage);
+        static uint32 FloorMilestones(BonkTier const& tier, uint32 stage);
+        static uint32 MilestoneAffixes(BonkTier const& tier, uint32 stage);
+        static float MilestoneVeteranChance(BonkTier const& tier, uint32 stage);
+        static float FloorRewardScale(BonkTier const& tier, uint32 stage);
+        static float BossLegendaryChance(BonkTier const& tier, uint32 stage, uint32 floorsCleared);
         uint32 GetMilestoneAffixes() const;
         float GetMilestoneVeteranChance() const;
         uint32 GetEvolveRank() const;

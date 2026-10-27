@@ -286,6 +286,7 @@ class BonkPlayer
 
         void SendShop(bool open) const;
         void SendArena(std::string const& npc) const;
+        void SendFloorPreview(BonkTier const& tier, BonkRunBonuses const& bonuses) const;
         bool IsAtShop() const;
         bool IsAtSpellbook() const;
 

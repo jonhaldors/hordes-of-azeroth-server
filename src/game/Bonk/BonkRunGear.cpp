@@ -113,12 +113,6 @@ namespace
     GearOdds const BONK_GEAR_ODDS_MEDIUM[3] = { { 50, 45, 5 },  { 0, 70, 30 },  { 0, 30, 70 } };
     GearOdds const BONK_GEAR_ODDS_HARD[3]   = { { 0, 70, 30 },  { 0, 30, 70 },  { 0, 10, 90 } };
 
-    float GetLegendaryDropChance(uint32 stage, uint32 floorsCleared)
-    {
-        uint32 const milestones = std::min(4u, floorsCleared / BONK_MYTHIC_MILESTONE_FLOORS);
-        return std::min(BONK_GEAR_LEGENDARY_MAX, BONK_GEAR_LEGENDARY_CHANCE + BONK_GEAR_LEGENDARY_PER_STAGE * float(stage - 2)) +
-            BONK_GEAR_LEGENDARY_PER_MILESTONE * float(milestones);
-    }
 
     float GetSalvageShare(uint8 quality)
     {
@@ -172,6 +166,15 @@ namespace
     }
 }
 
+float BonkRun::BossLegendaryChance(BonkTier const& tier, uint32 stage, uint32 floorsCleared)
+{
+    if (tier.key != "mythic" || stage < 2)
+        return 0.0f;
+    uint32 const milestones = std::min(4u, floorsCleared / BONK_MYTHIC_MILESTONE_FLOORS);
+    return std::min(BONK_GEAR_LEGENDARY_MAX, BONK_GEAR_LEGENDARY_CHANCE + BONK_GEAR_LEGENDARY_PER_STAGE * float(stage - 2)) +
+        BONK_GEAR_LEGENDARY_PER_MILESTONE * float(milestones);
+}
+
 uint8 BonkRun::RollGearQuality(BonkSpawnKind kind) const
 {
     GearOdds const* odds = BONK_GEAR_ODDS_EASY;
@@ -187,8 +190,7 @@ uint8 BonkRun::RollGearQuality(BonkSpawnKind kind) const
         ++quality;
     if (IsChallenge() && quality < ITEM_QUALITY_EPIC && (!IsInvasion() || roll_chance_f(BONK_INVASION_UPGRADE_CHANCE)))
         ++quality;
-    if (kind == BONK_SPAWN_BOSS && IsMythic() && m_stage >= 2 &&
-        roll_chance_f(GetLegendaryDropChance(m_stage, m_player->GetBonkPlayer()->GetMythicFloorsCleared())))
+    if (kind == BONK_SPAWN_BOSS && roll_chance_f(BossLegendaryChance(m_tier, m_stage, m_player->GetBonkPlayer()->GetMythicFloorsCleared())))
         quality = ITEM_QUALITY_LEGENDARY;
     return quality;
 }

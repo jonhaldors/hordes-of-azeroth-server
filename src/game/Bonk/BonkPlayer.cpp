@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <mutex>
@@ -2266,6 +2267,7 @@ void BonkPlayer::SendArena(std::string const& npc) const
             SendAddon("tier~" + std::to_string(tier.id) + "~" + tier.key + "~" + tier.name + "~" + (unlocked ? "1" : "0") + "~" +
                 (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best) + "~" + tier.description + "~" + tier.art + "~" + maps + "~" +
                 std::to_string(tier.stages) + "~" + (tier.endless ? "1" : "0") + "~" + dungeons + "~" + tier.details);
+            SendFloorPreview(tier, GetRunBonuses());
         }
         else if (unlocked)
             ChatHandler(m_player).PSendSysMessage("  %s (best: stage %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());
@@ -2280,6 +2282,66 @@ void BonkPlayer::SendArena(std::string const& npc) const
     if (m_addonReady)
         SendStarters();
     SendAddon("tierend");
+}
+
+namespace
+{
+    std::string Percent(float value)
+    {
+        return std::to_string(int32(std::floor(value + 0.5f)));
+    }
+
+    std::string DescribeFloorChange(BonkTier const& tier, uint32 floor)
+    {
+        if (floor < 2)
+            return "";
+        uint32 const affixes = BonkRun::MilestoneAffixes(tier, floor);
+        if (affixes > BonkRun::MilestoneAffixes(tier, floor - 1))
+            return "Elites gain " + std::to_string(tier.eliteAffixes + affixes) + " affixes from here on.";
+        float const veterans = BonkRun::MilestoneVeteranChance(tier, floor) - BonkRun::MilestoneVeteranChance(tier, floor - 1);
+        if (veterans > 0.0f)
+            return Percent(veterans) + "% more enemies are Veterans from here on.";
+        return "";
+    }
+
+    std::string DescribeFirstClear(BonkTier const& tier, uint32 floor)
+    {
+        if (tier.key != "mythic")
+            return "";
+        std::vector<std::string> rewards;
+        bool const milestone = floor % BONK_MYTHIC_MILESTONE_FLOORS == 0 && floor <= BONK_MYTHIC_MILESTONE_FLOORS * 4;
+        if (floor % BONK_FLOORS_PER_TALENT_POINT == 0 && floor / BONK_FLOORS_PER_TALENT_POINT <= BONK_FLOOR_TALENT_POINTS_MAX)
+            rewards.push_back("+1 talent point");
+        if (milestone)
+            rewards.push_back("legendary gear drops more often");
+        else if (floor % 2 == 1)
+            rewards.push_back(FormatBonkShards(BONK_FLOOR_TICKETS_BASE + floor / 2));
+        if (floor % BONK_TRAINING_FLOORS_PER_RANK == 0 && floor / BONK_TRAINING_FLOORS_PER_RANK <= BONK_TRAINING_MYTHIC_RANKS)
+            rewards.push_back("Account Training rank cap +1");
+        std::string text;
+        for (size_t i = 0; i < rewards.size(); ++i)
+            text += (i == 0 ? "" : i + 1 == rewards.size() ? " and " : ", ") + rewards[i];
+        return text;
+    }
+}
+
+void BonkPlayer::SendFloorPreview(BonkTier const& tier, BonkRunBonuses const& bonuses) const
+{
+    uint32 const cleared = GetMythicFloorsCleared();
+    uint32 const floors = std::min(tier.stages, BONK_MYTHIC_MILESTONE_FLOORS * 4);
+    for (uint32 floor = 1; floor <= floors; ++floor)
+    {
+        float const health = BonkRun::TierHealthScale(tier, floor) * (1.0f + bonuses.enemyHealth / 100.0f);
+        float const damage = BonkRun::TierDamageScale(tier, floor) * (1.0f + bonuses.enemyDamage / 100.0f);
+        float const veterans = tier.veteranChance > 0.0f ? tier.veteranChance + BonkRun::MilestoneVeteranChance(tier, floor) : 0.0f;
+        uint32 const affixes = tier.eliteAffixes + bonuses.eliteAffixes + BonkRun::MilestoneAffixes(tier, floor);
+        float const gold = (BonkRun::FloorRewardScale(tier, floor) - 1.0f) * 100.0f;
+        float const legendary = BonkRun::BossLegendaryChance(tier, floor, cleared);
+        bool const firstCleared = tier.key == "mythic" && floor <= cleared;
+        SendAddon("floor~" + std::to_string(tier.id) + "~" + std::to_string(floor) + "~" + Percent((health - 1.0f) * 100.0f) + "~" +
+            Percent((damage - 1.0f) * 100.0f) + "~" + Percent(veterans) + "~" + std::to_string(affixes) + "~" + Percent(gold) + "~" +
+            Percent(legendary) + "~" + DescribeFloorChange(tier, floor) + "~" + DescribeFirstClear(tier, floor) + "~" + (firstCleared ? "1" : "0"));
+    }
 }
 
 namespace

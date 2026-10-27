@@ -3433,18 +3433,26 @@ float BonkRun::GetMobHealth(uint32 level) const
     return 40.0f * level;
 }
 
+float BonkRun::TierHealthScale(BonkTier const& tier, uint32 stage)
+{
+    float const stages = float(stage - 1);
+    return tier.healthMultiplier * (1.0f + tier.stageHealthGrowth * stages + tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f));
+}
+
+float BonkRun::TierDamageScale(BonkTier const& tier, uint32 stage)
+{
+    float const stages = float(stage - 1);
+    return tier.damageMultiplier * (1.0f + tier.stageDamageGrowth * stages + tier.stageDamageAccel * stages * std::max(0.0f, stages - 1.0f));
+}
+
 float BonkRun::GetStageHealthMultiplier() const
 {
-    float const stages = float(m_stage - 1);
-    return m_tier.healthMultiplier * (1.0f + m_tier.stageHealthGrowth * stages + m_tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f)) *
-        (1.0f + m_bonuses.enemyHealth / 100.0f) * (IsChallenge() ? BONK_DUNGEON_HEALTH : 1.0f);
+    return TierHealthScale(m_tier, m_stage) * (1.0f + m_bonuses.enemyHealth / 100.0f) * (IsChallenge() ? BONK_DUNGEON_HEALTH : 1.0f);
 }
 
 float BonkRun::GetStageDamageMultiplier() const
 {
-    float const stages = float(m_stage - 1);
-    return m_tier.damageMultiplier * (1.0f + m_tier.stageDamageGrowth * stages + m_tier.stageDamageAccel * stages * std::max(0.0f, stages - 1.0f)) *
-        (1.0f + m_bonuses.enemyDamage / 100.0f) * (IsChallenge() ? BONK_DUNGEON_DAMAGE : 1.0f);
+    return TierDamageScale(m_tier, m_stage) * (1.0f + m_bonuses.enemyDamage / 100.0f) * (IsChallenge() ? BONK_DUNGEON_DAMAGE : 1.0f);
 }
 
 void BonkRun::UpdateGear()
@@ -4157,19 +4165,34 @@ bool BonkRun::RollVeteran(BonkMapCreature const& creature) const
     return roll_chance_f(m_tier.veteranChance + GetMilestoneVeteranChance());
 }
 
+uint32 BonkRun::FloorMilestones(BonkTier const& tier, uint32 stage)
+{
+    return tier.key == "mythic" ? std::min(4u, stage / BONK_MYTHIC_MILESTONE_FLOORS) : 0;
+}
+
+uint32 BonkRun::MilestoneAffixes(BonkTier const& tier, uint32 stage)
+{
+    return FloorMilestones(tier, stage) / 2;
+}
+
+float BonkRun::MilestoneVeteranChance(BonkTier const& tier, uint32 stage)
+{
+    return BONK_MILESTONE_VETERAN_CHANCE * float((FloorMilestones(tier, stage) + 1) / 2);
+}
+
 uint32 BonkRun::GetFloorMilestones() const
 {
-    return IsMythic() ? std::min(4u, m_stage / BONK_MYTHIC_MILESTONE_FLOORS) : 0;
+    return FloorMilestones(m_tier, m_stage);
 }
 
 uint32 BonkRun::GetMilestoneAffixes() const
 {
-    return GetFloorMilestones() / 2;
+    return MilestoneAffixes(m_tier, m_stage);
 }
 
 float BonkRun::GetMilestoneVeteranChance() const
 {
-    return BONK_MILESTONE_VETERAN_CHANCE * float((GetFloorMilestones() + 1) / 2);
+    return MilestoneVeteranChance(m_tier, m_stage);
 }
 
 Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y, float z, bool veteran)
@@ -4724,9 +4747,14 @@ void BonkRun::RewardMythicFloor()
         bonk->Notify("Account Training can now go to rank " + std::to_string(bonk->GetTrainingRankCap() + 1) + ".");
 }
 
+float BonkRun::FloorRewardScale(BonkTier const& tier, uint32 stage)
+{
+    return tier.key == "mythic" ? 1.0f + BONK_FLOOR_GOLD_GROWTH * float(stage - 1) : 1.0f;
+}
+
 float BonkRun::GetFloorRewardScale() const
 {
-    return IsMythic() ? 1.0f + BONK_FLOOR_GOLD_GROWTH * float(m_stage - 1) : 1.0f;
+    return FloorRewardScale(m_tier, m_stage);
 }
 
 BonkMap const* BonkRun::GetNextMap() const
