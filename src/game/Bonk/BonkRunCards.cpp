@@ -219,6 +219,8 @@ void BonkRun::GiveStartCard()
 
 bool BonkRun::IsCardCapped(BonkCard const& card) const
 {
+    if (card.effect == BONK_CARD_ASCENSION)
+        return !HasEvolutionLeft();
     if (card.effect != BONK_CARD_NONE)
         return false;
     bool grantsStat = false;

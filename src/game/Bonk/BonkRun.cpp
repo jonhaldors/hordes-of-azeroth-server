@@ -10839,6 +10839,13 @@ std::string BonkRun::DescribeEvolutionChance(OwnedWeapon const& owned, uint32& c
     return text;
 }
 
+bool BonkRun::HasEvolutionLeft() const
+{
+    if (m_weapons.size() < GetSpellSlots())
+        return true;
+    return std::any_of(m_weapons.begin(), m_weapons.end(), [this](OwnedWeapon const& owned) { return CanEvolve(owned); });
+}
+
 BonkRun::OwnedWeapon const* BonkRun::FindAscensionWeapon() const
 {
     if (!HasCard(BONK_CARD_ASCENSION))
