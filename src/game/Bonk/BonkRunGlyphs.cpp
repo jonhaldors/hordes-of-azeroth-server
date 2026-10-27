@@ -37,6 +37,7 @@ namespace
     uint32 const BONK_SPELL_GLYPH_SOULS  = 16583;
     uint32 const BONK_SHADOWMOURNE_SHOW_STEP = 5;
     size_t const BONK_MAX_GLYPH_BURSTS   = 64;
+    size_t const BONK_GLYPH_BURST_KITS   = 6;
 
     BonkMobAI const* GetGlyphAI(Unit const* unit)
     {
@@ -405,12 +406,11 @@ void BonkRun::ReleaseGlyphBursts()
             continue;
         if (burst.nearestOnly)
             mobs.resize(1);
+        for (size_t i = 0; i < mobs.size() && i < BONK_GLYPH_BURST_KITS; ++i)
+            mobs[i]->SendPlaySpellVisualKit(kit);
         m_cardProc = true;
         for (Creature* mob : mobs)
-        {
-            mob->SendPlaySpellVisualKit(kit);
             DealSpellHit(spellInfo, mob, burst.damage);
-        }
         m_cardProc = false;
     }
 }
