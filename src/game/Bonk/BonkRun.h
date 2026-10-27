@@ -319,6 +319,7 @@ class BonkRun
         float GetBlinkRechargeRate() const;
         float GetDashRechargeRate() const;
         uint32 GetBlinkInvulnerableMs() const;
+        uint32 GetVanishMs() const;
 
         void MakeSandbox(bool godBefore) { m_sandbox = true; m_sandboxGodBefore = godBefore; }
         bool IsSandbox() const { return m_sandbox; }
@@ -362,6 +363,7 @@ class BonkRun
             bool pieResync = false;
             uint32 castCharges = 0;
             uint32 castChargesSpent = 0;
+            bool forcedCrit = false;
             uint32 trinketCharges = 0;
             mutable uint32 shownIntervalMs = 0;
             mutable std::string shownDamage;
@@ -658,7 +660,19 @@ class BonkRun
         void UpdateGlyphStances();
         void UpdateGlyphChest();
         void RankUpStarter(uint32 ranks);
-        bool IsGlyphStill() const;
+        void RankUpWeapon(OwnedWeapon& owned, uint32 ranks);
+        void EchoRankPick(OwnedWeapon& owned, Offer const& offer);
+        bool IsGlyphBossFloor() const;
+        bool IsDivineShieldReady() const;
+        bool IsProdigySpell(SpellEntry const* spell) const;
+        float GetGlyphDamageMultiplier(SpellEntry const* spell) const;
+        uint32 GetGlyphLevelChoices() const;
+        void OnGlyphDash();
+        void TriggerGlyphNova();
+        void IgniteFromCrit(Creature* mob, uint32 spellId);
+        void QueueGlyphBurst(BonkGlyph const& glyph, float x, float y, float z, float radius, float damage, bool nearestOnly);
+        void ReleaseGlyphBursts();
+        void UpdateShadowmourne();
         bool IsLastStand() const;
         float GetAmbitionReward(BonkSpawnKind kind) const;
         void StrikeStorm(BonkGlyph const& glyph);
@@ -675,12 +689,28 @@ class BonkRun
         bool m_glyphStill = false;
         bool m_glyphLastStand = false;
         bool m_nomadPenalty = false;
-        bool m_glyphChestDue = false;
         uint32 m_soulHarvestUntilMs = 0;
         uint32 m_glyphMiniBosses = 0;
         uint32 m_divineShieldStage = 0;
         int32 m_glyphStormTimer = 0;
         int32 m_glyphMeteorTimer = 0;
+        uint32 m_glyphNextChestMs = 0;
+        uint32 m_glyphNovaReadyMs = 0;
+        bool m_vanishCritPending = false;
+        uint32 m_soulSiphonKills = 0;
+        uint32 m_shadowmourneSouls = 0;
+        uint32 m_shadowmourneShown = 0;
+        struct GlyphBurst
+        {
+            BonkGlyphEffect effect = BONK_GLYPH_NONE;
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            float radius = 0.0f;
+            float damage = 0.0f;
+            bool nearestOnly = false;
+        };
+        std::vector<GlyphBurst> m_glyphBursts;
 
         void SpawnPowerup(WorldObject const* at = nullptr);
         void UpdatePowerups(uint32 diff, bool spawn);

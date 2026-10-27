@@ -876,7 +876,10 @@ struct BonkPassive
     BonkPassiveEffect effect = BONK_PASSIVE_POWER;
     float valuePerRank = 10.0f;
     uint8 maxRank = 5;
-    uint32 excludes = 0;
+
+    bool IsMaxed(uint32 rank) const { return rank >= (maxRank ? uint32(maxRank) : uint32(UINT8_MAX)); }
+    static float RankWeight(uint32 rank);
+    static float RankScale(uint32 rank);
 };
 
 enum BonkMobRole : uint8
@@ -1252,16 +1255,12 @@ enum BonkGlyphEffect : uint8
 {
     BONK_GLYPH_NONE           = 0,
     BONK_GLYPH_PACKRAT        = 1,
-    BONK_GLYPH_THRIFT         = 2,
     BONK_GLYPH_SECOND_WIND    = 3,
     BONK_GLYPH_LEY_LINE       = 4,
     BONK_GLYPH_KILL_HASTE     = 5,
-    BONK_GLYPH_CHEST_TRAP     = 6,
-    BONK_GLYPH_HALF_ARMOR     = 7,
     BONK_GLYPH_DIVINE_SHIELD  = 8,
     BONK_GLYPH_SOUL_HARVEST   = 9,
     BONK_GLYPH_VENGEANCE      = 10,
-    BONK_GLYPH_NO_HEALS       = 11,
     BONK_GLYPH_GAMBLER        = 12,
     BONK_GLYPH_STORM          = 13,
     BONK_GLYPH_METEOR         = 14,
@@ -1273,8 +1272,18 @@ enum BonkGlyphEffect : uint8
     BONK_GLYPH_AMBITION       = 20,
     BONK_GLYPH_HUNT           = 21,
     BONK_GLYPH_LAST_STAND     = 22,
-    BONK_GLYPH_TURTLE         = 23,
     BONK_GLYPH_NOMAD          = 24,
+    BONK_GLYPH_DIVINATION     = 25,
+    BONK_GLYPH_FROST_NOVA     = 26,
+    BONK_GLYPH_VANISH         = 27,
+    BONK_GLYPH_CORPSE_BLAST   = 28,
+    BONK_GLYPH_EXECUTE        = 29,
+    BONK_GLYPH_CLEAVE         = 30,
+    BONK_GLYPH_MULTI_SHOT     = 31,
+    BONK_GLYPH_ECHOES         = 32,
+    BONK_GLYPH_IGNITE         = 33,
+    BONK_GLYPH_SOUL_SIPHON    = 34,
+    BONK_GLYPH_SHADOWMOURNE   = 35,
     MAX_BONK_GLYPH_EFFECT
 };
 

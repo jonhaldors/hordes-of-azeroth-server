@@ -1295,8 +1295,8 @@ void BonkRun::AddSandboxPassiveItems(uint32 page)
         BonkPassive const& passive = *passives[i];
         auto const rank = m_passiveRanks.find(passive.id);
         uint32 const current = rank != m_passiveRanks.end() ? rank->second : 0;
-        AddItem(m_player, current < passive.maxRank ? GOSSIP_ICON_TRAINER : GOSSIP_ICON_CHAT,
-            passive.name + " " + std::to_string(current) + "/" + std::to_string(passive.maxRank), SENDER_PASSIVE, passive.id);
+        AddItem(m_player, !passive.IsMaxed(current) ? GOSSIP_ICON_TRAINER : GOSSIP_ICON_CHAT,
+            passive.name + " " + std::to_string(current) + (passive.maxRank ? "/" + std::to_string(passive.maxRank) : ""), SENDER_PASSIVE, passive.id);
     }
     AddPaging(m_player, MENU_PASSIVES, page, 0, passives.size());
     AddBack(m_player, MENU_SPELLS);

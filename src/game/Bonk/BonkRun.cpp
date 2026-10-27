@@ -232,7 +232,6 @@ namespace
     float const BONK_WARD_MIN_DISTANCE = 10.0f;
     float const BONK_WARD_MAX_DISTANCE = 14.0f;
 
-    uint32 const BONK_KIT_CHEST_TRAP = 286;
     uint32 const BONK_POWERUP_RESTORATION = 900004;
 
     uint32 const BONK_KIT_HOLY_NOVA  = 3154;
@@ -1293,7 +1292,7 @@ void BonkRun::StartStage()
     m_nativeTimer = BONK_NATIVE_SWEEP_MS;
     if (m_stage > 1)
         m_rerolls += uint32(GetGlyphValue(BONK_GLYPH_FORESIGHT, 0));
-    m_glyphChestDue = GetGlyph(BONK_GLYPH_TREASURE) != nullptr;
+    m_glyphNextChestMs = uint32(GetGlyphValue(BONK_GLYPH_TREASURE, 0));
     m_lastLevel = m_player->GetLevel();
     m_safeX = m_player->GetPositionX();
     m_safeY = m_player->GetPositionY();
@@ -1454,9 +1453,8 @@ void BonkRun::UpdateRunning(uint32 diff)
             ReviveInSandbox();
             return;
         }
-        BonkGlyph const* shield = GetGlyph(BONK_GLYPH_DIVINE_SHIELD);
-        if (shield && m_divineShieldStage != m_stage)
-            Revive(false, shield);
+        if (IsDivineShieldReady())
+            Revive(false, GetGlyph(BONK_GLYPH_DIVINE_SHIELD));
         else if (m_revives)
             Revive();
         else if (m_soulstones)
@@ -4000,7 +3998,7 @@ float BonkRun::GetCritChance(SpellEntry const* spell, Unit const* victim, Unit c
         return std::max(100.0f, chance);
     if (spell)
         for (OwnedWeapon const& owned : m_weapons)
-            if (owned.weapon.spellId == spell->Id && owned.weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT))
+            if (owned.weapon.spellId == spell->Id && (owned.weapon.HasFlag(BONK_WEAPON_FLAG_ALWAYS_CRIT) || owned.forcedCrit))
                 return std::max(100.0f, chance);
     return GetPaladinCritChance(spell, GetRogueCritChance(spell, chance));
 }
@@ -4070,7 +4068,8 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
                     percent += bonus.second;
     }
 
-    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(true, victim) * minionScale;
+    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(true, victim) * minionScale *
+        GetGlyphDamageMultiplier(spell);
 
     if (victim)
         for (OwnedWeapon const& owned : m_weapons)
@@ -4132,9 +4131,8 @@ bool BonkRun::SaveFromDeath()
 {
     if (m_sandbox || !m_player->IsAlive() || (m_state != STATE_RUNNING && m_state != STATE_PORTAL))
         return false;
-    BonkGlyph const* shield = m_state == STATE_RUNNING ? GetGlyph(BONK_GLYPH_DIVINE_SHIELD) : nullptr;
-    if (shield && m_divineShieldStage != m_stage)
-        Revive(false, shield, true);
+    if (m_state == STATE_RUNNING && IsDivineShieldReady())
+        Revive(false, GetGlyph(BONK_GLYPH_DIVINE_SHIELD), true);
     else if (m_revives)
         Revive(false, nullptr, true);
     else if (m_soulstones && m_state == STATE_RUNNING)
@@ -4470,17 +4468,16 @@ uint32 BonkRun::GetChestCost() const
 
 uint32 BonkRun::GetChestPrice() const
 {
-    float const haggle = std::min(GetUtility(BONK_UTILITY_HAGGLE), BONK_MAX_HAGGLE) + GetGlyphValue(BONK_GLYPH_THRIFT, 0);
+    float const haggle = std::min(GetUtility(BONK_UTILITY_HAGGLE), BONK_MAX_HAGGLE);
     return std::max(1u, uint32(GetChestCost() * (1.0f - haggle / 100.0f) + 0.5f));
 }
 
 void BonkRun::SpawnPowerup(WorldObject const* at)
 {
-    bool const noHeals = GetGlyph(BONK_GLYPH_NO_HEALS) != nullptr;
     bool const magnetPlaced = !m_powerupObjectives.empty();
-    auto allowed = [noHeals, magnetPlaced](BonkPowerup const& powerup)
+    auto allowed = [magnetPlaced](BonkPowerup const& powerup)
     {
-        return (!noHeals || powerup.entry != BONK_POWERUP_RESTORATION) && (!magnetPlaced || powerup.effect != BONK_POWERUP_MAGNET);
+        return !magnetPlaced || powerup.effect != BONK_POWERUP_MAGNET;
     };
     std::vector<BonkPowerup> const& powerups = sBonkMgr.GetPowerups();
     uint32 totalWeight = 0;
@@ -4775,13 +4772,6 @@ void BonkRun::UseChest(GameObject* chest)
 
     ForgetChestObjective(*itr);
     m_chests.erase(itr);
-    if (BonkGlyph const* rigged = GetGlyph(BONK_GLYPH_CHEST_TRAP))
-        if (roll_chance_f(rigged->values[0]) && m_player->IsAlive())
-        {
-            m_player->SendPlaySpellVisualKit(BONK_KIT_CHEST_TRAP);
-            m_player->EnvironmentalDamage(DAMAGE_FIRE, std::max(1u, uint32(m_player->GetMaxHealth() * rigged->values[1] / 100.0f)));
-            bonk->Notify("Boom! That chest was rigged.");
-        }
     auto choices = m_chestChoices.find(chest->GetObjectGuid());
     m_pendingChestChoices.push_back(choices != m_chestChoices.end() ? choices->second : uint32(BONK_OFFER_SIZE));
     if (choices != m_chestChoices.end())
@@ -5017,7 +5007,7 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             if (passive->effect == effect)
-                total += passive->valuePerRank * itr.second;
+                total += passive->valuePerRank * BonkPassive::RankScale(itr.second);
     if (effect == BONK_PASSIVE_HASTE)
         total += GetEnrageHaste() + GetDruidHaste();
     if (effect == BONK_PASSIVE_MOVE_SPEED)
@@ -5025,12 +5015,6 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     total += m_stress.bonuses[effect];
     total += m_cardStats[effect];
     total += m_shrineBonuses[effect];
-    if (effect == BONK_PASSIVE_MOVE_SPEED)
-        total -= GetGlyphValue(BONK_GLYPH_TURTLE, 2);
-    if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && GetGlyph(BONK_GLYPH_HALF_ARMOR))
-        total *= 0.5f;
-    if (effect == BONK_PASSIVE_ARMOR && total > 0.0f && IsGlyphStill())
-        total *= 1.0f + GetGlyphValue(BONK_GLYPH_TURTLE, 1) / 100.0f;
     return total;
 }
 
@@ -5117,7 +5101,7 @@ uint32 BonkRun::GetSpellCount(OwnedWeapon const& owned) const
 {
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_AOE))
         return uint32(GetSpellUpgrade(owned, BONK_SPELL_UPGRADE_ECHO));
-    return uint32(GetStat(BONK_PASSIVE_AMOUNT));
+    return uint32(GetStat(BONK_PASSIVE_AMOUNT) + GetGlyphValue(BONK_GLYPH_MULTI_SHOT, 0));
 }
 
 float BonkRun::GetWeaponDurationScale(OwnedWeapon const& owned) const
@@ -10453,8 +10437,6 @@ void BonkRun::CollectAllShards()
 
 void BonkRun::DropHeal(Creature const* mob, BonkSpawnKind kind)
 {
-    if (GetGlyph(BONK_GLYPH_NO_HEALS))
-        return;
     float chance = 100.0f;
     if (kind == BONK_SPAWN_NORMAL)
         chance = BONK_HEAL_CHANCE_NORMAL;
@@ -10735,7 +10717,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
     {
         if (m_stoneBoss)
             GiveExperience(GetNextLevelXp());
-        if (!m_tier.stages || m_stage < m_tier.stages)
+        if (IsGlyphBossFloor())
             DropGlyph(mob);
         OpenPortal(mob);
     }
@@ -11152,7 +11134,7 @@ bool BonkRun::GivePassive(uint32 passiveId, std::string& error)
     auto rank = m_passiveRanks.find(passiveId);
     uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
     size_t const ownedPassives = std::count_if(m_passiveRanks.begin(), m_passiveRanks.end(), [](auto const& itr) { return itr.second > 0; });
-    if (current >= passive->maxRank)
+    if (passive->IsMaxed(current))
     {
         error = passive->name + " is already at its highest rank.";
         return false;
@@ -11172,17 +11154,7 @@ bool BonkRun::GivePassive(uint32 passiveId, std::string& error)
 
 bool BonkRun::IsPassiveAllowed(BonkPassive const& passive) const
 {
-    if (passive.effect == BONK_PASSIVE_POISON_DAMAGE && !sBonkMgr.HasPoisonSpell(m_player->GetClassMask()))
-        return false;
-    for (auto const& itr : m_passiveRanks)
-    {
-        if (!itr.second || itr.first == passive.id)
-            continue;
-        BonkPassive const* owned = sBonkMgr.GetPassive(itr.first);
-        if (passive.excludes == itr.first || (owned && owned->excludes == passive.id))
-            return false;
-    }
-    return true;
+    return passive.effect != BONK_PASSIVE_POISON_DAMAGE || sBonkMgr.HasPoisonSpell(m_player->GetClassMask());
 }
 
 size_t BonkRun::GetSpellSlots() const
@@ -11250,7 +11222,7 @@ bool BonkRun::RefreshKeptOffer(Offer& offer) const
     auto rank = m_passiveRanks.find(offer.id);
     uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
     size_t const ownedPassives = std::count_if(m_passiveRanks.begin(), m_passiveRanks.end(), [](auto const& itr) { return itr.second > 0; });
-    if (current >= passive->maxRank || (!current && ownedPassives >= GetPassiveSlots()))
+    if (passive->IsMaxed(current) || (!current && ownedPassives >= GetPassiveSlots()))
         return false;
     offer.newLevel = current + 1;
     return true;
@@ -11272,6 +11244,8 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     else
         offerSize += size_t(GetUtility(BONK_UTILITY_LEVEL_CHOICES));
     offerSize = std::min(offerSize, BONK_MAX_OFFER_SIZE);
+    if (source == OFFER_LEVEL)
+        offerSize = std::min(offerSize + GetGlyphLevelChoices(), BONK_MAX_OFFER_SIZE);
     if (source == OFFER_LEVEL)
         if (BonkGlyph const* gambler = GetGlyph(BONK_GLYPH_GAMBLER))
             offerSize = std::max<size_t>(1, std::min(offerSize, size_t(gambler->values[0])));
@@ -11343,7 +11317,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     {
         auto rank = m_passiveRanks.find(itr.first);
         uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
-        if (current >= itr.second.maxRank || (!current && ownedPassives >= GetPassiveSlots()))
+        if (itr.second.IsMaxed(current) || (!current && ownedPassives >= GetPassiveSlots()))
             continue;
         if (m_banished.count({ false, itr.first }) || isCard(false, itr.first) || sBonkQuests.IsLocked(account, BONK_REWARD_PASSIVE, itr.first))
             continue;
@@ -11725,7 +11699,10 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
     else if (offer.isWeapon)
     {
         if (OwnedWeapon* owned = FindOwned(offer.id))
+        {
             ApplyStep(*owned, offer);
+            EchoRankPick(*owned, offer);
+        }
         else if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id))
             AddWeapon(*weapon);
     }
@@ -11775,9 +11752,9 @@ bool BonkRun::Reroll(std::string& error)
         return false;
     }
 
-    if (!m_rerolls || GetGlyph(BONK_GLYPH_GAMBLER))
+    if (!m_rerolls)
     {
-        error = m_rerolls ? "The Gambler never rerolls." : "No rerolls left.";
+        error = "No rerolls left.";
         SendOffer();
         return false;
     }

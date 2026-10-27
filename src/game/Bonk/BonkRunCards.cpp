@@ -173,11 +173,13 @@ size_t BonkRun::PickWeightedCard(std::vector<BonkCard const*> const& pool) const
         if (itr.second.rarity < BONK_RARITY_LEGENDARY && IsCardInPool(itr.second))
             ++printed[itr.second.rarity];
 
+    uint8 const lift = GetGlyph(BONK_GLYPH_GAMBLER) ? 1 : 0;
     std::vector<float> weights;
     float total = 0.0f;
     for (BonkCard const* card : pool)
     {
-        float const weight = card->rarity < BONK_RARITY_LEGENDARY ? GetRarityWeight(card->rarity, BONK_RARITY_COMMON) / std::max(1u, printed[card->rarity]) : 0.0f;
+        bool const drawable = card->rarity < BONK_RARITY_LEGENDARY && card->rarity >= lift;
+        float const weight = drawable ? GetRarityWeight(card->rarity - lift, BONK_RARITY_COMMON) / std::max(1u, printed[card->rarity]) : 0.0f;
         weights.push_back(weight);
         total += weight;
     }
@@ -640,6 +642,8 @@ bool BonkRun::RollFreeChest() const
 
 void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
 {
+    if (damage)
+        TriggerGlyphNova();
     BonkCard const* choker = m_cardByEffect[BONK_CARD_THORNS];
     if (!damage || !attacker || !choker || m_cardProc || m_cardCooldowns[BONK_CARD_THORNS] > 0)
         return;
@@ -663,6 +667,8 @@ void BonkRun::ModifyHeroHit(Unit* victim, uint32& damage)
 
 void BonkRun::RollCastCharges(OwnedWeapon& owned)
 {
+    owned.forcedCrit = m_vanishCritPending;
+    m_vanishCritPending = false;
     owned.castCharges = 0;
     owned.castChargesSpent = 0;
     if (m_cards.empty())

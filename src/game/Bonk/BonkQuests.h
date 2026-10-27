@@ -55,6 +55,7 @@ enum BonkQuestType : uint8
     BONK_QUEST_PROJECTILES    = 36,
     BONK_QUEST_DEATHS         = 37,
     BONK_QUEST_DOT_KILLS      = 38,
+    BONK_QUEST_DASHES         = 39,
     MAX_BONK_QUEST_TYPE
 };
 

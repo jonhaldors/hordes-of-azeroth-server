@@ -1,5 +1,6 @@
 #include "BonkPlayer.h"
 #include "BonkRun.h"
+#include "BonkQuests.h"
 #include "Anticheat.h"
 #include "Map.h"
 #include "MoveSpline.h"
@@ -92,7 +93,10 @@ bool BonkPlayer::Dash()
 
     if (!m_dashSpent++)
         m_dashRechargeMs = GetDashCooldownMs();
-    m_dashInvulnerableUntilMs = m_dashClockMs + std::max(BONK_DASH_INVULNERABLE_MS, blink ? m_run->GetBlinkInvulnerableMs() : 0u);
+    m_dashInvulnerableUntilMs = m_dashClockMs + std::max(BONK_DASH_INVULNERABLE_MS, blink ? m_run->GetBlinkInvulnerableMs() : 0u) +
+        (m_run ? m_run->GetVanishMs() : 0u);
+    if (m_run && !m_run->IsSandbox())
+        sBonkQuests.OnProgress(m_player, BONK_QUEST_DASHES, 0, 1);
     SendDash();
     return true;
 }

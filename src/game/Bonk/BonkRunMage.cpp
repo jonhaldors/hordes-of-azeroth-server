@@ -230,6 +230,7 @@ void BonkRun::OnDash()
     if (m_state != STATE_RUNNING || !m_player->IsAlive())
         return;
     OnTalentDash();
+    OnGlyphDash();
     if (!IsBlinkDash())
         return;
     OnTalentBlink();
