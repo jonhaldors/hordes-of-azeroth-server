@@ -3437,17 +3437,19 @@ float BonkRun::GetMobHealth(uint32 level) const
     return 40.0f * level;
 }
 
-float BonkRun::CompoundStageScale(uint32 stage, float growth, float lateGrowth, uint32 knee)
+float BonkRun::CompoundStageScale(uint32 stage, float growth, float lateGrowth, uint32 knee, float lastGrowth, uint32 knee2)
 {
     uint32 const steps = stage > 1 ? stage - 1 : 0;
     uint32 const early = knee ? std::min(steps, knee - 1) : steps;
-    return std::pow(1.0f + growth, float(early)) * std::pow(1.0f + lateGrowth, float(steps - early));
+    uint32 const late = knee2 > knee ? std::min(steps, knee2 - 1) - std::min(early, knee2 - 1) : steps - early;
+    uint32 const last = steps - early - late;
+    return std::pow(1.0f + growth, float(early)) * std::pow(1.0f + lateGrowth, float(late)) * std::pow(1.0f + lastGrowth, float(last));
 }
 
 float BonkRun::TierHealthScale(BonkTier const& tier, uint32 stage)
 {
     if (tier.stageCompound)
-        return tier.healthMultiplier * CompoundStageScale(stage, tier.stageHealthGrowth, tier.lateHealthGrowth, tier.floorKnee);
+        return tier.healthMultiplier * CompoundStageScale(stage, tier.stageHealthGrowth, tier.lateHealthGrowth, tier.floorKnee, tier.lastHealthGrowth, tier.floorKnee2);
     float const stages = float(stage - 1);
     return tier.healthMultiplier * (1.0f + tier.stageHealthGrowth * stages + tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f));
 }
@@ -3455,7 +3457,7 @@ float BonkRun::TierHealthScale(BonkTier const& tier, uint32 stage)
 float BonkRun::TierDamageScale(BonkTier const& tier, uint32 stage)
 {
     if (tier.stageCompound)
-        return tier.damageMultiplier * CompoundStageScale(stage, tier.stageDamageGrowth, tier.lateDamageGrowth, tier.floorKnee);
+        return tier.damageMultiplier * CompoundStageScale(stage, tier.stageDamageGrowth, tier.lateDamageGrowth, tier.floorKnee, tier.lastDamageGrowth, tier.floorKnee2);
     float const stages = float(stage - 1);
     return tier.damageMultiplier * (1.0f + tier.stageDamageGrowth * stages + tier.stageDamageAccel * stages * std::max(0.0f, stages - 1.0f));
 }

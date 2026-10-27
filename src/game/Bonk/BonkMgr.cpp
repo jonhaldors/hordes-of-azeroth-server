@@ -319,7 +319,7 @@ void BonkMgr::LoadTiers()
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_affixes`, "
         "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth`, `details`, `opening_crowd`, `opening_sec`, "
-        "`stage_compound`, `floor_knee`, `late_health_growth`, `late_damage_growth` FROM `bonk_tier`"));
+        "`stage_compound`, `floor_knee`, `late_health_growth`, `late_damage_growth`, `floor_knee2`, `last_health_growth`, `last_damage_growth` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -371,6 +371,9 @@ void BonkMgr::LoadTiers()
         tier.floorKnee = fields[36].GetUInt32();
         tier.lateHealthGrowth = fields[37].GetFloat();
         tier.lateDamageGrowth = fields[38].GetFloat();
+        tier.floorKnee2 = fields[39].GetUInt32();
+        tier.lastHealthGrowth = fields[40].GetFloat();
+        tier.lastDamageGrowth = fields[41].GetFloat();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());

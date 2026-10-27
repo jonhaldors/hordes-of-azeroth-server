@@ -260,6 +260,9 @@ struct BonkTier
     uint32 floorKnee = 0;
     float lateHealthGrowth = 0.0f;
     float lateDamageGrowth = 0.0f;
+    uint32 floorKnee2 = 0;
+    float lastHealthGrowth = 0.0f;
+    float lastDamageGrowth = 0.0f;
     float minAliveMultiplier = 1.0f;
     float openingCrowd = 1.0f;
     uint32 openingMs = 0;
