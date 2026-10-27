@@ -85,7 +85,7 @@ INSERT INTO `bonk_talent` (`id`, `name`, `description`, `effect`, `value_per_ran
 DELETE FROM `gameobject_template` WHERE `entry` = 900063;
 DROP TEMPORARY TABLE IF EXISTS `bonk_go_copy`;
 CREATE TEMPORARY TABLE `bonk_go_copy` SELECT * FROM `gameobject_template` WHERE `entry` = 900041;
-UPDATE `bonk_go_copy` SET `entry` = 900063, `displayId` = 4891, `name` = 'Darkmoon Deck', `size` = 0.7, `script_name` = 'go_bonk_deck';
+UPDATE `bonk_go_copy` SET `entry` = 900063, `displayId` = 4712, `name` = 'Darkmoon Deck', `size` = 0.8, `script_name` = 'go_bonk_deck';
 INSERT INTO `gameobject_template` SELECT * FROM `bonk_go_copy`;
 DROP TEMPORARY TABLE `bonk_go_copy`;
 
