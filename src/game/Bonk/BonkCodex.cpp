@@ -4,6 +4,7 @@
 #include "BonkQuests.h"
 #include "BonkRun.h"
 #include "Creature.h"
+#include "Database/DatabaseEnv.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -206,6 +207,23 @@ void BonkCodex::Send(Player* player, std::string const& npc, bool deck)
     bonk->SendAddon("cdxend");
 }
 
+void BonkCodex::SendTermGlossary(BonkPlayer* bonk)
+{
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `term`, `words`, `keyword`, `description` FROM `bonk_glossary` ORDER BY `sort`, `term`"));
+    if (!result)
+        return;
+    do
+    {
+        Field* fields = result->Fetch();
+        std::string description = fields[3].GetCppString();
+        if (uint32 const keywordId = fields[2].GetUInt32())
+            if (BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(BonkKeyword(keywordId)))
+                description = keyword->description;
+        if (!description.empty())
+            bonk->SendAddon("gls~" + fields[0].GetCppString() + "~" + fields[1].GetCppString() + "~" + description);
+    } while (result->NextRow());
+}
+
 void BonkCodex::SendKeywordGlossary(BonkPlayer* bonk)
 {
     for (auto const& itr : sBonkMgr.GetKeywords())
@@ -217,6 +235,7 @@ void BonkCodex::SendKeywordGlossary(BonkPlayer* bonk)
         bonk->SendAddon("kwdaura~" + id + "~" + keyword.name + "~" + keyword.icon + "~" + std::to_string(keyword.spellId) + "~" +
             std::to_string(uint32(keyword.maxStacks)));
     }
+    SendTermGlossary(bonk);
 }
 
 bool GossipHello_npc_bonk_codex(Player* player, Creature* creature)
