@@ -1054,6 +1054,8 @@ bool BonkRun::Begin(std::string& error)
     m_map = *first;
     ApplyInvader();
     BringBossEarlier();
+    if (!m_sandbox)
+        LogLoadout();
 
     if (m_player->IsGameMaster())
         m_player->SetGameMaster(false);
@@ -2183,6 +2185,7 @@ void BonkRun::LogMinute()
     m_minutePackets = 0;
     m_minutePacketBytes = 0;
     m_minutePacketSeconds = 0;
+    LogBuild();
     ++m_nextLogMinute;
     m_minuteClientObjectsPeak = 0;
     m_minuteDamage = 0;
@@ -2303,6 +2306,31 @@ void BonkRun::LogDeath()
         m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()),
         m_player->GetLevel() + m_overcapLevel, m_kills, m_lastStriker.empty() ? "?" : m_lastStriker.c_str(), m_lastStrikeDamage, recent,
         uint32(m_recentHits.size()), recent * 100.0f / std::max(1.0f, float(m_player->GetMaxHealth())), uint32(m_mobs.size()), GetWave().name.c_str());
+}
+
+void BonkRun::LogLoadout() const
+{
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+        "Bonk loadout: %s starts a run at run minute 0 (stage %u, %s, %s, class %u): %s",
+        m_player->GetName(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()),
+        m_player->GetBonkPlayer()->DescribeLoadout().c_str());
+}
+
+void BonkRun::LogBuild() const
+{
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+        "Bonk build: %s at run minute %.2f (stage %u, %s, %s, class %u): level %u; %s",
+        m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()),
+        m_player->GetLevel() + m_overcapLevel, DescribeBuildTotals().c_str());
+}
+
+void BonkRun::LogRunEnd(bool wentHome) const
+{
+    char const* outcome = m_victory ? "victory" : wentHome ? "home" : m_player->IsAlive() ? "stopped" : "died";
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+        "Bonk end: %s at run minute %.2f (stage %u, %s, %s, class %u): %s, level %u, %u kills, gold earned %u; %s",
+        m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), outcome,
+        m_player->GetLevel() + m_overcapLevel, m_kills, m_goldEarned, DescribeBuildTotals().c_str());
 }
 
 void BonkRun::LogBossFight(Creature const* mob, BonkSpawnKind kind, BossArrival const& arrival)
@@ -11787,16 +11815,41 @@ std::string BonkRun::DescribeWeaponStats() const
     std::string text;
     for (auto const& owned : m_weapons)
     {
-        BonkRunStats::Spell stats;
-        for (uint32 spellId : IsShapeshift(owned) ? BonkStats::GetWeaponSpells(owned.weapon) : std::vector<uint32>{ owned.weapon.spellId })
-        {
-            BonkRunStats::Spell const part = BonkStats::GetSpellStats(m_player->GetObjectGuid(), spellId);
-            stats.damage += part.damage;
-            stats.kills += part.kills;
-        }
-        text += std::to_string(stats.damage) + ":" + std::to_string(stats.kills) + ",";
+        std::pair<uint64, uint32> const totals = GetOwnedSpellTotals(owned);
+        text += std::to_string(totals.first) + ":" + std::to_string(totals.second) + ",";
     }
     return text;
+}
+
+std::pair<uint64, uint32> BonkRun::GetOwnedSpellTotals(OwnedWeapon const& owned) const
+{
+    std::pair<uint64, uint32> totals{ 0, 0 };
+    for (uint32 spellId : IsShapeshift(owned) ? BonkStats::GetWeaponSpells(owned.weapon) : std::vector<uint32>{ owned.weapon.spellId })
+    {
+        BonkRunStats::Spell const part = BonkStats::GetSpellStats(m_player->GetObjectGuid(), spellId);
+        totals.first += part.damage;
+        totals.second += part.kills;
+    }
+    return totals;
+}
+
+std::string BonkRun::DescribeBuildTotals() const
+{
+    std::string spells;
+    for (OwnedWeapon const& owned : m_weapons)
+    {
+        std::pair<uint64, uint32> const totals = GetOwnedSpellTotals(owned);
+        spells += (spells.empty() ? "" : ",") + std::to_string(owned.weapon.id) + ":" + std::to_string(owned.rank) + ":" +
+            std::to_string(totals.first) + ":" + std::to_string(totals.second);
+    }
+    std::string passives;
+    for (auto const& itr : m_passiveRanks)
+        passives += (passives.empty() ? "" : ",") + std::to_string(itr.first) + ":" + std::to_string(itr.second);
+    std::string cards;
+    for (OwnedCard const& owned : m_cards)
+        if (owned.card)
+            cards += (cards.empty() ? "" : ",") + std::to_string(owned.card->id) + ":" + std::to_string(owned.copies);
+    return "spells [" + spells + "]; passives [" + passives + "]; cards [" + cards + "]";
 }
 
 void BonkRun::SendLoadout() const
@@ -12033,6 +12086,8 @@ void BonkRun::Finish(bool wentHome)
     if (wentHome)
         CollectAllShards();
 
+    if (!m_sandbox)
+        LogRunEnd(wentHome);
     DropOffers();
     ResolveRunGear(wentHome);
 

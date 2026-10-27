@@ -888,6 +888,8 @@ class BonkRun
         void UseAscension(OwnedWeapon const& owned);
         void ShowAllEvolutions(std::vector<Offer>& cards) const;
         std::string DescribeWeaponStats() const;
+        std::pair<uint64, uint32> GetOwnedSpellTotals(OwnedWeapon const& owned) const;
+        std::string DescribeBuildTotals() const;
         void ApplyStep(OwnedWeapon& owned, Offer const& offer);
         void EvolveWeapon(OwnedWeapon& owned, BonkWeapon const& evolved);
         bool RefreshKeptOffer(Offer& offer) const;
@@ -1074,6 +1076,9 @@ class BonkRun
         uint32 m_damageAbsorbed = 0;
         void LogMinute();
         void LogDeath();
+        void LogLoadout() const;
+        void LogBuild() const;
+        void LogRunEnd(bool wentHome) const;
         void LogBossFight(Creature const* mob, BonkSpawnKind kind, BossArrival const& arrival);
         uint32 m_nextLogMinute = 1;
         uint32 m_minuteDamage = 0;

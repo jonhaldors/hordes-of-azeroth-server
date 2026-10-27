@@ -365,6 +365,26 @@ uint32 BonkPlayer::GetMasteryPoints() const
     return GetMasteryLevel() + sBonkQuests.GetMasteryPoints(GetProgressAccount(), m_player->GetClass()) + GetFloorTalentPoints();
 }
 
+std::string BonkPlayer::DescribeLoadout() const
+{
+    auto describeRanks = [](std::map<uint32, uint8> const& ranks)
+    {
+        std::string text;
+        for (auto const& itr : ranks)
+            if (itr.second)
+                text += (text.empty() ? "" : ",") + std::to_string(itr.first) + ":" + std::to_string(itr.second);
+        return text;
+    };
+    std::string gear;
+    for (uint32 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            gear += (gear.empty() ? "" : ",") + std::to_string(slot) + ":" + std::to_string(item->GetEntry());
+    return "mastery level " + std::to_string(GetMasteryLevel()) + ", talent points " + std::to_string(GetMasterySpent()) + " of " +
+        std::to_string(GetMasteryPoints()) + ", best floor " + std::to_string(m_classFloor) + ", determination " + std::to_string(GetDetermination()) +
+        "; talents [" + describeRanks(m_masteryRanks) + "]; upgrades [" + describeRanks(m_upgradeRanks) + "]; fortunes [" +
+        describeRanks(m_talentRanks) + "]; gear [" + gear + "]";
+}
+
 uint32 BonkPlayer::GetFloorTalentPoints() const
 {
     return std::min(BONK_FLOOR_TALENT_POINTS_MAX, m_classFloor / BONK_FLOORS_PER_TALENT_POINT);
