@@ -1342,6 +1342,24 @@ bool BonkMobAI::ForceAbility(uint32 number)
     return true;
 }
 
+bool BonkMobAI::UsesExactPoints(SpellCaster const* caster)
+{
+    Creature const* creature = caster ? caster->ToCreature() : nullptr;
+    return creature && dynamic_cast<BonkMobAI const*>(creature->AI());
+}
+
+bool BonkMobAI::BlocksTriggeredSpell(SpellCaster const* caster, SpellEntry const* triggeredBy)
+{
+    Creature const* creature = caster && triggeredBy ? caster->ToCreature() : nullptr;
+    BonkMobAI const* ai = creature ? dynamic_cast<BonkMobAI const*>(creature->AI()) : nullptr;
+    if (!ai || !ai->m_mob)
+        return false;
+    for (BonkMobAbility const& ability : ai->m_mob->abilities)
+        if (ability.spellId == triggeredBy->Id)
+            return true;
+    return false;
+}
+
 void BonkMobAI::ReportTest(std::string const& text) const
 {
     if (m_kind != BONK_SPAWN_BOSS && m_kind != BONK_SPAWN_MINIBOSS)

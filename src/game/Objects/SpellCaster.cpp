@@ -29,6 +29,7 @@
 #include "Utilities/Random.h"
 #include "Bonk/BonkPlayer.h"
 #include "Bonk/BonkRun.h"
+#include "Bonk/BonkMobAI.h"
 
 namespace
 {
@@ -1215,6 +1216,9 @@ float SpellCaster::CalcArmorReducedDamage(Unit const* pVictim, uint32 const dama
 
 float SpellCaster::CalculateSpellEffectValue(Unit const* target, SpellEntry const* spellProto, SpellEffectIndex effect_index, int32 const* effBasePoints, Spell* spell) const
 {
+    if (effBasePoints && BonkMobAI::UsesExactPoints(this))
+        return float(*effBasePoints);
+
     Unit const* pUnit = ToUnit();
     Player const* pPlayer = ToPlayer();
 
