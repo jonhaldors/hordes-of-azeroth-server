@@ -565,7 +565,10 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (owner && swing)
             run->OnPetBite(attacker->ToCreature(), victim);
         if (!owner || attacker->GetEntry() == BONK_PROJECTILE)
+        {
             run->OnHeroHit(victim, dealt, spellProto);
+            run->OnTrinketHit(victim, dealt, spellProto);
+        }
         if (!owner)
             run->CountThunderHit(spellProto);
 

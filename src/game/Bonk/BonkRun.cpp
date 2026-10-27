@@ -5077,6 +5077,7 @@ float BonkRun::GetBoostMoveSpeed() const
     if (BonkCard const* potion = m_cardByEffect[BONK_CARD_SWIFTNESS])
         if (m_cardSwiftUntilMs)
             boost += potion->values[1];
+    boost += GetTrinketMoveSpeed();
     return boost;
 }
 
@@ -6631,6 +6632,7 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     owned.killed = false;
     RollCastCharges(owned);
+    RollTrinketCharges(owned);
     TalentCastScope talentCast(*this, owned);
 
     if (FirePriestSpell(owned, spellInfo) || FireRogueSpell(owned, spellInfo) || FirePaladinSpell(owned, spellInfo) || FireWarlockSpell(owned, spellInfo) ||

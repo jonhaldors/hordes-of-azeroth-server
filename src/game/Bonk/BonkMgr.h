@@ -1008,6 +1008,35 @@ uint32 const BONK_TIER_GEAR_FIRST = 903000;
 uint32 const BONK_TIER_GEAR_TIERS = 20;
 uint32 const BONK_TIER_GEAR_SLOTS = 8;
 uint8 const BONK_TIER_GEAR_CLASSES[] = { 1, 2, 3, 4, 5, 7, 8, 9, 11 };
+uint32 const BONK_MYTHIC_GEAR_FIRST = 904500;
+uint32 const BONK_MYTHIC_GEAR_KINDS = 20;
+uint32 const BONK_MYTHIC_GEAR_FIRST_ACCESSORY = 9;
+uint32 const BONK_MYTHIC_GEAR_FIRST_TRINKET = 12;
+
+enum BonkTrinketEffect : uint8
+{
+    BONK_TRINKET_STORM     = 0,
+    BONK_TRINKET_EMBER     = 1,
+    BONK_TRINKET_HASTE     = 2,
+    BONK_TRINKET_BULWARK   = 3,
+    BONK_TRINKET_BLOODVINE = 4,
+    BONK_TRINKET_FROST     = 5,
+    BONK_TRINKET_WRATH     = 6,
+    BONK_TRINKET_WIND      = 7,
+    MAX_BONK_TRINKET_EFFECT
+};
+
+struct BonkTrinket
+{
+    char const* name;
+    char const* icon;
+    uint32 spellId;
+    float value;
+    float radius;
+    uint32 targets;
+    uint32 durationMs;
+    char const* text;
+};
 uint8 const BONK_DETERMINATION_MAX_STACKS = 5;
 uint32 const BONK_FLOORS_PER_TALENT_POINT = 2;
 uint32 const BONK_FLOOR_TALENT_POINTS_MAX = 10;
@@ -1334,6 +1363,11 @@ class BonkMgr
         BonkGear const* GetGear(uint32 entry) const;
         static uint32 GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot);
         static bool ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot);
+        static uint32 GetMythicGearEntry(uint32 kind, uint32 tier);
+        static bool ReadMythicGearEntry(uint32 entry, uint32& kind, uint32& tier);
+        static bool ReadTrinketEffect(uint32 entry, BonkTrinketEffect& effect);
+        static BonkTrinket const& GetTrinket(BonkTrinketEffect effect);
+        static std::vector<uint32> GetMythicGearFor(uint32 classMask, uint32 tier);
         std::map<uint32, BonkGear> const& GetGear() const { return m_gear; }
 
         std::map<uint32, BonkShopTree> const& GetShopTrees() const { return m_shopTrees; }

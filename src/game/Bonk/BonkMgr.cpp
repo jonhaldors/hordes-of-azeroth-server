@@ -2073,6 +2073,43 @@ bool BonkMgr::ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint
     return true;
 }
 
+uint32 BonkMgr::GetMythicGearEntry(uint32 kind, uint32 tier)
+{
+    if (kind >= BONK_MYTHIC_GEAR_KINDS || !tier || tier > BONK_TIER_GEAR_TIERS)
+        return 0;
+    uint32 const entry = BONK_MYTHIC_GEAR_FIRST + kind * BONK_TIER_GEAR_TIERS + tier - 1;
+    return sObjectMgr.GetItemPrototype(entry) ? entry : 0;
+}
+
+bool BonkMgr::ReadMythicGearEntry(uint32 entry, uint32& kind, uint32& tier)
+{
+    if (entry < BONK_MYTHIC_GEAR_FIRST || entry >= BONK_MYTHIC_GEAR_FIRST + BONK_MYTHIC_GEAR_KINDS * BONK_TIER_GEAR_TIERS)
+        return false;
+    kind = (entry - BONK_MYTHIC_GEAR_FIRST) / BONK_TIER_GEAR_TIERS;
+    tier = (entry - BONK_MYTHIC_GEAR_FIRST) % BONK_TIER_GEAR_TIERS + 1;
+    return true;
+}
+
+bool BonkMgr::ReadTrinketEffect(uint32 entry, BonkTrinketEffect& effect)
+{
+    uint32 kind, tier;
+    if (!ReadMythicGearEntry(entry, kind, tier) || kind < BONK_MYTHIC_GEAR_FIRST_TRINKET)
+        return false;
+    effect = BonkTrinketEffect(kind - BONK_MYTHIC_GEAR_FIRST_TRINKET);
+    return effect < MAX_BONK_TRINKET_EFFECT;
+}
+
+std::vector<uint32> BonkMgr::GetMythicGearFor(uint32 classMask, uint32 tier)
+{
+    std::vector<uint32> gear;
+    for (uint32 kind = 0; kind < BONK_MYTHIC_GEAR_KINDS; ++kind)
+        if (uint32 const entry = GetMythicGearEntry(kind, tier))
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry))
+                if (proto->AllowableClass & classMask)
+                    gear.push_back(entry);
+    return gear;
+}
+
 BonkGear const* BonkMgr::GetGear(uint32 entry) const
 {
     auto itr = m_gear.find(entry);

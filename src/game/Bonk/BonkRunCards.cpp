@@ -150,6 +150,7 @@ float BonkRun::GetCardPower(Unit const* victim) const
 
     if (m_cardSurgeUntilMs > m_totalMs)
         power += GetCardTotal(BONK_CARD_POWER_SURGE, 0);
+    power += GetTrinketPower();
 
     if (HasCard(BONK_CARD_BIG_GAME) && victim && victim->IsCreature())
         if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(static_cast<Creature const*>(victim)->AI()))
@@ -704,6 +705,7 @@ float BonkRun::GetBurstHaste() const
         haste += GetCardTotal(BONK_CARD_HASTE_BURST, 1);
     if (m_glyphHasteUntilMs > m_totalMs)
         haste += GetGlyphValue(BONK_GLYPH_KILL_HASTE, 1);
+    haste += GetTrinketHaste();
     if (IsLastStand())
         haste += GetGlyphValue(BONK_GLYPH_LAST_STAND, 1);
     return haste;

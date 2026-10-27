@@ -225,9 +225,32 @@ void BonkRun::DropTierPiece(Creature const* mob, BonkSpawnKind kind)
     if (!roll_chance_f(chance))
         return;
     uint32 const tier = std::min(BONK_TIER_GEAR_TIERS, m_stage + 1);
-    uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), tier, urand(0, BONK_TIER_GEAR_SLOTS - 1));
-    if (entry && PlaceGearDrop(mob, entry, ITEM_QUALITY_EPIC, true))
-        m_player->GetBonkPlayer()->Notify("A Tier " + std::to_string(tier) + " set piece dropped!");
+    std::vector<uint32> choices;
+    for (uint32 slot = 0; slot < BONK_TIER_GEAR_SLOTS; ++slot)
+        if (uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), tier, slot))
+            choices.push_back(entry);
+    std::vector<uint32> weapons, trinkets;
+    for (uint32 entry : BonkMgr::GetMythicGearFor(m_player->GetClassMask(), tier))
+    {
+        uint32 kind, entryTier;
+        BonkMgr::ReadMythicGearEntry(entry, kind, entryTier);
+        if (kind >= BONK_MYTHIC_GEAR_FIRST_TRINKET)
+            trinkets.push_back(entry);
+        else if (kind < BONK_MYTHIC_GEAR_FIRST_ACCESSORY)
+            weapons.push_back(entry);
+        else
+            choices.push_back(entry);
+    }
+    if (!weapons.empty())
+        choices.push_back(weapons[urand(0, uint32(weapons.size() - 1))]);
+    if (!trinkets.empty())
+        choices.push_back(trinkets[urand(0, uint32(trinkets.size() - 1))]);
+    if (choices.empty())
+        return;
+    uint32 const entry = choices[urand(0, uint32(choices.size() - 1))];
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
+    if (proto && PlaceGearDrop(mob, entry, ITEM_QUALITY_EPIC, true))
+        m_player->GetBonkPlayer()->Notify(std::string(proto->Name1) + " (Tier " + std::to_string(tier) + ") dropped!");
 }
 
 void BonkRun::SendTierPieceHome(uint32 entry)
@@ -237,7 +260,7 @@ void BonkRun::SendTierPieceHome(uint32 entry)
     if (!piece)
         return;
     piece->SaveToDB();
-    MailDraft(std::string("Set piece: ") + proto->Name1, "You found this on " + m_map.name + ". It is yours to keep.")
+    MailDraft(std::string(proto->Name1), "You found this on " + m_map.name + ". It is yours to keep.")
         .AddItem(piece)
         .SendMailTo(MailReceiver(m_player), MailSender(MAIL_CREATURE, BONK_BANKER_ENTRY));
     m_player->GetBonkPlayer()->Notify("You found " + std::string(proto->Name1) + "! It's waiting in your mailbox.");

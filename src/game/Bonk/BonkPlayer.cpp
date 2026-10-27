@@ -1970,6 +1970,8 @@ std::vector<uint32> BonkPlayer::GetTierStock() const
     for (uint32 slot = 0; slot < BONK_TIER_GEAR_SLOTS; ++slot)
         if (uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), GetStockTier(), slot))
             stock.push_back(entry);
+    std::vector<uint32> const mythicGear = BonkMgr::GetMythicGearFor(m_player->GetClassMask(), GetStockTier());
+    stock.insert(stock.end(), mythicGear.begin(), mythicGear.end());
     return stock;
 }
 
@@ -2278,6 +2280,9 @@ void BonkPlayer::SendGearInfo() const
     for (uint32 tier = 1; tier <= BONK_TIER_GEAR_TIERS; ++tier)
         if (BonkItemStat const* stat = sBonkMgr.GetItemStat(BONK_TIER_GEAR_FIRST + (tier - 1) * BONK_TIER_GEAR_SLOTS))
             SendAddon("tierstats~" + std::to_string(tier) + "~" + FormatStatList(stat->stats));
+    for (uint8 effect = 0; effect < MAX_BONK_TRINKET_EFFECT; ++effect)
+        SendAddon("trinkettip~" + std::to_string(BONK_MYTHIC_GEAR_FIRST + (BONK_MYTHIC_GEAR_FIRST_TRINKET + effect) * BONK_TIER_GEAR_TIERS) + "~" +
+            std::to_string(BONK_TIER_GEAR_TIERS) + "~" + BonkMgr::GetTrinket(BonkTrinketEffect(effect)).text);
 
     for (auto const& itr : sBonkMgr.GetItemSets())
     {

@@ -214,6 +214,7 @@ class BonkRun
         void OnHeroHitBy(Creature* attacker, uint32 damage);
         void ModifyHeroHit(Unit* victim, uint32& damage);
         void OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell);
+        void OnTrinketHit(Unit* victim, uint32 damage, SpellEntry const* spell);
         bool GiveCard(uint32 cardId, std::string& error);
         static float GetCopyWeight(uint32 copy);
         static float GetCopySum(uint32 copies);
@@ -361,6 +362,7 @@ class BonkRun
             bool pieResync = false;
             uint32 castCharges = 0;
             uint32 castChargesSpent = 0;
+            uint32 trinketCharges = 0;
             mutable uint32 shownIntervalMs = 0;
             mutable std::string shownDamage;
             mutable std::string shownTip;
@@ -944,6 +946,12 @@ class BonkRun
         float GetCastChargeMultiplier(SpellEntry const* spell, Unit const* victim) const;
         float GetBurstHaste() const;
         float GetDotCardScale() const;
+        uint32 GetWornTrinkets() const;
+        void RollTrinketCharges(OwnedWeapon& owned);
+        void StrikeWithTrinket(BonkTrinketEffect effect, std::vector<Creature*> const& targets, float damage, uint32 kit);
+        float GetTrinketHaste() const;
+        float GetTrinketPower() const;
+        float GetTrinketMoveSpeed() const;
         bool IsCardImmune() const { return m_cardImmuneUntilMs > m_totalMs; }
         void OnCardHitTaken();
         void OnShieldBroken();
@@ -973,6 +981,9 @@ class BonkRun
         uint32 m_cardCritsSeen = 0;
         uint32 m_stillSinceMs = 0;
         bool m_cardProc = false;
+        uint32 m_trinketHasteUntilMs = 0;
+        uint32 m_trinketPowerUntilMs = 0;
+        uint32 m_trinketSpeedUntilMs = 0;
 
         struct GearDrop
         {
