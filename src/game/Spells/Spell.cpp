@@ -3443,6 +3443,7 @@ SpellCastResult Spell::prepare(Aura* triggeredByAura, uint32 chance)
         m_triggeredByAuraSpell = triggeredByAura->GetSpellProto();
         m_triggeredByAuraBasePoints = triggeredByAura->GetBasePoints();
     }
+
     try
     {
         // create and add update event for this spell
