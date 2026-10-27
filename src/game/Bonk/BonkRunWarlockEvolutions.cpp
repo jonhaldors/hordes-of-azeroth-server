@@ -42,7 +42,7 @@ namespace
     uint32 const BONK_SPELL_CORRUPTION_LOOK      = 172;
     uint32 const BONK_SPELL_DOOM_LOOK            = 603;
     uint32 const BONK_SPELL_INFERNO_LOOK         = 22703;
-    uint32 const BONK_SPELL_SOUL_LOOK            = 17941;
+    uint32 const BONK_SPELL_SOUL_LOOK            = 33461;
     uint32 const BONK_SPELL_VOID_SLAM_LOOK       = 1112;
     uint32 const BONK_SPELL_SEDUCTION_LOOK       = 6358;
     uint32 const BONK_SPELL_CHAOS_LOOK           = 33502;
