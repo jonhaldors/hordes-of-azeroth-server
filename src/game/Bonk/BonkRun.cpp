@@ -639,6 +639,7 @@ namespace
         creature->SetAI(new NullCreatureAI(creature));
         creature->SetFactionTemplateId(BONK_ORB_FACTION);
         creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
+        creature->ClearCreatureState(CSTATE_REGEN_HEALTH);
     }
 
     void InstallBoltTargetAI(Creature* creature)
@@ -4253,6 +4254,7 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
         return nullptr;
 
     mob->RemoveAllAuras();
+    mob->ClearCreatureState(CSTATE_REGEN_HEALTH);
     mob->SetInvincibilityHpThreshold(0);
     mob->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE);
 
@@ -4695,6 +4697,25 @@ void BonkRun::DespawnObjects()
     m_portalGuid.Clear();
 }
 
+void BonkRun::DespawnPaidChests()
+{
+    Map* map = m_player->FindMap();
+    for (auto itr = m_chests.begin(); itr != m_chests.end();)
+    {
+        GameObject* chest = map ? map->GetGameObject(*itr) : nullptr;
+        if (chest && chest->GetEntry() == BONK_GO_CHEST_FREE)
+        {
+            ++itr;
+            continue;
+        }
+        ForgetChestObjective(*itr);
+        m_chestChoices.erase(*itr);
+        if (chest)
+            chest->Delete();
+        itr = m_chests.erase(itr);
+    }
+}
+
 void BonkRun::UpdateObjectives(uint32 diff)
 {
     m_spawnPoints.Update(m_player, m_map.zoneId, diff);
@@ -4818,6 +4839,8 @@ void BonkRun::OpenPortal(Creature* boss)
     CollectAllOrbs();
     CollectAllGear();
     DespawnShrines();
+    DespawnMiniEvent();
+    DespawnPaidChests();
     ClearHidden();
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();

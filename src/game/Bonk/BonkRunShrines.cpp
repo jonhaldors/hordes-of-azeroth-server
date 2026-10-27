@@ -669,10 +669,14 @@ void BonkRun::ResetShrines()
 
 void BonkRun::DespawnShrines()
 {
-    if (Map* map = m_player->FindMap())
-        for (Shrine const& shrine : m_shrines)
+    Map* map = m_player->FindMap();
+    for (Shrine const& shrine : m_shrines)
+    {
+        if (map)
             if (GameObject* model = map->GetGameObject(shrine.model))
                 model->Delete();
+        RemoveObjective(shrine.objectiveId);
+    }
     m_shrines.clear();
     m_pendingSummons.clear();
     m_shrinesToPlace = 0;

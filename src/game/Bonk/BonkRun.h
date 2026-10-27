@@ -673,6 +673,7 @@ class BonkRun
         void UsePowerup(BonkPowerup const& powerup);
         void UpdateObjectives(uint32 diff);
         void DespawnObjects();
+        void DespawnPaidChests();
 
         uint32 GetMobLevel() const;
         uint32 GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const;
