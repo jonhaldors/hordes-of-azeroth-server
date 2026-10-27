@@ -43,6 +43,8 @@ namespace
     uint32 const BONK_ENEMY_FACTION        = 14;
     uint32 const BONK_SUMMON_LIMIT         = 1000;
     uint32 const BONK_OBJECT_LIFETIME_SEC  = 3600;
+    uint32 const BONK_MARKER_LOOK_CHECK_MS = 250;
+    float const BONK_DROP_SIGHT            = VISIBILITY_DISTANCE_GIGANTIC;
 
     float const BONK_SPAWN_MAX_HEIGHT_DIFF = 20.0f;
     float const BONK_SPAWN_MAX_DETOUR      = 2.5f;
@@ -1492,6 +1494,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateShards(diff);
     UpdateHeals(diff);
     UpdateGearDrops(diff);
+    UpdateMarkerLooks(diff);
     UpdateHearth(diff);
     if (m_state != STATE_RUNNING)
         return;
@@ -4679,7 +4682,7 @@ void BonkRun::DespawnObjects()
         for (HealDrop const& drop : m_healDrops)
             RemoveHealDrop(drop, map->GetCreature(drop.guid), false);
         for (GearDrop const& drop : m_gearDrops)
-            RemovePickup(drop.guid, drop.marker, drop.swirl);
+            RemovePickup(drop.guid, drop.marker, drop.swirl, drop.core);
         if (GameObject* portal = map->GetGameObject(m_portalGuid))
             portal->Delete();
     }
@@ -10343,6 +10346,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
         GiveShards(count);
         return;
     }
+    ShowFromFar(go);
 
     ShardDrop drop;
     drop.guid = go->GetObjectGuid();
@@ -10417,6 +10421,7 @@ void BonkRun::DropGlyph(Creature const* mob)
         QueueGlyphPick();
         return;
     }
+    ShowFromFar(go);
 
     GlyphDrop drop;
     drop.guid = go->GetObjectGuid();
@@ -10588,26 +10593,102 @@ void BonkRun::GiveShards(uint32 count)
     SendState();
 }
 
+Creature* BonkRun::SummonMarker(float x, float y, float z, float scale)
+{
+    Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, x, y, z, 0.0f,
+        TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, true, 0, &InstallOrbAI);
+    if (marker)
+        marker->SetObjectScale(scale);
+    return marker;
+}
+
 ObjectGuid BonkRun::PlaceMarker(GameObject const* go, uint32 spellId, float scale)
 {
-    Creature* marker = m_player->SummonCreature(BONK_PICKUP_MARKER, go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), 0.0f,
-        TEMPSUMMON_TIMED_DESPAWN, BONK_OBJECT_LIFETIME_SEC * IN_MILLISECONDS, false, 0, &InstallOrbAI);
+    Creature* marker = SummonMarker(go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), scale);
     if (!marker)
         return ObjectGuid();
 
-    marker->SetObjectScale(scale);
+    ShowFromFar(marker);
     marker->AddAura(spellId, ADD_AURA_PERMANENT);
     return marker->GetObjectGuid();
 }
 
-void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid, ObjectGuid const& sparkleGuid)
+void BonkRun::ShowFromFar(WorldObject* object)
+{
+    object->SetVisibilityModifier(BONK_DROP_SIGHT);
+    object->SetActiveObjectState(true);
+}
+
+void BonkRun::UpdateMarkerLooks(uint32 diff)
+{
+    m_markerLookTimer += diff;
+    if (m_markerLookTimer < BONK_MARKER_LOOK_CHECK_MS)
+        return;
+    m_markerLookTimer = 0;
+
+    for (GearDrop& drop : m_gearDrops)
+    {
+        RefreshMarkerLook(drop.marker);
+        RefreshMarkerLook(drop.core);
+        RefreshMarkerLook(drop.swirl);
+    }
+    for (ShardDrop& drop : m_shardDrops)
+    {
+        RefreshMarkerLook(drop.marker);
+        RefreshMarkerLook(drop.sparkle);
+    }
+    for (GlyphDrop& drop : m_glyphDrops)
+    {
+        RefreshMarkerLook(drop.marker);
+        RefreshMarkerLook(drop.sparkle);
+    }
+    for (ObjectGuid& guid : m_dropLooks)
+        RefreshMarkerLook(guid);
+}
+
+void BonkRun::RefreshMarkerLook(ObjectGuid& guid)
+{
+    if (!guid.IsCreature())
+        return;
+    Creature* marker = m_player->GetMap()->GetCreature(guid);
+    if (!marker)
+    {
+        m_markersSeen.erase(guid);
+        m_markersAway.erase(guid);
+        return;
+    }
+    if (!m_player->IsInVisibleList(marker))
+    {
+        if (m_markersSeen.erase(guid))
+            m_markersAway.insert(guid);
+        return;
+    }
+    if (!m_markersAway.erase(guid))
+    {
+        m_markersSeen.insert(guid);
+        return;
+    }
+
+    Creature* fresh = SummonMarker(marker->GetPositionX(), marker->GetPositionY(), marker->GetPositionZ(), marker->GetObjectScale());
+    if (!fresh)
+        return;
+    ShowFromFar(fresh);
+    for (auto const& itr : marker->GetSpellAuraHolderMap())
+        if (!fresh->HasAura(itr.first))
+            fresh->AddAura(itr.first, ADD_AURA_PERMANENT);
+    marker->RemoveAllAuras();
+    marker->DespawnOrUnsummon();
+    guid = fresh->GetObjectGuid();
+}
+
+void BonkRun::RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid, ObjectGuid const& sparkleGuid, ObjectGuid const& coreGuid)
 {
     Map* map = m_player->FindMap();
     if (!map)
         return;
     if (GameObject* go = map->GetGameObject(goGuid))
         go->Delete();
-    for (ObjectGuid const& guid : { markerGuid, sparkleGuid })
+    for (ObjectGuid const& guid : { markerGuid, sparkleGuid, coreGuid })
         if (Creature* marker = map->GetCreature(guid))
         {
             marker->RemoveAllAuras();

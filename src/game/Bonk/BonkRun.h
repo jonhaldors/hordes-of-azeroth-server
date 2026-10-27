@@ -871,8 +871,12 @@ class BonkRun
         void UpdateHeals(uint32 diff);
         void GiveShards(uint32 count);
         ObjectGuid PlaceMarker(GameObject const* go, uint32 spellId, float scale);
-        ObjectGuid PlaceLootBeam(GameObject const* go, uint8 quality, ObjectGuid& swirl);
-        void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid, ObjectGuid const& sparkleGuid = ObjectGuid());
+        Creature* SummonMarker(float x, float y, float z, float scale);
+        void ShowFromFar(WorldObject* object);
+        void UpdateMarkerLooks(uint32 diff);
+        void RefreshMarkerLook(ObjectGuid& guid);
+        ObjectGuid PlaceLootBeam(GameObject const* go, uint8 quality, ObjectGuid& core, ObjectGuid& swirl);
+        void RemovePickup(ObjectGuid const& goGuid, ObjectGuid const& markerGuid, ObjectGuid const& sparkleGuid = ObjectGuid(), ObjectGuid const& coreGuid = ObjectGuid());
 
         bool OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid = nullptr, std::vector<Offer> const* kept = nullptr,
             std::vector<Offer>* drawn = nullptr);
@@ -1033,6 +1037,7 @@ class BonkRun
             ObjectGuid guid;
             uint32 entry = 0;
             ObjectGuid marker;
+            ObjectGuid core;
             ObjectGuid swirl;
             bool tierPiece = false;
         };
@@ -1399,6 +1404,9 @@ class BonkRun
         };
         std::vector<GlyphDrop> m_glyphDrops;
         std::vector<ObjectGuid> m_dropLooks;
+        std::set<ObjectGuid> m_markersSeen;
+        std::set<ObjectGuid> m_markersAway;
+        uint32 m_markerLookTimer = 0;
         struct HealDrop
         {
             ObjectGuid guid;
