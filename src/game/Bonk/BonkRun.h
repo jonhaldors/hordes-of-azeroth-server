@@ -1024,6 +1024,7 @@ class BonkRun
         uint32 m_dungeonId = 0;
         uint32 m_invaderId = 0;
         uint32 m_startMapId = 0;
+        uint32 m_floorBestAtStart = 0;
         void ApplyInvader();
 
         void Finish(bool wentHome);

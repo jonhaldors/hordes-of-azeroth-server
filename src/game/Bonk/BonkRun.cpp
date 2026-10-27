@@ -1036,6 +1036,7 @@ BonkRun::BonkRun(Player* player, BonkTier const& tier, BonkRunChoice const& choi
     m_skips = m_bonuses.skips;
     m_revives = m_bonuses.revives;
     m_coins = m_bonuses.startCoins;
+    m_floorBestAtStart = player->GetBonkPlayer()->GetClassFloor();
 }
 
 bool BonkRun::Begin(std::string& error)
@@ -1414,7 +1415,7 @@ void BonkRun::SendFullState() const
         bonk->SendAddon("start~" + m_map.name + "~Sandbox~0~" + std::to_string(m_stage) + "~0~");
     else
         bonk->SendAddon("start~" + m_map.name + "~" + m_tier.name + "~" + std::to_string(m_map.durationSeconds) + "~" + std::to_string(m_stage) + "~" +
-            std::to_string(GetFirstMinibossSecond()) + "~" + DescribeTimelineMarks());
+            std::to_string(GetFirstMinibossSecond()) + "~" + DescribeTimelineMarks() + "~" + (IsMythic() ? "1" : "0"));
     SendLoadout();
     SendState();
     SendRunXp();
@@ -12002,7 +12003,8 @@ void BonkRun::Finish(bool wentHome)
     if (bonk->IsAddonReady())
         bonk->SendAddon("end~" + std::string(wentHome ? "1" : "0") + "~" + std::to_string(seconds) + "~" + std::to_string(m_kills) + "~" +
             std::to_string(m_goldEarned) + "~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_stage) + "~" + std::to_string(m_shardsEarned) +
-            "~" + (m_victory ? "1" : "0"));
+            "~" + (m_victory ? "1" : "0") + "~" + (IsMythic() ? "1" : "0") + "~" + std::to_string(bonk->GetClassFloor()) + "~" +
+            std::to_string(m_floorBestAtStart));
     else
         ChatHandler(m_player).PSendSysMessage("%s You reached stage %u in %s with %u kills at level %u, and earned %s and %s.",
             m_victory ? "Victory!" : wentHome ? "Run complete!" : "Defeated.",
