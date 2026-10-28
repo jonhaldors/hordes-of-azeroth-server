@@ -16,7 +16,7 @@ namespace
     float const BONK_ENRAGE_HASTE             = 25.0f;
     uint32 const BONK_ENRAGE_MS               = 4000;
     uint32 const BONK_ENRAGE_REFRESH_GAP_MS   = 250;
-    uint32 const BONK_SPELL_ENRAGE_LOOK       = 12686;
+    uint32 const BONK_SPELL_ENRAGE_LOOK       = 33462;
     uint32 const BONK_KIT_WHIRLWIND_SPIN      = 369;
     uint32 const BONK_KIT_BLADESTORM_SPIN     = 7352;
     uint32 const BONK_REVENGE_WINDOW_MS       = 500;
@@ -185,7 +185,7 @@ bool BonkRun::IsPeriodicHit()
 
 float BonkRun::GetEnrageHaste() const
 {
-    return IsEnraged() ? BONK_ENRAGE_HASTE + m_mastery.enrageHaste : 0.0f;
+    return IsEnraged() ? (BONK_ENRAGE_HASTE + m_mastery.enrageHaste) * m_mastery.EnrageBoost() : 0.0f;
 }
 
 void BonkRun::Enrage()
@@ -220,7 +220,8 @@ void BonkRun::OnCriticalStrike(SpellCaster const* caster, SpellEntry const* spel
 {
     if (m_state != STATE_RUNNING || caster != m_player || !spell || !victim || m_criticalStrikes.size() >= BONK_MAX_PENDING_CRITS)
         return;
-    if (!HasBehavior(BONK_BEHAVIOR_DEEP_WOUNDS) && !HasBehavior(BONK_BEHAVIOR_BLOODTHIRST) && !HasBehavior(BONK_BEHAVIOR_HOT_STREAK))
+    if (!HasBehavior(BONK_BEHAVIOR_DEEP_WOUNDS) && !HasBehavior(BONK_BEHAVIOR_BLOODTHIRST) && !HasBehavior(BONK_BEHAVIOR_HOT_STREAK) &&
+        !GetGlyph(BONK_GLYPH_IGNITE))
         return;
     m_criticalStrikes.emplace_back(victim->GetObjectGuid(), spell->Id);
 }
@@ -247,6 +248,8 @@ void BonkRun::ResolveCriticalStrikes()
             OpenDeepWound(*deepWounds, mob);
         if (striker && striker->weapon.behavior == BONK_BEHAVIOR_HOT_STREAK && mob)
             TriggerHotStreak(*striker, mob);
+        if (mob)
+            IgniteFromCrit(mob, crit.second);
     }
 }
 

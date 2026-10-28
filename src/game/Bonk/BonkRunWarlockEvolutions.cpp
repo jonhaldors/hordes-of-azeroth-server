@@ -42,7 +42,7 @@ namespace
     uint32 const BONK_SPELL_CORRUPTION_LOOK      = 172;
     uint32 const BONK_SPELL_DOOM_LOOK            = 603;
     uint32 const BONK_SPELL_INFERNO_LOOK         = 22703;
-    uint32 const BONK_SPELL_SOUL_LOOK            = 17941;
+    uint32 const BONK_SPELL_SOUL_LOOK            = 33461;
     uint32 const BONK_SPELL_VOID_SLAM_LOOK       = 1112;
     uint32 const BONK_SPELL_SEDUCTION_LOOK       = 6358;
     uint32 const BONK_SPELL_CHAOS_LOOK           = 33502;
@@ -75,7 +75,9 @@ namespace
     uint32 const BONK_DOOM_DELAY_MS              = 10000;
     float const BONK_DOOM_MOB_HEALTHS            = 1.5f;
     uint32 const BONK_DOOMGUARD_LIFE_MS          = 15000;
-    float const BONK_DOOMGUARD_BITE              = 2.0f;
+    float const BONK_DOOMGUARD_SWING_HEALTHS     = 0.3f;
+    uint32 const BONK_MINION_ATTACK_MS           = 1500;
+    uint32 const BONK_MINION_MIN_ATTACK_MS       = 300;
     uint32 const BONK_SOUL_MS                    = 10000;
     uint32 const BONK_MAX_SOULS                  = 10;
     float const BONK_SOUL_DAMAGE                 = 0.05f;
@@ -113,7 +115,7 @@ void BonkRun::SummonWarlockMinion(OwnedWeapon const& owned, uint32 entry, float 
     minion->UpdateModelData();
     minion->SetHealth(minion->GetMaxHealth());
     minion->SetInvincibilityHpThreshold(minion->GetMaxHealth());
-    m_warlockMinions.push_back({ minion->GetObjectGuid(), owned.weapon.id, m_totalMs + lifeMs, bite });
+    m_warlockMinions.push_back({ minion->GetObjectGuid(), owned.weapon.id, m_totalMs + uint32(lifeMs * GetWeaponDurationScale(owned)), bite });
     DressWarlockMinions();
 }
 
@@ -126,15 +128,28 @@ void BonkRun::DressWarlockMinions()
         Creature* minion = owned ? map->GetCreature(held.guid) : nullptr;
         if (!minion || !minion->IsAlive())
             continue;
-        float const damage = std::max(1.0f, GetWeaponDamage(*owned)) * held.bite * GetDemonDamageScale();
+        float const damage = GetMinionSwingDamage(*owned, held) * GetDemonDamageScale();
+        float const pace = GetWeaponCooldown(*owned) / float(std::max(1u, owned->weapon.cooldownMs));
         float const speed = GetPetRunSpeed();
         if (minion->GetBaseRunSpeedRate() != speed)
             minion->SetBaseSpeedRate(MOVE_RUN, speed);
         minion->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, damage * 0.9f);
         minion->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, damage * 1.1f);
         minion->UpdateDamagePhysical(BASE_ATTACK);
-        minion->SetAttackTime(BASE_ATTACK, 1500);
+        minion->SetAttackTime(BASE_ATTACK, std::max(BONK_MINION_MIN_ATTACK_MS, uint32(BONK_MINION_ATTACK_MS * pace)));
     }
+}
+
+float BonkRun::GetMinionSwingDamage(OwnedWeapon const& owned, WarlockMinion const& held) const
+{
+    if (held.weaponId == BONK_WEAPON_CURSE_OF_DOOM)
+        return GetMobHealth(GetMobLevel()) * BONK_DOOMGUARD_SWING_HEALTHS * (1.0f + owned.damageBonus / 100.0f);
+    return std::max(1.0f, GetWeaponDamage(owned)) * held.bite;
+}
+
+bool BonkRun::IsWarlockMinion(ObjectGuid const& guid) const
+{
+    return std::any_of(m_warlockMinions.begin(), m_warlockMinions.end(), [&guid](WarlockMinion const& held) { return held.guid == guid; });
 }
 
 void BonkRun::UpdateWarlockMinions()
@@ -335,7 +350,7 @@ void BonkRun::OnWarlockEvolvedPetStrike(OwnedWeapon& owned, Creature* pet, Creat
                 if (jumps++ >= BONK_FEL_IMPS_JUMPS)
                     break;
                 ShowStrike(prey, bolt, mob);
-                DealExactHit(bolt, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(bolt, mob, GetPowerShare(pet)))), pet);
+                DealSpellHit(bolt, mob, std::max(1.0f, hit), pet);
             }
         }
     }
@@ -397,9 +412,9 @@ void BonkRun::OnWarlockEvolvedKill(Unit* victim)
 
     bool const pandemic = m_mastery.Has(BONK_CAPSTONE_PANDEMIC);
     if ((pandemic || FindOwned(BONK_WEAPON_AGONYS_ECHO)) && GetKeywordStacks(victim, BONK_KEYWORD_AGONY))
-        PassAffliction(dead, BONK_KEYWORD_AGONY);
+        PassAffliction(dead, BONK_KEYWORD_AGONY, !FindOwned(BONK_WEAPON_AGONYS_ECHO));
     if (pandemic && GetKeywordStacks(victim, BONK_KEYWORD_DECAY))
-        PassAffliction(dead, BONK_KEYWORD_DECAY);
+        PassAffliction(dead, BONK_KEYWORD_DECAY, true);
 
     if (FindOwned(BONK_WEAPON_DRAIN_SOUL) && std::find(m_drainBeams.begin(), m_drainBeams.end(), guid) != m_drainBeams.end())
         AddSoul();
@@ -408,7 +423,7 @@ void BonkRun::OnWarlockEvolvedKill(Unit* victim)
     m_seducedUntil.erase(guid);
 }
 
-void BonkRun::PassAffliction(Creature* dead, BonkKeyword keyword)
+void BonkRun::PassAffliction(Creature* dead, BonkKeyword keyword, bool halve)
 {
     BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
     auto mob = m_dotStacks.find(dead->GetObjectGuid());
@@ -417,7 +432,9 @@ void BonkRun::PassAffliction(Creature* dead, BonkKeyword keyword)
     auto stacks = mob->second.find(keyword);
     if (stacks == mob->second.end() || stacks->second.empty())
         return;
-    std::vector<DotStack> const carried = stacks->second;
+    std::vector<DotStack> carried = stacks->second;
+    if (halve)
+        carried.resize((carried.size() + 1) / 2);
     for (Creature* next : GetMobsInRange(BONK_SPREAD_RADIUS, dead))
     {
         if (GetKeywordStacks(next, keyword))
@@ -557,7 +574,7 @@ void BonkRun::FallDoom()
         float const x = mob->GetPositionX(), y = mob->GetPositionY(), z = mob->GetPositionZ();
         DealShamanHit(look, owned->weapon.spellId, mob, GetMobHealth(GetMobLevel()) * BONK_DOOM_MOB_HEALTHS * (1.0f + owned->damageBonus / 100.0f));
         if (!mob->IsAlive())
-            SummonWarlockMinion(*owned, BONK_DOOMGUARD, x, y, z, BONK_DOOMGUARD_LIFE_MS, BONK_DOOMGUARD_BITE, 1.0f);
+            SummonWarlockMinion(*owned, BONK_DOOMGUARD, x, y, z, BONK_DOOMGUARD_LIFE_MS, 1.0f, 1.0f);
     }
 }
 
@@ -581,7 +598,7 @@ void BonkRun::SlamVoid()
         float const hit = GetPetBiteDamage(*owned, *family) * BONK_VOID_SLAM_BITES;
         for (Creature* mob : mobs)
         {
-            DealExactHit(look, mob, uint32(std::max(1.0f, hit * GetDamageMultiplier(look, mob, GetPowerShare(pet)))), pet);
+            DealSpellHit(look, mob, std::max(1.0f, hit), pet);
             if (mob->IsAlive() && IsNormalMob(mob))
                 KnockBack(mob);
         }

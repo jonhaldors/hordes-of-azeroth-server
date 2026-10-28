@@ -39,6 +39,7 @@ namespace
 
     uint32 const BONK_SPELL_SMITE             = 585;
     uint32 const BONK_SPELL_RENEW             = 139;
+    uint32 const BONK_SPELL_RENEW_LOOK        = 33464;
     uint32 const BONK_SPELL_POWER_WORD_SHIELD = 17;
     uint32 const BONK_SPELL_PENANCE_BOLT      = 591;
     uint32 const BONK_SPELL_RAPTURE_BOLT      = 598;
@@ -141,8 +142,8 @@ void BonkRun::ResetPriestState()
     m_voidTendrilsMs = 0;
     if (m_player->HasAura(BONK_SPELL_POWER_WORD_SHIELD))
         m_player->RemoveAurasDueToSpell(BONK_SPELL_POWER_WORD_SHIELD);
-    if (m_player->HasAura(BONK_SPELL_RENEW))
-        m_player->RemoveAurasDueToSpell(BONK_SPELL_RENEW);
+    if (m_player->HasAura(BONK_SPELL_RENEW_LOOK))
+        m_player->RemoveAurasDueToSpell(BONK_SPELL_RENEW_LOOK);
 }
 
 void BonkRun::UpdatePriest(uint32 diff)
@@ -353,8 +354,8 @@ void BonkRun::PulseRenew(OwnedWeapon& owned)
     owned.timer = GetWeaponCooldown(owned);
     if (!m_player->IsAlive())
         return;
-    if (!m_player->HasAura(BONK_SPELL_RENEW))
-        m_player->AddAura(BONK_SPELL_RENEW, ADD_AURA_PERMANENT);
+    if (!m_player->HasAura(BONK_SPELL_RENEW_LOOK))
+        m_player->AddAura(BONK_SPELL_RENEW_LOOK, ADD_AURA_PERMANENT);
     uint32 const smiteFrom = m_mastery.Has(BONK_CAPSTONE_ARCHANGEL) ? uint32(m_player->GetMaxHealth() * BONK_ARCHANGEL_SMITE_HEALTH) : m_player->GetMaxHealth();
     uint32 const naaruMs = uint32(m_mastery.Special(BONK_SPECIAL_LIGHT_OF_THE_NAARU) * IN_MILLISECONDS);
     if (m_player->GetHealth() < smiteFrom)
@@ -807,7 +808,7 @@ void BonkRun::OnPriestPetBite(Creature* pet, Unit* victim)
         if (owned.weapon.id == BONK_WEAPON_MINDBENDER)
             if (SpellEntry const* shadow = sSpellMgr.GetSpellEntry(BONK_SPELL_SHADOW_HIT))
                 for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), victim))
-                    DealShamanHit(shadow, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_MINDBENDER_SHARE);
+                    DealSpellHit(shadow, mob, GetWeaponDamage(owned) * BONK_MINDBENDER_SHARE, pet);
         return;
     }
 }

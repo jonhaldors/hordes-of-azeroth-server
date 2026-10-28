@@ -82,6 +82,7 @@ namespace
     float const BONK_ERUPTION_RADIUS          = 5.0f;
     float const BONK_ERUPTION_SHARE           = 0.4f;
     size_t const BONK_MAX_ERUPTIONS           = 12;
+    size_t const BONK_ERUPTION_TARGETS        = 3;
     uint32 const BONK_KIT_BLAST_WAVE          = 984;
     uint32 const BONK_KIT_ERUPTION            = 286;
 
@@ -230,6 +231,7 @@ void BonkRun::OnDash()
     if (m_state != STATE_RUNNING || !m_player->IsAlive())
         return;
     OnTalentDash();
+    OnGlyphDash();
     if (!IsBlinkDash())
         return;
     OnTalentBlink();
@@ -273,6 +275,14 @@ void BonkRun::OnDash()
                     explosion.pieResync = true;
                 }
     }
+
+    if (IsTalentBlinkDash())
+        for (OwnedWeapon& explosion : m_weapons)
+            if (explosion.weapon.spellId == BONK_SPELL_ARCANE_EXPLOSION)
+            {
+                explosion.timer = std::min(explosion.timer, BONK_BLINK_LAND_MS);
+                explosion.pieResync = true;
+            }
 
     if (HasBehavior(BONK_BEHAVIOR_ARCANE_POWER))
         m_arcanePowerUntilMs = m_totalMs + BONK_ARCANE_POWER_MS;
@@ -992,7 +1002,10 @@ void BonkRun::EruptBurning(OwnedWeapon& owned, SpellEntry const* spellInfo)
         if (!source->IsAlive())
             continue;
         source->SendPlaySpellVisualKit(BONK_KIT_ERUPTION);
-        for (Creature* mob : GetMobsInRange(BONK_ERUPTION_RADIUS * area, source))
+        std::vector<Creature*> struck = GetMobsInRange(BONK_ERUPTION_RADIUS * area, source);
+        if (struck.size() > BONK_ERUPTION_TARGETS)
+            struck.resize(BONK_ERUPTION_TARGETS);
+        for (Creature* mob : struck)
             DealSpellHit(spellInfo, mob, damage);
     }
 }

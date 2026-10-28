@@ -43,7 +43,7 @@ namespace
     uint32 const BONK_SPELL_LIGHTNING_LOOK    = 403;
     uint32 const BONK_KIT_STORMSTRIKE_IMPACT  = 317;
     uint32 const BONK_KIT_FLAMETONGUE_IMPACT  = 145;
-    uint32 const BONK_SPELL_LIGHTNING_SHIELD  = 324;
+    uint32 const BONK_SPELL_LIGHTNING_SHIELD  = 33465;
     uint32 const BONK_SPELL_HEALING_STREAM    = 5672;
     uint32 const BONK_SPELL_FLAMETONGUE       = 10444;
     uint32 const BONK_SPELL_FIRE_NOVA         = 8349;
@@ -97,7 +97,6 @@ namespace
 
     uint32 const BONK_SHAMAN_TICK_MS          = 1000;
     uint32 const BONK_ASCENDANCE_STACKS       = 3;
-    float const BONK_ASCENDANCE_COST          = 0.85f;
     uint32 const BONK_DOOMHAMMER_WINDFURY_EVERY = 2;
     uint32 const BONK_DOOMHAMMER_MAELSTROM_HITS = 3;
     uint32 const BONK_TOTEMIC_MASTERY_TOTEMS  = 1;
@@ -195,22 +194,6 @@ bool BonkRun::DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, U
     return crit;
 }
 
-void BonkRun::DealTotemHit(OwnedWeapon const& owned, SpellEntry const* spellInfo, Unit* target, uint32 damage)
-{
-    if (!spellInfo || !target || !target->IsAlive() || !damage || !m_player->IsAlive())
-        return;
-
-    bool const keywordless = m_keywordlessHits;
-    m_keywordlessHits = true;
-    SpellNonMeleeDamage hit(m_player, target, spellInfo->Id, SpellSchools(spellInfo->School));
-    hit.damage = damage;
-    m_player->DealDamageMods(target, hit.damage, &hit.absorb);
-    hit.spellId = owned.weapon.spellId;
-    m_player->SendSpellNonMeleeDamageLog(&hit);
-    m_player->DealSpellDamage(&hit, true);
-    m_keywordlessHits = keywordless;
-}
-
 void BonkRun::OnShamanStrike(OwnedWeapon& owned, SpellEntry const*, Creature* target, float share)
 {
     BonkWeapon const& weapon = owned.weapon;
@@ -245,8 +228,9 @@ void BonkRun::OnShamanStrike(OwnedWeapon& owned, SpellEntry const*, Creature* ta
 
     if (weapon.behavior == BONK_BEHAVIOR_EARTH_SHOCK)
     {
-        if (GetKeywordStacks(target, BONK_KEYWORD_STATIC))
-            QueueStaticDischarge(target, weapon.spellId);
+        BonkKeywordInfo const* staticInfo = sBonkMgr.GetKeyword(BONK_KEYWORD_STATIC);
+        if (staticInfo && GetKeywordStacks(target, BONK_KEYWORD_STATIC) && QueueStaticDischarge(target, weapon.spellId))
+            target->RemoveAurasByCasterSpell(staticInfo->spellId, m_player->GetObjectGuid());
         if (weapon.id == BONK_WEAPON_EARTHQUAKE)
             StartKeywordCloud(owned, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
         return;
@@ -563,10 +547,10 @@ void BonkRun::SpendStaticShock(Creature* target)
     }
 }
 
-void BonkRun::QueueStaticDischarge(Creature* mob, uint32 sourceSpellId)
+bool BonkRun::QueueStaticDischarge(Creature* mob, uint32 sourceSpellId)
 {
     if (!TakeRateSlot(m_staticDischargeTimes, BONK_MAX_STATIC_PER_SEC) || m_weapons.empty())
-        return;
+        return false;
 
     OwnedWeapon const* source = FindOwnedBySpell(sourceSpellId);
     PendingCast discharge;
@@ -582,6 +566,7 @@ void BonkRun::QueueStaticDischarge(Creature* mob, uint32 sourceSpellId)
 
     if (source && source->weapon.id == BONK_WEAPON_LIGHTNING_OVERLOAD)
         QueueOverload(*source, mob);
+    return true;
 }
 
 void BonkRun::QueueOverload(OwnedWeapon const& owned, Creature* mob)
@@ -734,7 +719,7 @@ void BonkRun::OnShamanPetPulse(OwnedWeapon& owned, Creature* pet, float radius)
         mobs.erase(mobs.begin() + pick);
         if (glob)
             ShowStrike(pet, glob, mob);
-        DealShamanHit(glob, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_LIQUID_MAGMA_SHARE);
+        DealSpellHit(glob, mob, GetWeaponDamage(owned) * BONK_LIQUID_MAGMA_SHARE, pet);
         ApplyShamanKeyword(owned, mob, BONK_KEYWORD_BURNING, 1);
     }
 }
@@ -751,11 +736,8 @@ bool BonkRun::IsLavaBurstOnBurning(SpellEntry const* spell, Unit const* victim) 
 
 float BonkRun::GetShamanDamageMultiplier(SpellEntry const* spell, Unit const* victim) const
 {
-    if (!victim)
+    if (!victim || !spell || spell->School != SPELL_SCHOOL_FIRE)
         return 1.0f;
-    float const ascendance = m_mastery.Has(BONK_CAPSTONE_ASCENDANCE) && !GetKeywordStacks(victim, BONK_KEYWORD_STATIC) ? BONK_ASCENDANCE_COST : 1.0f;
-    if (!spell || spell->School != SPELL_SCHOOL_FIRE)
-        return ascendance;
     for (OwnedWeapon const& owned : m_weapons)
     {
         if (owned.weapon.id != BONK_WEAPON_TOTEM_OF_WRATH)
@@ -764,9 +746,9 @@ float BonkRun::GetShamanDamageMultiplier(SpellEntry const* spell, Unit const* vi
         for (ObjectGuid const& guid : owned.pets)
             if (Creature* totem = map->GetCreature(guid))
                 if (totem->IsAlive() && victim->IsWithinDistInMap(totem, BONK_TOTEM_OF_WRATH_REACH))
-                    return BONK_TOTEM_OF_WRATH_BONUS * ascendance;
+                    return BONK_TOTEM_OF_WRATH_BONUS;
     }
-    return ascendance;
+    return 1.0f;
 }
 
 void BonkRun::ReplantTotems()
@@ -804,7 +786,7 @@ void BonkRun::BurstFireNovaTotems()
         totem->SendPlaySpellVisualKit(BONK_KIT_FIRE_NOVA);
         for (Creature* mob : GetMobsNear(totem->GetPositionX(), totem->GetPositionY(), radius))
         {
-            DealShamanHit(fire, nova->weapon.spellId, mob, GetWeaponDamage(*nova) * BONK_FIRE_NOVA_SHARE);
+            DealSpellHit(fire, mob, GetWeaponDamage(*nova) * BONK_FIRE_NOVA_SHARE, totem);
             ApplyShamanKeyword(*nova, mob, BONK_KEYWORD_BURNING, BONK_FIRE_NOVA_STACKS);
         }
         totem->NearTeleportTo(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), m_player->GetOrientation());
@@ -830,7 +812,7 @@ void BonkRun::RainFromHealingTotems()
         {
             if (look)
                 ShowStrike(totem, look, mob);
-            DealShamanHit(zap, rain->weapon.spellId, mob, GetWeaponDamage(*rain));
+            DealSpellHit(zap, mob, GetWeaponDamage(*rain), totem);
         }
     }
 }

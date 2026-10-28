@@ -104,9 +104,9 @@ namespace
     char const* const BONK_DAMAGE_ADJECTIVES[] = { "", "heavy ", "massive ", "extra " };
     char const* const BONK_TARGET_NOUNS[] = { "enem", "random", "nearest", "strongest", "target", "pack", "spirit" };
 
-    std::string MarkNumber(std::string const& text, bool better)
+    std::string MarkNumber(std::string const& text, bool)
     {
-        return (better ? "|cff20ff20" : "|cffffffff") + text + "|r";
+        return "|cffffffff" + text + "|r";
     }
 
     std::string MarkRange(float hit, float spread, bool better)
@@ -321,8 +321,8 @@ float BonkRun::GetShownHit(OwnedWeapon const& owned, float extraPower) const
         BonkPetFamily const* family = GetPetFamily(owned);
         if (!family)
             return 0.0f;
-        float const powerShare = BONK_SUMMON_POWER_SHARE + GetPackPowerShare();
-        return GetPetBiteDamage(owned, *family) * GetPetSwingFactor(owned) * GetDamageMultiplier(nullptr, nullptr, powerShare, extraPower) *
+        float const minionScale = 1.0f + GetPackPowerShare();
+        return GetPetBiteDamage(owned, *family) * GetPetSwingFactor(owned) * GetDamageMultiplier(nullptr, nullptr, minionScale, extraPower) *
             (1.0f + GetSpecDamage(owned.weapon.id) / 100.0f);
     }
 
@@ -454,7 +454,7 @@ void BonkRun::DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>
         if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
         {
             sBonkMgr.DescribePassiveStats(*passive, offer.newLevel, stats);
-            AddCurvedTotal(BonkPassiveEffect(passive->effect), passive->valuePerRank, stats);
+            AddCurvedTotal(BonkPassiveEffect(passive->effect), passive->valuePerRank * BonkPassive::RankWeight(offer.newLevel), stats);
         }
         return;
     }
@@ -557,7 +557,7 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
                     std::to_string(weapon.baseTargets + uint32(after[upgrade])) });
                 break;
             case BONK_SPELL_UPGRADE_REACH:
-                stats.push_back({ "Reach", FormatNumber(weapon.range * GetWeaponArea(owned), "%.1f") + " yd",
+                stats.push_back({ "Range", FormatNumber(weapon.range * GetWeaponArea(owned), "%.1f") + " yd",
                     FormatNumber(weapon.range * GetWeaponArea(next), "%.1f") + " yd" });
                 break;
             case BONK_SPELL_UPGRADE_DEPLOY:

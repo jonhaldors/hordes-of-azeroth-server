@@ -389,7 +389,7 @@ bool BonkRun::StartMiniEventNow(BonkMiniEventType type, std::string& error)
 {
     if (m_state != STATE_RUNNING || m_paused)
     {
-        error = "Only a running stage can have a mini-event.";
+        error = "Only a running floor can have a mini-event.";
         return false;
     }
     if (m_miniEventActive)

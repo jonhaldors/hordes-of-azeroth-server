@@ -208,6 +208,8 @@ uint32 const BONK_MASTERY_MAX_LEVEL = 30;
 uint32 const BONK_MASTERY_XP_BASE   = 50;
 uint32 const BONK_MASTERY_XP_STEP   = 8;
 uint32 const BONK_MASTERY_XP_CURVE  = 1;
+uint32 const BONK_MASTERY_XP_SLOW_FROM_LEVEL = 10;
+uint32 const BONK_MASTERY_XP_SLOW_PERCENT_PER_LEVEL = 3;
 uint32 const BONK_MASTERY_POINTS_PER_ROW = 5;
 uint8 const BONK_MASTERY_LAYOUT_GRID = 0;
 uint32 const BONK_TREE_ARCANE = 801;
@@ -354,6 +356,7 @@ struct BonkMasteryBonuses
 
     bool Has(BonkCapstone which) const { return capstone == which; }
     float Special(BonkTalentSpecial which) const { return specials[which]; }
+    float EnrageBoost() const { return Has(BONK_CAPSTONE_BERSERKER) ? 1.5f : 1.0f; }
 };
 
 class BonkMastery

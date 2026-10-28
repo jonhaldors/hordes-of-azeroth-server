@@ -1,4 +1,5 @@
 #include "BonkPlayer.h"
+#include "Bag.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkQuests.h"
@@ -22,6 +23,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <mutex>
@@ -32,7 +34,8 @@
 namespace
 {
     char const* const BONK_ACCOUNT_TABLES[] = { "bonk_account", "bonk_account_mastery", "bonk_account_mastery_node", "bonk_account_quest",
-        "bonk_account_starter", "bonk_account_talent", "bonk_account_tier", "bonk_account_upgrade", "bonk_account_floor" };
+        "bonk_account_starter", "bonk_account_talent", "bonk_account_tier", "bonk_account_upgrade", "bonk_account_floor",
+        "bonk_account_found" };
     char const* const BONK_PROGRESS_ONLY_TABLES[] = { "bonk_account_disabled", "bonk_account_unlock" };
     uint32 const BONK_IRONMAN_ACCOUNT_BIT = 0x80000000;
 
@@ -262,11 +265,23 @@ void BonkPlayer::LoadPurchases()
 
     m_shards = 0;
     m_determination = 0;
-    result = CharacterDatabase.PQuery("SELECT `shards`, `determination` FROM `bonk_account` WHERE `account` = %u", accountId);
+    m_scrap = 0;
+    m_quartermasterUpgrade = false;
+    result = CharacterDatabase.PQuery("SELECT `shards`, `determination`, `scrap` FROM `bonk_account` WHERE `account` = %u", accountId);
     if (result)
     {
         m_shards = result->Fetch()[0].GetUInt32();
         m_determination = result->Fetch()[1].GetUInt8();
+        m_scrap = result->Fetch()[2].GetUInt32();
+    }
+
+    m_foundGear.clear();
+    result = CharacterDatabase.PQuery("SELECT `item` FROM `bonk_account_found` WHERE `account` = %u", accountId);
+    if (result)
+    {
+        do
+            m_foundGear.insert(result->Fetch()[0].GetUInt32());
+        while (result->NextRow());
     }
 
     m_talentRanks.clear();
@@ -361,6 +376,26 @@ uint32 BonkPlayer::GetMasteryLevel() const
 uint32 BonkPlayer::GetMasteryPoints() const
 {
     return GetMasteryLevel() + sBonkQuests.GetMasteryPoints(GetProgressAccount(), m_player->GetClass()) + GetFloorTalentPoints();
+}
+
+std::string BonkPlayer::DescribeLoadout() const
+{
+    auto describeRanks = [](std::map<uint32, uint8> const& ranks)
+    {
+        std::string text;
+        for (auto const& itr : ranks)
+            if (itr.second)
+                text += (text.empty() ? "" : ",") + std::to_string(itr.first) + ":" + std::to_string(itr.second);
+        return text;
+    };
+    std::string gear;
+    for (uint32 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            gear += (gear.empty() ? "" : ",") + std::to_string(slot) + ":" + std::to_string(item->GetEntry());
+    return "mastery level " + std::to_string(GetMasteryLevel()) + ", talent points " + std::to_string(GetMasterySpent()) + " of " +
+        std::to_string(GetMasteryPoints()) + ", best floor " + std::to_string(m_classFloor) + ", determination " + std::to_string(GetDetermination()) +
+        "; talents [" + describeRanks(m_masteryRanks) + "]; upgrades [" + describeRanks(m_upgradeRanks) + "]; fortunes [" +
+        describeRanks(m_talentRanks) + "]; gear [" + gear + "]";
 }
 
 uint32 BonkPlayer::GetFloorTalentPoints() const
@@ -1132,67 +1167,6 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
     return true;
 }
 
-bool BonkPlayer::BuyUnlock(BonkQuestReward type, uint32 id, std::string& message)
-{
-    std::string name;
-    switch (type)
-    {
-        case BONK_REWARD_WEAPON:
-            if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(id))
-                name = weapon->name;
-            break;
-        case BONK_REWARD_PASSIVE:
-            if (BonkPassive const* passive = sBonkMgr.GetPassive(id))
-                name = passive->name;
-            break;
-        case BONK_REWARD_CARD:
-            if (BonkCard const* card = sBonkMgr.GetCard(id))
-                name = card->name;
-            break;
-        case BONK_REWARD_GLYPH:
-            if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(id))
-                name = glyph->name;
-            break;
-        default:
-            break;
-    }
-    if (name.empty())
-    {
-        message = "You can't unlock that.";
-        return false;
-    }
-    if (BonkQuests::IsTicketUnlock(type) && !IsVisitingShop(BONK_SHOP_TALENTS))
-    {
-        message = type == BONK_REWARD_CARD ? "Visit Sayge at the Inn to unlock Darkmoon Cards." : "Visit Sayge at the Inn to unlock Glyphs.";
-        return false;
-    }
-    if (!BonkQuests::IsTicketUnlock(type) && !IsAtSpellbook())
-    {
-        message = "Visit the Spellbook Keeper at the Inn to unlock " + name + ".";
-        return false;
-    }
-
-    uint32 const account = GetProgressAccount();
-    if (!sBonkQuests.IsForSale(account, type, id))
-    {
-        if (!sBonkQuests.IsLocked(account, type, id))
-            message = "You already have " + name + ".";
-        else if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(type, id))
-            message = "Finish the quest \"" + quest->name + "\" to unlock " + name + ".";
-        return false;
-    }
-
-    uint32 const price = sBonkQuests.GetUnlockPrice(account, type, id);
-    bool const paid = BonkQuests::IsTicketUnlock(type) ? SpendShards(price, message) : Spend(price, message);
-    if (!paid)
-        return false;
-    sBonkQuests.Buy(account, type, id);
-    message = name + " unlocked!";
-    if (BonkQuests::IsTicketUnlock(type))
-        SendShop(false);
-    return true;
-}
-
 bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
 {
     BonkTalent const* talent = sBonkMgr.GetTalent(talentId);
@@ -1485,6 +1459,40 @@ bool BonkPlayer::IsAtSpellbook() const
 
     Creature const* keeper = m_player->GetMap()->GetCreature(m_spellbookKeeper);
     return keeper && keeper->IsAlive() && m_player->IsWithinDistInMap(keeper, BONK_SHOP_RANGE);
+}
+
+void BonkPlayer::VisitDeck(GameObject const* table)
+{
+    m_deckTable = table->GetObjectGuid();
+}
+
+bool BonkPlayer::IsAtDeck() const
+{
+    if (m_deckTable.IsEmpty() || !m_player->IsInWorld())
+        return false;
+
+    GameObject const* table = m_player->GetMap()->GetGameObject(m_deckTable);
+    return table && m_player->IsWithinDistInMap(table, BONK_SHOP_RANGE);
+}
+
+bool BonkPlayer::BuyBanSlot(BonkQuestReward type, std::string& message)
+{
+    if (m_run)
+    {
+        message = "You can't do that during a run.";
+        return false;
+    }
+    if (!IsAtDeck())
+    {
+        message = "Visit the Darkmoon Deck at the Inn to buy ban slots.";
+        return false;
+    }
+    BonkTalentEffect const effect = type == BONK_REWARD_CARD ? BONK_TALENT_CARD_BANS : BONK_TALENT_GLYPH_BANS;
+    for (auto const& itr : sBonkMgr.GetTalents())
+        if (itr.second.effect == effect)
+            return BuyTalent(itr.first, message);
+    message = "Sayge has no ban slots for sale.";
+    return false;
 }
 
 bool BonkPlayer::IsAtShop() const
@@ -1947,12 +1955,231 @@ uint32 BonkPlayer::GetShownGearTab(std::vector<uint32> const& tabs) const
     return tabs.empty() ? 0 : tabs.front();
 }
 
+bool BonkPlayer::RecordGearFound(uint32 keepEntry)
+{
+    if (!keepEntry || !m_foundGear.insert(keepEntry).second)
+        return false;
+    CharacterDatabase.PExecute("INSERT IGNORE INTO `bonk_account_found` (`account`, `item`) VALUES (%u, %u)", GetProgressAccount(), keepEntry);
+    return true;
+}
+
+float BonkPlayer::GetGearPriceFactor(Creature const* vendor, uint32 itemEntry) const
+{
+    return vendor && vendor->GetEntry() == BONK_GEAR_VENDOR && IsGearFound(itemEntry) ? BONK_FOUND_PRICE_FACTOR : 1.0f;
+}
+
+void BonkPlayer::SendFoundGear(Creature const* vendor) const
+{
+    if (vendor->GetEntry() != BONK_GEAR_VENDOR)
+        return;
+    SendAddon("gearfoundclear");
+    VendorItemData const* items = vendor->GetVendorItems();
+    std::string ids;
+    for (uint32 i = 0; items && i < items->GetItemCount(); ++i)
+    {
+        VendorItem const* item = items->GetItem(i);
+        if (!item || !IsGearFound(item->item))
+            continue;
+        ids += (ids.empty() ? "" : ",") + std::to_string(item->item);
+        if (ids.size() > BONK_FOUND_LINE_LENGTH)
+        {
+            SendAddon("gearfound~" + ids);
+            ids.clear();
+        }
+    }
+    if (!ids.empty())
+        SendAddon("gearfound~" + ids);
+}
+
 bool BonkPlayer::ShowsGearItem(Creature const* vendor, uint32 itemEntry) const
 {
     if (vendor->GetEntry() != BONK_GEAR_VENDOR)
         return true;
+    BonkGear const* runGear = sBonkMgr.GetGearByKeep(itemEntry);
+    if (runGear && runGear->quality == ITEM_QUALITY_UNCOMMON && !IsGearFound(itemEntry))
+        return false;
     std::vector<uint32> const tabs = GetGearTabs(vendor);
     return tabs.size() < 2 || GetGearGroup(itemEntry) == GetShownGearTab(tabs);
+}
+
+bool BonkPlayer::IsTierVendor(Creature const* vendor) const
+{
+    return vendor && vendor->GetEntry() == BONK_TIER_VENDOR;
+}
+
+uint32 BonkPlayer::GetStockTier() const
+{
+    uint32 const cleared = GetMythicFloorsCleared();
+    uint32 const lagged = cleared > BONK_STOCK_TIER_LAG ? cleared - BONK_STOCK_TIER_LAG : 1u;
+    return std::min(BONK_TIER_GEAR_TIERS, std::max(1u, lagged));
+}
+
+std::vector<uint32> BonkPlayer::GetTierStock() const
+{
+    std::vector<uint32> stock;
+    if (!IsTierCleared("heroic"))
+        return stock;
+    bool const upgrading = m_quartermasterUpgrade && CanUpgradeAtQuartermaster();
+    uint32 const tier = std::min(BONK_TIER_GEAR_TIERS, GetStockTier() + (upgrading ? 1u : 0u));
+    for (uint32 slot = 0; slot < BONK_TIER_GEAR_SLOTS; ++slot)
+        if (uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), tier, slot))
+            stock.push_back(entry);
+    std::vector<uint32> const mythicGear = BonkMgr::GetMythicGearFor(m_player->GetClassMask(), tier);
+    stock.insert(stock.end(), mythicGear.begin(), mythicGear.end());
+    if (upgrading)
+        for (Item const* legendary : GetOwnedLegendaries())
+            if (uint32 const upgrade = GetLegendaryUpgradeEntry(legendary->GetEntry()))
+                if (std::find(stock.begin(), stock.end(), upgrade) == stock.end())
+                    stock.push_back(upgrade);
+    return stock;
+}
+
+void BonkPlayer::AddScrap(uint32 points)
+{
+    if (!points)
+        return;
+    m_scrap += points;
+    CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `scrap`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `scrap` = VALUES(`scrap`)",
+        GetProgressAccount(), m_scrap);
+}
+
+bool BonkPlayer::CanUpgradeAtQuartermaster() const
+{
+    return m_scrap >= BONK_SCRAP_PER_UPGRADE && GetStockTier() < BONK_TIER_GEAR_TIERS;
+}
+
+void BonkPlayer::SetQuartermasterUpgrade(bool on)
+{
+    Creature* vendor = m_player->FindNearestCreature(BONK_TIER_VENDOR, BONK_GEAR_VENDOR_RANGE);
+    if (on && !CanUpgradeAtQuartermaster())
+    {
+        Notify("You need " + std::to_string(BONK_SCRAP_PER_UPGRADE) + " Scrap to buy an upgrade. You have " + std::to_string(m_scrap) + ".");
+        on = false;
+    }
+    m_quartermasterUpgrade = on;
+    if (vendor)
+        m_player->GetSession()->SendListInventory(vendor->GetObjectGuid());
+}
+
+void BonkPlayer::SendQuartermaster() const
+{
+    bool const upgrading = m_quartermasterUpgrade && CanUpgradeAtQuartermaster();
+    SendAddon("quartermaster~" + std::to_string(GetStockTier()) + "~" + std::to_string(m_scrap) + "~" + std::to_string(BONK_SCRAP_PER_UPGRADE) + "~" +
+        (upgrading ? "1" : "0") + "~" + (GetStockTier() < BONK_TIER_GEAR_TIERS ? "1" : "0"));
+}
+
+std::vector<Item*> BonkPlayer::GetOwnedLegendaries() const
+{
+    std::vector<Item*> legendaries;
+    auto consider = [&](Item* item)
+    {
+        uint32 kind, tier;
+        if (item && BonkMgr::ReadLegendaryEntry(item->GetEntry(), kind, tier))
+            legendaries.push_back(item);
+    };
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        consider(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        if (Bag* container = dynamic_cast<Bag*>(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, bag)))
+            for (uint32 slot = 0; slot < container->GetBagSize(); ++slot)
+                consider(container->GetItemByPos(uint8(slot)));
+    return legendaries;
+}
+
+uint32 BonkPlayer::GetLegendaryUpgradeEntry(uint32 entry) const
+{
+    uint32 kind, tier;
+    if (!BonkMgr::ReadLegendaryEntry(entry, kind, tier))
+        return 0;
+    uint32 const ceiling = std::min(BONK_TIER_GEAR_TIERS, GetStockTier() + 1);
+    if (BonkMgr::IsLegacyLegendary(entry))
+        return BonkMgr::GetLegendaryTierEntry(kind, ceiling);
+    return tier < ceiling ? BonkMgr::GetLegendaryTierEntry(kind, tier + 1) : 0;
+}
+
+void BonkPlayer::OnTierPurchase(Item* bought)
+{
+    if (!bought || !m_quartermasterUpgrade || !CanUpgradeAtQuartermaster())
+        return;
+    uint32 kind, tier;
+    if (BonkMgr::ReadLegendaryEntry(bought->GetEntry(), kind, tier))
+    {
+        for (Item* legendary : GetOwnedLegendaries())
+            if (legendary != bought && GetLegendaryUpgradeEntry(legendary->GetEntry()) == bought->GetEntry())
+            {
+                m_player->DestroyItem(legendary->GetBagSlot(), legendary->GetSlot(), true);
+                break;
+            }
+        Notify(std::string(bought->GetProto()->Name1) + " is now Tier " + std::to_string(tier) + ".");
+    }
+    else
+        Notify("You bought a Tier " + std::to_string(BonkMgr::GetGearTier(bought->GetEntry())) + " upgrade with Scrap.");
+    m_scrap = m_scrap > BONK_SCRAP_PER_UPGRADE ? m_scrap - BONK_SCRAP_PER_UPGRADE : 0;
+    CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `scrap`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `scrap` = VALUES(`scrap`)",
+        GetProgressAccount(), m_scrap);
+    m_quartermasterUpgrade = false;
+    if (Creature* vendor = m_player->FindNearestCreature(BONK_TIER_VENDOR, BONK_GEAR_VENDOR_RANGE))
+        m_player->GetSession()->SendListInventory(vendor->GetObjectGuid());
+}
+
+std::vector<Item*> BonkPlayer::GetForeignTierPieces() const
+{
+    std::vector<Item*> pieces;
+    auto consider = [&](Item* item)
+    {
+        uint8 classId;
+        uint32 tier, slot;
+        if (item && BonkMgr::ReadTierGearEntry(item->GetEntry(), classId, tier, slot) && classId != m_player->GetClass())
+            pieces.push_back(item);
+    };
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        consider(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        if (Bag* container = dynamic_cast<Bag*>(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, bag)))
+            for (uint32 slot = 0; slot < container->GetBagSize(); ++slot)
+                consider(container->GetItemByPos(uint8(slot)));
+    return pieces;
+}
+
+uint32 BonkPlayer::GetTierExchangeFee(std::vector<Item*> const& pieces) const
+{
+    uint32 fee = 0;
+    for (Item* piece : pieces)
+        fee += piece->GetProto()->BuyPrice * BONK_TIER_EXCHANGE_FEE_PERCENT / 100;
+    return fee;
+}
+
+void BonkPlayer::ExchangeTierPieces()
+{
+    uint32 exchanged = 0;
+    for (Item* piece : GetForeignTierPieces())
+    {
+        uint8 classId;
+        uint32 tier, slot;
+        BonkMgr::ReadTierGearEntry(piece->GetEntry(), classId, tier, slot);
+        uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), tier, slot);
+        uint32 const fee = piece->GetProto()->BuyPrice * BONK_TIER_EXCHANGE_FEE_PERCENT / 100;
+        if (!entry || m_player->GetMoney() < fee)
+            break;
+        uint8 const bag = piece->GetBagSlot();
+        uint8 const slotInBag = piece->GetSlot();
+        uint32 const oldEntry = piece->GetEntry();
+        m_player->DestroyItem(bag, slotInBag, true);
+        ItemPosCountVec dest;
+        if (m_player->CanStoreNewItem(bag, slotInBag, dest, entry, 1) != EQUIP_ERR_OK)
+        {
+            ItemPosCountVec back;
+            if (m_player->CanStoreNewItem(bag, slotInBag, back, oldEntry, 1) == EQUIP_ERR_OK)
+                m_player->StoreNewItem(back, oldEntry, true);
+            break;
+        }
+        m_player->ModifyMoney(-int32(fee));
+        if (Item* refit = m_player->StoreNewItem(dest, entry, true))
+            m_player->SendNewItem(refit, 1, true, false);
+        ++exchanged;
+    }
+    Notify(exchanged ? "Refitted " + std::to_string(exchanged) + (exchanged == 1 ? " set piece" : " set pieces") + " for your class." :
+        "You have no set pieces from other classes in your bags, or not enough gold.");
 }
 
 void BonkPlayer::SendGearTabs(Creature const* vendor) const
@@ -1968,6 +2195,21 @@ void BonkPlayer::SendGearTabs(Creature const* vendor) const
             line += "~" + std::to_string(group) + "~" + (tier ? tier->name : std::string("Gear"));
         }
     SendAddon(line);
+}
+
+void BonkPlayer::SendRefitOffer() const
+{
+    std::vector<Item*> const foreign = GetForeignTierPieces();
+    SendAddon("qmrefit~" + std::to_string(foreign.size()) + "~" + std::to_string(GetTierExchangeFee(foreign)));
+}
+
+void BonkPlayer::RefitAtQuartermaster()
+{
+    Creature* vendor = m_player->FindNearestCreature(BONK_TIER_VENDOR, BONK_GEAR_VENDOR_RANGE);
+    if (!vendor)
+        return;
+    ExchangeTierPieces();
+    m_player->GetSession()->SendListInventory(vendor->GetObjectGuid());
 }
 
 void BonkPlayer::SelectGearTab(uint32 group)
@@ -2085,7 +2327,7 @@ std::string BonkPlayer::GetUnlockHint(BonkTier const& tier) const
         return "";
     if (required->stages && tier.unlockStage > required->stages)
         return "Clear " + required->name;
-    return "Reach stage " + std::to_string(tier.unlockStage) + " on " + required->name;
+    return "Reach floor " + std::to_string(tier.unlockStage) + " on " + required->name;
 }
 
 void BonkPlayer::RecordStage(uint32 tierId, uint32 stage)
@@ -2120,14 +2362,46 @@ void BonkPlayer::SendAddon(std::string const& line) const
     ChatHandler(m_player).SendSysMessage(("BONK~" + line).c_str());
 }
 
-uint32 BonkPlayer::GetPoolToggleSlots() const
+std::vector<BonkPlayer::BanSource> BonkPlayer::GetBanSources(BonkQuestReward type) const
 {
-    return uint32(GetUpgradeUtility(BONK_UTILITY_POOL_TOGGLES));
+    bool const cards = type == BONK_REWARD_CARD;
+    uint32 const account = GetProgressAccount();
+    std::vector<BanSource> sources;
+
+    for (BonkQuest const* quest : sBonkQuests.GetRewardQuests(cards ? BONK_REWARD_CARD_BAN : BONK_REWARD_GLYPH_BAN))
+        for (uint32 i = 0; i < quest->rewardValue; ++i)
+            sources.push_back({ "Quest: " + quest->name, quest->description, sBonkQuests.IsCompleted(account, quest->id), 0 });
+
+    uint32 const cleared = GetMythicFloorsCleared();
+    for (uint32 floor : cards ? std::vector<uint32>{ 5, 10 } : std::vector<uint32>{ 15, 20 })
+        sources.push_back({ "Mythic floor " + std::to_string(floor), "Clear floor " + std::to_string(floor), cleared >= floor, 0 });
+
+    BonkTalentEffect const effect = cards ? BONK_TALENT_CARD_BANS : BONK_TALENT_GLYPH_BANS;
+    for (auto const& itr : sBonkMgr.GetTalents())
+    {
+        BonkTalent const& talent = itr.second;
+        if (talent.effect != effect)
+            continue;
+        uint8 const owned = GetTalentRank(talent.id);
+        for (uint8 rank = 0; rank < talent.maxRank; ++rank)
+            sources.push_back({ "Sayge: " + talent.name, "", rank < owned, talent.GetCost(rank) });
+    }
+    return sources;
+}
+
+uint32 BonkPlayer::GetBanSlots(BonkQuestReward type) const
+{
+    uint32 slots = 0;
+    for (BanSource const& source : GetBanSources(type))
+        if (source.earned)
+            ++slots;
+    return slots;
 }
 
 void BonkPlayer::TrimPoolToggles() const
 {
-    sBonkQuests.TrimDisabled(GetProgressAccount(), GetPoolToggleSlots());
+    sBonkQuests.TrimDisabled(GetProgressAccount(), BONK_REWARD_CARD, GetBanSlots(BONK_REWARD_CARD));
+    sBonkQuests.TrimDisabled(GetProgressAccount(), BONK_REWARD_GLYPH, GetBanSlots(BONK_REWARD_GLYPH));
 }
 
 void BonkPlayer::SendGlyphInfo() const
@@ -2158,8 +2432,19 @@ void BonkPlayer::NotifyFind(std::string const& text) const
 
 void BonkPlayer::SendGearInfo() const
 {
+    uint32 const tierGearEnd = BONK_TIER_GEAR_FIRST + uint32(std::size(BONK_TIER_GEAR_CLASSES)) * BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
     for (auto const& itr : sBonkMgr.GetItemStats())
-        SendAddon("gear~" + std::to_string(itr.first) + "~" + std::to_string(itr.second.setId) + "~" + FormatStatList(itr.second.stats));
+        if (itr.first < BONK_TIER_GEAR_FIRST || itr.first >= tierGearEnd)
+            SendAddon("gear~" + std::to_string(itr.first) + "~" + std::to_string(itr.second.setId) + "~" + FormatStatList(itr.second.stats));
+
+    SendAddon("tiergear~" + std::to_string(BONK_TIER_GEAR_FIRST) + "~" + std::to_string(BONK_TIER_GEAR_TIERS) + "~" +
+        std::to_string(BONK_TIER_GEAR_SLOTS) + "~" + std::to_string(std::size(BONK_TIER_GEAR_CLASSES)));
+    for (uint32 tier = 1; tier <= BONK_TIER_GEAR_TIERS; ++tier)
+        if (BonkItemStat const* stat = sBonkMgr.GetItemStat(BONK_TIER_GEAR_FIRST + (tier - 1) * BONK_TIER_GEAR_SLOTS))
+            SendAddon("tierstats~" + std::to_string(tier) + "~" + FormatStatList(stat->stats));
+    for (uint8 effect = 0; effect < MAX_BONK_TRINKET_EFFECT; ++effect)
+        SendAddon("trinkettip~" + std::to_string(BONK_MYTHIC_GEAR_FIRST + (BONK_MYTHIC_GEAR_FIRST_TRINKET + effect) * BONK_TIER_GEAR_TIERS) + "~" +
+            std::to_string(BONK_TIER_GEAR_TIERS) + "~" + BonkMgr::GetTrinket(BonkTrinketEffect(effect)).text);
 
     for (auto const& itr : sBonkMgr.GetItemSets())
     {
@@ -2264,9 +2549,10 @@ void BonkPlayer::SendArena(std::string const& npc) const
             SendAddon("tier~" + std::to_string(tier.id) + "~" + tier.key + "~" + tier.name + "~" + (unlocked ? "1" : "0") + "~" +
                 (unlocked ? "" : GetUnlockHint(tier)) + "~" + std::to_string(best) + "~" + tier.description + "~" + tier.art + "~" + maps + "~" +
                 std::to_string(tier.stages) + "~" + (tier.endless ? "1" : "0") + "~" + dungeons + "~" + tier.details);
+            SendFloorPreview(tier, GetRunBonuses());
         }
         else if (unlocked)
-            ChatHandler(m_player).PSendSysMessage("  %s (best: stage %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());
+            ChatHandler(m_player).PSendSysMessage("  %s (best: floor %u): .bonk start %s", tier.name.c_str(), best, tier.key.c_str());
         else
         {
             std::string hint = GetUnlockHint(tier);
@@ -2278,6 +2564,94 @@ void BonkPlayer::SendArena(std::string const& npc) const
     if (m_addonReady)
         SendStarters();
     SendAddon("tierend");
+}
+
+namespace
+{
+    std::string Percent(float value)
+    {
+        return std::to_string(int32(std::floor(value + 0.5f)));
+    }
+
+    std::string Ordinal(uint32 value)
+    {
+        uint32 const tens = value % 100;
+        char const* suffix = (tens >= 11 && tens <= 13) ? "th" : value % 10 == 1 ? "st" : value % 10 == 2 ? "nd" : value % 10 == 3 ? "rd" : "th";
+        return std::to_string(value) + suffix;
+    }
+
+    std::string FloorChangeKind(BonkTier const& tier, uint32 floor)
+    {
+        if (floor < 2)
+            return "";
+        if (BonkRun::MilestoneAffixes(tier, floor) > BonkRun::MilestoneAffixes(tier, floor - 1))
+            return "affix";
+        if (BonkRun::MilestoneVeteranChance(tier, floor) > BonkRun::MilestoneVeteranChance(tier, floor - 1))
+            return "veteran";
+        return "";
+    }
+
+    std::string DescribeFloorChange(BonkTier const& tier, uint32 floor)
+    {
+        std::string const kind = FloorChangeKind(tier, floor);
+        if (kind == "affix")
+            return "Elites gain a " + Ordinal(tier.eliteAffixes + BonkRun::MilestoneAffixes(tier, floor)) + " affix.";
+        if (kind == "veteran")
+            return Percent(BonkRun::MilestoneVeteranChance(tier, floor) - BonkRun::MilestoneVeteranChance(tier, floor - 1)) +
+                "% more enemies are Veterans.";
+        return "";
+    }
+
+    uint32 FloorBand(BonkTier const& tier, uint32 floor)
+    {
+        if (tier.floorKnee2 && floor > tier.floorKnee2)
+            return 3;
+        if (tier.floorKnee && floor > tier.floorKnee)
+            return 2;
+        return 1;
+    }
+
+    std::string DescribeFirstClear(BonkTier const& tier, uint32 floor)
+    {
+        if (tier.key != "mythic")
+            return "";
+        std::vector<std::string> rewards;
+        if (floor % BONK_FLOORS_PER_TALENT_POINT == 0 && floor / BONK_FLOORS_PER_TALENT_POINT <= BONK_FLOOR_TALENT_POINTS_MAX)
+            rewards.push_back("+1 talent point");
+        if (uint32 const tickets = GetFloorFirstClearTickets(floor))
+            rewards.push_back(FormatBonkShards(tickets));
+        if (floor % BONK_TRAINING_FLOORS_PER_RANK == 0 && floor / BONK_TRAINING_FLOORS_PER_RANK <= BONK_TRAINING_MYTHIC_RANKS)
+            rewards.push_back("Account Training rank cap +1");
+        std::string text;
+        for (size_t i = 0; i < rewards.size(); ++i)
+            text += (i == 0 ? "" : i + 1 == rewards.size() ? " and " : ", ") + rewards[i];
+        return text;
+    }
+}
+
+void BonkPlayer::SendFloorPreview(BonkTier const& tier, BonkRunBonuses const& bonuses) const
+{
+    static char const* const CASTER_AIM[] = { "Poor", "Good", "Precise" };
+    static char const* const BOSS_ATTACKS[] = { "Normal", "More attacks", "Relentless" };
+    uint32 const step = std::min(2u, tier.eliteAffixes ? tier.eliteAffixes - 1u : 0u);
+    SendAddon("tierinfo~" + std::to_string(tier.id) + "~" + CASTER_AIM[step] + "~" + BOSS_ATTACKS[step] + "~" +
+        std::to_string((tier.chargeIntervalMs + 500) / 1000) + "~" + std::to_string(tier.maxAlive));
+    uint32 const cleared = GetMythicFloorsCleared();
+    uint32 const floors = std::min(tier.stages, BONK_MYTHIC_MILESTONE_FLOORS * 4);
+    for (uint32 floor = 1; floor <= floors; ++floor)
+    {
+        float const health = BonkRun::TierHealthScale(tier, floor) * (1.0f + bonuses.enemyHealth / 100.0f);
+        float const damage = BonkRun::TierDamageScale(tier, floor) * (1.0f + bonuses.enemyDamage / 100.0f);
+        float const veterans = tier.veteranChance > 0.0f ? tier.veteranChance + BonkRun::MilestoneVeteranChance(tier, floor) : 0.0f;
+        uint32 const affixes = tier.eliteAffixes + bonuses.eliteAffixes + BonkRun::MilestoneAffixes(tier, floor);
+        float const gold = (BonkRun::FloorRewardScale(tier, floor) - 1.0f) * 100.0f;
+        float const legendary = BonkRun::BossLegendaryChance(tier, floor);
+        bool const firstCleared = tier.key == "mythic" && floor <= cleared;
+        SendAddon("floor~" + std::to_string(tier.id) + "~" + std::to_string(floor) + "~" + Percent((health - 1.0f) * 100.0f) + "~" +
+            Percent((damage - 1.0f) * 100.0f) + "~" + Percent(veterans) + "~" + std::to_string(affixes) + "~" + Percent(gold) + "~" +
+            Percent(legendary) + "~" + DescribeFloorChange(tier, floor) + "~" + DescribeFirstClear(tier, floor) + "~" + (firstCleared ? "1" : "0") + "~" +
+            std::to_string(FloorBand(tier, floor)) + "~" + FloorChangeKind(tier, floor));
+    }
 }
 
 namespace

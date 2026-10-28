@@ -15,6 +15,7 @@
 namespace
 {
     uint32 const BONK_STRESS_RANK            = 16;
+    uint32 const BONK_STRESS_PASSIVE_RANKS   = 5;
     uint32 const BONK_STRESS_REPORT_MS       = 10000;
     uint32 const BONK_STRESS_HOLD_CHECK_MS   = 1000;
     uint32 const BONK_STRESS_HOLD_MS         = 10000;
@@ -95,7 +96,7 @@ void BonkRun::StartStress()
         float best = 0.0f;
         for (auto const& itr : sBonkMgr.GetPassives())
             if (itr.second.effect == effect)
-                best = std::max(best, itr.second.valuePerRank * itr.second.maxRank);
+                best = std::max(best, itr.second.valuePerRank * BonkPassive::RankScale(itr.second.maxRank ? itr.second.maxRank : BONK_STRESS_PASSIVE_RANKS));
         m_stress.bonuses[effect] += best;
     }
     m_stress.bonuses[BONK_PASSIVE_AMOUNT] += BONK_MAX_COUNT;

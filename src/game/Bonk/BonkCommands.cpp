@@ -304,6 +304,13 @@ bool ChatHandler::HandleBonkMenuCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkResyncCommand(char* )
+{
+    if (BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun())
+        run->ResyncPause();
+    return true;
+}
+
 bool ChatHandler::HandleBonkVaultCommand(char* args)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
@@ -315,35 +322,34 @@ bool ChatHandler::HandleBonkVaultCommand(char* args)
         return true;
     }
     uint32 guidLow = 0;
-    if (!run || !action || (strcmp(action, "put") && strcmp(action, "take")) || !ExtractUInt32(&args, guidLow))
+    bool const known = action && (!strcmp(action, "put") || !strcmp(action, "take") || !strcmp(action, "send"));
+    if (!run || !known || !ExtractUInt32(&args, guidLow))
     {
-        SendSysMessage(run ? "Use .bonk vault put|take <item>." : "You are not in a run.");
+        SendSysMessage(run ? "Use .bonk vault put|take|send <item>." : "You are not in a run.");
         SetSentErrorMessage(true);
         return false;
     }
 
     std::string error;
-    if (!(strcmp(action, "put") ? run->TakeFromVault(guidLow, error) : run->PutInVault(guidLow, error)))
+    bool done = false;
+    if (!strcmp(action, "send"))
+        done = run->SendHomeFromPillar(guidLow, error);
+    else if (!strcmp(action, "put"))
+        done = run->PutInVault(guidLow, error);
+    else
+        done = run->TakeFromVault(guidLow, error);
+    if (!done)
         m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
     return true;
 }
 
-bool ChatHandler::HandleBonkUnlockCommand(char* args)
+bool ChatHandler::HandleBonkBanSlotCommand(char* args)
 {
     char* kind = ExtractLiteralArg(&args);
-    uint32 id = 0;
-    BonkQuestReward type = MAX_BONK_REWARD;
-    if (kind && !strcmp(kind, "w"))
-        type = BONK_REWARD_WEAPON;
-    else if (kind && !strcmp(kind, "p"))
-        type = BONK_REWARD_PASSIVE;
-    else if (kind && !strcmp(kind, "c"))
-        type = BONK_REWARD_CARD;
-    else if (kind && !strcmp(kind, "g"))
-        type = BONK_REWARD_GLYPH;
-    if (type == MAX_BONK_REWARD || !ExtractUInt32(&args, id))
+    BonkQuestReward const type = kind && !strcmp(kind, "c") ? BONK_REWARD_CARD : kind && !strcmp(kind, "g") ? BONK_REWARD_GLYPH : MAX_BONK_REWARD;
+    if (type == MAX_BONK_REWARD)
     {
-        SendSysMessage("Use .bonk unlock w|p|c|g <id>.");
+        SendSysMessage("Use .bonk banslot c|g.");
         SetSentErrorMessage(true);
         return false;
     }
@@ -351,10 +357,10 @@ bool ChatHandler::HandleBonkUnlockCommand(char* args)
     Player* player = m_session->GetPlayer();
     BonkPlayer* bonk = player->GetBonkPlayer();
     std::string message;
-    bool const bought = bonk->BuyUnlock(type, id, message);
+    bonk->BuyBanSlot(type, message);
     bonk->Notify(message);
-    BonkCodex::Send(player, "");
-    return bought;
+    BonkCodex::Send(player, "", bonk->IsAtDeck());
+    return true;
 }
 
 bool ChatHandler::HandleBonkPoolCommand(char* args)
@@ -388,12 +394,11 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
         return false;
     }
     std::string error;
-    bool const done = sBonkQuests.SetDisabled(player->GetBonkPlayer()->GetProgressAccount(), type, id, !strcmp(state, "off"),
-        player->GetBonkPlayer()->GetPoolToggleSlots(), error);
-    if (!done)
+    if (!sBonkQuests.SetDisabled(player->GetBonkPlayer()->GetProgressAccount(), type, id, !strcmp(state, "off"),
+        player->GetBonkPlayer()->GetBanSlots(type), error))
         player->GetBonkPlayer()->Notify(error);
-    BonkCodex::Send(player, "");
-    return done;
+    BonkCodex::Send(player, "", player->GetBonkPlayer()->IsAtDeck());
+    return true;
 }
 
 bool ChatHandler::HandleBonkGlyphCommand(char* args)
@@ -422,6 +427,16 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
     if (tab.compare(0, 4, "tab ") == 0)
     {
         m_session->GetPlayer()->GetBonkPlayer()->SelectGearTab(uint32(atoi(tab.c_str() + 4)));
+        return true;
+    }
+    if (tab == "refit")
+    {
+        m_session->GetPlayer()->GetBonkPlayer()->RefitAtQuartermaster();
+        return true;
+    }
+    if (tab == "upgrade on" || tab == "upgrade off")
+    {
+        m_session->GetPlayer()->GetBonkPlayer()->SetQuartermasterUpgrade(tab == "upgrade on");
         return true;
     }
 
@@ -858,6 +873,20 @@ bool ChatHandler::HandleBonkPowerupCommand(char* args)
     else if (run->PlacePowerupNow(entry, error))
     {
         PSendSysMessage("Power-up %s placed 10 yards in front of you.", nameArg);
+        return true;
+    }
+    SendSysMessage(error.c_str());
+    SetSentErrorMessage(true);
+    return false;
+}
+
+bool ChatHandler::HandleBonkDropLooksCommand(char* )
+{
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    std::string error = "Drop looks need a run or the sandbox.";
+    if (run && run->PlaceDropLooksNow(error))
+    {
+        SendSysMessage("Every drop look is laid out 10 yards in front of you.");
         return true;
     }
     SendSysMessage(error.c_str());

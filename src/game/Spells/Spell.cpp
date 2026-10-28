@@ -50,6 +50,7 @@
 #include "Utilities/Random.h"
 #include "Bonk/BonkPlayer.h"
 #include "Bonk/BonkRun.h"
+#include "Bonk/BonkMobAI.h"
 
 using namespace Spells;
 
@@ -3464,6 +3465,11 @@ SpellCastResult Spell::prepare(Aura* triggeredByAura, uint32 chance)
             SendCastResult(SPELL_FAILED_SPELL_UNAVAILABLE);
             finish(false);
             return SPELL_FAILED_SPELL_UNAVAILABLE;
+        }
+        if (BonkMobAI::BlocksTriggeredSpell(m_caster, m_triggeredByAuraSpell ? m_triggeredByAuraSpell : m_triggeredBySpellInfo))
+        {
+            finish(false);
+            return SPELL_FAILED_DONT_REPORT;
         }
 
         // Fill cost data

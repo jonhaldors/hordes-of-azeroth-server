@@ -28,12 +28,16 @@ namespace
     uint32 const BONK_SPELL_CARD_SHADOW    = 16583;
     uint32 const BONK_SPELL_HEALTHSTONE    = 11732;
     float const BONK_SHADOW_BURST_HEAL     = 0.1f;
-    float const BONK_CAMPFIRE_MAX_REGEN    = 3.0f;
+    float const BONK_CARD_COPY_DECAY       = 0.85f;
+    float const BONK_CARD_COPY_FLOOR       = 0.25f;
+    float const BONK_CHAMPION_MAX_REDUCTION = 60.0f;
+    BonkCardEffect const BONK_CAST_CHARGE_EFFECTS[] = { BONK_CARD_DEATH_RAY, BONK_CARD_FIRE_BURST, BONK_CARD_SHADOW_BURST, BONK_CARD_CHAIN };
 
     uint32 const BONK_KIT_FIRE_IMPACT      = 728;
     uint32 const BONK_KIT_NOVA             = 984;
     uint32 const BONK_KIT_DEATH_RAY        = 419;
     uint32 const BONK_KIT_SHADOW_IMPACT    = 2350;
+    uint32 const BONK_KIT_THORNS_BURST     = 6377;
 
     bool IsCardSpell(SpellEntry const* spell)
     {
@@ -57,8 +61,31 @@ namespace
     {
         if (!copies || percent <= 0.0f)
             return 0.0f;
-        return 100.0f * (1.0f - std::pow(1.0f - std::min(percent, 100.0f) / 100.0f, float(copies)));
+        float miss = 1.0f;
+        for (uint32 copy = 1; copy <= copies; ++copy)
+            miss *= 1.0f - std::min(percent * BonkRun::GetCopyWeight(copy), 100.0f) / 100.0f;
+        return 100.0f * (1.0f - miss);
     }
+}
+
+float BonkRun::GetCopyWeight(uint32 copy)
+{
+    if (!copy)
+        return 0.0f;
+    return std::max(BONK_CARD_COPY_FLOOR, std::pow(BONK_CARD_COPY_DECAY, float(copy - 1)));
+}
+
+float BonkRun::GetStackedChance(float percent, uint32 copies)
+{
+    return StackChance(percent, copies);
+}
+
+float BonkRun::GetCopySum(uint32 copies)
+{
+    float sum = 0.0f;
+    for (uint32 copy = 1; copy <= copies; ++copy)
+        sum += GetCopyWeight(copy);
+    return sum;
 }
 
 std::pair<bool, uint32> BonkRun::GetBanishKey(Offer const& offer)
@@ -86,7 +113,7 @@ float BonkRun::GetCardTotal(BonkCardEffect effect, uint8 index) const
     if (index < 3 && m_cardCopies[effect])
         for (OwnedCard const& owned : m_cards)
             if (owned.card->effect == effect)
-                total += owned.card->values[index] * owned.copies;
+                total += owned.card->values[index] * GetCopySum(owned.copies);
     return total;
 }
 
@@ -106,8 +133,7 @@ uint32 BonkRun::GetCardCooldown(BonkCardEffect effect) const
     BonkCard const* card = m_cardByEffect[effect];
     if (!card)
         return 0;
-    float const step = std::max(0.0f, std::min(card->values[2], 90.0f)) / 100.0f;
-    return uint32(card->cooldownMs * std::pow(1.0f - step, float(m_cardCopies[effect] - 1)));
+    return uint32(card->cooldownMs * GetCopyWeight(m_cardCopies[effect]));
 }
 
 float BonkRun::GetCardPower(Unit const* victim) const
@@ -115,10 +141,17 @@ float BonkRun::GetCardPower(Unit const* victim) const
     float power = 0.0f;
 
     if (BonkCard const* brooch = m_cardByEffect[BONK_CARD_KILL_POWER])
-        power += std::min(brooch->values[1], brooch->values[0] * m_cardKills) * m_cardCopies[BONK_CARD_KILL_POWER];
+        power += std::min(brooch->values[1], brooch->values[0] * m_cardKills) * GetCopySum(m_cardCopies[BONK_CARD_KILL_POWER]);
+
+    if (HasCard(BONK_CARD_UNHIT_POWER))
+    {
+        float const seconds = float(m_totalMs - (m_hurt ? m_lastHurtMs : 0)) / IN_MILLISECONDS;
+        power += std::min(GetCardTotal(BONK_CARD_UNHIT_POWER, 1), GetCardTotal(BONK_CARD_UNHIT_POWER, 0) * std::floor(seconds));
+    }
 
     if (m_cardSurgeUntilMs > m_totalMs)
         power += GetCardTotal(BONK_CARD_POWER_SURGE, 0);
+    power += GetTrinketPower();
 
     if (HasCard(BONK_CARD_BIG_GAME) && victim && victim->IsCreature())
         if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(static_cast<Creature const*>(victim)->AI()))
@@ -137,14 +170,16 @@ size_t BonkRun::PickWeightedCard(std::vector<BonkCard const*> const& pool) const
 {
     uint32 printed[BONK_RARITY_LEGENDARY] = {};
     for (auto const& itr : sBonkMgr.GetCards())
-        if (itr.second.inChests && itr.second.rarity < BONK_RARITY_LEGENDARY)
+        if (itr.second.rarity < BONK_RARITY_LEGENDARY && IsCardInPool(itr.second))
             ++printed[itr.second.rarity];
 
+    uint8 const lift = GetGlyph(BONK_GLYPH_GAMBLER) ? 1 : 0;
     std::vector<float> weights;
     float total = 0.0f;
     for (BonkCard const* card : pool)
     {
-        float const weight = card->rarity < BONK_RARITY_LEGENDARY ? GetRarityWeight(card->rarity, BONK_RARITY_COMMON) / std::max(1u, printed[card->rarity]) : 0.0f;
+        bool const drawable = card->rarity < BONK_RARITY_LEGENDARY && card->rarity >= lift;
+        float const weight = drawable ? GetRarityWeight(card->rarity - lift, BONK_RARITY_COMMON) / std::max(1u, printed[card->rarity]) : 0.0f;
         weights.push_back(weight);
         total += weight;
     }
@@ -184,6 +219,8 @@ void BonkRun::GiveStartCard()
 
 bool BonkRun::IsCardCapped(BonkCard const& card) const
 {
+    if (card.effect == BONK_CARD_ASCENSION)
+        return !HasEvolutionLeft();
     if (card.effect != BONK_CARD_NONE)
         return false;
     bool grantsStat = false;
@@ -299,9 +336,10 @@ void BonkRun::AddCard(BonkCard const& card)
     else
         ++owned->copies;
 
+    float const weight = GetCopyWeight(GetCardCopies(card.id));
     for (uint8 i = 0; i < 2; ++i)
         if (card.stats[i] < MAX_BONK_PASSIVE_EFFECT)
-            m_cardStats[card.stats[i]] += card.statValues[i];
+            m_cardStats[card.stats[i]] += card.statValues[i] * weight;
 
     if (card.effect != BONK_CARD_NONE)
     {
@@ -331,12 +369,13 @@ void BonkRun::RemoveCard(BonkCard const& card)
     auto owned = std::find_if(m_cards.begin(), m_cards.end(), [&card](OwnedCard const& held) { return held.card->id == card.id; });
     if (owned == m_cards.end())
         return;
+    float const weight = GetCopyWeight(owned->copies);
     if (--owned->copies == 0)
         m_cards.erase(owned);
 
     for (uint8 i = 0; i < 2; ++i)
         if (card.stats[i] < MAX_BONK_PASSIVE_EFFECT)
-            m_cardStats[card.stats[i]] -= card.statValues[i];
+            m_cardStats[card.stats[i]] -= card.statValues[i] * weight;
 
     if (card.effect != BONK_CARD_NONE && m_cardCopies[card.effect])
     {
@@ -413,7 +452,7 @@ void BonkRun::UpdateCards(uint32 diff)
         if (!m_cardSwiftUntilMs && m_cardCooldowns[BONK_CARD_SWIFTNESS] <= 0 && health < potion->values[0])
         {
             m_cardSwiftUntilMs = m_totalMs + uint32(potion->values[2]);
-            StartCardCooldown(BONK_CARD_SWIFTNESS, potion->cooldownMs);
+            StartCardCooldown(BONK_CARD_SWIFTNESS, GetCardCooldown(BONK_CARD_SWIFTNESS));
             ApplyPassives();
         }
         else if (m_cardSwiftUntilMs && m_totalMs >= m_cardSwiftUntilMs)
@@ -433,6 +472,9 @@ void BonkRun::UpdateCards(uint32 diff)
                 charm->values[1] / 1000.0f);
             m_player->GetBonkPlayer()->Notify(charm->name + surge);
         }
+
+    if (m_cardHasteUntilMs && m_totalMs >= m_cardHasteUntilMs)
+        m_cardHasteUntilMs = 0;
 
     if (HasCard(BONK_CARD_MAGNET) && m_cardCooldowns[BONK_CARD_MAGNET] <= 0)
     {
@@ -460,12 +502,13 @@ void BonkRun::UpdateCards(uint32 diff)
             healFromCard(BONK_CARD_BANDAGE, GetCardTotal(BONK_CARD_BANDAGE, 0));
     if (BonkCard const* campfire = m_cardByEffect[BONK_CARD_CAMPFIRE])
         if (m_totalMs - m_stillSinceMs >= uint32(campfire->values[1] * IN_MILLISECONDS))
-            healFromCard(BONK_CARD_CAMPFIRE, std::min(BONK_CAMPFIRE_MAX_REGEN, GetCardTotal(BONK_CARD_CAMPFIRE, 0)));
+            healFromCard(BONK_CARD_CAMPFIRE, GetCardTotal(BONK_CARD_CAMPFIRE, 0));
     if (BonkCard const* heroism = m_cardByEffect[BONK_CARD_CRIT_HEAL])
     {
         uint32 const crits = m_crits - m_cardCritsSeen;
         m_cardCritsSeen = m_crits;
-        healFromCard(BONK_CARD_CRIT_HEAL, std::min(crits * GetCardChance(BONK_CARD_CRIT_HEAL) / 100.0f * heroism->values[1], heroism->values[2]));
+        healFromCard(BONK_CARD_CRIT_HEAL, std::min(crits * GetCardChance(BONK_CARD_CRIT_HEAL) / 100.0f * heroism->values[1],
+            GetCardTotal(BONK_CARD_CRIT_HEAL, 2)));
     }
 
     SendCardStatus(false);
@@ -489,9 +532,19 @@ std::string BonkRun::DescribeCardNow(BonkCard const& card) const
     {
         case BONK_CARD_KILL_POWER:
         {
-            float const power = std::min(card.values[1], card.values[0] * m_cardKills) * GetCardCopies(card.id);
+            float const power = std::min(card.values[1], card.values[0] * m_cardKills) * GetCopySum(GetCardCopies(card.id));
             return "Now: +" + percent(power) + "% Power";
         }
+        case BONK_CARD_UNHIT_POWER:
+        {
+            float const seconds = float(m_totalMs - (m_hurt ? m_lastHurtMs : 0)) / IN_MILLISECONDS;
+            float const power = std::min(GetCardTotal(BONK_CARD_UNHIT_POWER, 1), GetCardTotal(BONK_CARD_UNHIT_POWER, 0) * std::floor(seconds));
+            return "Now: +" + percent(power) + "% Power";
+        }
+        case BONK_CARD_HASTE_BURST:
+            if (m_cardHasteUntilMs > m_totalMs)
+                return "Active: +" + percent(GetCardTotal(BONK_CARD_HASTE_BURST, 1)) + "% Haste";
+            return "";
         case BONK_CARD_POWER_SURGE:
             if (m_cardSurgeUntilMs > m_totalMs)
             {
@@ -591,13 +644,20 @@ bool BonkRun::RollFreeChest() const
 
 void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
 {
-    if (!damage || !attacker || !attacker->IsAlive() || !HasCard(BONK_CARD_THORNS) || m_cardProc)
+    if (damage)
+        TriggerGlyphNova();
+    BonkCard const* choker = m_cardByEffect[BONK_CARD_THORNS];
+    if (!damage || !attacker || !choker || m_cardProc || m_cardCooldowns[BONK_CARD_THORNS] > 0)
         return;
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_THORNS);
     if (!spellInfo)
         return;
+    m_cardCooldowns[BONK_CARD_THORNS] = int32(choker->values[2]);
+    float const burst = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * GetCardTotal(BONK_CARD_THORNS, 0) / 100.0f;
+    m_player->SendPlaySpellVisualKit(BONK_KIT_THORNS_BURST);
     m_cardProc = true;
-    DealSpellHit(spellInfo, attacker, damage * GetCardTotal(BONK_CARD_THORNS, 0) / 100.0f);
+    for (Creature* mob : GetMobsInRange(choker->values[1]))
+        DealSpellHit(spellInfo, mob, burst);
     m_cardProc = false;
 }
 
@@ -605,20 +665,69 @@ void BonkRun::ModifyHeroHit(Unit* victim, uint32& damage)
 {
     if (!m_cardProc)
         ModifyGlyphHit(victim, damage);
-    if (!damage || m_cardProc || !HasCard(BONK_CARD_DEATH_RAY) || !RollCardProc(BONK_CARD_DEATH_RAY, 0))
-        return;
-    damage = uint32(damage * m_cardByEffect[BONK_CARD_DEATH_RAY]->values[1]);
-    victim->SendPlaySpellVisualKit(BONK_KIT_DEATH_RAY);
 }
 
-bool BonkRun::RollCardProc(BonkCardEffect effect, uint32 spellId)
+void BonkRun::RollCastCharges(OwnedWeapon& owned)
 {
-    uint64 const key = (uint64(effect) << 32) | spellId;
-    auto const rolled = m_cardRollMs.find(key);
-    if (rolled != m_cardRollMs.end() && rolled->second == m_totalMs)
+    owned.forcedCrit = m_vanishCritPending;
+    m_vanishCritPending = false;
+    owned.castCharges = 0;
+    owned.castChargesSpent = 0;
+    if (m_cards.empty())
+        return;
+    for (BonkCardEffect effect : BONK_CAST_CHARGE_EFFECTS)
+        if (HasCard(effect) && roll_chance_f(GetCardChance(effect)))
+            owned.castCharges |= 1u << effect;
+
+    if (BonkCard const* dragon = m_cardByEffect[BONK_CARD_HASTE_BURST])
+        if (m_cardCooldowns[BONK_CARD_HASTE_BURST] <= 0 && roll_chance_f(GetCardChance(BONK_CARD_HASTE_BURST)))
+        {
+            m_cardHasteUntilMs = m_totalMs + uint32(dragon->values[2]);
+            StartCardCooldown(BONK_CARD_HASTE_BURST, dragon->cooldownMs);
+        }
+}
+
+bool BonkRun::SpendCastCharge(OwnedWeapon& owned, BonkCardEffect effect)
+{
+    uint32 const bit = 1u << effect;
+    if (!(owned.castCharges & bit) || (owned.castChargesSpent & bit))
         return false;
-    m_cardRollMs[key] = m_totalMs;
-    return roll_chance_f(GetCardChance(effect));
+    owned.castChargesSpent |= bit;
+    return true;
+}
+
+float BonkRun::GetCastChargeMultiplier(SpellEntry const* spell, Unit const* victim) const
+{
+    BonkCard const* ray = m_cardByEffect[BONK_CARD_DEATH_RAY];
+    if (!ray || !spell || !victim || m_cardProc)
+        return 1.0f;
+    OwnedWeapon const* owned = FindOwnedBySpell(spell->Id);
+    return owned && IsCastCharged(*owned, BONK_CARD_DEATH_RAY) ? ray->values[1] : 1.0f;
+}
+
+float BonkRun::GetChampionDamageTaken(BonkSpawnKind kind) const
+{
+    if (kind == BONK_SPAWN_NORMAL || !HasCard(BONK_CARD_BIG_GAME))
+        return 1.0f;
+    return 1.0f - std::min(BONK_CHAMPION_MAX_REDUCTION, GetCardTotal(BONK_CARD_BIG_GAME, 1)) / 100.0f;
+}
+
+float BonkRun::GetBurstHaste() const
+{
+    float haste = 0.0f;
+    if (m_cardHasteUntilMs > m_totalMs)
+        haste += GetCardTotal(BONK_CARD_HASTE_BURST, 1);
+    if (m_glyphHasteUntilMs > m_totalMs)
+        haste += GetGlyphValue(BONK_GLYPH_KILL_HASTE, 1);
+    haste += GetTrinketHaste();
+    if (IsLastStand())
+        haste += GetGlyphValue(BONK_GLYPH_LAST_STAND, 1);
+    return haste;
+}
+
+float BonkRun::GetDotCardScale() const
+{
+    return 1.0f + GetCardTotal(BONK_CARD_DOT_DAMAGE, 0) / 100.0f;
 }
 
 void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
@@ -626,8 +735,16 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
     if (!damage || m_cardProc || IsCardSpell(spell) || m_cards.empty())
         return;
 
-    float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim));
-    uint32 const spellId = spell ? spell->Id : 0;
+    OwnedWeapon* owned = spell ? const_cast<OwnedWeapon*>(FindOwnedBySpell(spell->Id)) : nullptr;
+    if (!owned)
+        return;
+
+    float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim)) * GetCastChargeMultiplier(spell, victim);
+    float const castScale = owned->weapon.HasFlag(BONK_WEAPON_FLAG_AOE) ? 1.0f : 1.0f + float(GetSpellCount(*owned));
+    damage = uint32(damage * castScale);
+
+    if (SpendCastCharge(*owned, BONK_CARD_DEATH_RAY))
+        victim->SendPlaySpellVisualKit(BONK_KIT_DEATH_RAY);
 
     auto burstTargets = [this, victim](float radius)
     {
@@ -638,7 +755,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
     };
 
     if (BonkCard const* hand = m_cardByEffect[BONK_CARD_FIRE_BURST])
-        if (RollCardProc(BONK_CARD_FIRE_BURST, spellId))
+        if (SpendCastCharge(*owned, BONK_CARD_FIRE_BURST))
             if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_FIRE))
             {
                 float const burst = damage * hand->values[1] / multiplier;
@@ -652,7 +769,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
             }
 
     if (BonkCard const* blade = m_cardByEffect[BONK_CARD_SHADOW_BURST])
-        if (RollCardProc(BONK_CARD_SHADOW_BURST, spellId))
+        if (SpendCastCharge(*owned, BONK_CARD_SHADOW_BURST))
             if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_CARD_SHADOW))
             {
                 float const burst = damage * blade->values[1] / multiplier;
@@ -673,7 +790,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
             }
 
     if (BonkCard const* maelstrom = m_cardByEffect[BONK_CARD_CHAIN])
-        if (RollCardProc(BONK_CARD_CHAIN, spellId))
+        if (SpendCastCharge(*owned, BONK_CARD_CHAIN))
         {
             uint32 const chainSpellId = maelstrom->values[2] > 3.0f ? BONK_SPELL_CARD_CHAIN_FIVE : BONK_SPELL_CARD_CHAIN_THREE;
             Unit* target = victim->IsAlive() ? victim : nullptr;

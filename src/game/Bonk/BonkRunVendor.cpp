@@ -425,7 +425,7 @@ bool BonkRun::SpawnVendorNow(std::string& error)
 {
     if (m_state != STATE_RUNNING)
     {
-        error = "Only a running stage can have a merchant.";
+        error = "Only a running floor can have a merchant.";
         return false;
     }
     if (!m_vendorGuid.IsEmpty())
@@ -443,11 +443,7 @@ bool BonkRun::SpawnVendorNow(std::string& error)
 
 void BonkRun::DespawnVendor()
 {
-    if (m_vendorOpen)
-    {
-        m_vendorOpen = false;
-        m_player->GetBonkPlayer()->SendAddon("vendorclose");
-    }
+    CloseVendor();
 
     for (VendorSlot const& slot : m_vendorStock)
         if (slot.locked && slot.state == VENDOR_FOR_SALE)

@@ -22,6 +22,9 @@ INSTANTIATE_SINGLETON_1(BonkMgr);
 
 namespace
 {
+    float const BONK_PASSIVE_RANK_DECAY = 0.85f;
+    float const BONK_PASSIVE_RANK_FLOOR = 0.2f;
+
     struct GearColumn
     {
         char const* name;
@@ -132,7 +135,7 @@ namespace
         return value;
     }
 
-    std::string ScalePassiveText(std::string const& text, uint32 rank, std::vector<std::string>* values = nullptr)
+    std::string ScalePassiveText(std::string const& text, float scale, std::vector<std::string>* values = nullptr)
     {
         std::string scaled;
         size_t pos = 0;
@@ -153,7 +156,7 @@ namespace
                 scaled += text.substr(open, close - open + 1);
             else
             {
-                std::string const number = FormatScaled(perRank * rank);
+                std::string const number = FormatScaled(perRank * scale);
                 scaled += number;
                 if (values)
                     values->push_back(DescribeScaledValue(text, open, close, number));
@@ -163,7 +166,7 @@ namespace
         return scaled;
     }
 
-    std::vector<std::string> GetScaledNumbers(std::string const& text, uint32 rank)
+    std::vector<std::string> GetScaledNumbers(std::string const& text, float scale)
     {
         std::vector<std::string> numbers;
         for (size_t open = text.find('{'); open != std::string::npos; open = text.find('{', open + 1))
@@ -176,7 +179,7 @@ namespace
             float const perRank = std::strtof(inner.c_str(), &end);
             if (inner.empty() || *end)
                 continue;
-            std::string value = (open > 0 && text[open - 1] == '+' ? "+" : "") + FormatScaled(perRank * rank);
+            std::string value = (open > 0 && text[open - 1] == '+' ? "+" : "") + FormatScaled(perRank * scale);
             if (close + 1 < text.size() && text[close + 1] == '%')
                 value += "%";
             numbers.push_back(value);
@@ -203,7 +206,6 @@ namespace
             case BONK_PASSIVE_AREA:          return "Area";
             case BONK_PASSIVE_DURATION:      return "Duration";
             case BONK_PASSIVE_ARMOR:         return "Armor";
-            case BONK_PASSIVE_HIT:           return "Hit chance";
             case BONK_PASSIVE_DODGE:         return "Dodge chance";
             case BONK_PASSIVE_CRIT:          return "Critical strike chance";
             case BONK_PASSIVE_CRIT_DAMAGE:   return "Critical strike damage";
@@ -318,7 +320,8 @@ void BonkMgr::LoadTiers()
         "`stage_health_accel`, `chest_cost`, `chest_cost_growth`, `unlock_tier`, `unlock_stage`, "
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_affixes`, "
-        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth`, `details`, `opening_crowd`, `opening_sec` FROM `bonk_tier`"));
+        "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth`, `details`, `opening_crowd`, `opening_sec`, "
+        "`stage_compound`, `floor_knee`, `late_health_growth`, `late_damage_growth`, `floor_knee2`, `last_health_growth`, `last_damage_growth` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -366,6 +369,13 @@ void BonkMgr::LoadTiers()
         tier.details = fields[32].GetCppString();
         tier.openingCrowd = std::min(1.0f, std::max(0.0f, fields[33].GetFloat()));
         tier.openingMs = fields[34].GetUInt32() * IN_MILLISECONDS;
+        tier.stageCompound = fields[35].GetUInt8() != 0;
+        tier.floorKnee = fields[36].GetUInt32();
+        tier.lateHealthGrowth = fields[37].GetFloat();
+        tier.lateDamageGrowth = fields[38].GetFloat();
+        tier.floorKnee2 = fields[39].GetUInt32();
+        tier.lastHealthGrowth = fields[40].GetFloat();
+        tier.lastDamageGrowth = fields[41].GetFloat();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -1076,7 +1086,7 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         }
         case BONK_SPELL_UPGRADE_DEPLOY:     return std::string("+") + number + " yd deploy range";
         case BONK_SPELL_UPGRADE_TRAP_AREA:  return percent + " trap radius";
-        case BONK_SPELL_UPGRADE_REACH:      return percent + " reach";
+        case BONK_SPELL_UPGRADE_REACH:      return percent + " range";
         case BONK_SPELL_UPGRADE_TARGETS:
             return std::string("affects ") + number + (amount == 1.0f ? " additional enemy" : " additional enemies");
         case BONK_SPELL_UPGRADE_SHIELD_SIZE: return percent + " Shield size";
@@ -1167,7 +1177,7 @@ void BonkMgr::LoadPassives()
     m_passives.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `icon`, `description`, `effect`, `value_per_rank`, `max_rank`, `excludes` FROM `bonk_passive`"));
+        "SELECT `id`, `name`, `icon`, `description`, `effect`, `value_per_rank`, `max_rank` FROM `bonk_passive`"));
 
     if (!result)
     {
@@ -1186,8 +1196,7 @@ void BonkMgr::LoadPassives()
         passive.description = fields[3].GetCppString();
         uint8 const effect = fields[4].GetUInt8();
         passive.valuePerRank = fields[5].GetFloat();
-        passive.maxRank = std::max<uint8>(1, fields[6].GetUInt8());
-        passive.excludes = fields[7].GetUInt32();
+        passive.maxRank = fields[6].GetUInt8();
 
         if (effect >= MAX_BONK_PASSIVE_EFFECT)
         {
@@ -1390,6 +1399,8 @@ void BonkMgr::CheckShopLayout(char const* table, BonkShop shop, std::map<uint32,
     {
         Entry& entry = itr.second;
         BonkShopNode& node = entry.layout;
+        if (!node.tree)
+            continue;
 
         auto tree = m_shopTrees.find(node.tree);
         if (tree == m_shopTrees.end() || tree->second.shop != shop)
@@ -1647,18 +1658,26 @@ BonkItemSet const* BonkMgr::GetItemSet(uint32 id) const
 
 BonkGearTotals BonkMgr::EvaluateGear(Player const* player) const
 {
+    std::vector<uint32> worn;
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            worn.push_back(item->GetEntry());
+    return EvaluateItems(worn);
+}
+
+BonkGearTotals BonkMgr::EvaluateItems(std::vector<uint32> const& entries) const
+{
     BonkGearTotals totals;
     std::map<uint32, uint32> setPieces;
 
-    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            if (BonkItemStat const* stat = GetItemStat(item->GetEntry()))
-            {
-                for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
-                    totals.passives[effect] += stat->stats[effect];
-                if (stat->setId)
-                    ++setPieces[stat->setId];
-            }
+    for (uint32 entry : entries)
+        if (BonkItemStat const* stat = GetItemStat(entry))
+        {
+            for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+                totals.passives[effect] += stat->stats[effect];
+            if (stat->setId)
+                ++setPieces[stat->setId];
+        }
 
     for (auto const& itr : setPieces)
         if (BonkItemSet const* set = GetItemSet(itr.first))
@@ -2041,15 +2060,142 @@ void BonkMgr::LoadItemCards()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk item cards", uint32(m_itemCards.size()));
 }
 
+uint32 BonkMgr::GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot)
+{
+    uint8 const* classes = std::begin(BONK_TIER_GEAR_CLASSES);
+    uint8 const* found = std::find(classes, std::end(BONK_TIER_GEAR_CLASSES), classId);
+    if (found == std::end(BONK_TIER_GEAR_CLASSES) || !tier || tier > BONK_TIER_GEAR_TIERS || slot >= BONK_TIER_GEAR_SLOTS)
+        return 0;
+    uint32 const entry = BONK_TIER_GEAR_FIRST + (uint32(found - classes) * BONK_TIER_GEAR_TIERS + tier - 1) * BONK_TIER_GEAR_SLOTS + slot;
+    return sObjectMgr.GetItemPrototype(entry) ? entry : 0;
+}
+
+bool BonkMgr::ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot)
+{
+    uint32 const perClass = BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
+    if (entry < BONK_TIER_GEAR_FIRST || entry >= BONK_TIER_GEAR_FIRST + perClass * uint32(std::size(BONK_TIER_GEAR_CLASSES)))
+        return false;
+    uint32 const index = entry - BONK_TIER_GEAR_FIRST;
+    classId = BONK_TIER_GEAR_CLASSES[index / perClass];
+    tier = (index % perClass) / BONK_TIER_GEAR_SLOTS + 1;
+    slot = index % BONK_TIER_GEAR_SLOTS;
+    return true;
+}
+
+uint32 BonkMgr::GetMythicGearEntry(uint32 kind, uint32 tier)
+{
+    if (kind >= BONK_MYTHIC_GEAR_KINDS || !tier || tier > BONK_TIER_GEAR_TIERS)
+        return 0;
+    uint32 const entry = BONK_MYTHIC_GEAR_FIRST + kind * BONK_TIER_GEAR_TIERS + tier - 1;
+    return sObjectMgr.GetItemPrototype(entry) ? entry : 0;
+}
+
+bool BonkMgr::ReadMythicGearEntry(uint32 entry, uint32& kind, uint32& tier)
+{
+    if (entry < BONK_MYTHIC_GEAR_FIRST || entry >= BONK_MYTHIC_GEAR_FIRST + BONK_MYTHIC_GEAR_KINDS * BONK_TIER_GEAR_TIERS)
+        return false;
+    kind = (entry - BONK_MYTHIC_GEAR_FIRST) / BONK_TIER_GEAR_TIERS;
+    tier = (entry - BONK_MYTHIC_GEAR_FIRST) % BONK_TIER_GEAR_TIERS + 1;
+    return true;
+}
+
+bool BonkMgr::ReadTrinketEffect(uint32 entry, BonkTrinketEffect& effect)
+{
+    uint32 kind, tier;
+    if (!ReadMythicGearEntry(entry, kind, tier) || kind < BONK_MYTHIC_GEAR_FIRST_TRINKET)
+        return false;
+    effect = BonkTrinketEffect(kind - BONK_MYTHIC_GEAR_FIRST_TRINKET);
+    return effect < MAX_BONK_TRINKET_EFFECT;
+}
+
+std::vector<uint32> BonkMgr::GetMythicGearFor(uint32 classMask, uint32 tier)
+{
+    std::vector<uint32> gear;
+    for (uint32 kind = 0; kind < BONK_MYTHIC_GEAR_KINDS; ++kind)
+        if (uint32 const entry = GetMythicGearEntry(kind, tier))
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry))
+                if (proto->AllowableClass & classMask)
+                    gear.push_back(entry);
+    return gear;
+}
+
+uint32 BonkMgr::GetLegendaryTierEntry(uint32 kind, uint32 tier)
+{
+    if (kind >= BONK_LEGENDARY_KINDS || !tier || tier > BONK_TIER_GEAR_TIERS)
+        return 0;
+    uint32 const entry = BONK_LEGENDARY_TIER_FIRST + kind * BONK_TIER_GEAR_TIERS + tier - 1;
+    return sObjectMgr.GetItemPrototype(entry) ? entry : 0;
+}
+
+bool BonkMgr::IsLegacyLegendary(uint32 entry)
+{
+    return entry >= BONK_LEGACY_LEGENDARY_FIRST && entry < BONK_LEGACY_LEGENDARY_FIRST + BONK_LEGENDARY_KINDS;
+}
+
+bool BonkMgr::ReadLegendaryEntry(uint32 entry, uint32& kind, uint32& tier)
+{
+    if (IsLegacyLegendary(entry))
+    {
+        kind = entry - BONK_LEGACY_LEGENDARY_FIRST;
+        tier = 1;
+        return true;
+    }
+    if (entry < BONK_LEGENDARY_TIER_FIRST || entry >= BONK_LEGENDARY_TIER_FIRST + BONK_LEGENDARY_KINDS * BONK_TIER_GEAR_TIERS)
+        return false;
+    kind = (entry - BONK_LEGENDARY_TIER_FIRST) / BONK_TIER_GEAR_TIERS;
+    tier = (entry - BONK_LEGENDARY_TIER_FIRST) % BONK_TIER_GEAR_TIERS + 1;
+    return true;
+}
+
+std::vector<uint32> BonkMgr::GetLegendariesFor(uint32 classMask, uint32 tier)
+{
+    std::vector<uint32> legendaries;
+    for (uint32 kind = 0; kind < BONK_LEGENDARY_KINDS; ++kind)
+        if (uint32 const entry = GetLegendaryTierEntry(kind, tier))
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry))
+                if (proto->AllowableClass & classMask)
+                    legendaries.push_back(entry);
+    return legendaries;
+}
+
+uint32 BonkMgr::GetGearTier(uint32 entry)
+{
+    uint8 classId;
+    uint32 kind, tier, slot;
+    if (ReadTierGearEntry(entry, classId, tier, slot) || ReadMythicGearEntry(entry, kind, tier) || ReadLegendaryEntry(entry, kind, tier))
+        return tier;
+    return 0;
+}
+
+uint32 BonkMgr::GetGearAtTier(uint32 entry, uint32 tier)
+{
+    uint8 classId;
+    uint32 kind, oldTier, slot;
+    if (ReadTierGearEntry(entry, classId, oldTier, slot))
+        return GetTierGearEntry(classId, tier, slot);
+    if (ReadMythicGearEntry(entry, kind, oldTier))
+        return GetMythicGearEntry(kind, tier);
+    if (ReadLegendaryEntry(entry, kind, oldTier))
+        return GetLegendaryTierEntry(kind, tier);
+    return 0;
+}
+
 BonkGear const* BonkMgr::GetGear(uint32 entry) const
 {
     auto itr = m_gear.find(entry);
     return itr != m_gear.end() ? &itr->second : nullptr;
 }
 
+BonkGear const* BonkMgr::GetGearByKeep(uint32 keepEntry) const
+{
+    auto itr = m_gearByKeep.find(keepEntry);
+    return itr != m_gearByKeep.end() ? GetGear(itr->second) : nullptr;
+}
+
 void BonkMgr::LoadGear()
 {
     m_gear.clear();
+    m_gearByKeep.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `quality`, `keep_entry`, `tier` FROM `bonk_gear`"));
     if (!result)
@@ -2082,23 +2228,36 @@ void BonkMgr::LoadGear()
         gear.allowableClass = uint32(proto->AllowableClass);
 
         m_gear[gear.entry] = gear;
+        if (gear.keepEntry)
+            m_gearByKeep[gear.keepEntry] = gear.entry;
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk run gear", uint32(m_gear.size()));
 }
 
+float BonkPassive::RankWeight(uint32 rank)
+{
+    if (!rank)
+        return 0.0f;
+    return std::max(BONK_PASSIVE_RANK_FLOOR, std::pow(BONK_PASSIVE_RANK_DECAY, float(rank - 1)));
+}
+
+float BonkPassive::RankScale(uint32 rank)
+{
+    float scale = 0.0f;
+    for (uint32 step = 1; step <= rank; ++step)
+        scale += RankWeight(step);
+    return scale;
+}
+
 std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank) const
 {
-    std::string const text = ScalePassiveText(passive.description, std::max(1u, rank));
-    for (auto const& itr : m_passives)
-        if (itr.first != passive.id && (itr.first == passive.excludes || itr.second.excludes == passive.id))
-            return text + " You can't have this and " + itr.second.name + " at the same time.";
-    return text;
+    return ScalePassiveText(passive.description, BonkPassive::RankScale(std::max(1u, rank)));
 }
 
 std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const
 {
-    return rank <= 1 ? DescribePassive(passive, 1) : ScalePassiveText(passive.description, 1);
+    return rank <= 1 ? DescribePassive(passive, 1) : ScalePassiveText(passive.description, BonkPassive::RankWeight(rank));
 }
 
 void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std::vector<BonkStatChange>& stats) const
@@ -2106,8 +2265,8 @@ void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std:
     stats.clear();
     if (rank <= 1)
         return;
-    std::vector<std::string> const before = GetScaledNumbers(passive.description, rank - 1);
-    std::vector<std::string> const after = GetScaledNumbers(passive.description, rank);
+    std::vector<std::string> const before = GetScaledNumbers(passive.description, BonkPassive::RankScale(rank - 1));
+    std::vector<std::string> const after = GetScaledNumbers(passive.description, BonkPassive::RankScale(rank));
     std::vector<std::string> shown;
     for (size_t i = 0; i < after.size() && i < before.size(); ++i)
     {
@@ -2128,7 +2287,7 @@ std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank)
         return text;
 
     std::vector<std::string> now;
-    ScalePassiveText(passive.description, rank, &now);
+    ScalePassiveText(passive.description, BonkPassive::RankScale(rank), &now);
     if (!now.empty())
         text += BONK_LINE_BREAK + std::string("Current: ") + JoinValues(now) + ".";
     return text;

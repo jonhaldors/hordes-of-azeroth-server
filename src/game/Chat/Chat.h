@@ -224,8 +224,9 @@ class ChatHandler
         bool HandleBonkGearCommand(char* args);
         bool HandleBonkGlyphCommand(char* args);
         bool HandleBonkPoolCommand(char* args);
-        bool HandleBonkUnlockCommand(char* args);
+        bool HandleBonkBanSlotCommand(char* args);
         bool HandleBonkMenuCommand(char* args);
+        bool HandleBonkResyncCommand(char* args);
         bool HandleBonkVaultCommand(char* args);
         bool HandleBonkHelloCommand(char* args);
         bool HandleBonkQuestsCommand(char* args);
@@ -240,6 +241,7 @@ class ChatHandler
         bool HandleBonkEventCommand(char* args);
         bool HandleBonkShrineCommand(char* args);
         bool HandleBonkPowerupCommand(char* args);
+        bool HandleBonkDropLooksCommand(char* args);
         bool HandleBonkLeyPickCommand(char* args);
         bool HandleBonkVendorCommand(char* args);
         bool HandleBonkKeywordCommand(char* args);

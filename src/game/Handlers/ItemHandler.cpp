@@ -724,7 +724,35 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid, uint8 menu_type)
     GetPlayer()->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_INTERACTING_CANCELS);
 
     if (BonkPlayer* bonk = GetPlayer()->GetBonkPlayer())
+    {
         bonk->SendGearTabs(pCreature);
+        bonk->SendFoundGear(pCreature);
+        if (bonk->IsTierVendor(pCreature))
+        {
+            bonk->SendQuartermaster();
+            bonk->SendRefitOffer();
+            std::vector<uint32> const stock = bonk->GetTierStock();
+            WorldPacket data(SMSG_LIST_INVENTORY, (8 + 1 + stock.size() * 7 * 4));
+            data << ObjectGuid(vendorguid);
+            data << uint8(stock.size());
+            if (stock.empty())
+                data << uint8(0);
+            uint32 row = 0;
+            for (uint32 entry : stock)
+            {
+                ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
+                data << uint32(++row);
+                data << uint32(entry);
+                data << uint32(proto ? proto->DisplayInfoID : 0);
+                data << uint32(0xFFFFFFFF);
+                data << uint32(proto ? proto->BuyPrice : 0);
+                data << uint32(proto ? proto->MaxDurability : 0);
+                data << uint32(proto ? proto->BuyCount : 1);
+            }
+            SendPacket(&data);
+            return;
+        }
+    }
 
     VendorItemData const* vItems = menu_type & VENDOR_MENU_NORMAL ? pCreature->GetVendorItems() : nullptr;
     VendorItemData const* tItems = menu_type & VENDOR_MENU_TEMPLATE ? pCreature->GetVendorTemplateItems() : nullptr;
@@ -766,7 +794,8 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid, uint8 menu_type)
                 ++count;
 
                 // reputation discount
-                uint32 price = uint32(pProto->BuyPrice * discountMod + 0.5f);
+                float const foundMod = _player->GetBonkPlayer() ? _player->GetBonkPlayer()->GetGearPriceFactor(pCreature, crItem->item) : 1.0f;
+                uint32 price = uint32(pProto->BuyPrice * discountMod * foundMod + 0.5f);
 
                 data << uint32(count);
                 data << uint32(crItem->item);

@@ -17,6 +17,7 @@
 
 class BonkRun;
 class Creature;
+class GameObject;
 class Player;
 enum BonkShop : uint8;
 enum BonkQuestReward : uint8;
@@ -63,8 +64,28 @@ class BonkPlayer
         void SendDetermination() const;
         bool CanBuyGear(uint32 itemEntry) const;
         bool ShowsGearItem(Creature const* vendor, uint32 itemEntry) const;
+        bool IsTierVendor(Creature const* vendor) const;
+        uint32 GetStockTier() const;
+        std::vector<uint32> GetTierStock() const;
+        uint32 GetScrap() const { return m_scrap; }
+        void AddScrap(uint32 points);
+        bool CanUpgradeAtQuartermaster() const;
+        void SetQuartermasterUpgrade(bool on);
+        void OnTierPurchase(Item* bought);
+        void SendQuartermaster() const;
+        std::vector<Item*> GetOwnedLegendaries() const;
+        uint32 GetLegendaryUpgradeEntry(uint32 entry) const;
+        bool IsGearFound(uint32 keepEntry) const { return m_foundGear.count(keepEntry) != 0; }
+        bool RecordGearFound(uint32 keepEntry);
+        float GetGearPriceFactor(Creature const* vendor, uint32 itemEntry) const;
+        void SendFoundGear(Creature const* vendor) const;
+        std::vector<Item*> GetForeignTierPieces() const;
+        uint32 GetTierExchangeFee(std::vector<Item*> const& pieces) const;
+        void ExchangeTierPieces();
         void SendGearTabs(Creature const* vendor) const;
         void SelectGearTab(uint32 group);
+        void SendRefitOffer() const;
+        void RefitAtQuartermaster();
         std::string GetUnlockHint(BonkTier const& tier) const;
         void RecordStage(uint32 tierId, uint32 stage);
 
@@ -106,7 +127,6 @@ class BonkPlayer
         bool IsTalentEnabled(uint32 talentId) const { return m_enabledTalents.count(talentId) != 0; }
         uint32 CountDarkFortunes() const { return uint32(m_enabledTalents.size()); }
         bool BuyUpgrade(uint32 upgradeId, std::string& message);
-        bool BuyUnlock(BonkQuestReward type, uint32 id, std::string& message);
         void VisitSpellbook(Creature const* keeper);
         bool BuyTalent(uint32 talentId, std::string& message);
         bool ResetUpgrades(std::string& message);
@@ -127,6 +147,7 @@ class BonkPlayer
         void RecordClassFloor(uint32 floor);
         void TakeTalentResetNotice();
         uint32 GetMasterySpent() const;
+        std::string DescribeLoadout() const;
         uint32 GetMasterySpentInTree(uint32 treeId) const;
         uint8 GetMasteryRank(uint32 nodeId) const;
         void AddMasteryXp(uint32 xp);
@@ -224,7 +245,18 @@ class BonkPlayer
         void Notify(std::string const& text) const;
         void NotifyFind(std::string const& text) const;
         void SendGlyphInfo() const;
-        uint32 GetPoolToggleSlots() const;
+        struct BanSource
+        {
+            std::string label;
+            std::string detail;
+            bool earned = false;
+            uint32 tickets = 0;
+        };
+        std::vector<BanSource> GetBanSources(BonkQuestReward type) const;
+        uint32 GetBanSlots(BonkQuestReward type) const;
+        bool BuyBanSlot(BonkQuestReward type, std::string& message);
+        void VisitDeck(GameObject const* table);
+        bool IsAtDeck() const;
         void TrimPoolToggles() const;
 
         bool Dash();
@@ -286,6 +318,7 @@ class BonkPlayer
 
         void SendShop(bool open) const;
         void SendArena(std::string const& npc) const;
+        void SendFloorPreview(BonkTier const& tier, BonkRunBonuses const& bonuses) const;
         bool IsAtShop() const;
         bool IsAtSpellbook() const;
 
@@ -335,6 +368,9 @@ class BonkPlayer
         std::set<uint32> m_enabledTalents;
         uint32 m_shards = 0;
         uint8 m_determination = 0;
+        uint32 m_scrap = 0;
+        bool m_quartermasterUpgrade = false;
+        std::set<uint32> m_foundGear;
         uint32 m_masteryXp = 0;
         uint32 m_classFloor = 0;
         std::map<uint32, uint8> m_masteryRanks;
@@ -342,6 +378,7 @@ class BonkPlayer
         BonkShop m_shop{};
         ObjectGuid m_shopNpc;
         ObjectGuid m_spellbookKeeper;
+        ObjectGuid m_deckTable;
         std::string m_shopNpcName;
         std::string m_masteryNotice;
 

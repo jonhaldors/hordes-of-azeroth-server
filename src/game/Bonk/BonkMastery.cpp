@@ -11,28 +11,9 @@ INSTANTIATE_SINGLETON_1(BonkMastery);
 
 namespace
 {
-    float const BONK_TRAPMASTER_HEALTH_COST    = 15.0f;
-    float const BONK_WEAPON_MASTER_HASTE_COST  = 10.0f;
-    float const BONK_JUGGERNAUT_POWER_COST     = 15.0f;
     float const BONK_GLASS_CANNON_CRIT_DAMAGE  = 100.0f;
-    float const BONK_GLASS_CANNON_HEALTH_COST  = 50.0f;
-    float const BONK_DOOMHAMMER_HEALTH_COST    = 15.0f;
-    float const BONK_TOTEMIC_MASTERY_POWER_COST = 15.0f;
-    float const BONK_ARCHANGEL_HEALTH_COST     = 15.0f;
-    float const BONK_PAIN_SUPPRESSION_POWER_COST = 15.0f;
+    float const BONK_GLASS_CANNON_HEALTH_COST  = 35.0f;
     float const BONK_SHADOWFORM_DECAY_DAMAGE   = 30.0f;
-    float const BONK_SHADOWFORM_HASTE_COST     = 10.0f;
-    float const BONK_MASTER_POISONER_POWER_COST = 15.0f;
-    float const BONK_BLADE_DANCER_CRIT_COST    = 10.0f;
-    float const BONK_MASTER_OF_SUBTLETY_HEALTH_COST = 15.0f;
-    float const BONK_DIVINE_ILLUMINATION_POWER_COST = 15.0f;
-    float const BONK_GUARDIAN_OF_THE_LIGHT_POWER_COST = 15.0f;
-    float const BONK_TEMPLARS_VERDICT_CRIT_COST = 10.0f;
-    float const BONK_PANDEMIC_POWER_COST       = 15.0f;
-    float const BONK_MASTER_DEMONOLOGIST_POWER_COST = 15.0f;
-    float const BONK_RUIN_CRIT_COST            = 10.0f;
-    float const BONK_CELESTIAL_ALIGNMENT_POWER_COST = 15.0f;
-    float const BONK_PRIMAL_FURY_POWER_COST    = 15.0f;
 }
 
 void BonkMastery::Load()
@@ -239,7 +220,9 @@ BonkMasteryNode const* BonkMastery::FindStarterUnlock(uint8 classId, uint32 weap
 uint32 BonkMastery::GetXpForLevel(uint32 level)
 {
     uint32 const steps = std::max(1u, level) - 1;
-    return BONK_MASTERY_XP_BASE + BONK_MASTERY_XP_STEP * steps + BONK_MASTERY_XP_CURVE * steps * steps / 2;
+    uint32 const baseXp = BONK_MASTERY_XP_BASE + BONK_MASTERY_XP_STEP * steps + BONK_MASTERY_XP_CURVE * steps * steps / 2;
+    uint32 const slowLevels = level > BONK_MASTERY_XP_SLOW_FROM_LEVEL ? level - BONK_MASTERY_XP_SLOW_FROM_LEVEL : 0;
+    return baseXp * (100 + BONK_MASTERY_XP_SLOW_PERCENT_PER_LEVEL * slowLevels) / 100;
 }
 
 uint32 BonkMastery::GetLevel(uint32 xp)
@@ -357,67 +340,12 @@ void BonkMastery::ApplyCapstoneCost(BonkMasteryBonuses& bonuses)
 {
     switch (bonuses.capstone)
     {
-        case BONK_CAPSTONE_TRAPMASTER:
-            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_TRAPMASTER_HEALTH_COST;
-            break;
-        case BONK_CAPSTONE_WEAPON_MASTER:
-            bonuses.passives[BONK_PASSIVE_HASTE] -= BONK_WEAPON_MASTER_HASTE_COST;
-            break;
-        case BONK_CAPSTONE_JUGGERNAUT:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_JUGGERNAUT_POWER_COST;
-            break;
         case BONK_CAPSTONE_GLASS_CANNON:
             bonuses.passives[BONK_PASSIVE_CRIT_DAMAGE] += BONK_GLASS_CANNON_CRIT_DAMAGE;
             bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_GLASS_CANNON_HEALTH_COST;
             break;
-        case BONK_CAPSTONE_DOOMHAMMER:
-            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_DOOMHAMMER_HEALTH_COST;
-            break;
-        case BONK_CAPSTONE_TOTEMIC_MASTERY:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_TOTEMIC_MASTERY_POWER_COST;
-            break;
-        case BONK_CAPSTONE_ARCHANGEL:
-            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_ARCHANGEL_HEALTH_COST;
-            break;
-        case BONK_CAPSTONE_PAIN_SUPPRESSION:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_PAIN_SUPPRESSION_POWER_COST;
-            break;
         case BONK_CAPSTONE_SHADOWFORM:
             bonuses.keywordDamage[BONK_KEYWORD_DECAY] += BONK_SHADOWFORM_DECAY_DAMAGE;
-            bonuses.passives[BONK_PASSIVE_HASTE] -= BONK_SHADOWFORM_HASTE_COST;
-            break;
-        case BONK_CAPSTONE_MASTER_POISONER:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_MASTER_POISONER_POWER_COST;
-            break;
-        case BONK_CAPSTONE_BLADE_DANCER:
-            bonuses.passives[BONK_PASSIVE_CRIT] -= BONK_BLADE_DANCER_CRIT_COST;
-            break;
-        case BONK_CAPSTONE_MASTER_OF_SUBTLETY:
-            bonuses.passives[BONK_PASSIVE_MAX_HEALTH] -= BONK_MASTER_OF_SUBTLETY_HEALTH_COST;
-            break;
-        case BONK_CAPSTONE_DIVINE_ILLUMINATION:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_DIVINE_ILLUMINATION_POWER_COST;
-            break;
-        case BONK_CAPSTONE_GUARDIAN_OF_THE_LIGHT:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_GUARDIAN_OF_THE_LIGHT_POWER_COST;
-            break;
-        case BONK_CAPSTONE_TEMPLARS_VERDICT:
-            bonuses.passives[BONK_PASSIVE_CRIT] -= BONK_TEMPLARS_VERDICT_CRIT_COST;
-            break;
-        case BONK_CAPSTONE_PANDEMIC:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_PANDEMIC_POWER_COST;
-            break;
-        case BONK_CAPSTONE_MASTER_DEMONOLOGIST:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_MASTER_DEMONOLOGIST_POWER_COST;
-            break;
-        case BONK_CAPSTONE_RUIN:
-            bonuses.passives[BONK_PASSIVE_CRIT] -= BONK_RUIN_CRIT_COST;
-            break;
-        case BONK_CAPSTONE_CELESTIAL_ALIGNMENT:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_CELESTIAL_ALIGNMENT_POWER_COST;
-            break;
-        case BONK_CAPSTONE_PRIMAL_FURY:
-            bonuses.passives[BONK_PASSIVE_POWER] -= BONK_PRIMAL_FURY_POWER_COST;
             break;
         default:
             break;

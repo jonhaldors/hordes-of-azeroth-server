@@ -26,6 +26,7 @@ uint32 const BONK_GO_PORTAL     = 900003;
 uint32 const BONK_GO_VAULT      = 900041;
 uint32 const BONK_GO_SHARD      = 900007;
 uint32 const BONK_GO_HEAL       = 900008;
+uint32 const BONK_GO_GLYPH      = 900062;
 
 uint32 const BONK_ORB_SMALL = 900100;
 uint32 const BONK_ORB_LARGE = 900101;
@@ -36,6 +37,7 @@ uint32 const BONK_PICKUP_MARKER = 900111;
 uint32 const BONK_HEAL_PICKUP = 900116;
 uint32 const BONK_PROJECTILE = 900113;
 uint32 const BONK_SNAKE = 900117;
+uint32 const BONK_SKELETON = 900151;
 uint32 const BONK_SPECTRAL_BEAST = 900118;
 uint32 const BONK_PLAGUE_BEAST = 900119;
 uint32 const BONK_HYBRID_ELEMENTAL = 900147;
@@ -256,6 +258,13 @@ struct BonkTier
     float stageDamageGrowth = 0.25f;
     float stageHealthAccel = 0.05f;
     float stageDamageAccel = 0.05f;
+    bool stageCompound = false;
+    uint32 floorKnee = 0;
+    float lateHealthGrowth = 0.0f;
+    float lateDamageGrowth = 0.0f;
+    uint32 floorKnee2 = 0;
+    float lastHealthGrowth = 0.0f;
+    float lastDamageGrowth = 0.0f;
     float minAliveMultiplier = 1.0f;
     float openingCrowd = 1.0f;
     uint32 openingMs = 0;
@@ -760,7 +769,6 @@ std::string GetBonkMagicSchoolName(uint32 spellId);
 std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& school);
 
 uint32 const BONK_MAX_SUMMONS        = 12;
-float const BONK_SUMMON_POWER_SHARE  = 0.6f;
 
 uint32 const BONK_PET_FAMILY_CAT = 1;
 uint32 const BONK_PET_FAMILY_WATER_ELEMENTAL = 2;
@@ -829,7 +837,6 @@ enum BonkPassiveEffect : uint8
     BONK_PASSIVE_AREA        = 10,
     BONK_PASSIVE_DURATION    = 11,
     BONK_PASSIVE_ARMOR       = 12,
-    BONK_PASSIVE_HIT         = 13,
     BONK_PASSIVE_DODGE       = 14,
     BONK_PASSIVE_CRIT        = 15,
     BONK_PASSIVE_CRIT_DAMAGE = 16,
@@ -869,7 +876,10 @@ struct BonkPassive
     BonkPassiveEffect effect = BONK_PASSIVE_POWER;
     float valuePerRank = 10.0f;
     uint8 maxRank = 5;
-    uint32 excludes = 0;
+
+    bool IsMaxed(uint32 rank) const { return rank >= (maxRank ? uint32(maxRank) : uint32(UINT8_MAX)); }
+    static float RankWeight(uint32 rank);
+    static float RankScale(uint32 rank);
 };
 
 enum BonkMobRole : uint8
@@ -995,12 +1005,68 @@ uint8 const BONK_TRAINING_OPEN_RANKS = 3;
 uint8 const BONK_TRAINING_HEROIC_RANKS = 3;
 uint8 const BONK_TRAINING_MYTHIC_RANKS = 4;
 uint32 const BONK_TRAINING_FLOORS_PER_RANK = 4;
+uint32 const BONK_TIER_VENDOR = 900150;
+uint32 const BONK_TIER_EXCHANGE_FEE_PERCENT = 10;
+uint32 const BONK_STOCK_TIER_LAG = 2;
+uint32 const BONK_SCRAP_PER_UPGRADE = 100;
+float const BONK_FOUND_PRICE_FACTOR = 0.5f;
+size_t const BONK_FOUND_LINE_LENGTH = 200;
+uint32 const BONK_TIER_GEAR_FIRST = 903000;
+uint32 const BONK_TIER_GEAR_TIERS = 20;
+uint32 const BONK_TIER_GEAR_SLOTS = 8;
+uint8 const BONK_TIER_GEAR_CLASSES[] = { 1, 2, 3, 4, 5, 7, 8, 9, 11 };
+uint32 const BONK_MYTHIC_GEAR_FIRST = 904500;
+uint32 const BONK_MYTHIC_GEAR_KINDS = 20;
+uint32 const BONK_MYTHIC_GEAR_FIRST_ACCESSORY = 9;
+uint32 const BONK_MYTHIC_GEAR_FIRST_TRINKET = 12;
+uint32 const BONK_LEGENDARY_TIER_FIRST = 905000;
+uint32 const BONK_LEGACY_LEGENDARY_FIRST = 901420;
+uint32 const BONK_LEGENDARY_KINDS = 8;
+
+enum BonkTrinketEffect : uint8
+{
+    BONK_TRINKET_STORM     = 0,
+    BONK_TRINKET_EMBER     = 1,
+    BONK_TRINKET_HASTE     = 2,
+    BONK_TRINKET_BULWARK   = 3,
+    BONK_TRINKET_BLOODVINE = 4,
+    BONK_TRINKET_FROST     = 5,
+    BONK_TRINKET_WRATH     = 6,
+    BONK_TRINKET_WIND      = 7,
+    MAX_BONK_TRINKET_EFFECT
+};
+
+struct BonkTrinket
+{
+    char const* name;
+    char const* icon;
+    uint32 spellId;
+    float value;
+    float radius;
+    uint32 targets;
+    uint32 durationMs;
+    char const* text;
+};
 uint8 const BONK_DETERMINATION_MAX_STACKS = 5;
 uint32 const BONK_FLOORS_PER_TALENT_POINT = 2;
 uint32 const BONK_FLOOR_TALENT_POINTS_MAX = 10;
 uint32 const BONK_MYTHIC_MILESTONE_FLOORS = 5;
 float const BONK_FLOOR_GOLD_GROWTH = 0.1f;
 uint32 const BONK_FLOOR_TICKETS_BASE = 3;
+uint32 const BONK_MILESTONE_TICKET_FACTOR = 2;
+
+inline bool IsMythicMilestoneFloor(uint32 floor)
+{
+    return floor % BONK_MYTHIC_MILESTONE_FLOORS == 0 && floor <= BONK_MYTHIC_MILESTONE_FLOORS * 4;
+}
+
+inline uint32 GetFloorFirstClearTickets(uint32 floor)
+{
+    uint32 const tickets = BONK_FLOOR_TICKETS_BASE + floor / 2;
+    if (IsMythicMilestoneFloor(floor))
+        return tickets * BONK_MILESTONE_TICKET_FACTOR;
+    return floor % 2 == 1 ? tickets : 0;
+}
 float const BONK_DETERMINATION_PER_STACK = 3.0f;
 
 struct BonkUpgrade
@@ -1038,6 +1104,8 @@ enum BonkTalentEffect : uint8
     BONK_TALENT_CURSED_GROUND = 14,
     BONK_TALENT_DOOM_CLOCK   = 15,
     BONK_TALENT_ELITE_AFFIX  = 16,
+    BONK_TALENT_CARD_BANS    = 17,
+    BONK_TALENT_GLYPH_BANS   = 18,
     MAX_BONK_TALENT_EFFECT
 };
 
@@ -1148,6 +1216,9 @@ enum BonkCardEffect : uint8
     BONK_CARD_FREE_CHEST    = 21,
     BONK_CARD_SHADOW_BURST  = 22,
     BONK_CARD_ASCENSION     = 23,
+    BONK_CARD_HASTE_BURST   = 24,
+    BONK_CARD_UNHIT_POWER   = 25,
+    BONK_CARD_DOT_DAMAGE    = 26,
     MAX_BONK_CARD_EFFECT
 };
 
@@ -1191,16 +1262,12 @@ enum BonkGlyphEffect : uint8
 {
     BONK_GLYPH_NONE           = 0,
     BONK_GLYPH_PACKRAT        = 1,
-    BONK_GLYPH_THRIFT         = 2,
     BONK_GLYPH_SECOND_WIND    = 3,
     BONK_GLYPH_LEY_LINE       = 4,
     BONK_GLYPH_KILL_HASTE     = 5,
-    BONK_GLYPH_CHEST_TRAP     = 6,
-    BONK_GLYPH_HALF_ARMOR     = 7,
     BONK_GLYPH_DIVINE_SHIELD  = 8,
     BONK_GLYPH_SOUL_HARVEST   = 9,
     BONK_GLYPH_VENGEANCE      = 10,
-    BONK_GLYPH_NO_HEALS       = 11,
     BONK_GLYPH_GAMBLER        = 12,
     BONK_GLYPH_STORM          = 13,
     BONK_GLYPH_METEOR         = 14,
@@ -1212,8 +1279,19 @@ enum BonkGlyphEffect : uint8
     BONK_GLYPH_AMBITION       = 20,
     BONK_GLYPH_HUNT           = 21,
     BONK_GLYPH_LAST_STAND     = 22,
-    BONK_GLYPH_TURTLE         = 23,
     BONK_GLYPH_NOMAD          = 24,
+    BONK_GLYPH_DIVINATION     = 25,
+    BONK_GLYPH_FROST_NOVA     = 26,
+    BONK_GLYPH_VANISH         = 27,
+    BONK_GLYPH_CORPSE_BLAST   = 28,
+    BONK_GLYPH_EXECUTE        = 29,
+    BONK_GLYPH_CLEAVE         = 30,
+    BONK_GLYPH_MULTI_SHOT     = 31,
+    BONK_GLYPH_ECHOES         = 32,
+    BONK_GLYPH_IGNITE         = 33,
+    BONK_GLYPH_SOUL_SIPHON    = 34,
+    BONK_GLYPH_SHADOWMOURNE   = 35,
+    BONK_GLYPH_RAISE_DEAD     = 36,
     MAX_BONK_GLYPH_EFFECT
 };
 
@@ -1300,6 +1378,20 @@ class BonkMgr
         uint32 GetItemCard(uint32 itemEntry) const;
 
         BonkGear const* GetGear(uint32 entry) const;
+        BonkGear const* GetGearByKeep(uint32 keepEntry) const;
+        static uint32 GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot);
+        static bool ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot);
+        static uint32 GetMythicGearEntry(uint32 kind, uint32 tier);
+        static bool ReadMythicGearEntry(uint32 entry, uint32& kind, uint32& tier);
+        static bool ReadTrinketEffect(uint32 entry, BonkTrinketEffect& effect);
+        static BonkTrinket const& GetTrinket(BonkTrinketEffect effect);
+        static std::vector<uint32> GetMythicGearFor(uint32 classMask, uint32 tier);
+        static uint32 GetLegendaryTierEntry(uint32 kind, uint32 tier);
+        static bool ReadLegendaryEntry(uint32 entry, uint32& kind, uint32& tier);
+        static std::vector<uint32> GetLegendariesFor(uint32 classMask, uint32 tier);
+        static uint32 GetGearTier(uint32 entry);
+        static uint32 GetGearAtTier(uint32 entry, uint32 tier);
+        static bool IsLegacyLegendary(uint32 entry);
         std::map<uint32, BonkGear> const& GetGear() const { return m_gear; }
 
         std::map<uint32, BonkShopTree> const& GetShopTrees() const { return m_shopTrees; }
@@ -1315,6 +1407,7 @@ class BonkMgr
         BonkItemSet const* GetItemSet(uint32 id) const;
         std::map<uint32, BonkItemSet> const& GetItemSets() const { return m_itemSets; }
         BonkGearTotals EvaluateGear(Player const* player) const;
+        BonkGearTotals EvaluateItems(std::vector<uint32> const& entries) const;
 
         bool IsStaticCreatureSuppressed(Map const* map, uint32 dbGuid) const;
         bool IsArenaLocation(uint32 mapId, uint32 zoneId) const;
@@ -1363,6 +1456,7 @@ class BonkMgr
         std::map<uint32, BonkGlyph> m_glyphs;
         std::vector<BonkHidden> m_hiddenEncounters;
         std::map<uint32, BonkGear> m_gear;
+        std::map<uint32, uint32> m_gearByKeep;
         std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;
         mutable std::mutex m_mapStartLock;

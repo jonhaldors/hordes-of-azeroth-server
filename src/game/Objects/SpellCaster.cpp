@@ -29,6 +29,7 @@
 #include "Utilities/Random.h"
 #include "Bonk/BonkPlayer.h"
 #include "Bonk/BonkRun.h"
+#include "Bonk/BonkMobAI.h"
 
 namespace
 {
@@ -41,7 +42,7 @@ namespace
         BonkRun const* run = player ? player->GetBonkPlayer()->GetRun() : nullptr;
         if (!run)
             return 1.0f;
-        float const multiplier = run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetPowerShare(attacker));
+        float const multiplier = run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetMinionScale(attacker));
         return attacker->IsPlayer() ? multiplier : multiplier * run->GetSummonDamageMultiplier(attacker);
     }
 
@@ -1023,7 +1024,7 @@ uint32 SpellCaster::SpellCriticalDamageBonus(SpellEntry const* spellProto, uint3
     {
         bool const weaponAttack = spellProto->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_RANGED;
         run->OnCriticalStrike(this, spellProto, pVictim);
-        return uint32(damage * run->RollCritMultiplier(weaponAttack, pVictim));
+        return uint32(damage * run->RollCritMultiplier(weaponAttack, pVictim, spellProto));
     }
 
     // Calculate critical bonus
@@ -1215,6 +1216,9 @@ float SpellCaster::CalcArmorReducedDamage(Unit const* pVictim, uint32 const dama
 
 float SpellCaster::CalculateSpellEffectValue(Unit const* target, SpellEntry const* spellProto, SpellEffectIndex effect_index, int32 const* effBasePoints, Spell* spell) const
 {
+    if (effBasePoints && BonkMobAI::UsesExactPoints(this))
+        return float(*effBasePoints);
+
     Unit const* pUnit = ToUnit();
     Player const* pPlayer = ToPlayer();
 

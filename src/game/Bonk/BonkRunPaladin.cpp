@@ -43,7 +43,7 @@ namespace
     uint32 const BONK_SPELL_HOLY_NOVA         = 15237;
     uint32 const BONK_SPELL_FALLING_HAMMER    = 17286;
     uint32 const BONK_SPELL_JUSTICE_HAMMER    = 20685;
-    uint32 const BONK_SPELL_DIVINE_SHIELD     = 642;
+    uint32 const BONK_SPELL_DIVINE_SHIELD     = 33463;
     uint32 const BONK_SPELL_HAMMER_OF_WRATH   = 24239;
     uint32 const BONK_SPELL_LAY_ON_HANDS      = 633;
     uint32 const BONK_SPELL_SEAL_OF_LIGHT     = 20165;
@@ -60,7 +60,7 @@ namespace
     float const BONK_CRUSADER_SPLASH_SHARE    = 0.3f;
     float const BONK_ZEAL_SPLASH_SHARE        = 0.5f;
     float const BONK_AVENGING_HAMMER_CHANCE   = 15.0f;
-    uint32 const BONK_VERDICT_EVERY           = 5;
+    uint32 const BONK_VERDICT_EVERY           = 4;
     float const BONK_VERDICT_DAMAGE           = 3.0f;
     uint32 const BONK_COMMAND_EVERY           = 3;
     uint32 const BONK_CRUSADER_COMMAND_EVERY  = 2;

@@ -69,7 +69,7 @@ namespace
         "Click it to earn 5% more gold and Darkmoon Tickets for the rest of the run, but more enemies will come. Each totem you use adds more.",
         "Click it to face elite guards with two affixes. Beat them for a free chest.",
         "Click it to heal 8% of your health every second for 10 seconds while you stand in it. Enemies you kill inside it give double experience.",
-        "Click it to summon this stage's boss early. Defeat it to open the portal and skip the rest of the stage.",
+        "Click it to summon this floor's boss early. Defeat it to open the portal and skip the rest of the floor.",
     };
 
     struct LeyStat
@@ -684,14 +684,16 @@ void BonkRun::ResetShrines()
 
 void BonkRun::DespawnShrines()
 {
-    if (Map* map = m_player->FindMap())
-        for (Shrine const& shrine : m_shrines)
-        {
-            if (shrine.markKey)
-                SendBonkUnmark(m_player, GetShrineMarkKey(shrine.markKey));
+    Map* map = m_player->FindMap();
+    for (Shrine const& shrine : m_shrines)
+    {
+        if (shrine.markKey)
+            SendBonkUnmark(m_player, GetShrineMarkKey(shrine.markKey));
+        if (map)
             if (GameObject* model = map->GetGameObject(shrine.model))
                 model->Delete();
-        }
+        RemoveObjective(shrine.objectiveId);
+    }
     m_shrines.clear();
     m_pendingSummons.clear();
     m_shrinesToPlace = 0;
@@ -706,17 +708,17 @@ bool BonkRun::PlaceShrineNow(BonkShrineType type, std::string& error)
 {
     if (m_state != STATE_RUNNING)
     {
-        error = "Only a running stage can have a shrine.";
+        error = "Only a running floor can have a shrine.";
         return false;
     }
     if ((type == BONK_SHRINE_MOONWELL && m_moonwellPlaced) || (type == BONK_SHRINE_STONE && m_stonePlaced))
     {
-        error = std::string("This stage has already had its ") + SHRINE_LABELS[type] + ".";
+        error = std::string("This floor has already had its ") + SHRINE_LABELS[type] + ".";
         return false;
     }
     if (type == BONK_SHRINE_LEY_LINE && m_leyLinesPlaced >= BONK_MAX_LEY_LINES)
     {
-        error = "This stage has already had " + std::to_string(BONK_MAX_LEY_LINES) + " Ley Lines.";
+        error = "This floor has already had " + std::to_string(BONK_MAX_LEY_LINES) + " Ley Lines.";
         return false;
     }
     if (!PlaceShrine(type))
