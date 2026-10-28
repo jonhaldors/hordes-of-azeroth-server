@@ -1659,18 +1659,26 @@ BonkItemSet const* BonkMgr::GetItemSet(uint32 id) const
 
 BonkGearTotals BonkMgr::EvaluateGear(Player const* player) const
 {
+    std::vector<uint32> worn;
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            worn.push_back(item->GetEntry());
+    return EvaluateItems(worn);
+}
+
+BonkGearTotals BonkMgr::EvaluateItems(std::vector<uint32> const& entries) const
+{
     BonkGearTotals totals;
     std::map<uint32, uint32> setPieces;
 
-    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            if (BonkItemStat const* stat = GetItemStat(item->GetEntry()))
-            {
-                for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
-                    totals.passives[effect] += stat->stats[effect];
-                if (stat->setId)
-                    ++setPieces[stat->setId];
-            }
+    for (uint32 entry : entries)
+        if (BonkItemStat const* stat = GetItemStat(entry))
+        {
+            for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+                totals.passives[effect] += stat->stats[effect];
+            if (stat->setId)
+                ++setPieces[stat->setId];
+        }
 
     for (auto const& itr : setPieces)
         if (BonkItemSet const* set = GetItemSet(itr.first))

@@ -109,8 +109,8 @@ namespace
     uint32 const BONK_SMOKE_BOMB_MS           = 5000;
     float const BONK_SMOKE_BOMB_MISS          = 50.0f;
     float const BONK_SUBTLETY_SPLASH_RADIUS   = 8.0f;
-    float const BONK_SUBTLETY_SPLASH_SHARE    = 1.0f;
-    uint32 const BONK_BLADE_DANCER_EXTRA      = 2;
+    float const BONK_SUBTLETY_SPLASH_SHARE    = 0.5f;
+    uint32 const BONK_BLADE_DANCER_EXTRA      = 1;
     float const BONK_BLADE_DANCER_SHARE       = 0.6f;
 
     void SetAuraLength(Player* player, uint32 spellId, int32 durationMs)

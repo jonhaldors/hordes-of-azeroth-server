@@ -3506,7 +3506,7 @@ float BonkRun::GetStageDamageMultiplier() const
 
 void BonkRun::UpdateGear()
 {
-    BonkGearTotals const gear = m_sandboxBench ? BonkGearTotals() : sBonkMgr.EvaluateGear(m_player);
+    BonkGearTotals const gear = m_sandboxBench ? sBonkMgr.EvaluateItems(m_sandboxBenchItems) : sBonkMgr.EvaluateGear(m_player);
     bool const passivesChanged = !std::equal(std::begin(gear.passives), std::end(gear.passives), std::begin(m_gear.passives));
     m_gear = gear;
 

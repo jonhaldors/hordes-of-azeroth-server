@@ -937,6 +937,33 @@ void BonkRun::SetSandboxTalent(uint32 nodeId, uint32 rank)
     HealInSandbox();
 }
 
+bool BonkRun::SetSandboxBenchItem(uint32 entry, std::string& error)
+{
+    if (!entry)
+        m_sandboxBenchItems.clear();
+    else if (!sBonkMgr.GetItemStat(entry))
+    {
+        error = "Item " + std::to_string(entry) + " has no Bonk stats.";
+        return false;
+    }
+    else
+        m_sandboxBenchItems.push_back(entry);
+    UpdateGear();
+    ApplyPassives();
+    HealInSandbox();
+    return true;
+}
+
+void BonkRun::SetSandboxTraining(uint32 rank)
+{
+    m_bonuses = BonkRunBonuses();
+    for (auto const& itr : sBonkMgr.GetUpgrades())
+        if (itr.second.layout.tree == BONK_TRAINING_TREE && itr.second.utility < 0)
+            m_bonuses.passives[itr.second.effect] += itr.second.valuePerRank * std::min<uint32>(rank, itr.second.maxRank);
+    ApplyPassives();
+    HealInSandbox();
+}
+
 bool BonkRun::SetSandboxTier(uint32 tierId, uint32 stage, std::string& error)
 {
     BonkTier const* tier = sBonkMgr.GetTier(tierId);
@@ -1149,6 +1176,7 @@ void BonkRun::EnterSandboxBench()
 {
     m_sandboxBench = true;
     m_bonuses = BonkRunBonuses();
+    m_sandboxBenchItems.clear();
     m_mastery = BonkMasteryBonuses();
     RemoveSandboxSpells(0);
     UpdateGear();
@@ -1497,6 +1525,10 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         return SetSandboxTier(first, second, error);
     else if (verb == "talent")
         SetSandboxTalent(first, second);
+    else if (verb == "item")
+        return SetSandboxBenchItem(first, error);
+    else if (verb == "training")
+        SetSandboxTraining(first);
     else if (verb == "vitals")
         ReportSandboxVitals();
     else if (verb == "forget")

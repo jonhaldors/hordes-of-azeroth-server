@@ -1394,6 +1394,7 @@ class BonkMgr
         BonkItemSet const* GetItemSet(uint32 id) const;
         std::map<uint32, BonkItemSet> const& GetItemSets() const { return m_itemSets; }
         BonkGearTotals EvaluateGear(Player const* player) const;
+        BonkGearTotals EvaluateItems(std::vector<uint32> const& entries) const;
 
         bool IsStaticCreatureSuppressed(Map const* map, uint32 dbGuid) const;
         bool IsArenaLocation(uint32 mapId, uint32 zoneId) const;

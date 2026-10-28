@@ -397,9 +397,9 @@ void BonkRun::OnWarlockEvolvedKill(Unit* victim)
 
     bool const pandemic = m_mastery.Has(BONK_CAPSTONE_PANDEMIC);
     if ((pandemic || FindOwned(BONK_WEAPON_AGONYS_ECHO)) && GetKeywordStacks(victim, BONK_KEYWORD_AGONY))
-        PassAffliction(dead, BONK_KEYWORD_AGONY);
+        PassAffliction(dead, BONK_KEYWORD_AGONY, !FindOwned(BONK_WEAPON_AGONYS_ECHO));
     if (pandemic && GetKeywordStacks(victim, BONK_KEYWORD_DECAY))
-        PassAffliction(dead, BONK_KEYWORD_DECAY);
+        PassAffliction(dead, BONK_KEYWORD_DECAY, true);
 
     if (FindOwned(BONK_WEAPON_DRAIN_SOUL) && std::find(m_drainBeams.begin(), m_drainBeams.end(), guid) != m_drainBeams.end())
         AddSoul();
@@ -408,7 +408,7 @@ void BonkRun::OnWarlockEvolvedKill(Unit* victim)
     m_seducedUntil.erase(guid);
 }
 
-void BonkRun::PassAffliction(Creature* dead, BonkKeyword keyword)
+void BonkRun::PassAffliction(Creature* dead, BonkKeyword keyword, bool halve)
 {
     BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
     auto mob = m_dotStacks.find(dead->GetObjectGuid());
@@ -417,7 +417,9 @@ void BonkRun::PassAffliction(Creature* dead, BonkKeyword keyword)
     auto stacks = mob->second.find(keyword);
     if (stacks == mob->second.end() || stacks->second.empty())
         return;
-    std::vector<DotStack> const carried = stacks->second;
+    std::vector<DotStack> carried = stacks->second;
+    if (halve)
+        carried.resize((carried.size() + 1) / 2);
     for (Creature* next : GetMobsInRange(BONK_SPREAD_RADIUS, dead))
     {
         if (GetKeywordStacks(next, keyword))

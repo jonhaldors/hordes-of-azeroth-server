@@ -2126,7 +2126,7 @@ class BonkRun
         void CrashInfernals();
         void OnWarlockEvolvedPetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey);
         void OnWarlockEvolvedKill(Unit* victim);
-        void PassAffliction(Creature* dead, BonkKeyword keyword);
+        void PassAffliction(Creature* dead, BonkKeyword keyword, bool halve);
         void AddSoul();
         void ShowSouls();
         void ExpireSouls();
@@ -2773,6 +2773,8 @@ class BonkRun
         bool AddSandboxGlyph(uint32 glyphId, std::string& error);
         bool AddSandboxCards(uint32 cardId, uint32 copies, std::string& error);
         void SetSandboxTalent(uint32 nodeId, uint32 rank);
+        bool SetSandboxBenchItem(uint32 entry, std::string& error);
+        void SetSandboxTraining(uint32 rank);
         bool SetSandboxTier(uint32 tierId, uint32 stage, std::string& error);
         void ReportSandboxVitals();
         void SetSandboxRank(uint32 baseId, uint32 rank, bool epicRoundRobin);
@@ -2803,6 +2805,7 @@ class BonkRun
         bool m_sandboxQuietLevels = false;
         bool m_sandboxBench = false;
         std::map<uint32, uint8> m_sandboxTalents;
+        std::vector<uint32> m_sandboxBenchItems;
         uint32 m_sandboxDeaths = 0;
         float m_sandboxMinute = -1.0f;
         ObjectGuid m_sandboxKeeper;
