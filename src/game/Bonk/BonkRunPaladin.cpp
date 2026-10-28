@@ -560,6 +560,7 @@ void BonkRun::LandLightsHammer(OwnedWeapon& owned, SpellEntry const* spellInfo, 
     }
     Creature* center = m_player->GetMap()->GetCreature(cast.target);
     ResolvePaladinStrike(center && center->IsAlive() ? center : mobs.front());
+    HealPaladin(owned.weapon.healPct, owned.weapon.spellId);
     if (crit)
         TriggerArtOfWar();
 }
@@ -698,7 +699,6 @@ void BonkRun::OnPaladinStruck(Creature* attacker)
 {
     if (m_player->GetClass() != CLASS_PALADIN || !attacker || !attacker->IsAlive() || IsPeriodicHit())
         return;
-    TryPaladinLastStands();
     OwnedWeapon const* aura = FindOwnedByBehavior(BONK_BEHAVIOR_RETRIBUTION_AURA);
     if (!aura || !attacker->IsAlive() || !TakeRateSlot(m_retributionTimes, BONK_RETRIBUTION_PER_SEC))
         return;

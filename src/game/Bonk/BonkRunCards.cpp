@@ -671,6 +671,9 @@ void BonkRun::RollCastCharges(OwnedWeapon& owned)
 {
     owned.forcedCrit = m_vanishCritPending;
     m_vanishCritPending = false;
+    if (owned.weapon.IsPassiveTrigger() || int32(m_totalMs - owned.castRollAtMs) < 0)
+        return;
+    owned.castRollAtMs = m_totalMs + GetWeaponCooldown(owned);
     owned.castCharges = 0;
     owned.castChargesSpent = 0;
     if (m_cards.empty())

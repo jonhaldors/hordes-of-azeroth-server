@@ -684,6 +684,10 @@ struct BonkWeapon
     {
         return behavior == BONK_BEHAVIOR_BLINK || behavior == BONK_BEHAVIOR_PHASE_RUSH || behavior == BONK_BEHAVIOR_SHIMMER;
     }
+    bool IsPassiveTrigger() const
+    {
+        return behavior == BONK_BEHAVIOR_DEEP_WOUNDS || behavior == BONK_BEHAVIOR_MAELSTROM || IsBlink();
+    }
     bool IsSeal() const
     {
         return behavior == BONK_BEHAVIOR_SEAL;

@@ -870,6 +870,10 @@ uint32 Unit::DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDa
         {
             uint32 dmg = std::min<uint32>(health - pVictim->GetInvincibilityHpThreshold(), damage);
             pVictim->ModifyHealth(-(int32)dmg);
+            if (pVictim->IsPlayer())
+                if (BonkPlayer* bonk = static_cast<Player*>(pVictim)->GetBonkPlayer())
+                    if (BonkRun* run = bonk->GetRun())
+                        run->OnHeroDamaged();
         }
 
         if (damagetype != DOT && damagetype != SELF_DAMAGE)

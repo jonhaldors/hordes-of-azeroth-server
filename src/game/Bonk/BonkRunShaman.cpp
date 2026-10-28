@@ -191,6 +191,7 @@ bool BonkRun::DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, U
     m_player->SendSpellNonMeleeDamageLog(&hit);
     m_player->DealSpellDamage(&hit, true);
     m_keywordlessHits = keywordless;
+    OnClassSpellHit(creditSpellId, target);
     return crit;
 }
 
@@ -513,8 +514,15 @@ void BonkRun::OnShamanStruck(Creature* attacker)
     SpellEntry const* look = sSpellMgr.GetSpellEntry(BONK_SPELL_LIGHTNING_LOOK);
     if (look)
         ShowStrike(m_player, look, attacker);
-    DealShamanHit(sSpellMgr.GetSpellEntry(BONK_SPELL_LIGHTNING_ZAP), shield->weapon.spellId, attacker, GetWeaponDamage(*shield));
-    ApplyShamanKeyword(*shield, attacker, BONK_KEYWORD_STATIC, shield->weapon.applyStacks);
+    std::vector<Creature*> victims = { attacker };
+    if (shield->weapon.id == BONK_WEAPON_STATIC_SHOCK)
+        victims = GetStaticShockVictims(*shield, attacker);
+    SpellEntry const* zap = sSpellMgr.GetSpellEntry(BONK_SPELL_LIGHTNING_ZAP);
+    for (Creature* mob : victims)
+    {
+        DealShamanHit(zap, shield->weapon.spellId, mob, GetWeaponDamage(*shield));
+        ApplyShamanKeyword(*shield, mob, BONK_KEYWORD_STATIC, shield->weapon.applyStacks);
+    }
 
     if (shield->weapon.id != BONK_WEAPON_EARTH_SHIELD || !m_player->IsAlive())
         return;
@@ -537,14 +545,19 @@ void BonkRun::SpendStaticShock(Creature* target)
     SpellEntry const* zap = sSpellMgr.GetSpellEntry(BONK_SPELL_LIGHTNING_ZAP);
     if (look)
         ShowStrike(m_player, look, target);
-    std::vector<Creature*> victims = GetMobsInRange(GetWeaponRadius(*shock), target);
-    if (std::find(victims.begin(), victims.end(), target) == victims.end())
-        victims.insert(victims.begin(), target);
-    for (Creature* mob : victims)
+    for (Creature* mob : GetStaticShockVictims(*shock, target))
     {
         DealShamanHit(zap, shock->weapon.spellId, mob, GetWeaponDamage(*shock));
         ApplyShamanKeyword(*shock, mob, BONK_KEYWORD_STATIC, shock->weapon.applyStacks);
     }
+}
+
+std::vector<Creature*> BonkRun::GetStaticShockVictims(OwnedWeapon const& shock, Creature* target) const
+{
+    std::vector<Creature*> victims = GetMobsInRange(GetWeaponRadius(shock), target);
+    if (std::find(victims.begin(), victims.end(), target) == victims.end())
+        victims.insert(victims.begin(), target);
+    return victims;
 }
 
 bool BonkRun::QueueStaticDischarge(Creature* mob, uint32 sourceSpellId)

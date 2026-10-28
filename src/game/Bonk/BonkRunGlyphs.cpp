@@ -342,6 +342,16 @@ bool BonkRun::IsDivineShieldReady() const
     return shield->values[1] >= 1.0f && m_stage >= m_divineShieldStage + uint32(shield->values[1]);
 }
 
+std::string BonkRun::DescribeDivineShieldRecharge(BonkGlyph const& shield) const
+{
+    uint32 const floors = uint32(shield.values[1]);
+    if (!floors)
+        return "It won't be ready again this run.";
+    if (floors == 1)
+        return "It will be ready again next floor.";
+    return "It will be ready again in " + std::to_string(floors) + " floors.";
+}
+
 bool BonkRun::IsProdigySpell(SpellEntry const* spell) const
 {
     if (!spell || m_weapons.empty())

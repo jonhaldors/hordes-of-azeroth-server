@@ -555,6 +555,8 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (damage >= health && !victim->GetInvincibilityHpThreshold())
         {
             run->OnKillingBlow(victim);
+            if (!owner && spellProto && !dotSpellId)
+                run->ResetOnKill(spellProto->Id);
             if (dotSpellId)
                 sBonkQuests.OnProgress(player, BONK_QUEST_DOT_KILLS, 0, 1);
         }

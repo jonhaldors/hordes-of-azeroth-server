@@ -147,6 +147,7 @@ class BonkRun
 
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool SaveFromDeath();
+        void OnHeroDamaged();
         bool IsPaused() const { return m_paused; }
         bool IsHeroPerched() const { return m_perched; }
         uint32 GetGlyphDashCharges() const { return uint32(GetGlyphValue(BONK_GLYPH_DASH, 0)); }
@@ -260,9 +261,11 @@ class BonkRun
         bool IsVaultEmptyWithFinds() const;
 
         void OnWeaponHit(Unit* victim, SpellEntry const* spell);
+        void OnClassSpellHit(uint32 creditSpellId, Unit* victim);
         void ApplyBiteKeyword(Creature* pet, Unit* victim);
         void OnPetBite(Creature* pet, Unit* victim);
         void OnKillingBlow(Unit* victim);
+        void ResetOnKill(uint32 spellId);
         void OnTalentDamage(Unit* victim, SpellEntry const* spell);
         bool ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs = 0, float damageScale = 1.0f, uint32 sourceSpellId = 0);
         void CreditDamageOverTime(Unit const* victim, uint32 spellId, uint32 damage, std::vector<std::pair<uint32, uint32>>& credits) const;
@@ -367,6 +370,8 @@ class BonkRun
             std::vector<ObjectGuid> pets;
             bool killed = false;
             uint32 trinketRollAtMs = 0;
+            uint32 castRollAtMs = 0;
+            bool firedByClass = false;
             bool held = false;
             bool pieResync = false;
             uint32 castCharges = 0;
@@ -669,6 +674,7 @@ class BonkRun
         void EchoRankPick(OwnedWeapon& owned, Offer const& offer);
         bool IsGlyphBossFloor() const;
         bool IsDivineShieldReady() const;
+        std::string DescribeDivineShieldRecharge(BonkGlyph const& shield) const;
         bool IsProdigySpell(SpellEntry const* spell) const;
         float GetGlyphDamageMultiplier(SpellEntry const* spell) const;
         uint32 GetGlyphLevelChoices() const;
@@ -999,6 +1005,7 @@ class BonkRun
         float GetDotCardScale() const;
         uint32 GetWornTrinkets() const;
         void RollTrinketCharges(OwnedWeapon& owned);
+        void ExpireTrinketSpeed();
         void StrikeWithTrinket(BonkTrinketEffect effect, std::vector<Creature*> const& targets, float damage, uint32 kit);
         float GetTrinketHaste() const;
         float GetTrinketPower() const;
@@ -1129,6 +1136,7 @@ class BonkRun
         void SmiteAroundRevive();
         void UpdateGear();
         uint32 GetEliteIntervalMs() const;
+        float GetEliteScale() const;
 
         void SetPaused(bool paused);
         void HoldAuraTimers(uint32 diff);
@@ -1700,6 +1708,8 @@ class BonkRun
         uint32 GetKeywordTalentCap(uint32 keyword) const;
         float GetTalentReach(OwnedWeapon const& owned) const;
         void QueueTalentStun(OwnedWeapon const& owned, Unit* victim);
+        void QueueTalentSlowAndStun(OwnedWeapon const& owned, Unit* victim);
+        void QueueTalentKeyword(OwnedWeapon const& owned, Unit* victim);
         void ApplyPendingStuns();
         uint32 GetSpellShieldCap() const;
         uint32 GetShieldBlockTalent() const;
@@ -2084,6 +2094,7 @@ class BonkRun
         bool ApplyShamanKeyword(OwnedWeapon const& owned, Creature* mob, BonkKeyword keyword, uint32 stacks);
         void BurnWithFlametongue(OwnedWeapon& owned, Creature* target, uint32 stacks);
         void SpendStaticShock(Creature* target);
+        std::vector<Creature*> GetStaticShockVictims(OwnedWeapon const& shock, Creature* target) const;
         void QueueOverload(OwnedWeapon const& owned, Creature* mob);
         void StormNearDischarge(PendingCast const& cast);
         void BurstFireNovaTotems();
@@ -2134,7 +2145,7 @@ class BonkRun
         float GetWarlockPetStrikeScale(OwnedWeapon const& owned, Creature const* prey) const;
         void QueueImpVolley(OwnedWeapon const& owned, Creature* pet, Creature* prey, uint32 abilityIndex);
         void FireImpVolleys();
-        void AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword);
+        void AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword, bool openingStacks = true);
         uint32 GetWarlockAbilitySpell(OwnedWeapon const& owned, uint32 spellId) const;
         void DressWarlockPet(OwnedWeapon const& owned, Creature* pet) const;
         void SummonWarlockMinion(OwnedWeapon const& owned, uint32 entry, float x, float y, float z, uint32 lifeMs, float bite, float scale);

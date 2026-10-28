@@ -50,10 +50,7 @@ void BonkRun::OnWeaponHit(Unit* victim, SpellEntry const* spell)
     if (!owned || owned->weapon.behavior == BONK_BEHAVIOR_PET)
         return;
 
-    auto slow = m_mastery.spellSlow.find(GetRootWeapon(owned->weapon));
-    if (slow != m_mastery.spellSlow.end())
-        m_pendingSlows.emplace_back(victim->GetObjectGuid(), slow->second);
-    QueueTalentStun(*owned, victim);
+    QueueTalentSlowAndStun(*owned, victim);
     if (m_mastery.Has(BONK_CAPSTONE_TRUESHOT) && !GetKeywordStacks(victim, BONK_KEYWORD_HUNTERS_MARK))
     {
         PendingKeyword mark;
@@ -78,6 +75,39 @@ void BonkRun::OnWeaponHit(Unit* victim, SpellEntry const* spell)
 
     pending.mob = victim->GetObjectGuid();
     m_pendingKeywords.push_back(pending);
+}
+
+void BonkRun::QueueTalentSlowAndStun(OwnedWeapon const& owned, Unit* victim)
+{
+    auto slow = m_mastery.spellSlow.find(GetRootWeapon(owned.weapon));
+    if (slow != m_mastery.spellSlow.end())
+        m_pendingSlows.emplace_back(victim->GetObjectGuid(), slow->second);
+    QueueTalentStun(owned, victim);
+}
+
+void BonkRun::QueueTalentKeyword(OwnedWeapon const& owned, Unit* victim)
+{
+    if (!m_mastery.spellApplies.count(GetRootWeapon(owned.weapon)))
+        return;
+    BonkWeapon const* base = sBonkMgr.GetWeapon(owned.weapon.id);
+    if (!base || base->applies != BONK_KEYWORD_NONE)
+        return;
+    PendingKeyword pending;
+    if (!GetWeaponKeyword(owned, pending))
+        return;
+    pending.mob = victim->GetObjectGuid();
+    m_pendingKeywords.push_back(pending);
+}
+
+void BonkRun::OnClassSpellHit(uint32 creditSpellId, Unit* victim)
+{
+    if (m_state != STATE_RUNNING || !victim->IsAlive() || !GetRunAI(victim))
+        return;
+    OwnedWeapon const* owned = FindOwnedBySpell(creditSpellId);
+    if (!owned || !owned->firedByClass || owned->weapon.behavior == BONK_BEHAVIOR_PET)
+        return;
+    QueueTalentSlowAndStun(*owned, victim);
+    QueueTalentKeyword(*owned, victim);
 }
 
 bool BonkRun::GetWeaponKeyword(OwnedWeapon const& owned, PendingKeyword& keyword) const

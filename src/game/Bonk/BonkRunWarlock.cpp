@@ -88,7 +88,7 @@ void BonkRun::DressWarlockPet(OwnedWeapon const& owned, Creature* pet) const
     pet->SetNativeDisplayId(BONK_FEL_IMP_DISPLAY);
 }
 
-void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword)
+void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spellInfo, std::vector<Creature*> mobs, BonkKeyword keyword, bool openingStacks)
 {
     uint32 const wanted = GetWeaponTargets(owned);
     std::stable_partition(mobs.begin(), mobs.end(), [this, keyword](Creature* mob) { return !GetKeywordStacks(mob, keyword); });
@@ -103,7 +103,7 @@ void BonkRun::AddWarlockStacks(OwnedWeapon const& owned, SpellEntry const* spell
     for (Creature* mob : mobs)
     {
         ShowStrike(m_player, spellInfo, mob);
-        uint32 const opening = GetKeywordStacks(mob, keyword) ? 0 : BONK_WARLOCK_OPENING_STACKS;
+        uint32 const opening = openingStacks && !GetKeywordStacks(mob, keyword) ? BONK_WARLOCK_OPENING_STACKS : 0;
         ApplyKeyword(mob, keyword, stacks + opening, durationMs, strength, owned.weapon.spellId);
         if (keyword == BONK_KEYWORD_DECAY && m_mastery.Special(BONK_SPECIAL_CONTAGION) > 0.0f)
             ApplyKeyword(mob, BONK_KEYWORD_AGONY, uint32(m_mastery.Special(BONK_SPECIAL_CONTAGION)), 0, strength, owned.weapon.spellId);
@@ -392,8 +392,10 @@ void BonkRun::FireImpVolleys()
             std::vector<Creature*> const mobs = GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), family->abilities[volley.ability].value);
             prey = mobs.empty() ? nullptr : mobs.front();
         }
-        if (prey)
-            PetStrike(*owned, pet, prey, family->abilities[volley.ability]);
+        if (!prey)
+            continue;
+        PetStrike(*owned, pet, prey, family->abilities[volley.ability]);
+        OnWarlockEvolvedPetStrike(*owned, pet, prey);
     }
 }
 

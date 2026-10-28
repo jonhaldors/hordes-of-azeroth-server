@@ -632,7 +632,7 @@ void BonkRun::CastMoonfire(OwnedWeapon& owned, SpellEntry const* spellInfo)
     float const impact = GetWeaponDamage(owned) * BONK_MOONFIRE_IMPACT_SHARE;
     for (Creature* mob : struck)
         HitAsDruid(owned, spellInfo, mob, impact);
-    AddWarlockStacks(ScaleForForm(owned), spellInfo, mobs, BONK_KEYWORD_MOONFIRE);
+    AddWarlockStacks(ScaleForForm(owned), spellInfo, mobs, BONK_KEYWORD_MOONFIRE, false);
     OnMoonfireStrikes(owned, struck);
 }
 
