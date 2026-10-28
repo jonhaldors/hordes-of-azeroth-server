@@ -96,7 +96,7 @@ void BonkRun::StartStress()
         float best = 0.0f;
         for (auto const& itr : sBonkMgr.GetPassives())
             if (itr.second.effect == effect)
-                best = std::max(best, itr.second.valuePerRank * BonkPassive::RankScale(itr.second.maxRank ? itr.second.maxRank : BONK_STRESS_PASSIVE_RANKS));
+                best = std::max(best, itr.second.valuePerRank * itr.second.RankScale(itr.second.maxRank ? itr.second.maxRank : BONK_STRESS_PASSIVE_RANKS));
         m_stress.bonuses[effect] += best;
     }
     m_stress.bonuses[BONK_PASSIVE_AMOUNT] += BONK_MAX_COUNT;

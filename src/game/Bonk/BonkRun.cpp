@@ -1,4 +1,5 @@
 #include "BonkRun.h"
+#include "BonkCodex.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
@@ -5034,7 +5035,7 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             if (passive->effect == effect)
-                total += passive->valuePerRank * BonkPassive::RankScale(itr.second);
+                total += passive->valuePerRank * passive->RankScale(itr.second);
     if (effect == BONK_PASSIVE_HASTE)
         total += GetEnrageHaste() + GetDruidHaste();
     if (effect == BONK_PASSIVE_MOVE_SPEED)
@@ -11491,7 +11492,11 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
     if (offer.isCard)
     {
         BonkCard const* card = sBonkMgr.GetCard(offer.id);
-        return card ? card->description : "";
+        if (!card)
+            return "";
+        uint32 const owned = GetCardCopies(card->id);
+        std::string const total = owned ? BonkCodex::DescribeCardTotal(*card, owned + 1) : std::string();
+        return total.empty() ? card->description : card->description + BONK_LINE_BREAK + "With this copy: " + total + ".";
     }
 
     if (!offer.isWeapon)

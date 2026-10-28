@@ -882,8 +882,8 @@ struct BonkPassive
     uint8 maxRank = 5;
 
     bool IsMaxed(uint32 rank) const { return rank >= (maxRank ? uint32(maxRank) : uint32(UINT8_MAX)); }
-    static float RankWeight(uint32 rank);
-    static float RankScale(uint32 rank);
+    float RankWeight(uint32 rank) const;
+    float RankScale(uint32 rank) const;
 };
 
 enum BonkMobRole : uint8

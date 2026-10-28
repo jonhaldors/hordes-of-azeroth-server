@@ -102,7 +102,7 @@ namespace
         std::string text;
         for (uint8 i = 0; i < 2; ++i)
             if (card.stats[i] < MAX_BONK_PASSIVE_EFFECT)
-                text += (text.empty() ? "" : ", ") + DescribeStat(card.stats[i], card.statValues[i] * sum);
+                text += (text.empty() ? "" : ", ") + DescribeStat(card.stats[i], card.statValues[i] * BonkRun::GetStatCopySum(card.stats[i], copies));
         return text;
     }
 
@@ -282,6 +282,11 @@ namespace
             bonk->SendAddon(std::string("cdxq~") + kind + "~" + std::to_string(id) + "~" + quest->name + "~" + quest->description + "~" +
                 std::to_string(sBonkQuests.GetProgress(bonk->GetProgressAccount(), *quest)) + "~" + std::to_string(quest->amount));
     }
+}
+
+std::string BonkCodex::DescribeCardTotal(BonkCard const& card, uint32_t copies)
+{
+    return DescribeCardStack(card, copies);
 }
 
 void BonkCodex::Send(Player* player, std::string const& npc, bool deck)

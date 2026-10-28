@@ -2235,14 +2235,16 @@ void BonkMgr::LoadGear()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk run gear", uint32(m_gear.size()));
 }
 
-float BonkPassive::RankWeight(uint32 rank)
+float BonkPassive::RankWeight(uint32 rank) const
 {
     if (!rank)
         return 0.0f;
+    if (effect == BONK_PASSIVE_AMOUNT)
+        return 1.0f;
     return std::max(BONK_PASSIVE_RANK_FLOOR, std::pow(BONK_PASSIVE_RANK_DECAY, float(rank - 1)));
 }
 
-float BonkPassive::RankScale(uint32 rank)
+float BonkPassive::RankScale(uint32 rank) const
 {
     float scale = 0.0f;
     for (uint32 step = 1; step <= rank; ++step)
@@ -2252,12 +2254,12 @@ float BonkPassive::RankScale(uint32 rank)
 
 std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank) const
 {
-    return ScalePassiveText(passive.description, BonkPassive::RankScale(std::max(1u, rank)));
+    return ScalePassiveText(passive.description, passive.RankScale(std::max(1u, rank)));
 }
 
 std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const
 {
-    return rank <= 1 ? DescribePassive(passive, 1) : ScalePassiveText(passive.description, BonkPassive::RankWeight(rank));
+    return rank <= 1 ? DescribePassive(passive, 1) : ScalePassiveText(passive.description, passive.RankWeight(rank));
 }
 
 void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std::vector<BonkStatChange>& stats) const
@@ -2265,8 +2267,8 @@ void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std:
     stats.clear();
     if (rank <= 1)
         return;
-    std::vector<std::string> const before = GetScaledNumbers(passive.description, BonkPassive::RankScale(rank - 1));
-    std::vector<std::string> const after = GetScaledNumbers(passive.description, BonkPassive::RankScale(rank));
+    std::vector<std::string> const before = GetScaledNumbers(passive.description, passive.RankScale(rank - 1));
+    std::vector<std::string> const after = GetScaledNumbers(passive.description, passive.RankScale(rank));
     std::vector<std::string> shown;
     for (size_t i = 0; i < after.size() && i < before.size(); ++i)
     {
@@ -2287,7 +2289,7 @@ std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank)
         return text;
 
     std::vector<std::string> now;
-    ScalePassiveText(passive.description, BonkPassive::RankScale(rank), &now);
+    ScalePassiveText(passive.description, passive.RankScale(rank), &now);
     if (!now.empty())
         text += BONK_LINE_BREAK + std::string("Current: ") + JoinValues(now) + ".";
     return text;

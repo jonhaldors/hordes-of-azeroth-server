@@ -454,7 +454,7 @@ void BonkRun::DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>
         if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
         {
             sBonkMgr.DescribePassiveStats(*passive, offer.newLevel, stats);
-            AddCurvedTotal(BonkPassiveEffect(passive->effect), passive->valuePerRank * BonkPassive::RankWeight(offer.newLevel), stats);
+            AddCurvedTotal(BonkPassiveEffect(passive->effect), passive->valuePerRank * passive->RankWeight(offer.newLevel), stats);
         }
         return;
     }

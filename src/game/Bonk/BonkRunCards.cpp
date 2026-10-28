@@ -75,6 +75,16 @@ float BonkRun::GetCopyWeight(uint32 copy)
     return std::max(BONK_CARD_COPY_FLOOR, std::pow(BONK_CARD_COPY_DECAY, float(copy - 1)));
 }
 
+float BonkRun::GetStatCopyWeight(uint8 stat, uint32 copy)
+{
+    return stat == BONK_PASSIVE_AMOUNT ? (copy ? 1.0f : 0.0f) : GetCopyWeight(copy);
+}
+
+float BonkRun::GetStatCopySum(uint8 stat, uint32 copies)
+{
+    return stat == BONK_PASSIVE_AMOUNT ? float(copies) : GetCopySum(copies);
+}
+
 float BonkRun::GetStackedChance(float percent, uint32 copies)
 {
     return StackChance(percent, copies);
@@ -336,10 +346,10 @@ void BonkRun::AddCard(BonkCard const& card)
     else
         ++owned->copies;
 
-    float const weight = GetCopyWeight(GetCardCopies(card.id));
+    uint32 const copies = GetCardCopies(card.id);
     for (uint8 i = 0; i < 2; ++i)
         if (card.stats[i] < MAX_BONK_PASSIVE_EFFECT)
-            m_cardStats[card.stats[i]] += card.statValues[i] * weight;
+            m_cardStats[card.stats[i]] += card.statValues[i] * GetStatCopyWeight(card.stats[i], copies);
 
     if (card.effect != BONK_CARD_NONE)
     {
@@ -369,13 +379,13 @@ void BonkRun::RemoveCard(BonkCard const& card)
     auto owned = std::find_if(m_cards.begin(), m_cards.end(), [&card](OwnedCard const& held) { return held.card->id == card.id; });
     if (owned == m_cards.end())
         return;
-    float const weight = GetCopyWeight(owned->copies);
+    uint32 const copies = owned->copies;
     if (--owned->copies == 0)
         m_cards.erase(owned);
 
     for (uint8 i = 0; i < 2; ++i)
         if (card.stats[i] < MAX_BONK_PASSIVE_EFFECT)
-            m_cardStats[card.stats[i]] -= card.statValues[i] * weight;
+            m_cardStats[card.stats[i]] -= card.statValues[i] * GetStatCopyWeight(card.stats[i], copies);
 
     if (card.effect != BONK_CARD_NONE && m_cardCopies[card.effect])
     {
