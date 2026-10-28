@@ -439,8 +439,16 @@ void BonkRun::AddCurvedTotal(BonkPassiveEffect effect, float gain, std::vector<B
     if (ceiling <= 0.0f)
         return;
     float const raw = GetPassiveTotal(effect);
-    auto percent = [](float value) { return std::to_string(int32(std::lround(value))) + "%"; };
-    stats.push_back({ "Total", percent(CurveStat(raw, ceiling)), percent(CurveStat(raw + gain, ceiling)) });
+    float const before = CurveStat(raw, ceiling);
+    float const after = CurveStat(raw + gain, ceiling);
+    bool const fine = std::lround(before) == std::lround(after);
+    auto percent = [fine](float value)
+    {
+        char text[16];
+        snprintf(text, sizeof(text), fine ? "%.1f%%" : "%.0f%%", value);
+        return std::string(text);
+    };
+    stats.push_back({ "Total", percent(before), percent(after) });
 }
 
 void BonkRun::DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const
