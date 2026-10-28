@@ -131,13 +131,16 @@ void BonkRun::OnKillingBlow(Unit* victim)
         if (stacks == mob->second.end() || stacks->second.empty())
             continue;
         int64 sum = 0;
+        uint32 fullMs = 0;
         std::map<uint32, uint32> bySpell;
         for (DotStack const& stack : stacks->second)
         {
             sum += stack.points;
+            fullMs = std::max(fullMs, stack.fullMs);
             ++bySpell[stack.spellId];
         }
         DyingKeyword& dying = carried[itr.first];
+        dying.fullMs = fullMs;
         dying.stacks = uint32(stacks->second.size());
         dying.points = int32(sum / int64(dying.stacks));
         dying.spellId = std::max_element(bySpell.begin(), bySpell.end(), [](auto const& a, auto const& b) { return a.second < b.second; })->first;
@@ -263,7 +266,8 @@ void BonkRun::AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 st
     std::vector<DotStack>& list = m_dotStacks[mob->GetObjectGuid()][info.id];
     DotStack stack;
     stack.appliedMs = WorldTimer::getMSTime();
-    stack.untilMs = stack.appliedMs + std::max(1u, durationMs);
+    stack.fullMs = std::max(1u, durationMs);
+    stack.untilMs = stack.appliedMs + stack.fullMs;
     stack.points = points;
     stack.spellId = spellId;
     stack.grows = info.id == BONK_KEYWORD_AGONY || IsGrowingDotSpell(spellId);
@@ -775,7 +779,7 @@ void BonkRun::SpreadKeywords(Creature const* dead)
                 break;
             if (!next->IsAlive() || !GetRunAI(next))
                 continue;
-            AddDotStacks(next, *info, half, info->durationMs, keyword.second.points, keyword.second.spellId);
+            AddDotStacks(next, *info, half, keyword.second.fullMs ? keyword.second.fullMs : info->durationMs, keyword.second.points, keyword.second.spellId);
             ++spread;
         }
     }

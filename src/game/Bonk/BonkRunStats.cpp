@@ -528,6 +528,7 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
     uint32 const dealt = std::min(damage, health);
 
     bool const swing = !spellProto;
+    SpellEntry const* const hitSpell = spellProto;
     Player* owner = nullptr;
     if (attacker->IsCreature() && !victim->IsPlayer())
         if (Player* hero = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
@@ -564,10 +565,12 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             run->OnWeaponHit(victim, spellProto);
         if (owner && swing)
             run->OnPetBite(attacker->ToCreature(), victim);
+        if (owner && attacker->GetEntry() != BONK_PROJECTILE && damage < health)
+            run->ApplySummonHitKeyword(attacker, victim, hitSpell);
         if (!owner || attacker->GetEntry() == BONK_PROJECTILE)
         {
-            run->OnHeroHit(victim, dealt, spellProto);
-            run->OnTrinketHit(victim, dealt, spellProto);
+            run->OnHeroHit(victim, damage, spellProto);
+            run->OnTrinketHit(victim, damage, spellProto);
         }
         if (!owner)
             run->CountThunderHit(spellProto);

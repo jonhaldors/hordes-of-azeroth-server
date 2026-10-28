@@ -900,7 +900,6 @@ void BonkMgr::LoadWeapons()
             case BONK_BEHAVIOR_AEGIS:
             case BONK_BEHAVIOR_SPIKED_SHIELD:
             case BONK_BEHAVIOR_WARD:
-            case BONK_BEHAVIOR_MARK:
             case BONK_BEHAVIOR_DEMORALIZE:
             case BONK_BEHAVIOR_BUFF:
             case BONK_BEHAVIOR_PET:

@@ -405,7 +405,7 @@ struct BonkWeaponUpgrade
     float step = 0.0f;
 };
 
-float const BONK_RANK_DAMAGE[BONK_RARITY_LEGENDARY]   = { 10.0f, 18.0f, 15.0f, 15.0f };
+float const BONK_RANK_DAMAGE[BONK_RARITY_LEGENDARY]   = { 10.0f, 15.0f, 15.0f, 15.0f };
 uint8 const BONK_RANK_UPGRADES[BONK_RARITY_LEGENDARY] = { 0, 0, 1, 2 };
 uint8 const BONK_DAMAGELESS_RANK_UPGRADES[BONK_RARITY_LEGENDARY] = { 1, 2, 2, 3 };
 uint8 const BONK_MAX_RANK_UPGRADES                    = 3;
@@ -438,7 +438,6 @@ enum BonkWeaponBehavior : uint8
     BONK_BEHAVIOR_EXECUTE       = 11,
     BONK_BEHAVIOR_SPIN          = 12,
     BONK_BEHAVIOR_LEECH         = 13,
-    BONK_BEHAVIOR_MARK          = 14,
     BONK_BEHAVIOR_DEMORALIZE    = 15,
     BONK_BEHAVIOR_BUFF          = 16,
     BONK_BEHAVIOR_REVENGE       = 17,

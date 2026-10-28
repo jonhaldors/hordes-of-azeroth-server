@@ -313,7 +313,7 @@ void BonkRun::QueueWindfury(OwnedWeapon const& owned, Creature* target, float sh
     OwnedWeapon* pack = FindOwned(BONK_WEAPON_SPIRIT_PACK);
     if (!pack)
         return;
-    m_spiritPackUntil.push_back(WorldTimer::getMSTime() + BONK_SPIRIT_PACK_MS);
+    m_spiritPackUntil.push_back(WorldTimer::getMSTime() + uint32(BONK_SPIRIT_PACK_MS * GetWeaponDurationScale(*pack)));
     UpdatePets(*pack);
 }
 
