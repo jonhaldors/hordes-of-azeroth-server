@@ -1008,6 +1008,10 @@ uint8 const BONK_TRAINING_MYTHIC_RANKS = 4;
 uint32 const BONK_TRAINING_FLOORS_PER_RANK = 4;
 uint32 const BONK_TIER_VENDOR = 900150;
 uint32 const BONK_TIER_EXCHANGE_FEE_PERCENT = 10;
+uint32 const BONK_STOCK_TIER_LAG = 2;
+uint32 const BONK_SCRAP_PER_UPGRADE = 100;
+float const BONK_FOUND_PRICE_FACTOR = 0.5f;
+size_t const BONK_FOUND_LINE_LENGTH = 200;
 uint32 const BONK_TIER_GEAR_FIRST = 903000;
 uint32 const BONK_TIER_GEAR_TIERS = 20;
 uint32 const BONK_TIER_GEAR_SLOTS = 8;
@@ -1016,6 +1020,9 @@ uint32 const BONK_MYTHIC_GEAR_FIRST = 904500;
 uint32 const BONK_MYTHIC_GEAR_KINDS = 20;
 uint32 const BONK_MYTHIC_GEAR_FIRST_ACCESSORY = 9;
 uint32 const BONK_MYTHIC_GEAR_FIRST_TRINKET = 12;
+uint32 const BONK_LEGENDARY_TIER_FIRST = 905000;
+uint32 const BONK_LEGACY_LEGENDARY_FIRST = 901420;
+uint32 const BONK_LEGENDARY_KINDS = 8;
 
 enum BonkTrinketEffect : uint8
 {
@@ -1372,6 +1379,7 @@ class BonkMgr
         uint32 GetItemCard(uint32 itemEntry) const;
 
         BonkGear const* GetGear(uint32 entry) const;
+        BonkGear const* GetGearByKeep(uint32 keepEntry) const;
         static uint32 GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot);
         static bool ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot);
         static uint32 GetMythicGearEntry(uint32 kind, uint32 tier);
@@ -1379,6 +1387,12 @@ class BonkMgr
         static bool ReadTrinketEffect(uint32 entry, BonkTrinketEffect& effect);
         static BonkTrinket const& GetTrinket(BonkTrinketEffect effect);
         static std::vector<uint32> GetMythicGearFor(uint32 classMask, uint32 tier);
+        static uint32 GetLegendaryTierEntry(uint32 kind, uint32 tier);
+        static bool ReadLegendaryEntry(uint32 entry, uint32& kind, uint32& tier);
+        static std::vector<uint32> GetLegendariesFor(uint32 classMask, uint32 tier);
+        static uint32 GetGearTier(uint32 entry);
+        static uint32 GetGearAtTier(uint32 entry, uint32 tier);
+        static bool IsLegacyLegendary(uint32 entry);
         std::map<uint32, BonkGear> const& GetGear() const { return m_gear; }
 
         std::map<uint32, BonkShopTree> const& GetShopTrees() const { return m_shopTrees; }
@@ -1442,6 +1456,7 @@ class BonkMgr
         std::map<uint32, BonkGlyph> m_glyphs;
         std::vector<BonkHidden> m_hiddenEncounters;
         std::map<uint32, BonkGear> m_gear;
+        std::map<uint32, uint32> m_gearByKeep;
         std::map<uint32, BonkShopTree> m_shopTrees;
         std::map<uint32, BonkUpgrade> m_upgrades;
         mutable std::mutex m_mapStartLock;

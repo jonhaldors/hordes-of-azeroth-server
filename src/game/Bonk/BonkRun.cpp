@@ -1374,6 +1374,9 @@ void BonkRun::StartStage()
     m_heldShotSources.clear();
     m_telegraphs.Dismiss(m_player);
     m_telegraphs.Warm();
+    DespawnPillar();
+    m_floorMiniBosses = 0;
+    m_pillarRaised = false;
     m_objectives.Clear(m_player);
     m_spawnPoints.Reset(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ());
     ResetShrines();
@@ -1595,6 +1598,7 @@ void BonkRun::UpdateOffers()
         m_lastLevel = level;
     }
 
+    SettlePendingGear();
     if (!m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_vaultOpen || m_gearOfferEntry || !m_glyphOffer.empty())
         return;
 
@@ -1973,6 +1977,7 @@ void BonkRun::UpdateSpawns(uint32 diff)
         {
             m_bossSpawned = true;
             m_player->GetBonkPlayer()->Notify(std::string(mob->GetName()) + " has arrived!");
+            MaybeSpawnPillar();
         }
     }
 
@@ -4687,6 +4692,7 @@ void BonkRun::DespawnObjects()
             portal->Delete();
     }
     DespawnVault();
+    DespawnPillar();
     ClearDropLooks();
     m_chests.clear();
     m_chestObjectives.clear();
@@ -10808,6 +10814,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
     OnHiddenKilled(mob);
     if (kind == BONK_SPAWN_MINIBOSS && !m_sandbox && mob->GetObjectGuid() != hiddenBoss && ++m_glyphMiniBosses == 1)
         DropGlyph(mob);
+    if (kind == BONK_SPAWN_MINIBOSS && mob->GetObjectGuid() != hiddenBoss)
+        CountFloorMiniBoss();
 
     if (mob->GetObjectGuid() == m_bossGuid)
     {

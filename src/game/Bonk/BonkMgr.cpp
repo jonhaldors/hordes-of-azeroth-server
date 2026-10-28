@@ -2112,15 +2112,83 @@ std::vector<uint32> BonkMgr::GetMythicGearFor(uint32 classMask, uint32 tier)
     return gear;
 }
 
+uint32 BonkMgr::GetLegendaryTierEntry(uint32 kind, uint32 tier)
+{
+    if (kind >= BONK_LEGENDARY_KINDS || !tier || tier > BONK_TIER_GEAR_TIERS)
+        return 0;
+    uint32 const entry = BONK_LEGENDARY_TIER_FIRST + kind * BONK_TIER_GEAR_TIERS + tier - 1;
+    return sObjectMgr.GetItemPrototype(entry) ? entry : 0;
+}
+
+bool BonkMgr::IsLegacyLegendary(uint32 entry)
+{
+    return entry >= BONK_LEGACY_LEGENDARY_FIRST && entry < BONK_LEGACY_LEGENDARY_FIRST + BONK_LEGENDARY_KINDS;
+}
+
+bool BonkMgr::ReadLegendaryEntry(uint32 entry, uint32& kind, uint32& tier)
+{
+    if (IsLegacyLegendary(entry))
+    {
+        kind = entry - BONK_LEGACY_LEGENDARY_FIRST;
+        tier = 1;
+        return true;
+    }
+    if (entry < BONK_LEGENDARY_TIER_FIRST || entry >= BONK_LEGENDARY_TIER_FIRST + BONK_LEGENDARY_KINDS * BONK_TIER_GEAR_TIERS)
+        return false;
+    kind = (entry - BONK_LEGENDARY_TIER_FIRST) / BONK_TIER_GEAR_TIERS;
+    tier = (entry - BONK_LEGENDARY_TIER_FIRST) % BONK_TIER_GEAR_TIERS + 1;
+    return true;
+}
+
+std::vector<uint32> BonkMgr::GetLegendariesFor(uint32 classMask, uint32 tier)
+{
+    std::vector<uint32> legendaries;
+    for (uint32 kind = 0; kind < BONK_LEGENDARY_KINDS; ++kind)
+        if (uint32 const entry = GetLegendaryTierEntry(kind, tier))
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry))
+                if (proto->AllowableClass & classMask)
+                    legendaries.push_back(entry);
+    return legendaries;
+}
+
+uint32 BonkMgr::GetGearTier(uint32 entry)
+{
+    uint8 classId;
+    uint32 kind, tier, slot;
+    if (ReadTierGearEntry(entry, classId, tier, slot) || ReadMythicGearEntry(entry, kind, tier) || ReadLegendaryEntry(entry, kind, tier))
+        return tier;
+    return 0;
+}
+
+uint32 BonkMgr::GetGearAtTier(uint32 entry, uint32 tier)
+{
+    uint8 classId;
+    uint32 kind, oldTier, slot;
+    if (ReadTierGearEntry(entry, classId, oldTier, slot))
+        return GetTierGearEntry(classId, tier, slot);
+    if (ReadMythicGearEntry(entry, kind, oldTier))
+        return GetMythicGearEntry(kind, tier);
+    if (ReadLegendaryEntry(entry, kind, oldTier))
+        return GetLegendaryTierEntry(kind, tier);
+    return 0;
+}
+
 BonkGear const* BonkMgr::GetGear(uint32 entry) const
 {
     auto itr = m_gear.find(entry);
     return itr != m_gear.end() ? &itr->second : nullptr;
 }
 
+BonkGear const* BonkMgr::GetGearByKeep(uint32 keepEntry) const
+{
+    auto itr = m_gearByKeep.find(keepEntry);
+    return itr != m_gearByKeep.end() ? GetGear(itr->second) : nullptr;
+}
+
 void BonkMgr::LoadGear()
 {
     m_gear.clear();
+    m_gearByKeep.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `quality`, `keep_entry`, `tier` FROM `bonk_gear`"));
     if (!result)
@@ -2153,6 +2221,8 @@ void BonkMgr::LoadGear()
         gear.allowableClass = uint32(proto->AllowableClass);
 
         m_gear[gear.entry] = gear;
+        if (gear.keepEntry)
+            m_gearByKeep[gear.keepEntry] = gear.entry;
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk run gear", uint32(m_gear.size()));

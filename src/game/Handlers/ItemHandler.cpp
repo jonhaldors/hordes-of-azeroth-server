@@ -726,9 +726,10 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid, uint8 menu_type)
     if (BonkPlayer* bonk = GetPlayer()->GetBonkPlayer())
     {
         bonk->SendGearTabs(pCreature);
+        bonk->SendFoundGear(pCreature);
         if (bonk->IsTierVendor(pCreature))
         {
-            bonk->SendAddon("quartermaster~" + std::to_string(bonk->GetStockTier()));
+            bonk->SendQuartermaster();
             bonk->SendRefitOffer();
             std::vector<uint32> const stock = bonk->GetTierStock();
             WorldPacket data(SMSG_LIST_INVENTORY, (8 + 1 + stock.size() * 7 * 4));
@@ -793,7 +794,8 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid, uint8 menu_type)
                 ++count;
 
                 // reputation discount
-                uint32 price = uint32(pProto->BuyPrice * discountMod + 0.5f);
+                float const foundMod = _player->GetBonkPlayer() ? _player->GetBonkPlayer()->GetGearPriceFactor(pCreature, crItem->item) : 1.0f;
+                uint32 price = uint32(pProto->BuyPrice * discountMod * foundMod + 0.5f);
 
                 data << uint32(count);
                 data << uint32(crItem->item);

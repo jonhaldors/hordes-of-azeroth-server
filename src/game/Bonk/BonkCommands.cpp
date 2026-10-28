@@ -322,15 +322,23 @@ bool ChatHandler::HandleBonkVaultCommand(char* args)
         return true;
     }
     uint32 guidLow = 0;
-    if (!run || !action || (strcmp(action, "put") && strcmp(action, "take")) || !ExtractUInt32(&args, guidLow))
+    bool const known = action && (!strcmp(action, "put") || !strcmp(action, "take") || !strcmp(action, "send"));
+    if (!run || !known || !ExtractUInt32(&args, guidLow))
     {
-        SendSysMessage(run ? "Use .bonk vault put|take <item>." : "You are not in a run.");
+        SendSysMessage(run ? "Use .bonk vault put|take|send <item>." : "You are not in a run.");
         SetSentErrorMessage(true);
         return false;
     }
 
     std::string error;
-    if (!(strcmp(action, "put") ? run->TakeFromVault(guidLow, error) : run->PutInVault(guidLow, error)))
+    bool done = false;
+    if (!strcmp(action, "send"))
+        done = run->SendHomeFromPillar(guidLow, error);
+    else if (!strcmp(action, "put"))
+        done = run->PutInVault(guidLow, error);
+    else
+        done = run->TakeFromVault(guidLow, error);
+    if (!done)
         m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
     return true;
 }
@@ -424,6 +432,11 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
     if (tab == "refit")
     {
         m_session->GetPlayer()->GetBonkPlayer()->RefitAtQuartermaster();
+        return true;
+    }
+    if (tab == "upgrade on" || tab == "upgrade off")
+    {
+        m_session->GetPlayer()->GetBonkPlayer()->SetQuartermasterUpgrade(tab == "upgrade on");
         return true;
     }
 

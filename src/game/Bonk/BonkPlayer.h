@@ -67,6 +67,18 @@ class BonkPlayer
         bool IsTierVendor(Creature const* vendor) const;
         uint32 GetStockTier() const;
         std::vector<uint32> GetTierStock() const;
+        uint32 GetScrap() const { return m_scrap; }
+        void AddScrap(uint32 points);
+        bool CanUpgradeAtQuartermaster() const;
+        void SetQuartermasterUpgrade(bool on);
+        void OnTierPurchase(Item* bought);
+        void SendQuartermaster() const;
+        std::vector<Item*> GetOwnedLegendaries() const;
+        uint32 GetLegendaryUpgradeEntry(uint32 entry) const;
+        bool IsGearFound(uint32 keepEntry) const { return m_foundGear.count(keepEntry) != 0; }
+        bool RecordGearFound(uint32 keepEntry);
+        float GetGearPriceFactor(Creature const* vendor, uint32 itemEntry) const;
+        void SendFoundGear(Creature const* vendor) const;
         std::vector<Item*> GetForeignTierPieces() const;
         uint32 GetTierExchangeFee(std::vector<Item*> const& pieces) const;
         void ExchangeTierPieces();
@@ -356,6 +368,9 @@ class BonkPlayer
         std::set<uint32> m_enabledTalents;
         uint32 m_shards = 0;
         uint8 m_determination = 0;
+        uint32 m_scrap = 0;
+        bool m_quartermasterUpgrade = false;
+        std::set<uint32> m_foundGear;
         uint32 m_masteryXp = 0;
         uint32 m_classFloor = 0;
         std::map<uint32, uint8> m_masteryRanks;

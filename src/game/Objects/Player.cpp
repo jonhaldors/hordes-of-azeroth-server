@@ -18513,7 +18513,8 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
     uint32 price  = pProto->BuyPrice * count;
 
     // reputation discount
-    price = uint32(price * GetReputationPriceDiscount(pCreature) + 0.5f);
+    float const foundMod = m_bonkPlayer ? m_bonkPlayer->GetGearPriceFactor(pCreature, item) : 1.0f;
+    price = uint32(price * GetReputationPriceDiscount(pCreature) * foundMod + 0.5f);
 
     if (GetMoney() < price)
     {
@@ -18590,6 +18591,9 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
     GetSession()->SendPacket(std::move(packet));
 
     SendNewItem(pItem, totalCount, true, false, false);
+
+    if (tierVendor)
+        m_bonkPlayer->OnTierPurchase(pItem);
 
     return crItem->maxcount != 0;
 }
