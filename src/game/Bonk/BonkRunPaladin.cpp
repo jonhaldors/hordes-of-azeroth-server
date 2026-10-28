@@ -46,6 +46,7 @@ namespace
     uint32 const BONK_SPELL_DIVINE_SHIELD     = 33463;
     uint32 const BONK_SPELL_HAMMER_OF_WRATH   = 24239;
     uint32 const BONK_SPELL_LAY_ON_HANDS      = 633;
+    uint32 const BONK_SPELL_JUDGED_LOOK       = 21183;
     uint32 const BONK_SPELL_SEAL_OF_LIGHT     = 20165;
     uint32 const BONK_SPELL_CONSECRATION_LOOK = 26573;
     uint32 const BONK_KIT_HOLY_WRATH_CAST     = 329;
@@ -371,6 +372,29 @@ void BonkRun::CallAvengingHammer(OwnedWeapon const& owned, Creature* target)
 void BonkRun::JudgeTarget(Creature* target)
 {
     m_judgedUntilMs[target->GetObjectGuid()] = m_totalMs + BONK_JUDGED_MS;
+    ShowJudgedDebuff(target);
+}
+
+void BonkRun::ShowJudgedDebuff(Creature* target)
+{
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_JUDGED_LOOK);
+    if (!spellInfo || !target->IsAlive())
+        return;
+    if (SpellAuraHolder* held = target->GetSpellAuraHolder(BONK_SPELL_JUDGED_LOOK, m_player->GetObjectGuid()))
+    {
+        held->SetAuraDuration(int32(BONK_JUDGED_MS));
+        held->UpdateAuraDuration();
+        return;
+    }
+    int32 noEffect = 0;
+    SpellAuraHolder* holder = CreateSpellAuraHolder(spellInfo, target, m_player, m_player);
+    Aura* aura = CreateAura(spellInfo, EFFECT_INDEX_0, &noEffect, holder, target, m_player);
+    aura->SetPositive(false);
+    holder->AddAura(aura, EFFECT_INDEX_0);
+    holder->SetPermanent(false);
+    holder->SetAuraMaxDuration(int32(BONK_JUDGED_MS));
+    holder->SetAuraDuration(int32(BONK_JUDGED_MS));
+    target->AddSpellAuraHolder(holder);
 }
 
 bool BonkRun::IsJudged(Unit const* victim) const

@@ -143,8 +143,8 @@ void BonkRun::DressWarlockMinions()
 float BonkRun::GetMinionSwingDamage(OwnedWeapon const& owned, WarlockMinion const& held) const
 {
     if (held.weaponId == BONK_WEAPON_CURSE_OF_DOOM)
-        return GetMobHealth(GetMobLevel()) * BONK_DOOMGUARD_SWING_HEALTHS * (1.0f + owned.damageBonus / 100.0f);
-    return std::max(1.0f, GetWeaponDamage(owned)) * held.bite;
+        return GetMobHealth(GetMobLevel()) * BONK_DOOMGUARD_SWING_HEALTHS * (1.0f + owned.damageBonus / 100.0f) * GetSummonTalentScale(owned);
+    return std::max(1.0f, GetWeaponDamage(owned)) * held.bite * GetSummonTalentScale(owned);
 }
 
 bool BonkRun::IsWarlockMinion(ObjectGuid const& guid) const

@@ -1110,7 +1110,6 @@ void BonkRun::RemoveSandboxSpells(uint32 baseId)
     ResetMageState();
     m_pendingCasts.clear();
     m_heldShotSources.clear();
-    m_marks.clear();
     m_buffs.clear();
 
     m_weapons.erase(std::remove_if(m_weapons.begin(), m_weapons.end(), [baseId](OwnedWeapon const& owned)
@@ -1162,7 +1161,6 @@ void BonkRun::ClearSandboxEnemies()
     m_telegraphs.Clear(m_player);
     m_voidZones.clear();
     DespawnPools();
-    m_marks.clear();
     m_pendingKeywords.clear();
     m_pendingConsumes.clear();
     m_dyingKeywords.clear();

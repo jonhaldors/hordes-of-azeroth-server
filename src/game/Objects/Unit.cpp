@@ -1451,7 +1451,7 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
             int32 mod = GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_CRIT_PERCENT_VERSUS, creatureTypeMask);
             float multiplier = (200.0f + mod) / 100.0f;
             if (BonkRun const* run = BonkRun::FromAttack(this, damageInfo->target))
-                multiplier = run->RollCritMultiplier(true, damageInfo->target);
+                multiplier = run->RollCritMultiplier(true, damageInfo->target, nullptr, this);
             damageInfo->totalDamage = uint32((damageInfo->totalDamage) * multiplier);
 
             for (uint8 i = 0; i < m_weaponDamageCount[damageInfo->attackType]; i++)

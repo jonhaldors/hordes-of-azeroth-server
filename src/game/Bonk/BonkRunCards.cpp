@@ -718,9 +718,9 @@ std::string BonkRun::DescribeBigHit(SpellEntry const* spell, Unit const* victim)
 {
     float const power = GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + GetTalentDamagePercent();
     char text[512];
-    snprintf(text, sizeof(text), "total x%.2f | power %.0f%% | mark %.0f%% | keyword x%.2f | mage x%.2f | shaman x%.2f | priest x%.2f | rogue x%.2f | "
+    snprintf(text, sizeof(text), "total x%.2f | power %.0f%% | keyword x%.2f | mage x%.2f | shaman x%.2f | priest x%.2f | rogue x%.2f | "
         "paladin x%.2f | ray +%.0f%% | capstone x%.2f | glyph x%.2f | victim %.0f%% health",
-        GetDamageMultiplier(spell, victim), power, GetMarkBonus(victim), GetKeywordDamageMultiplier(spell, victim), GetMageDamageMultiplier(victim),
+        GetDamageMultiplier(spell, victim), power, GetKeywordDamageMultiplier(spell, victim), GetMageDamageMultiplier(victim),
         GetShamanDamageMultiplier(spell, victim), GetPriestDamageMultiplier(victim), GetRogueDamageMultiplier(victim), GetPaladinDamageMultiplier(victim),
         GetCastChargePower(spell, victim), GetCapstoneDamageMultiplier(true, victim), spell ? GetGlyphDamageMultiplier(spell) : 1.0f,
         victim ? victim->GetHealthPercent() : 0.0f);

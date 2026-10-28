@@ -1024,7 +1024,7 @@ uint32 SpellCaster::SpellCriticalDamageBonus(SpellEntry const* spellProto, uint3
     {
         bool const weaponAttack = spellProto->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_RANGED;
         run->OnCriticalStrike(this, spellProto, pVictim);
-        return uint32(damage * run->RollCritMultiplier(weaponAttack, pVictim, spellProto));
+        return uint32(damage * run->RollCritMultiplier(weaponAttack, pVictim, spellProto, ToUnit()));
     }
 
     // Calculate critical bonus

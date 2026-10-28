@@ -263,7 +263,7 @@ class BonkRun
 
         void OnWeaponHit(Unit* victim, SpellEntry const* spell);
         void OnClassSpellHit(uint32 creditSpellId, Unit* victim);
-        void ApplyBiteKeyword(Creature* pet, Unit* victim);
+        void ApplySummonHitKeyword(Unit* summon, Unit* victim, SpellEntry const* spell);
         void OnPetBite(Creature* pet, Unit* victim);
         void OnKillingBlow(Unit* victim);
         void ResetOnKill(uint32 spellId);
@@ -306,7 +306,8 @@ class BonkRun
         void LandWarning(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
         static std::string DescribeStriker(Creature const* attacker);
         std::vector<std::string> DescribeMob(Creature const* mob) const;
-        float RollCritMultiplier(bool weaponAttack, Unit const* victim = nullptr, SpellEntry const* spell = nullptr) const;
+        float RollCritMultiplier(bool weaponAttack, Unit const* victim = nullptr, SpellEntry const* spell = nullptr, Unit const* attacker = nullptr) const;
+        bool IsAlwaysCrit(SpellEntry const* spell, Unit const* victim) const;
 
         void SendStats() const;
         std::vector<std::string> DescribeScaling() const;
@@ -779,8 +780,6 @@ class BonkRun
         void SortStrongestFirst(std::vector<Creature*>& mobs) const;
         std::vector<Creature*> GetMobsInCone(OwnedWeapon const& owned, float range) const;
         void KnockBack(Creature* mob);
-        float GetMarkBonus(Unit const* victim) const;
-        void OnMarkedDeath(Creature const* mob);
         float GetBuffPower() const;
         bool IsReckless() const;
         void DropTraps(OwnedWeapon& owned, bool armed = false);
@@ -803,6 +802,9 @@ class BonkRun
         void UpdatePetTargets(uint32 diff);
         uint32 GetPetPreyRank(Creature const* mob) const;
         float GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& family) const;
+        float GetSummonTalentScale(OwnedWeapon const& owned) const;
+        bool IsKeywordAbilityHit(OwnedWeapon const& owned, SpellEntry const* spell) const;
+        bool HasStackingPetAbility(OwnedWeapon const& owned) const;
         void StartPetAttack(OwnedWeapon const& owned, Creature* pet, Creature* target);
         void UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey);
         bool Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey);
@@ -1924,12 +1926,6 @@ class BonkRun
         void LandEnemyMissile(EnemyMissile const& missile);
         uint32 m_spellShield = 0;
         bool m_wardBurst = false;
-        struct Mark
-        {
-            uint32 weaponId = 0;
-            uint32 untilMs = 0;
-        };
-        std::map<ObjectGuid, Mark> m_marks;
         std::map<uint32, uint32> m_buffs;
         struct Trap
         {
@@ -2346,6 +2342,7 @@ class BonkRun
         void CallAvengingHammer(OwnedWeapon const& owned, Creature* target);
         void JudgeTarget(Creature* target);
         bool IsJudged(Unit const* victim) const;
+        void ShowJudgedDebuff(Creature* target);
         float GetVengeanceScale(Creature* target);
         void DropExplodingHammer(OwnedWeapon const& owned);
         void BurstSanctifiedWrath(OwnedWeapon const& owned, SpellEntry const* spellInfo, Creature* target, float damage);
@@ -2717,6 +2714,7 @@ class BonkRun
             int32 points = 0;
             uint32 spellId = 0;
             uint32 appliedMs = 0;
+            uint32 fullMs = 0;
             bool grows = false;
         };
         void AddDotStacks(Creature* mob, BonkKeywordInfo const& info, uint32 stacks, uint32 durationMs, int32 points, uint32 spellId);
@@ -2751,6 +2749,7 @@ class BonkRun
             int32 points = 0;
             uint32 spellId = 0;
             uint32 leftMs = 0;
+            uint32 fullMs = 0;
         };
         std::map<ObjectGuid, std::map<uint8, DyingKeyword>> m_dyingKeywords;
         std::map<ObjectGuid, std::map<uint8, std::vector<DotStack>>> m_dotStacks;
