@@ -716,7 +716,7 @@ std::string BonkRun::DescribeSpellHeader(OwnedWeapon const& owned, uint32 interv
         return attackMs ? GetPetAttackLabel(owned) + " " + seconds(attackMs) : "";
     }
     if (weapon.IsBlink())
-        return seconds(intervalMs) + " recharge";
+        return seconds(intervalMs) + " cooldown";
     if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS)
         return "Once every " + seconds(intervalMs) + " per enemy";
     if (weapon.IsRevenge())
