@@ -2389,28 +2389,32 @@ BonkScalingPoint BonkRun::GetScalingNow() const
         ++index;
     BonkScalingPoint const& from = points[index];
     BonkScalingPoint const* to = index + 1 < points.size() ? &points[index + 1] : nullptr;
+    BonkScalingPoint now = from;
+    now.minute = minute;
     if (!to && index > 0)
     {
         BonkScalingPoint const& before = points[index - 1];
         float const span = from.minute - before.minute;
-        BonkScalingPoint now = from;
         if (span > 0.0f)
         {
             float const t = (minute - from.minute) / span;
             now.hitShare += (from.hitShare - before.hitShare) * t;
             now.health += (from.health - before.health) * t;
+            now.healthNormal += (from.healthNormal - before.healthNormal) * t;
         }
-        now.minute = minute;
-        return now;
     }
-    if (!to)
-        return from;
-    float const span = to->minute - from.minute;
-    float const t = span > 0.0f ? std::min(1.0f, std::max(0.0f, (minute - from.minute) / span)) : 0.0f;
-    BonkScalingPoint now;
-    now.minute = minute;
-    now.hitShare = from.hitShare + (to->hitShare - from.hitShare) * t;
-    now.health = from.health + (to->health - from.health) * t;
+    else if (to)
+    {
+        float const span = to->minute - from.minute;
+        float const t = span > 0.0f ? std::min(1.0f, std::max(0.0f, (minute - from.minute) / span)) : 0.0f;
+        now.hitShare = from.hitShare + (to->hitShare - from.hitShare) * t;
+        now.health = from.health + (to->health - from.health) * t;
+        now.healthNormal = from.healthNormal + (to->healthNormal - from.healthNormal) * t;
+    }
+    else
+        now.minute = from.minute;
+    if (m_tier.key == "normal")
+        now.health = now.healthNormal;
     return now;
 }
 

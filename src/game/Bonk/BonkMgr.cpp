@@ -552,7 +552,7 @@ void BonkMgr::LoadScaling()
 {
     m_scaling.clear();
 
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `minute`, `hit_share`, `health` FROM `bonk_scaling` ORDER BY `minute`"));
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `minute`, `hit_share`, `health`, `health_normal` FROM `bonk_scaling` ORDER BY `minute`"));
     if (result)
     {
         do
@@ -562,6 +562,7 @@ void BonkMgr::LoadScaling()
             point.minute = std::max(0.0f, fields[0].GetFloat());
             point.hitShare = std::max(0.0f, fields[1].GetFloat() / 100.0f);
             point.health = std::max(0.01f, fields[2].GetFloat());
+            point.healthNormal = std::max(0.01f, fields[3].GetFloat());
             m_scaling.push_back(point);
         } while (result->NextRow());
     }

@@ -140,6 +140,7 @@ struct BonkScalingPoint
     float minute = 0.0f;
     float hitShare = 0.0f;
     float health = 1.0f;
+    float healthNormal = 1.0f;
 };
 
 struct BonkMapCreature
