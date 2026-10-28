@@ -74,12 +74,12 @@ namespace
     float const BONK_BESTIAL_WRATH_OWN_DAMAGE   = 0.85f;
     float const BONK_TRUESHOT_MARKED            = 1.3f;
     float const BONK_CAPSTONE_EMPOWERED         = 1.2f;
-    uint32 const BONK_SHATTERLORD_FREEZE_STACKS = 6;
+    uint32 const BONK_SHATTERLORD_FREEZE_STACKS = 4;
     float const BONK_BERSERKER_DAMAGE_TAKEN     = 1.15f;
     float const BONK_SPELL_SHIELD_CAP           = 0.5f;
     float const BONK_JUGGERNAUT_SHIELD_CAP      = 1.0f;
     float const BONK_JUGGERNAUT_REGEN_PER_SEC   = 0.1f;
-    uint32 const BONK_WEAPON_MASTER_EVERY       = 4;
+    uint32 const BONK_WEAPON_MASTER_EVERY       = 3;
     float const BONK_WEAPON_MASTER_CRIT_DAMAGE  = 0.25f;
     float const BONK_PRIMAL_FURY_CAT_CRIT_DAMAGE = 0.25f;
     float const BONK_TRAPMASTER_DASH_RECHARGE   = 1.3f;
@@ -235,6 +235,9 @@ BonkRun::OwnedWeapon const* BonkRun::FindSummonOwner(Unit const* unit) const
     for (Beast const& beast : m_beasts)
         if (beast.guid == guid)
             return FindOwned(beast.weaponId);
+    for (WarlockMinion const& minion : m_warlockMinions)
+        if (minion.guid == guid)
+            return FindOwned(minion.weaponId);
     return nullptr;
 }
 

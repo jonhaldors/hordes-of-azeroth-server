@@ -808,7 +808,7 @@ void BonkRun::OnPriestPetBite(Creature* pet, Unit* victim)
         if (owned.weapon.id == BONK_WEAPON_MINDBENDER)
             if (SpellEntry const* shadow = sSpellMgr.GetSpellEntry(BONK_SPELL_SHADOW_HIT))
                 for (Creature* mob : GetMobsInRange(GetWeaponRadius(owned), victim))
-                    DealShamanHit(shadow, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_MINDBENDER_SHARE);
+                    DealSpellHit(shadow, mob, GetWeaponDamage(owned) * BONK_MINDBENDER_SHARE, pet);
         return;
     }
 }

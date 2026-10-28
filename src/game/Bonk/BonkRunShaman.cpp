@@ -192,22 +192,6 @@ bool BonkRun::DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, U
     return crit;
 }
 
-void BonkRun::DealTotemHit(OwnedWeapon const& owned, SpellEntry const* spellInfo, Unit* target, uint32 damage)
-{
-    if (!spellInfo || !target || !target->IsAlive() || !damage || !m_player->IsAlive())
-        return;
-
-    bool const keywordless = m_keywordlessHits;
-    m_keywordlessHits = true;
-    SpellNonMeleeDamage hit(m_player, target, spellInfo->Id, SpellSchools(spellInfo->School));
-    hit.damage = damage;
-    m_player->DealDamageMods(target, hit.damage, &hit.absorb);
-    hit.spellId = owned.weapon.spellId;
-    m_player->SendSpellNonMeleeDamageLog(&hit);
-    m_player->DealSpellDamage(&hit, true);
-    m_keywordlessHits = keywordless;
-}
-
 void BonkRun::OnShamanStrike(OwnedWeapon& owned, SpellEntry const*, Creature* target, float share)
 {
     BonkWeapon const& weapon = owned.weapon;
@@ -719,7 +703,7 @@ void BonkRun::OnShamanPetPulse(OwnedWeapon& owned, Creature* pet, float radius)
         mobs.erase(mobs.begin() + pick);
         if (glob)
             ShowStrike(pet, glob, mob);
-        DealShamanHit(glob, owned.weapon.spellId, mob, GetWeaponDamage(owned) * BONK_LIQUID_MAGMA_SHARE);
+        DealSpellHit(glob, mob, GetWeaponDamage(owned) * BONK_LIQUID_MAGMA_SHARE, pet);
         ApplyShamanKeyword(owned, mob, BONK_KEYWORD_BURNING, 1);
     }
 }
@@ -786,7 +770,7 @@ void BonkRun::BurstFireNovaTotems()
         totem->SendPlaySpellVisualKit(BONK_KIT_FIRE_NOVA);
         for (Creature* mob : GetMobsNear(totem->GetPositionX(), totem->GetPositionY(), radius))
         {
-            DealShamanHit(fire, nova->weapon.spellId, mob, GetWeaponDamage(*nova) * BONK_FIRE_NOVA_SHARE);
+            DealSpellHit(fire, mob, GetWeaponDamage(*nova) * BONK_FIRE_NOVA_SHARE, totem);
             ApplyShamanKeyword(*nova, mob, BONK_KEYWORD_BURNING, BONK_FIRE_NOVA_STACKS);
         }
         totem->NearTeleportTo(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), m_player->GetOrientation());
@@ -812,7 +796,7 @@ void BonkRun::RainFromHealingTotems()
         {
             if (look)
                 ShowStrike(totem, look, mob);
-            DealShamanHit(zap, rain->weapon.spellId, mob, GetWeaponDamage(*rain));
+            DealSpellHit(zap, mob, GetWeaponDamage(*rain), totem);
         }
     }
 }
