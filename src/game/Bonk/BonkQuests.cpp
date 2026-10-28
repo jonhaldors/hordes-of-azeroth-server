@@ -67,12 +67,18 @@ void BonkQuests::Load()
     m_quests.clear();
     m_titles.clear();
 
-    if (std::unique_ptr<QueryResult> titles{ WorldDatabase.Query("SELECT `id`, `name` FROM `bonk_title`") })
+    if (std::unique_ptr<QueryResult> titles{ WorldDatabase.Query("SELECT `id`, `name`, `pattern`, `class`, `stat`, `value` FROM `bonk_title`") })
     {
         do
         {
             Field* fields = titles->Fetch();
-            m_titles[fields[0].GetUInt32()] = fields[1].GetCppString();
+            BonkTitle& title = m_titles[fields[0].GetUInt32()];
+            title.id = fields[0].GetUInt32();
+            title.name = fields[1].GetCppString();
+            title.pattern = fields[2].GetCppString();
+            title.classId = fields[3].GetUInt8();
+            title.stat = fields[4].GetUInt8();
+            title.value = fields[5].GetFloat();
         } while (titles->NextRow());
     }
 
@@ -331,6 +337,47 @@ bool BonkQuests::Counts(Player const* player, BonkQuest const& quest)
     return !quest.classId || player->GetClass() == quest.classId;
 }
 
+BonkTitle const* BonkQuests::GetTitle(uint32 id) const
+{
+    auto const itr = m_titles.find(id);
+    return itr != m_titles.end() ? &itr->second : nullptr;
+}
+
+std::vector<BonkTitle const*> BonkQuests::GetEarnedTitles(uint32 account) const
+{
+    std::vector<BonkTitle const*> earned;
+    std::lock_guard<std::mutex> guard(m_lock);
+    auto const progress = m_accounts.find(account);
+    if (progress == m_accounts.end())
+        return earned;
+
+    for (auto const& itr : m_titles)
+    {
+        BonkTitle const& title = itr.second;
+        for (auto const& quest : m_quests)
+        {
+            BonkQuest const& q = quest.second;
+            if (q.rewardType != BONK_REWARD_TITLE || q.rewardValue != title.id)
+                continue;
+            auto const entry = progress->second.find(q.id);
+            if (entry != progress->second.end() && entry->second.completed)
+            {
+                earned.push_back(&title);
+                break;
+            }
+        }
+    }
+    return earned;
+}
+
+bool BonkQuests::HasTitle(uint32 account, uint32 titleId) const
+{
+    for (BonkTitle const* title : GetEarnedTitles(account))
+        if (title->id == titleId)
+            return true;
+    return false;
+}
+
 uint32 BonkQuests::GetMasteryPoints(uint32 account, uint8 classId) const
 {
     std::lock_guard<std::mutex> guard(m_lock);
@@ -507,6 +554,21 @@ void BonkQuests::OnStage(Player* player, uint32 tierId, uint32 stage, bool backf
     if (!stage)
         return;
 
+    CreditStage(player, tierId, stage, backfill);
+    if (stage < 2)
+        return;
+
+    BonkTier const* tier = sBonkMgr.GetTier(tierId);
+    for (uint32 hops = 0; tier && tier->unlockTierId && hops < 8; ++hops)
+    {
+        tier = sBonkMgr.GetTier(tier->unlockTierId);
+        if (tier)
+            CreditStage(player, tier->id, tier->stages + 1, backfill);
+    }
+}
+
+void BonkQuests::CreditStage(Player* player, uint32 tierId, uint32 stage, bool backfill)
+{
     Track(player, [&](BonkQuest const& q, AccountProgress& progress)
     {
         if (q.type == BONK_QUEST_REACH_STAGE && q.target == tierId && !(backfill && q.classId))
@@ -599,6 +661,9 @@ void BonkQuests::Complete(Player* player, BonkQuest const& quest)
             break;
         case BONK_REWARD_MASTERY:
             bonk->SendMasteryState();
+            break;
+        case BONK_REWARD_TITLE:
+            bonk->SendTitles();
             break;
         default:
             break;
@@ -715,7 +780,7 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (title != m_titles.end())
             {
                 *icon = "INV_Misc_Note_02";
-                return "The title \"" + title->second + "\"";
+                return "The title \"" + title->second.name + "\"";
             }
             break;
         }

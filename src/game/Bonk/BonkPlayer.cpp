@@ -317,6 +317,11 @@ void BonkPlayer::LoadMastery()
     if (result)
         m_classFloor = result->Fetch()[0].GetUInt32();
 
+    m_titleId = 0;
+    result = CharacterDatabase.PQuery("SELECT `title` FROM `bonk_character_title` WHERE `guid` = %u", m_player->GetGUIDLow());
+    if (result)
+        m_titleId = result->Fetch()[0].GetUInt32();
+
     m_masteryRanks.clear();
     result = CharacterDatabase.PQuery("SELECT `node`, `rank` FROM `bonk_account_mastery_node` WHERE `account` = %u", accountId);
     if (result)
@@ -483,6 +488,44 @@ void BonkPlayer::SendMasteryState() const
         std::to_string(level < BONK_MASTERY_MAX_LEVEL ? BonkMastery::GetXpForLevel(level + 1) : 0) + "~" +
         std::to_string(BONK_MASTERY_MAX_LEVEL) + "~" + std::to_string(earned > spent ? earned - spent : 0) + "~" +
         (sBonkMastery.HasTrees(m_player->GetClass()) ? "1" : "0"));
+}
+
+BonkTitle const* BonkPlayer::GetActiveTitle() const
+{
+    if (!m_titleId || !sBonkQuests.HasTitle(GetProgressAccount(), m_titleId))
+        return nullptr;
+    return sBonkQuests.GetTitle(m_titleId);
+}
+
+void BonkPlayer::SendTitles() const
+{
+    BonkTitle const* active = GetActiveTitle();
+    std::string line = "titles~" + std::to_string(active ? active->id : 0);
+    for (BonkTitle const* title : sBonkQuests.GetEarnedTitles(GetProgressAccount()))
+        line += "~" + std::to_string(title->id) + "~" + title->pattern + "~" + std::to_string(title->stat) + "~" + std::to_string(title->value);
+    SendAddon(line);
+}
+
+bool BonkPlayer::SetTitle(uint32 titleId, std::string& error)
+{
+    if (titleId && !sBonkQuests.HasTitle(GetProgressAccount(), titleId))
+    {
+        error = "You haven't earned that title.";
+        return false;
+    }
+    if (GetRun())
+    {
+        error = "You can't change your title during a run.";
+        return false;
+    }
+
+    m_titleId = titleId;
+    if (titleId)
+        CharacterDatabase.PExecute("REPLACE INTO `bonk_character_title` (`guid`, `title`) VALUES (%u, %u)", m_player->GetGUIDLow(), titleId);
+    else
+        CharacterDatabase.PExecute("DELETE FROM `bonk_character_title` WHERE `guid` = %u", m_player->GetGUIDLow());
+    SendTitles();
+    return true;
 }
 
 void BonkPlayer::AddMasteryXp(uint32 xp)
@@ -1720,6 +1763,10 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
     float const determination = GetDetermination() * BONK_DETERMINATION_PER_STACK;
     bonuses.passives[BONK_PASSIVE_POWER] += determination;
     bonuses.damageTakenCut += determination;
+
+    if (BonkTitle const* title = GetActiveTitle())
+        if (title->value > 0.0f && title->stat < MAX_BONK_PASSIVE_EFFECT)
+            bonuses.passives[title->stat] += title->value;
 
     for (auto const& itr : m_talentRanks)
     {

@@ -6,6 +6,8 @@
 #include "ObjectGuid.h"
 #include "SharedDefines.h"
 
+struct BonkTitle;
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -158,6 +160,9 @@ class BonkPlayer
         BonkMasteryBonuses GetMasteryBonuses() const;
         std::map<uint32, uint8> const& GetMasteryRanks() const { return m_masteryRanks; }
         void SendMasteryState() const;
+        void SendTitles() const;
+        bool SetTitle(uint32 titleId, std::string& error);
+        BonkTitle const* GetActiveTitle() const;
         void SendWallet() const;
 
         void OpenShop(BonkShop shop, Creature const* npc);
@@ -373,6 +378,7 @@ class BonkPlayer
         std::set<uint32> m_foundGear;
         uint32 m_masteryXp = 0;
         uint32 m_classFloor = 0;
+        uint32 m_titleId = 0;
         std::map<uint32, uint8> m_masteryRanks;
         uint32 m_starterChoice = 0;
         BonkShop m_shop{};

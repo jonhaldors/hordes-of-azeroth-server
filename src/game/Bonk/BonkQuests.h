@@ -108,6 +108,16 @@ struct BonkQuest
     bool CountsBits() const { return type == BONK_QUEST_CLEAR_CLASSES || type == BONK_QUEST_SHRINE_TYPES; }
 };
 
+struct BonkTitle
+{
+    uint32 id = 0;
+    std::string name;
+    std::string pattern;
+    uint8 classId = 0;
+    uint8 stat = 0;
+    float value = 0.0f;
+};
+
 class BonkQuests
 {
     public:
@@ -138,6 +148,9 @@ class BonkQuests
         void OnProgress(Player* player, BonkQuestType type, uint32 target, uint32 value, bool absolute = false);
 
         uint32 GetMasteryPoints(uint32 account, uint8 classId) const;
+        BonkTitle const* GetTitle(uint32 id) const;
+        std::vector<BonkTitle const*> GetEarnedTitles(uint32 account) const;
+        bool HasTitle(uint32 account, uint32 titleId) const;
 
         void SendLog(Player* player, std::string const& npc);
         std::vector<std::string> DescribeAll(Player* player) const;
@@ -154,6 +167,7 @@ class BonkQuests
         typedef std::map<uint32, Progress> AccountProgress;
 
         void Track(Player* player, std::function<void(BonkQuest const&, AccountProgress&)> const& step);
+        void CreditStage(Player* player, uint32 tierId, uint32 stage, bool backfill);
         void Advance(Player* player, AccountProgress& progress, BonkQuest const& quest, uint32 value, bool absolute);
         void AdvanceBit(AccountProgress& progress, BonkQuest const& quest, uint32 bit);
         void Complete(Player* player, BonkQuest const& quest);
@@ -164,7 +178,7 @@ class BonkQuests
         uint32 GetRootWeapon(uint32 spellId, uint32 classMask) const;
 
         std::map<uint32, BonkQuest> m_quests;
-        std::map<uint32, std::string> m_titles;
+        std::map<uint32, BonkTitle> m_titles;
 
         static uint64 UnlockKey(BonkQuestReward type, uint32 id) { return (uint64(type) << 32) | id; }
 

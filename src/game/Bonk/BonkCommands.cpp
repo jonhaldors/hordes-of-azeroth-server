@@ -421,6 +421,25 @@ bool ChatHandler::HandleBonkGlyphCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleBonkTitleCommand(char* args)
+{
+    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
+    uint32 titleId = 0;
+    if (!ExtractUInt32(&args, titleId))
+    {
+        bonk->SendTitles();
+        return true;
+    }
+    std::string error;
+    if (!bonk->SetTitle(titleId, error))
+    {
+        SendSysMessage(error.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+    return true;
+}
+
 bool ChatHandler::HandleBonkGearCommand(char* args)
 {
     std::string const tab = args ? args : "";
