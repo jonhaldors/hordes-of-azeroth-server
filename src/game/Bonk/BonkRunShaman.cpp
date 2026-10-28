@@ -166,6 +166,19 @@ uint32 BonkRun::GetShamanPetFamily(OwnedWeapon const& owned) const
     }
 }
 
+void BonkRun::StrikeSearingTotemSecondTarget(OwnedWeapon& owned, BonkPetFamily const& family, Creature* pet, Creature* prey, BonkPetAbility const& ability)
+{
+    if (family.id != BONK_PET_FAMILY_SEARING_TOTEM)
+        return;
+    for (Creature* mob : GetMobsNear(pet->GetPositionX(), pet->GetPositionY(), ability.value))
+    {
+        if (mob == prey || !pet->IsWithinLOSInMap(mob))
+            continue;
+        PetStrike(owned, pet, mob, ability);
+        return;
+    }
+}
+
 bool BonkRun::ApplyShamanKeyword(OwnedWeapon const& owned, Creature* mob, BonkKeyword keyword, uint32 stacks)
 {
     BonkKeywordInfo const* info = sBonkMgr.GetKeyword(keyword);
