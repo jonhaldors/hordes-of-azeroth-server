@@ -11944,7 +11944,11 @@ std::string BonkRun::DescribeBuildTotals() const
     for (OwnedCard const& owned : m_cards)
         if (owned.card)
             cards += (cards.empty() ? "" : ",") + std::to_string(owned.card->id) + ":" + std::to_string(owned.copies);
-    return "spells [" + spells + "]; passives [" + passives + "]; cards [" + cards + "]";
+    std::string glyphs;
+    for (BonkGlyph const* glyph : m_glyphs)
+        glyphs += (glyphs.empty() ? "" : ",") + std::to_string(glyph->id);
+    return "spells [" + spells + "]; passives [" + passives + "]; cards [" + cards + "]; glyphs [" + glyphs + "]; gear [" +
+        m_player->GetBonkPlayer()->DescribeGear() + "]";
 }
 
 void BonkRun::SendLoadout() const

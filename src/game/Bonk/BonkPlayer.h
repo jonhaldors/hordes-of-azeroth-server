@@ -150,6 +150,7 @@ class BonkPlayer
         void TakeTalentResetNotice();
         uint32 GetMasterySpent() const;
         std::string DescribeLoadout() const;
+        std::string DescribeGear() const;
         uint32 GetMasterySpentInTree(uint32 treeId) const;
         uint8 GetMasteryRank(uint32 nodeId) const;
         void AddMasteryXp(uint32 xp);
