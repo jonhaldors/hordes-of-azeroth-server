@@ -206,7 +206,6 @@ namespace
             case BONK_PASSIVE_AREA:          return "Area";
             case BONK_PASSIVE_DURATION:      return "Duration";
             case BONK_PASSIVE_ARMOR:         return "Armor";
-            case BONK_PASSIVE_HIT:           return "Hit chance";
             case BONK_PASSIVE_DODGE:         return "Dodge chance";
             case BONK_PASSIVE_CRIT:          return "Critical strike chance";
             case BONK_PASSIVE_CRIT_DAMAGE:   return "Critical strike damage";

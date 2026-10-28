@@ -8560,12 +8560,28 @@ bool BonkRun::IsHowlFrenzied() const
     return int32(m_petFrenzyUntil - WorldTimer::getMSTime()) > 0;
 }
 
+void BonkRun::ApplyBiteKeyword(Creature* pet, Unit* victim)
+{
+    OwnedWeapon const* owned = FindSummonOwner(pet);
+    BonkPetFamily const* family = owned && owned->weapon.behavior == BONK_BEHAVIOR_PET ? GetPetFamily(*owned) : nullptr;
+    if (!family || family->applies == BONK_KEYWORD_NONE || !family->applyStacks || !victim->IsAlive())
+        return;
+    if (std::any_of(family->abilities.begin(), family->abilities.end(), [](BonkPetAbility const& ability) { return ability.stacks > 0; }))
+        return;
+    PendingKeyword keyword;
+    if (!GetWeaponKeyword(*owned, keyword))
+        return;
+    keyword.mob = victim->GetObjectGuid();
+    m_pendingKeywords.push_back(keyword);
+}
+
 void BonkRun::OnPetBite(Creature* pet, Unit* victim)
 {
     if (m_state != STATE_RUNNING || !pet || !victim)
         return;
     OnShamanPetBite(pet, victim);
     OnPriestPetBite(pet, victim);
+    ApplyBiteKeyword(pet, victim);
     if (!IsPetFrenzied() || !IsSummon(pet))
         return;
 

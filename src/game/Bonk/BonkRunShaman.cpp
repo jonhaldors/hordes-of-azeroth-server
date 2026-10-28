@@ -226,8 +226,9 @@ void BonkRun::OnShamanStrike(OwnedWeapon& owned, SpellEntry const*, Creature* ta
 
     if (weapon.behavior == BONK_BEHAVIOR_EARTH_SHOCK)
     {
-        if (GetKeywordStacks(target, BONK_KEYWORD_STATIC))
-            QueueStaticDischarge(target, weapon.spellId);
+        BonkKeywordInfo const* staticInfo = sBonkMgr.GetKeyword(BONK_KEYWORD_STATIC);
+        if (staticInfo && GetKeywordStacks(target, BONK_KEYWORD_STATIC) && QueueStaticDischarge(target, weapon.spellId))
+            target->RemoveAurasByCasterSpell(staticInfo->spellId, m_player->GetObjectGuid());
         if (weapon.id == BONK_WEAPON_EARTHQUAKE)
             StartKeywordCloud(owned, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
         return;
@@ -532,10 +533,10 @@ void BonkRun::SpendStaticShock(Creature* target)
     }
 }
 
-void BonkRun::QueueStaticDischarge(Creature* mob, uint32 sourceSpellId)
+bool BonkRun::QueueStaticDischarge(Creature* mob, uint32 sourceSpellId)
 {
     if (!TakeRateSlot(m_staticDischargeTimes, BONK_MAX_STATIC_PER_SEC) || m_weapons.empty())
-        return;
+        return false;
 
     OwnedWeapon const* source = FindOwnedBySpell(sourceSpellId);
     PendingCast discharge;
@@ -551,6 +552,7 @@ void BonkRun::QueueStaticDischarge(Creature* mob, uint32 sourceSpellId)
 
     if (source && source->weapon.id == BONK_WEAPON_LIGHTNING_OVERLOAD)
         QueueOverload(*source, mob);
+    return true;
 }
 
 void BonkRun::QueueOverload(OwnedWeapon const& owned, Creature* mob)

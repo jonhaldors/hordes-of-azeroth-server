@@ -249,10 +249,9 @@ bool BonkRun::ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, ui
         return true;
     }
 
-    if (keyword == BONK_KEYWORD_STATIC && total >= GetStaticDischargeStacks(*info))
+    if (keyword == BONK_KEYWORD_STATIC && total >= GetStaticDischargeStacks(*info) && QueueStaticDischarge(mob, sourceSpellId))
     {
         mob->RemoveAurasByCasterSpell(info->spellId, m_player->GetObjectGuid());
-        QueueStaticDischarge(mob, sourceSpellId);
         return true;
     }
 
