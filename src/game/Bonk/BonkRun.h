@@ -1004,7 +1004,7 @@ class BonkRun
         void RollCastCharges(OwnedWeapon& owned);
         bool IsCastCharged(OwnedWeapon const& owned, BonkCardEffect effect) const { return (owned.castCharges & (1u << effect)) != 0; }
         bool SpendCastCharge(OwnedWeapon& owned, BonkCardEffect effect);
-        float GetCastChargeMultiplier(SpellEntry const* spell, Unit const* victim) const;
+        float GetCastChargePower(SpellEntry const* spell, Unit const* victim) const;
         float GetBurstHaste() const;
         float GetDotCardScale() const;
         uint32 GetWornTrinkets() const;

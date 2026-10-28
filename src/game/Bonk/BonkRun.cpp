@@ -4030,10 +4030,11 @@ float BonkRun::GetMinionScale(Unit const* attacker) const
 
 float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float minionScale, float extraPower) const
 {
-    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower);
+    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower +
+        GetCastChargePower(spell, victim));
     float const mark = (1.0f + GetMarkBonus(victim) / 100.0f) * GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
-        GetPaladinDamageMultiplier(victim) * GetCastChargeMultiplier(spell, victim);
+        GetPaladinDamageMultiplier(victim);
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim) * minionScale;
 

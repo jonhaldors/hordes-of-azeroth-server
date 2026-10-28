@@ -705,13 +705,13 @@ bool BonkRun::SpendCastCharge(OwnedWeapon& owned, BonkCardEffect effect)
     return true;
 }
 
-float BonkRun::GetCastChargeMultiplier(SpellEntry const* spell, Unit const* victim) const
+float BonkRun::GetCastChargePower(SpellEntry const* spell, Unit const* victim) const
 {
     BonkCard const* ray = m_cardByEffect[BONK_CARD_DEATH_RAY];
     if (!ray || !spell || !victim || m_cardProc)
-        return 1.0f;
+        return 0.0f;
     OwnedWeapon const* owned = FindOwnedBySpell(spell->Id);
-    return owned && IsCastCharged(*owned, BONK_CARD_DEATH_RAY) ? ray->values[1] : 1.0f;
+    return owned && IsCastCharged(*owned, BONK_CARD_DEATH_RAY) ? ray->values[1] : 0.0f;
 }
 
 std::string BonkRun::DescribeBigHit(SpellEntry const* spell, Unit const* victim) const
@@ -719,10 +719,10 @@ std::string BonkRun::DescribeBigHit(SpellEntry const* spell, Unit const* victim)
     float const power = GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + GetTalentDamagePercent();
     char text[512];
     snprintf(text, sizeof(text), "total x%.2f | power %.0f%% | mark %.0f%% | keyword x%.2f | mage x%.2f | shaman x%.2f | priest x%.2f | rogue x%.2f | "
-        "paladin x%.2f | ray x%.2f | capstone x%.2f | glyph x%.2f | victim %.0f%% health",
+        "paladin x%.2f | ray +%.0f%% | capstone x%.2f | glyph x%.2f | victim %.0f%% health",
         GetDamageMultiplier(spell, victim), power, GetMarkBonus(victim), GetKeywordDamageMultiplier(spell, victim), GetMageDamageMultiplier(victim),
         GetShamanDamageMultiplier(spell, victim), GetPriestDamageMultiplier(victim), GetRogueDamageMultiplier(victim), GetPaladinDamageMultiplier(victim),
-        GetCastChargeMultiplier(spell, victim), GetCapstoneDamageMultiplier(true, victim), spell ? GetGlyphDamageMultiplier(spell) : 1.0f,
+        GetCastChargePower(spell, victim), GetCapstoneDamageMultiplier(true, victim), spell ? GetGlyphDamageMultiplier(spell) : 1.0f,
         victim ? victim->GetHealthPercent() : 0.0f);
     return text;
 }
@@ -761,7 +761,7 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
     if (!owned)
         return;
 
-    float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim)) * GetCastChargeMultiplier(spell, victim);
+    float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim, 1.0f, GetCastChargePower(spell, victim)));
     float const castScale = owned->weapon.HasFlag(BONK_WEAPON_FLAG_AOE) ? 1.0f : 1.0f + float(GetSpellCount(*owned));
     damage = uint32(damage * castScale);
 

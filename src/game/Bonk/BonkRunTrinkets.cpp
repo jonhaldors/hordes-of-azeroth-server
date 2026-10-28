@@ -123,7 +123,7 @@ void BonkRun::OnTrinketHit(Unit* victim, uint32 damage, SpellEntry const* spell)
     if (!damage || !owned || !owned->trinketCharges || !victim)
         return;
 
-    float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim)) * GetCastChargeMultiplier(spell, victim);
+    float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim, 1.0f, GetCastChargePower(spell, victim)));
     float const castScale = owned->weapon.HasFlag(BONK_WEAPON_FLAG_AOE) ? 1.0f : 1.0f + float(GetSpellCount(*owned));
     float const base = damage * castScale / multiplier;
 
