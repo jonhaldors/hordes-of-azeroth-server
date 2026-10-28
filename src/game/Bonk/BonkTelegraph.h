@@ -41,7 +41,7 @@ uint32 GetBonkStandInSizeCount();
 uint32 GetBonkStandInSizeIndex(float size);
 
 void SendBonkDraw(Player* player, std::string const& line);
-void SendBonkKitAt(Player* player, uint32 kit, float x, float y, float z, float orientation, uint32 holdMs);
+void SendBonkKitAt(Player* player, uint32 kit, float x, float y, float z, float orientation, uint32 holdMs, bool raised = false);
 void SendBonkFlight(Player* player, uint32 id, float fromX, float fromY, float fromZ, float toX, float toY, float toZ, uint32 flightMs,
     uint32 display, float scale);
 void SendBonkLanding(Player* player, uint32 id);

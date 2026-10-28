@@ -504,10 +504,15 @@ namespace
     uint32 const BONK_NECROTIC_MAX_STACKS  = 15;
     uint32 const BONK_NECROTIC_CHECK_MS    = 250;
     float const BONK_BOLSTER_RANGE         = 12.0f;
-    uint32 const BONK_SPELL_SANGUINE       = 31951;
+    char const* const BONK_SANGUINE_TEXTURE = "SPELLS\\Bloodpool.blp";
     float const BONK_SANGUINE_RADIUS       = 5.0f;
     float const BONK_SANGUINE_HEAL         = 0.05f;
     uint32 const BONK_SANGUINE_DURATION_MS = 12000;
+
+    std::string GetSanguineMarkKey(uint32 marker)
+    {
+        return "sanguine" + std::to_string(marker);
+    }
 
     uint32 const BONK_SPELL_MOVE_SPEED = 17498;
     uint32 const BONK_SPELL_MAX_HEALTH = 19255;
@@ -3673,7 +3678,8 @@ void BonkRun::OnAffixedDeath(Creature* mob)
         pool.z = mob->GetPositionZ();
         pool.leftMs = BONK_SANGUINE_DURATION_MS;
         pool.marker = NextBonkAuraKey();
-        SendBonkAuraAt(m_player, pool.marker, BONK_SPELL_SANGUINE, pool.x, pool.y, pool.z);
+        SendBonkMark(m_player, GetSanguineMarkKey(pool.marker), BONK_TELEGRAPH_CIRCLE, pool.x, pool.y, pool.z, 0.0f, BONK_SANGUINE_RADIUS, 0,
+            true, BONK_TELEGRAPH_STYLE_BLOOD, ObjectGuid(), BONK_SANGUINE_TEXTURE);
         m_pools.push_back(pool);
     }
 }
@@ -3903,7 +3909,7 @@ void BonkRun::UpdatePools(uint32 diff)
             ++itr;
             continue;
         }
-        SendBonkAuraGone(m_player, itr->marker);
+        SendBonkUnmark(m_player, GetSanguineMarkKey(itr->marker));
         itr = m_pools.erase(itr);
     }
 }
@@ -3911,7 +3917,7 @@ void BonkRun::UpdatePools(uint32 diff)
 void BonkRun::DespawnPools()
 {
     for (Pool const& pool : m_pools)
-        SendBonkAuraGone(m_player, pool.marker);
+        SendBonkUnmark(m_player, GetSanguineMarkKey(pool.marker));
     m_pools.clear();
 }
 
@@ -5720,7 +5726,7 @@ void BonkRun::PlayKitAt(ObjectGuid const& guid, float x, float y, float z, uint3
         mob->SendPlaySpellVisualKit(kit);
         return;
     }
-    SendBonkKitAt(m_player, kit, x, y, atFeet ? z : z + BONK_PROJECTILE_HEIGHT, 0.0f, BONK_ERUPTION_LOOK_MS);
+    SendBonkKitAt(m_player, kit, x, y, atFeet ? z : z + BONK_PROJECTILE_HEIGHT, 0.0f, BONK_ERUPTION_LOOK_MS, !atFeet);
 }
 
 void BonkRun::QueueDetonations(OwnedWeapon const& owned, SpellEntry const* spellInfo, float share, std::vector<Creature*> struck)

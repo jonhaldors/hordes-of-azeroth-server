@@ -16,8 +16,9 @@ namespace
     float const BONK_STANDIN_SIZES[] = { 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f, 4.5f, 5.0f, 5.5f, 6.0f, 6.5f, 7.0f, 7.5f, 8.0f,
         9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f };
     uint32 const BONK_STANDIN_SIZE_COUNT = sizeof(BONK_STANDIN_SIZES) / sizeof(BONK_STANDIN_SIZES[0]);
-    uint32 const BONK_LINE_MAX_PIECES = 12;
-    float const BONK_LINE_PIECE_SIZE = 3.0f;
+    float const BONK_LINE_HALF_WIDTH = 1.5f;
+    float const BONK_LINE_SHORTEST = 1.0f;
+    float const BONK_LINE_LONGEST = 36.0f;
 
     uint32 const BONK_STANDIN_INVISIBLE   = 11686;
     uint32 const BONK_STANDIN_LOOK_FADE_MS = 3500;
@@ -31,15 +32,16 @@ namespace
     float const BONK_TELEGRAPH_GROUND_SEARCH = 20.0f;
 
     uint32 const BONK_TELEGRAPH_OUTLINE_ONLY = 1;
+    uint32 const BONK_KIT_RAISED = 1;
 
     char const* const BONK_TELEGRAPH_SHAPE_NAMES[MAX_BONK_TELEGRAPH_SHAPE] = { "circle", "cone", "line" };
 
     uint32 s_nextFlightId = 0;
     uint32 s_nextAuraKey = 0;
 
-    uint32 GetLinePieceCount(float length)
+    float GetLineLength(float size)
     {
-        return std::min(BONK_LINE_MAX_PIECES, std::max(1u, uint32(length / BONK_LINE_PIECE_SIZE + 0.5f)));
+        return std::min(BONK_LINE_LONGEST, std::max(BONK_LINE_SHORTEST, size));
     }
 
     float GetGround(Map* map, float x, float y, float z)
@@ -103,12 +105,12 @@ void SendBonkDraw(Player* player, std::string const& line)
         ChatHandler(player).SendSysMessage(("HOA~" + line).c_str());
 }
 
-void SendBonkKitAt(Player* player, uint32 kit, float x, float y, float z, float orientation, uint32 holdMs)
+void SendBonkKitAt(Player* player, uint32 kit, float x, float y, float z, float orientation, uint32 holdMs, bool raised)
 {
     if (!kit)
         return;
     SendBonkDraw(player, "kit~" + std::to_string(kit) + "~" + FormatPoint(x, y, z) + "~" + FormatFloat(orientation) + "~" +
-        std::to_string(holdMs));
+        std::to_string(holdMs) + (raised ? "~" + std::to_string(BONK_KIT_RAISED) : ""));
 }
 
 void SendBonkFlight(Player* player, uint32 id, float fromX, float fromY, float fromZ, float toX, float toY, float toZ, uint32 flightMs,
@@ -132,6 +134,8 @@ void SendBonkMissile(Player* player, uint32 spellId, float fromX, float fromY, f
 void SendBonkMark(Player* player, std::string const& key, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size,
     uint32 durationMs, bool outlineOnly, uint8 style, ObjectGuid const& follow, std::string const& texture, uint32 doneMs)
 {
+    if (Map* map = player ? player->FindMap() : nullptr)
+        z = GetTelegraphGround(map, shape, x, y, z, orientation, size);
     SendBonkDraw(player, "mark~" + key + "~" + std::to_string(uint32(shape)) + "~" + FormatPoint(x, y, z) + "~" + FormatFloat(orientation) + "~" +
         FormatFloat(size) + "~" + std::to_string(durationMs) + "~" + std::to_string(outlineOnly ? BONK_TELEGRAPH_OUTLINE_ONLY : 0) + "~" +
         std::to_string(uint32(style)) + "~" + std::to_string(follow.GetRawValue()) + "~" + texture + "~" + std::to_string(doneMs));
@@ -232,10 +236,10 @@ bool IsInBonkTelegraph(BonkTelegraphShape shape, float originX, float originY, f
         }
         case BONK_TELEGRAPH_LINE:
         {
-            float const length = GetLinePieceCount(size) * BONK_LINE_PIECE_SIZE;
+            float const length = GetLineLength(size);
             float const along = dx * std::cos(orientation) + dy * std::sin(orientation);
             float const across = -dx * std::sin(orientation) + dy * std::cos(orientation);
-            return along >= 0.0f && along <= length && std::fabs(across) <= BONK_LINE_PIECE_SIZE / 2.0f;
+            return along >= 0.0f && along <= length && std::fabs(across) <= BONK_LINE_HALF_WIDTH;
         }
         default:
             return distance <= size;
