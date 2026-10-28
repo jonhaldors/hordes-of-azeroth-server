@@ -5897,7 +5897,7 @@ void Aura::PeriodicTick(SpellEntry const* sProto, AuraType auraType, uint32 data
 
             if (Player* hero = pCaster->ToPlayer())
                 if (BonkRun const* run = hero->GetBonkPlayer()->GetRun())
-                    fdamage *= run->GetDotGrowth(target, spellProto->Id);
+                    fdamage *= run->GetDotGrowth(target, spellProto->Id) * run->RollDotCrit(target, spellProto->Id);
 
             // SpellDamageBonus for magic spells
             if (spellProto->DmgClass == SPELL_DAMAGE_CLASS_NONE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_MAGIC)

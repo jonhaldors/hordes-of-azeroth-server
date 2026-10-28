@@ -557,7 +557,12 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         {
             run->OnKillingBlow(victim);
             if (!owner && spellProto && !dotSpellId)
+            {
                 run->ResetOnKill(spellProto->Id);
+                run->OnSpellKill(spellProto->Id);
+            }
+            if (owner && !dotSpellId)
+                run->OnSummonKill(attacker, victim);
             if (dotSpellId)
                 sBonkQuests.OnProgress(player, BONK_QUEST_DOT_KILLS, 0, 1);
         }

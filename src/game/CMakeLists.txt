@@ -51,6 +51,7 @@ set (game_SRCS
     Bonk/BonkRunRogue.cpp
     Bonk/BonkRunPaladin.cpp
     Bonk/BonkRunShrines.cpp
+    Bonk/BonkRunSpecNodes.cpp
     Bonk/BonkRunVendor.cpp
     Bonk/BonkRunStats.cpp
     Bonk/BonkRunStress.cpp

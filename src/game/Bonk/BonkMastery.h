@@ -60,6 +60,7 @@ enum BonkMasteryEffect : uint8
     BONK_MASTERY_CAST_HASTE     = 44,
     BONK_MASTERY_SPECIAL        = 45,
     BONK_MASTERY_SPELL_BEHAVIOR = 46,
+    BONK_MASTERY_KEYWORD_CRIT   = 47,
     MAX_BONK_MASTERY_EFFECT
 };
 
@@ -168,6 +169,22 @@ enum BonkTalentSpecial : uint8
     BONK_SPECIAL_GROVE_GUARDIANS         = 100,
     BONK_SPECIAL_FLOURISH                = 101,
     BONK_SPECIAL_SOUL_OF_THE_FOREST      = 102,
+    BONK_SPECIAL_EXECUTE_ENRAGE          = 103,
+    BONK_SPECIAL_THUNDER_SHIELD          = 104,
+    BONK_SPECIAL_HAMMER_EXPOSE           = 105,
+    BONK_SPECIAL_CONSECRATED_RETRIBUTION = 106,
+    BONK_SPECIAL_JUDGEMENT_COMMAND       = 107,
+    BONK_SPECIAL_MARK_TRANSFER           = 108,
+    BONK_SPECIAL_SPREE_CRIT              = 109,
+    BONK_SPECIAL_SHURIKEN_AMBUSH         = 110,
+    BONK_SPECIAL_PENANCE_SHIELD          = 111,
+    BONK_SPECIAL_RENEW_SHIELD            = 112,
+    BONK_SPECIAL_BOLT_STATIC             = 113,
+    BONK_SPECIAL_STORMSTRIKE_WINDFURY    = 114,
+    BONK_SPECIAL_MISSILE_SPLIT           = 115,
+    BONK_SPECIAL_THAW_CHILL              = 116,
+    BONK_SPECIAL_DEMON_CLEAVE            = 117,
+    BONK_SPECIAL_ROOT_SPREAD             = 118,
     MAX_BONK_SPECIAL
 };
 
@@ -320,6 +337,7 @@ struct BonkMasteryBonuses
     std::map<uint32, float> specDamage;
     std::map<uint32, float> keywordDamage;
     std::map<uint32, float> critVsKeyword;
+    std::set<uint32> keywordCrit;
     std::map<uint32, float> usesBonus;
     std::map<uint32, BonkMasteryApply> spellApplies;
     std::map<uint32, float> spellHeal;

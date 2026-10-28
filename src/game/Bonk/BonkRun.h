@@ -266,6 +266,9 @@ class BonkRun
         void OnPetBite(Creature* pet, Unit* victim);
         void OnKillingBlow(Unit* victim);
         void ResetOnKill(uint32 spellId);
+        void OnSpellKill(uint32 spellId);
+        void OnSummonKill(Unit* summon, Unit* victim);
+        float RollDotCrit(Unit const* victim, uint32 spellId) const;
         void OnTalentDamage(Unit* victim, SpellEntry const* spell);
         bool ApplyKeyword(Creature* mob, BonkKeyword keyword, uint32 stacks, uint32 durationMs = 0, float damageScale = 1.0f, uint32 sourceSpellId = 0);
         void CreditDamageOverTime(Unit const* victim, uint32 spellId, uint32 damage, std::vector<std::pair<uint32, uint32>>& credits) const;
@@ -1749,7 +1752,22 @@ class BonkRun
         void UpdateTalents(uint32 diff);
         void ReduceTimer(uint32 rootWeapon, int32 ms);
         void EchoMissile(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
+        void SplitCriticalMissile(OwnedWeapon& owned, SpellEntry const* spellInfo, Creature* target, float share);
         void BlowFreezingWinds(PendingCast const& cast);
+        float GetCritBonus(bool weaponAttack, Unit const* victim) const;
+        void OnSpecNodeDamage(uint32 root, bool crit, Unit* victim, SpellEntry const* spell);
+        void OnSpecNodeKill(Creature* dead);
+        void GrantThunderShield();
+        void ExposeToHammer(Unit* victim);
+        bool IsExposedToHammer(Unit const* victim) const;
+        void AmbushFromShuriken(Creature* mob);
+        void StormstrikeWindfury(Creature* mob);
+        void PassMarkOn(Creature const* dead);
+        void SpreadRoots(Creature const* dead);
+        void QueueThawChill(Creature const* mob, uint32 thawMs);
+        void UpdateThaws();
+        void ShieldFromRenew(uint32 overheal);
+        void PulseConsecratedRetribution(KeywordCloud const& cloud);
 
         class TalentCastScope
         {
@@ -2598,6 +2616,14 @@ class BonkRun
         bool m_fingersReady = false;
         bool m_searingBurstArmed = false;
         uint32 m_talentCritsSeen = 0;
+        uint32 m_thunderShieldAtMs = ~0u;
+        uint32 m_thunderShieldHits = 0;
+        uint32 m_stormWindfuryAtMs = ~0u;
+        std::vector<uint32> m_demonCleaveTimes;
+        bool m_spreeStriking = false;
+        std::map<ObjectGuid, uint32> m_hammerExposedUntil;
+        std::map<ObjectGuid, uint32> m_shurikenAmbushReady;
+        std::vector<std::pair<ObjectGuid, uint32>> m_thaws;
         float GetArcanePowerMultiplier() const;
         uint32 m_arcanePowerUntilMs = 0;
         void PlantHydra(Creature* pet);

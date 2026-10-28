@@ -702,6 +702,7 @@ void BonkRun::OnTalentDamage(Unit* victim, SpellEntry const* spell)
     if (rootItr == m_spellRoots.end())
         return;
     uint32 const root = rootItr->second;
+    OnSpecNodeDamage(root, crit, victim, spell);
 
     if (crit && BonkMastery::GetSpec(root) == BONK_TREE_FIRE)
     {
@@ -804,6 +805,7 @@ void BonkRun::OnTalentKill(Unit* victim)
 {
     float const share = m_mastery.Special(BONK_SPECIAL_GLACIAL_FRAGMENTS);
     Creature* dead = victim ? victim->ToCreature() : nullptr;
+    OnSpecNodeKill(dead);
     float const venomRush = m_mastery.Special(BONK_SPECIAL_VENOM_RUSH);
     if (venomRush > 0.0f && dead && GetKeywordStacks(dead, BONK_KEYWORD_POISON))
         ReduceTimer(BONK_WEAPON_ENVENOM, int32(venomRush * IN_MILLISECONDS));

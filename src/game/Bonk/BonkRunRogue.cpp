@@ -596,7 +596,9 @@ void BonkRun::StrikeSpree(OwnedWeapon& owned, SpellEntry const* spellInfo, bool 
         ObjectGuid const victim = target->GetObjectGuid();
         float x, y, z;
         target->GetPosition(x, y, z);
+        m_spreeStriking = true;
         StabRogue(owned, look ? look : spellInfo, target, 1.0f, true);
+        m_spreeStriking = false;
         PlayKitAt(victim, x, y, z, BONK_KIT_SPREE_SLASH, false);
         SwingRogueBlades();
         if (owned.weapon.id == BONK_WEAPON_MURDEROUS_INTENT && !target->IsAlive() && m_spreeBonus < BONK_MURDEROUS_CAP)
@@ -949,6 +951,8 @@ float BonkRun::GetRogueDamageMultiplier(Unit const* victim) const
 
 float BonkRun::GetRogueCritChance(SpellEntry const* spell, float chance) const
 {
+    if (m_spreeStriking && m_mastery.Special(BONK_SPECIAL_SPREE_CRIT) > 0.0f)
+        return std::max(100.0f, chance);
     if (spell && (spell->Id == BONK_SPELL_EVISCERATE || spell->Id == BONK_SPELL_AMBUSH))
         return chance * BONK_ROGUE_CRIT_SCALE;
     return chance;

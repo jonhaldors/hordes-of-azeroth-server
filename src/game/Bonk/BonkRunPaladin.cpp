@@ -597,6 +597,7 @@ void BonkRun::OnPaladinCloudPulse(OwnedWeapon const& owned, KeywordCloud const& 
     float const damage = GetWeaponDamage(owned);
     for (Creature* mob : GetMobsNear(cloud.x, cloud.y, cloud.radius))
         DealShamanHit(look, owned.weapon.spellId, mob, damage);
+    PulseConsecratedRetribution(cloud);
     if (owned.weapon.id == BONK_WEAPON_BLESSED_GROUND && m_player->GetDistance2d(cloud.x, cloud.y) <= cloud.radius)
         HealPaladin(BONK_BLESSED_GROUND_HEAL, owned.weapon.spellId);
 }
@@ -693,6 +694,18 @@ void BonkRun::PulseRetributionAura(OwnedWeapon& owned, SpellEntry const* spellIn
     float const damage = GetWeaponDamage(owned);
     for (Creature* mob : mobs)
         DealShamanHit(spellInfo, owned.weapon.spellId, mob, damage);
+}
+
+void BonkRun::PulseConsecratedRetribution(KeywordCloud const& cloud)
+{
+    float const share = m_mastery.Special(BONK_SPECIAL_CONSECRATED_RETRIBUTION);
+    OwnedWeapon const* aura = share > 0.0f ? FindOwnedByBehavior(BONK_BEHAVIOR_RETRIBUTION_AURA) : nullptr;
+    if (!aura)
+        return;
+    SpellEntry const* look = sSpellMgr.GetSpellEntry(aura->weapon.spellId);
+    float const damage = GetWeaponDamage(*aura) * BONK_RETRIBUTION_STRUCK_SHARE * share / 100.0f;
+    for (Creature* mob : GetMobsNear(cloud.x, cloud.y, cloud.radius))
+        DealShamanHit(look, aura->weapon.spellId, mob, damage);
 }
 
 void BonkRun::OnPaladinStruck(Creature* attacker)
@@ -865,6 +878,8 @@ float BonkRun::GetPaladinDamageMultiplier(Unit const* victim) const
     if (m_player->GetClass() != CLASS_PALADIN)
         return 1.0f;
     float scale = IsJudged(victim) ? BONK_JUDGED_BONUS : 1.0f;
+    if (IsExposedToHammer(victim))
+        scale *= 1.0f + m_mastery.Special(BONK_SPECIAL_HAMMER_EXPOSE) / 100.0f;
     if (IsStandingInConsecration())
         scale *= FindOwned(BONK_WEAPON_HALLOWED_GROUND) ? BONK_HALLOWED_GROUND_BONUS : BONK_CONSECRATION_BONUS;
     return scale;

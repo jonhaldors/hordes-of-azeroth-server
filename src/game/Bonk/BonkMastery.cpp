@@ -117,6 +117,7 @@ void BonkMastery::Load()
                     break;
                 case BONK_MASTERY_KEYWORD_DAMAGE:
                 case BONK_MASTERY_CRIT_VS_KEYWORD:
+                case BONK_MASTERY_KEYWORD_CRIT:
                 case BONK_MASTERY_SPREAD_TARGETS:
                 case BONK_MASTERY_KEYWORD_DURATION:
                 case BONK_MASTERY_KEYWORD_CAP:
@@ -286,6 +287,11 @@ BonkMasteryBonuses BonkMastery::Evaluate(std::map<uint32, uint8> const& ranks) c
             case BONK_MASTERY_SPEC_DAMAGE:    bonuses.specDamage[node->target] += value; break;
             case BONK_MASTERY_KEYWORD_DAMAGE: bonuses.keywordDamage[node->target] += value; break;
             case BONK_MASTERY_CRIT_VS_KEYWORD: bonuses.critVsKeyword[node->target] += value; break;
+            case BONK_MASTERY_KEYWORD_CRIT:
+                bonuses.keywordCrit.insert(node->target);
+                if (node->param)
+                    bonuses.keywordCrit.insert(node->param);
+                break;
             case BONK_MASTERY_USES_BONUS:     bonuses.usesBonus[node->target] += value; break;
             case BONK_MASTERY_SPELL_STACKS:   bonuses.spellStacks[node->target] += value; break;
             case BONK_MASTERY_SPELL_DURATION: bonuses.spellDuration[node->target] += value; break;

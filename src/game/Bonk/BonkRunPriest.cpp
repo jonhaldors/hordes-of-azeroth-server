@@ -341,11 +341,20 @@ void BonkRun::HealPriest(float percent, uint32 textSpellId, bool atonement)
     uint32 const amount = ReduceHealing(std::max(1u, uint32(maxHealth * percent / 100.0f)));
     uint32 const missing = maxHealth - std::min(maxHealth, m_player->GetHealth());
     HealHero(amount, textSpellId);
+    if (textSpellId == BONK_SPELL_RENEW && amount > missing)
+        ShieldFromRenew(amount - missing);
     if (!atonement || amount <= missing)
         return;
     uint32 const cap = uint32(maxHealth * BONK_ATONEMENT_CAP / 100.0f);
     if (m_spellShield < cap)
         AddSpellShield(std::min(amount - missing, cap - m_spellShield));
+}
+
+void BonkRun::ShieldFromRenew(uint32 overheal)
+{
+    uint32 const cap = uint32(m_player->GetMaxHealth() * m_mastery.Special(BONK_SPECIAL_RENEW_SHIELD) / 100.0f);
+    if (m_spellShield < cap)
+        AddSpellShield(std::min(overheal, cap - m_spellShield));
 }
 
 void BonkRun::PulseRenew(OwnedWeapon& owned)

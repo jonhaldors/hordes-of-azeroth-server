@@ -199,6 +199,7 @@ void BonkRun::UpdateKeywords(uint32 diff)
                 ApplyMasterySlow(mob, slow.second);
     }
     ApplyPendingStuns();
+    UpdateThaws();
     UpdateDotStacks(diff);
     SendKeywordTimers(diff);
 }
@@ -543,6 +544,7 @@ bool BonkRun::Freeze(Creature* mob)
 
     if (ai->GetKind() == BONK_SPAWN_NORMAL)
         AddKeywordAura(mob, *info, 1, length);
+    QueueThawChill(mob, now + length);
     return true;
 }
 
