@@ -287,7 +287,7 @@ void BonkRun::CloseVendor()
         return;
     m_vendorOpen = false;
     m_player->GetBonkPlayer()->SendAddon("vendorclose");
-    SetPaused(false);
+    ResumeUnlessChoiceOpen();
     UpdateOffers();
 }
 

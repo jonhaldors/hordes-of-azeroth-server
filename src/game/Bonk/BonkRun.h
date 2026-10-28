@@ -1146,6 +1146,8 @@ class BonkRun
         float GetEliteScale() const;
 
         void SetPaused(bool paused);
+        bool HasOpenChoice() const;
+        void ResumeUnlessChoiceOpen();
         void HoldAuraTimers(uint32 diff);
         uint32 m_pauseAuraMs = 0;
         bool m_menuOpen = false;

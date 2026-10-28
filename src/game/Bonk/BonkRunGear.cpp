@@ -693,7 +693,7 @@ bool BonkRun::ChooseGear(GearChoice choice, uint8 slot, std::string& error)
     }
 
     CloseGearOffer();
-    SetPaused(false);
+    ResumeUnlessChoiceOpen();
     UpdateOffers();
     return true;
 }
@@ -1158,7 +1158,7 @@ void BonkRun::CloseVault()
     if (!m_vaultOpen)
         return;
     m_vaultOpen = false;
-    SetPaused(false);
+    ResumeUnlessChoiceOpen();
     UpdateOffers();
 }
 

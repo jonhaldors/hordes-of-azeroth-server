@@ -407,8 +407,7 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
         if (LeyStat const* stat = GetLeyStat(buff.effect))
             bonk->Notify("The Ley Line grants you " + FormatLeyValue(*stat, buff.value) + "!");
     }
-    if (m_offer.empty())
-        SetPaused(false);
+    ResumeUnlessChoiceOpen();
     SendState();
     return true;
 }

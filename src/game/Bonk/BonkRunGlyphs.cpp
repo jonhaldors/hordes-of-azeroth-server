@@ -201,7 +201,7 @@ bool BonkRun::ChooseGlyph(uint32 choice, std::string& error)
         bonk->Notify("You chose " + glyph->name + ".");
     }
 
-    SetPaused(false);
+    ResumeUnlessChoiceOpen();
     UpdateOffers();
     return true;
 }

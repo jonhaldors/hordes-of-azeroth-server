@@ -11775,7 +11775,7 @@ void BonkRun::CloseOffer(uint32 pickedIndex)
     bonk->SendAddon("picked");
     SendLoadout();
 
-    SetPaused(false);
+    ResumeUnlessChoiceOpen();
     UpdateOffers();
 }
 
@@ -12241,9 +12241,19 @@ void BonkRun::SetMenuOpen(bool open)
             SetPaused(true);
         return;
     }
-    if (m_offer.empty() && m_leyOffer.empty() && !m_vendorOpen && !m_vaultOpen && !m_gearOfferEntry && m_glyphOffer.empty())
-        SetPaused(false);
+    ResumeUnlessChoiceOpen();
     UpdateOffers();
+}
+
+bool BonkRun::HasOpenChoice() const
+{
+    return !m_offer.empty() || !m_leyOffer.empty() || m_vendorOpen || m_vaultOpen || m_gearOfferEntry || !m_glyphOffer.empty();
+}
+
+void BonkRun::ResumeUnlessChoiceOpen()
+{
+    if (!HasOpenChoice())
+        SetPaused(false);
 }
 
 void BonkRun::SetPaused(bool paused)
