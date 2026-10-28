@@ -2073,7 +2073,7 @@ uint32 BonkMgr::GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot)
 bool BonkMgr::ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot)
 {
     uint32 const perClass = BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
-    if (entry < BONK_TIER_GEAR_FIRST || entry >= BONK_TIER_GEAR_FIRST + perClass * uint32(std::size(BONK_TIER_GEAR_CLASSES)))
+    if (entry < BONK_TIER_GEAR_FIRST || entry >= BONK_TIER_GEAR_FIRST + perClass * BONK_TIER_GEAR_CLASS_COUNT)
         return false;
     uint32 const index = entry - BONK_TIER_GEAR_FIRST;
     classId = BONK_TIER_GEAR_CLASSES[index / perClass];

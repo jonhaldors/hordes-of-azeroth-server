@@ -2285,13 +2285,13 @@ void BonkPlayer::NotifyFind(std::string const& text) const
 
 void BonkPlayer::SendGearInfo() const
 {
-    uint32 const tierGearEnd = BONK_TIER_GEAR_FIRST + uint32(std::size(BONK_TIER_GEAR_CLASSES)) * BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
+    uint32 const tierGearEnd = BONK_TIER_GEAR_FIRST + BONK_TIER_GEAR_CLASS_COUNT * BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
     for (auto const& itr : sBonkMgr.GetItemStats())
         if (itr.first < BONK_TIER_GEAR_FIRST || itr.first >= tierGearEnd)
             SendAddon("gear~" + std::to_string(itr.first) + "~" + std::to_string(itr.second.setId) + "~" + FormatStatList(itr.second.stats));
 
     SendAddon("tiergear~" + std::to_string(BONK_TIER_GEAR_FIRST) + "~" + std::to_string(BONK_TIER_GEAR_TIERS) + "~" +
-        std::to_string(BONK_TIER_GEAR_SLOTS) + "~" + std::to_string(std::size(BONK_TIER_GEAR_CLASSES)));
+        std::to_string(BONK_TIER_GEAR_SLOTS) + "~" + std::to_string(BONK_TIER_GEAR_CLASS_COUNT));
     for (uint32 tier = 1; tier <= BONK_TIER_GEAR_TIERS; ++tier)
         if (BonkItemStat const* stat = sBonkMgr.GetItemStat(BONK_TIER_GEAR_FIRST + (tier - 1) * BONK_TIER_GEAR_SLOTS))
             SendAddon("tierstats~" + std::to_string(tier) + "~" + FormatStatList(stat->stats));
