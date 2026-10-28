@@ -194,6 +194,7 @@ void BonkPlayer::OnLogin()
 
     GiveStarterBags();
     TeachWeaponSkills();
+    m_player->GetCamera().UpdateVisibilityForOwner();
 }
 
 void BonkPlayer::TeachWeaponSkills()

@@ -237,6 +237,11 @@ void BonkRun::DropTierPiece(Creature const* mob, BonkSpawnKind kind)
     float const chance = kind == BONK_SPAWN_BOSS ? BONK_TIER_DROP_BOSS : kind == BONK_SPAWN_MINIBOSS ? miniBoss : 0.0f;
     if (!roll_chance_f(chance))
         return;
+    PlaceTierPiece(mob);
+}
+
+bool BonkRun::PlaceTierPiece(Creature const* mob)
+{
     uint32 const tier = GetDropTier();
     std::vector<uint32> choices;
     for (uint32 slot = 0; slot < BONK_TIER_GEAR_SLOTS; ++slot)
@@ -259,11 +264,13 @@ void BonkRun::DropTierPiece(Creature const* mob, BonkSpawnKind kind)
     if (!trinkets.empty())
         choices.push_back(trinkets[urand(0, uint32(trinkets.size() - 1))]);
     if (choices.empty())
-        return;
+        return false;
     uint32 const entry = choices[urand(0, uint32(choices.size() - 1))];
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
-    if (proto && PlaceGearDrop(mob, entry, ITEM_QUALITY_EPIC))
-        m_player->GetBonkPlayer()->Notify(std::string(proto->Name1) + " (Tier " + std::to_string(tier) + ") dropped!");
+    if (!proto || !PlaceGearDrop(mob, entry, ITEM_QUALITY_EPIC))
+        return false;
+    m_player->GetBonkPlayer()->Notify(std::string(proto->Name1) + " (Tier " + std::to_string(tier) + ") dropped!");
+    return true;
 }
 
 bool BonkRun::DropLegendary(Creature const* mob)
@@ -480,6 +487,11 @@ void BonkRun::DropGear(Creature const* mob, BonkSpawnKind kind)
     uint8 const rolled = RollGearQuality(kind);
     if (rolled == ITEM_QUALITY_LEGENDARY && IsMythic() && DropLegendary(mob))
         return;
+    if (rolled >= ITEM_QUALITY_EPIC && IsMythic())
+    {
+        PlaceTierPiece(mob);
+        return;
+    }
     uint32 const classMask = m_player->GetClassMask();
     std::vector<BonkGear const*> pool;
     for (uint8 quality = rolled; quality >= ITEM_QUALITY_UNCOMMON && pool.empty(); --quality)

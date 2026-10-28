@@ -1060,6 +1060,7 @@ class BonkRun
         };
         void DropGear(Creature const* mob, BonkSpawnKind kind);
         void DropTierPiece(Creature const* mob, BonkSpawnKind kind);
+        bool PlaceTierPiece(Creature const* mob);
         bool DropLegendary(Creature const* mob);
         uint32 GetDropTier() const;
         bool PlaceGearDrop(Creature const* mob, uint32 entry, uint8 quality);
