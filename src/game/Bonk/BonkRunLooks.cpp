@@ -182,7 +182,7 @@ void BonkRun::ShowHeroRing(BonkHeroRing ring, float reach, uint32 fillMs)
         return;
     m_heroRingSpells[size_t(ring)] = shown;
     SendBonkMark(m_player, GetHeroRingKey(ring), BONK_TELEGRAPH_CIRCLE, m_player->GetPositionX(), m_player->GetPositionY(),
-        m_player->GetPositionZ(), 0.0f, reach, fillMs, !fillMs, GetRingStyle(ring), m_player->GetObjectGuid());
+        m_player->GetPositionZ(), 0.0f, reach, fillMs, !fillMs, GetRingStyle(ring), m_player->GetObjectGuid(), "", 0, !fillMs);
 }
 
 void BonkRun::HideHeroRing(BonkHeroRing ring)

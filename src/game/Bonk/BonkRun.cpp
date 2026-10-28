@@ -504,7 +504,6 @@ namespace
     uint32 const BONK_NECROTIC_MAX_STACKS  = 15;
     uint32 const BONK_NECROTIC_CHECK_MS    = 250;
     float const BONK_BOLSTER_RANGE         = 12.0f;
-    char const* const BONK_SANGUINE_TEXTURE = "SPELLS\\Bloodpool.blp";
     float const BONK_SANGUINE_RADIUS       = 5.0f;
     float const BONK_SANGUINE_HEAL         = 0.05f;
     uint32 const BONK_SANGUINE_DURATION_MS = 12000;
@@ -3679,7 +3678,7 @@ void BonkRun::OnAffixedDeath(Creature* mob)
         pool.leftMs = BONK_SANGUINE_DURATION_MS;
         pool.marker = NextBonkAuraKey();
         SendBonkMark(m_player, GetSanguineMarkKey(pool.marker), BONK_TELEGRAPH_CIRCLE, pool.x, pool.y, pool.z, 0.0f, BONK_SANGUINE_RADIUS, 0,
-            true, BONK_TELEGRAPH_STYLE_BLOOD, ObjectGuid(), BONK_SANGUINE_TEXTURE);
+            true, BONK_TELEGRAPH_STYLE_BLOOD, ObjectGuid(), "", 0, true);
         m_pools.push_back(pool);
     }
 }
@@ -3754,7 +3753,7 @@ void BonkRun::StartVoidZone(BonkEnemyHit const& hit, float x, float y, float z, 
     zone.tickMs = 0;
     zone.markKey = NextBonkAuraKey();
     SendBonkMark(m_player, "zone" + std::to_string(zone.markKey), BONK_TELEGRAPH_CIRCLE, x, y, z, 0.0f, radius, 0, true,
-        BONK_TELEGRAPH_STYLE_DANGER);
+        BONK_TELEGRAPH_STYLE_DANGER, ObjectGuid(), "", 0, true);
     if (vortex)
     {
         zone.vortexKey = NextBonkAuraKey();
@@ -6216,7 +6215,7 @@ void BonkRun::ShowRingAt(KeywordCloud& cloud, float z, BonkHeroRing ring)
 {
     cloud.markKey = NextBonkAuraKey();
     SendBonkMark(m_player, "cloud" + std::to_string(cloud.markKey), BONK_TELEGRAPH_CIRCLE, cloud.x, cloud.y, z, 0.0f, cloud.radius, 0, true,
-        GetRingStyle(ring));
+        GetRingStyle(ring), ObjectGuid(), "", 0, true);
 }
 
 void BonkRun::EndKeywordCloud(KeywordCloud const& cloud)
