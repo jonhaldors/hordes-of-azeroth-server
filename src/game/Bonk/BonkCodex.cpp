@@ -258,7 +258,7 @@ namespace
             .Line("Dash makes you immune for 0.25 sec.")
             .Line("Healing orbs heal 20% of maximum health. Each level gained heals 5%.")
             .Line("Necrotic, boss wounds and Cursed Ground reduce healing taken, up to 100%.")
-            .Term("Revives", "the Divine Shield glyph first, then talents, then Soulstones. A revive restores health, shields you and destroys normal enemies within 15 yards.");
+            .Term("Revives", "when you die, Glyph of Divine Shield saves you first, then Second Chance, then a Soulstone. A revive restores your health, shields you and destroys normal enemies within 15 yards.");
     }
 
     void SendRules(BonkPlayer* bonk)
