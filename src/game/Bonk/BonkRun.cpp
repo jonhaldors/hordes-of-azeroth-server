@@ -8492,7 +8492,8 @@ void BonkRun::DealSpellHit(SpellEntry const* spellInfo, Unit* target, float dama
         return;
 
     SpellNonMeleeDamage hit(caster, target, spellInfo->Id, SpellSchools(spellInfo->School));
-    bool const crit = forceCrit || (spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo, target)));
+    Unit const* summon = caster == m_player ? nullptr : caster;
+    bool const crit = forceCrit || (spellInfo->CanCrit() && roll_chance_f(GetCritChance(spellInfo, target, summon)));
     caster->CalculateSpellDamage(&hit, damage, spellInfo, EFFECT_INDEX_0, BASE_ATTACK, nullptr, crit);
     target->CalculateAbsorbResistBlock(caster, &hit, spellInfo, BASE_ATTACK, nullptr);
     caster->DealDamageMods(target, hit.damage, &hit.absorb);
@@ -8764,7 +8765,7 @@ bool BonkRun::IsSummon(Unit const* unit) const
     for (OwnedWeapon const& owned : m_weapons)
         if (std::find(owned.pets.begin(), owned.pets.end(), unit->GetObjectGuid()) != owned.pets.end())
             return true;
-    return IsSnake(unit->GetObjectGuid()) || IsBeast(unit->GetObjectGuid()) || IsSkeleton(unit->GetObjectGuid());
+    return IsSnake(unit->GetObjectGuid()) || IsBeast(unit->GetObjectGuid()) || IsSkeleton(unit->GetObjectGuid()) || IsWarlockMinion(unit->GetObjectGuid());
 }
 
 Creature* BonkRun::SummonGlyphHelper(uint32 entry, float x, float y, float z, float orientation)
@@ -8879,7 +8880,7 @@ float BonkRun::GetPetBiteDamage(OwnedWeapon const& owned, BonkPetFamily const& f
     uint32 const spellMs = std::max(500u, owned.weapon.tickMs);
     uint32 const root = GetRootWeapon(owned.weapon);
     auto talentDamage = m_mastery.spellDamage.find(root);
-    float const talentPercent = (talentDamage != m_mastery.spellDamage.end() ? talentDamage->second : 0.0f) + GetSpecDamage(root);
+    float const talentPercent = talentDamage != m_mastery.spellDamage.end() ? talentDamage->second : 0.0f;
     return GetWeaponDamage(owned) * IN_MILLISECONDS / float(spellMs) / rate * GetDemonDamageScale() * (1.0f + talentPercent / 100.0f);
 }
 
@@ -8964,7 +8965,7 @@ void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkP
     if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM) && abilityInfo)
     {
         ShowStrike(pet, abilityInfo, prey);
-        DealTotemHit(owned, abilityInfo, prey, uint32(std::max(1.0f, damage * GetDamageMultiplier(abilityInfo, prey, GetMinionScale(pet)))));
+        DealSpellHit(abilityInfo, prey, float(damage), pet);
     }
     else
         pet->CastCustomSpell(prey, abilitySpell, damage, {}, {}, true);
@@ -9007,8 +9008,7 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
 
     float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
     uint32 const root = GetRootWeapon(owned.weapon);
-    float const hit = GetPetBiteDamage(owned, *family) * ability.damage * frenzy;
-    float const minionScale = GetMinionScale(pet);
+    float const hit = std::max(1.0f, GetPetBiteDamage(owned, *family) * ability.damage * frenzy);
     PendingKeyword keyword;
     bool const applies = ability.stacks && (GetWeaponKeyword(owned, keyword) || GetPetAbilityKeyword(owned, ability, keyword));
     auto talentStacks = m_mastery.spellStacks.find(root);
@@ -9018,11 +9018,7 @@ bool BonkRun::PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& 
     {
         if (!pet->IsWithinLOSInMap(mob))
             continue;
-        uint32 const amount = uint32(std::max(1.0f, hit * GetDamageMultiplier(nullptr, mob, minionScale)));
-        if (owned.weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM))
-            DealTotemHit(owned, spellInfo, mob, amount);
-        else
-            DealExactHit(spellInfo, mob, amount, pet);
+        DealSpellHit(spellInfo, mob, hit, pet);
         if (applies && mob->IsAlive())
             ApplyKeyword(mob, keyword.keyword, stacks, keyword.durationMs, keyword.damageScale, keyword.spellId);
     }

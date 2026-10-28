@@ -678,6 +678,7 @@ class BonkRun
         void UpdateSkeletons();
         void DespawnSkeletons();
         bool IsSkeleton(ObjectGuid const& guid) const;
+        bool IsWarlockMinion(ObjectGuid const& guid) const;
         std::string DescribeGlyphStats() const;
         struct RisenSkeleton
         {
@@ -1906,6 +1907,7 @@ class BonkRun
             float bite;
         };
         std::vector<WarlockMinion> m_warlockMinions;
+        float GetMinionSwingDamage(OwnedWeapon const& owned, WarlockMinion const& held) const;
         struct PendingInfernal
         {
             uint32 weaponId;
@@ -2074,7 +2076,6 @@ class BonkRun
         void QueueStaticDischarge(Creature* mob, uint32 sourceSpellId);
         void DischargeStatic(PendingCast const& cast);
         bool DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, Unit* target, float damage);
-        void DealTotemHit(OwnedWeapon const& owned, SpellEntry const* spellInfo, Unit* target, uint32 damage);
         void ChargeLightningShield();
         void ShowLightningShield(uint32 charges);
         void ReplantTotems();

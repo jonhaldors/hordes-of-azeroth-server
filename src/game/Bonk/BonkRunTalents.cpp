@@ -235,6 +235,9 @@ BonkRun::OwnedWeapon const* BonkRun::FindSummonOwner(Unit const* unit) const
     for (Beast const& beast : m_beasts)
         if (beast.guid == guid)
             return FindOwned(beast.weaponId);
+    for (WarlockMinion const& minion : m_warlockMinions)
+        if (minion.guid == guid)
+            return FindOwned(minion.weaponId);
     return nullptr;
 }
 
