@@ -671,8 +671,14 @@ void BonkRun::RollCastCharges(OwnedWeapon& owned)
 {
     owned.forcedCrit = m_vanishCritPending;
     m_vanishCritPending = false;
-    if (owned.weapon.IsPassiveTrigger() || int32(m_totalMs - owned.castRollAtMs) < 0)
+    if (owned.weapon.IsPassiveTrigger())
         return;
+    if (int32(m_totalMs - owned.castRollAtMs) < 0)
+    {
+        owned.castCharges &= ~owned.castChargesSpent;
+        owned.castChargesSpent = 0;
+        return;
+    }
     owned.castRollAtMs = m_totalMs + GetWeaponCooldown(owned);
     owned.castCharges = 0;
     owned.castChargesSpent = 0;
@@ -706,6 +712,19 @@ float BonkRun::GetCastChargeMultiplier(SpellEntry const* spell, Unit const* vict
         return 1.0f;
     OwnedWeapon const* owned = FindOwnedBySpell(spell->Id);
     return owned && IsCastCharged(*owned, BONK_CARD_DEATH_RAY) ? ray->values[1] : 1.0f;
+}
+
+std::string BonkRun::DescribeBigHit(SpellEntry const* spell, Unit const* victim) const
+{
+    float const power = GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + GetTalentDamagePercent();
+    char text[512];
+    snprintf(text, sizeof(text), "total x%.2f | power %.0f%% | mark %.0f%% | keyword x%.2f | mage x%.2f | shaman x%.2f | priest x%.2f | rogue x%.2f | "
+        "paladin x%.2f | ray x%.2f | capstone x%.2f | glyph x%.2f | victim %.0f%% health",
+        GetDamageMultiplier(spell, victim), power, GetMarkBonus(victim), GetKeywordDamageMultiplier(spell, victim), GetMageDamageMultiplier(victim),
+        GetShamanDamageMultiplier(spell, victim), GetPriestDamageMultiplier(victim), GetRogueDamageMultiplier(victim), GetPaladinDamageMultiplier(victim),
+        GetCastChargeMultiplier(spell, victim), GetCapstoneDamageMultiplier(true, victim), spell ? GetGlyphDamageMultiplier(spell) : 1.0f,
+        victim ? victim->GetHealthPercent() : 0.0f);
+    return text;
 }
 
 float BonkRun::GetChampionDamageTaken(BonkSpawnKind kind) const

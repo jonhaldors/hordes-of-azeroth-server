@@ -8,6 +8,7 @@
 #include "Database/DBCFileLoader.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "Log.h"
 #include "Player.h"
 #include "SpellEntry.h"
 #include "SpellMgr.h"
@@ -572,20 +573,31 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         if (!owner)
             run->CountThunderHit(spellProto);
 
-        std::lock_guard<std::mutex> guard(s_lock);
-        BonkRunStats& stats = s_stats[player->GetObjectGuid()];
-        for (auto const& credit : credits)
+        bool newBiggestHit = false;
         {
-            stats.bySpell[credit.first].damage += credit.second;
-            if (dotSpellId && credit.first != dotSpellId)
-                stats.dotBySpell[credit.first][dotSpellId].damage += credit.second;
+            std::lock_guard<std::mutex> guard(s_lock);
+            BonkRunStats& stats = s_stats[player->GetObjectGuid()];
+            for (auto const& credit : credits)
+            {
+                stats.bySpell[credit.first].damage += credit.second;
+                if (dotSpellId && credit.first != dotSpellId)
+                    stats.dotBySpell[credit.first][dotSpellId].damage += credit.second;
+            }
+            if (damage > stats.biggestHit)
+            {
+                stats.biggestHit = damage;
+                newBiggestHit = true;
+            }
+            if (damage >= health)
+            {
+                stats.killingSpells[victim->GetObjectGuid()] = credits.front().first;
+                if (dotSpellId && credits.front().first != dotSpellId)
+                    stats.killingDots[victim->GetObjectGuid()] = dotSpellId;
+            }
         }
-        if (damage >= health)
-        {
-            stats.killingSpells[victim->GetObjectGuid()] = credits.front().first;
-            if (dotSpellId && credits.front().first != dotSpellId)
-                stats.killingDots[victim->GetObjectGuid()] = dotSpellId;
-        }
+        if (newBiggestHit && run->IsSandbox())
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk biggest hit: %s %u from spell %u | %s", player->GetName(), damage, spellProto ? spellProto->Id : 0,
+                run->DescribeBigHit(spellProto, victim).c_str());
     }
     else if (Player* player = victim->ToPlayer())
     {

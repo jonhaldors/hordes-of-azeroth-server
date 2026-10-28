@@ -333,6 +333,7 @@ class BonkRun
 
         void MakeSandbox(bool godBefore) { m_sandbox = true; m_sandboxGodBefore = godBefore; }
         bool IsSandbox() const { return m_sandbox; }
+        std::string DescribeBigHit(SpellEntry const* spell, Unit const* victim) const;
         BonkCrowd const& GetCrowd() const { return m_crowd; }
         void ShowSandboxMenu(Creature* keeper, uint32 menu);
         void SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action);
