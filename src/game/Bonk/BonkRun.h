@@ -745,6 +745,7 @@ class BonkRun
 
         uint32 GetMobLevel() const;
         uint32 GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const;
+        float GetProcBaseHealth() const;
         float GetMobHealth(uint32 level) const;
         float GetStageHealthMultiplier() const;
         float GetStageDamageMultiplier() const;

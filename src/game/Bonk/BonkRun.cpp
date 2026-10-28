@@ -3446,6 +3446,11 @@ uint32 BonkRun::GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, floa
         GetCrowdOverflow() * GetKindHealth(kind) * GetScalingNow().health));
 }
 
+float BonkRun::GetProcBaseHealth() const
+{
+    return GetMobHealth(GetMobLevel()) * sBonkMgr.GetArchetype(BONK_ARCHETYPE_GRUNT).healthMultiplier * GetScalingNow().health;
+}
+
 std::vector<std::string> BonkRun::DescribeScaling() const
 {
     std::vector<std::string> lines;

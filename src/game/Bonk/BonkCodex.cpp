@@ -76,7 +76,7 @@ namespace
             case BONK_CARD_OVERHEAL:
                 return "Shield up to " + Number(card.values[0] * sum) + "%";
             case BONK_CARD_THORNS:
-                return Number(card.values[0] * sum) + "% of an enemy's health";
+                return Number(card.values[0] * sum) + "% of a normal enemy's health on Normal";
             case BONK_CARD_FIRE_BURST:
             case BONK_CARD_CHAIN:
             case BONK_CARD_DEATH_RAY:

@@ -478,7 +478,7 @@ void BonkRun::DressSkeletons()
     if (!raise)
         return;
     Map* map = m_player->GetMap();
-    float const bite = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * raise->values[2] / 100.0f;
+    float const bite = GetProcBaseHealth() * raise->values[2] / 100.0f;
     float const speed = GetPetRunSpeed();
     for (RisenSkeleton const& risen : m_skeletons)
     {
@@ -588,7 +588,7 @@ void BonkRun::UpdateShadowmourne()
         m_shadowmourneSouls = 0;
         m_player->SendPlaySpellVisualKit(BONK_KIT_SOUL_HARVEST);
         QueueGlyphBurst(*mourne, m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ(), mourne->values[2],
-            GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * mourne->values[1], false);
+            GetProcBaseHealth() * mourne->values[1], false);
     }
     if (m_shadowmourneSouls / BONK_SHADOWMOURNE_SHOW_STEP != m_shadowmourneShown)
     {
@@ -729,7 +729,7 @@ void BonkRun::StrikeStorm(BonkGlyph const& glyph)
         return;
     for (size_t i = mobs.size(); i > 1; --i)
         std::swap(mobs[i - 1], mobs[urand(0, uint32(i) - 1)]);
-    float const damage = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * glyph.values[2];
+    float const damage = GetProcBaseHealth() * glyph.values[2];
     for (size_t i = 0; i < mobs.size() && i < size_t(glyph.values[1]); ++i)
     {
         mobs[i]->SendPlaySpellVisualKit(BONK_KIT_LIGHTNING);
@@ -757,7 +757,7 @@ void BonkRun::DropMeteor(BonkGlyph const& glyph)
         }
     }
 
-    float const damage = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * glyph.values[1];
+    float const damage = GetProcBaseHealth() * glyph.values[1];
     centre->SendPlaySpellVisualKit(BONK_KIT_EXPLOSION);
     std::vector<Creature*> struck;
     for (Creature* mob : mobs)

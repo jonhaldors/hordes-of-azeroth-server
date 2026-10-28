@@ -560,11 +560,11 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             if (dotSpellId)
                 sBonkQuests.OnProgress(player, BONK_QUEST_DOT_KILLS, 0, 1);
         }
-        else
+        else if (!dotSpellId)
             run->OnWeaponHit(victim, spellProto);
         if (owner && swing)
             run->OnPetBite(attacker->ToCreature(), victim);
-        if (!owner || attacker->GetEntry() == BONK_PROJECTILE)
+        if ((!owner || attacker->GetEntry() == BONK_PROJECTILE) && !dotSpellId)
         {
             run->OnHeroHit(victim, dealt, spellProto);
             run->OnTrinketHit(victim, dealt, spellProto);

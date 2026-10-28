@@ -629,7 +629,7 @@ void BonkRun::OnShieldBroken()
     if (!disk || !spellInfo || m_cardProc)
         return;
 
-    float const damage = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * GetCardTotal(BONK_CARD_SHIELD_NOVA, 0);
+    float const damage = GetProcBaseHealth() * GetCardTotal(BONK_CARD_SHIELD_NOVA, 0);
     m_player->SendPlaySpellVisualKit(BONK_KIT_NOVA);
     m_cardProc = true;
     for (Creature* mob : GetMobsInRange(disk->values[1]))
@@ -653,7 +653,7 @@ void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
     if (!spellInfo)
         return;
     m_cardCooldowns[BONK_CARD_THORNS] = int32(choker->values[2]);
-    float const burst = GetSpawnHealth(BONK_SPAWN_NORMAL, BONK_ARCHETYPE_GRUNT, 1.0f) * GetCardTotal(BONK_CARD_THORNS, 0) / 100.0f;
+    float const burst = GetProcBaseHealth() * GetCardTotal(BONK_CARD_THORNS, 0) / 100.0f;
     m_player->SendPlaySpellVisualKit(BONK_KIT_THORNS_BURST);
     m_cardProc = true;
     for (Creature* mob : GetMobsInRange(choker->values[1]))
