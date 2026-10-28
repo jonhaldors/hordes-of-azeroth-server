@@ -838,7 +838,6 @@ enum BonkPassiveEffect : uint8
     BONK_PASSIVE_AREA        = 10,
     BONK_PASSIVE_DURATION    = 11,
     BONK_PASSIVE_ARMOR       = 12,
-    BONK_PASSIVE_HIT         = 13,
     BONK_PASSIVE_DODGE       = 14,
     BONK_PASSIVE_CRIT        = 15,
     BONK_PASSIVE_CRIT_DAMAGE = 16,

@@ -255,6 +255,7 @@ class BonkRun
         bool IsVaultEmptyWithFinds() const;
 
         void OnWeaponHit(Unit* victim, SpellEntry const* spell);
+        void ApplyBiteKeyword(Creature* pet, Unit* victim);
         void OnPetBite(Creature* pet, Unit* victim);
         void OnKillingBlow(Unit* victim);
         void OnTalentDamage(Unit* victim, SpellEntry const* spell);
@@ -359,6 +360,7 @@ class BonkRun
             std::map<ObjectGuid, uint32> carriers;
             std::vector<ObjectGuid> pets;
             bool killed = false;
+            uint32 trinketRollAtMs = 0;
             bool held = false;
             bool pieResync = false;
             uint32 castCharges = 0;
@@ -2075,7 +2077,7 @@ class BonkRun
         void SwingWindfury(OwnedWeapon& owned, SpellEntry const* spellInfo, PendingCast const& cast);
         void CountMaelstromHit();
         void ReleaseMaelstrom();
-        void QueueStaticDischarge(Creature* mob, uint32 sourceSpellId);
+        bool QueueStaticDischarge(Creature* mob, uint32 sourceSpellId);
         void DischargeStatic(PendingCast const& cast);
         bool DealShamanHit(SpellEntry const* spellInfo, uint32 creditSpellId, Unit* target, float damage);
         void ChargeLightningShield();

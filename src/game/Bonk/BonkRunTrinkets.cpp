@@ -68,6 +68,11 @@ void BonkRun::RollTrinketCharges(OwnedWeapon& owned)
         m_trinketSpeedUntilMs = 0;
         ApplyPassives();
     }
+    BonkWeapon const& weapon = owned.weapon;
+    if (weapon.behavior == BONK_BEHAVIOR_DEEP_WOUNDS || weapon.behavior == BONK_BEHAVIOR_MAELSTROM || weapon.IsBlink() ||
+        int32(m_totalMs - owned.trinketRollAtMs) < 0)
+        return;
+    owned.trinketRollAtMs = m_totalMs + GetWeaponCooldown(owned);
     uint32 const worn = GetWornTrinkets();
     for (uint8 index = 0; index < MAX_BONK_TRINKET_EFFECT; ++index)
     {

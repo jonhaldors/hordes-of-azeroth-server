@@ -339,7 +339,7 @@ bool BonkRun::IsDivineShieldReady() const
         return false;
     if (!m_divineShieldStage)
         return true;
-    return IsMythic() && shield->values[1] >= 1.0f && m_stage >= m_divineShieldStage + uint32(shield->values[1]);
+    return shield->values[1] >= 1.0f && m_stage >= m_divineShieldStage + uint32(shield->values[1]);
 }
 
 bool BonkRun::IsProdigySpell(SpellEntry const* spell) const
