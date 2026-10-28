@@ -231,7 +231,7 @@ namespace
             .Line("Summons don't get your Area and don't trigger your Leech, cards or trinkets.")
             .Line("Every summon hit applies its spell's keyword.")
             .Line("Count adds pets, elementals, treants, totems and wolves, up to " + std::to_string(BONK_MAX_SUMMONS) + " summons in all.")
-            .Line("Summons that leave on their own, like snakes, beasts, Stampede, Spirit Pack wolves and warlock demons, last longer with Duration.")
+            .Line("Summons that leave on their own, like snakes, beasts, Stampede, Spirit Pack wolves and warlock demons, last longer with Duration.");
     }
 
     void SendProcRules(BonkPlayer* bonk)
