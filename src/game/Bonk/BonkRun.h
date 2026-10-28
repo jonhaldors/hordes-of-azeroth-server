@@ -145,6 +145,7 @@ class BonkRun
         void CloseVendor();
         bool SpawnVendorNow(std::string& error);
 
+        bool IsSummon(Unit const* unit) const;
         bool IsActive() const { return m_state == STATE_RUNNING; }
         bool SaveFromDeath();
         void OnHeroDamaged();
@@ -810,7 +811,6 @@ class BonkRun
         void StrikeSearingTotemSecondTarget(OwnedWeapon& owned, BonkPetFamily const& family, Creature* pet, Creature* prey, BonkPetAbility const& ability);
         bool PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability, Creature* coneTarget = nullptr);
         void DespawnPets();
-        bool IsSummon(Unit const* unit) const;
         uint32 GetSummonRoom(OwnedWeapon const& owned);
         uint32 GetWantedSummons(OwnedWeapon const& owned);
         float GetPetRunSpeed() const;

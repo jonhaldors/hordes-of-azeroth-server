@@ -836,6 +836,30 @@ bool BonkMobAI::AreAffixesQuiet() const
     return m_affixesQuietUntilMs && int32(m_affixesQuietUntilMs - WorldTimer::getMSTime()) > 0;
 }
 
+void BonkMobAI::KeepSummonsUntargeted(Player* owner, BonkRun const* run)
+{
+    Unit* victim = m_creature->GetVictim();
+    if (victim && victim != owner && run->IsSummon(victim))
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk summon target: %s attacked summon %s; switching back to the hero", m_creature->GetName(), victim->GetName());
+        m_creature->AttackStop();
+        AttackStart(owner);
+    }
+
+    bool const casting = m_creature->m_castingTargetGuid != 0;
+    ObjectGuid const shown = casting ? ObjectGuid(m_creature->m_castingTargetGuid) : m_creature->GetTargetGuid();
+    if (shown.IsEmpty() || shown == owner->GetObjectGuid())
+        return;
+    Unit* unit = m_creature->GetMap()->GetUnit(shown);
+    if (!unit || !run->IsSummon(unit))
+        return;
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk summon target: %s showed summon %s as its %s", m_creature->GetName(), unit->GetName(), casting ? "cast target" : "target");
+    if (casting)
+        m_creature->ClearCastingTarget();
+    else
+        m_creature->SetTargetGuid(m_creature->GetVictim() == owner ? owner->GetObjectGuid() : ObjectGuid());
+}
+
 void BonkMobAI::UpdateAI(uint32 const diff)
 {
     if (m_creature->HasCreatureState(CSTATE_DESPAWNING))
@@ -855,6 +879,7 @@ void BonkMobAI::UpdateAI(uint32 const diff)
         return;
     }
     SetFrozen(false);
+    KeepSummonsUntargeted(owner, run);
 
     m_creature->SetCombatStartPosition(m_creature->GetPositionX(), m_creature->GetPositionY(), m_creature->GetPositionZ());
 

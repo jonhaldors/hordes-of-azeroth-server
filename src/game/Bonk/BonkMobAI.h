@@ -134,6 +134,7 @@ class BonkMobAI : public CreatureAI
         void UseAbility(size_t index, Player* owner);
         void ReportTest(std::string const& text) const;
         void UpdateAbilities(uint32 diff, Player* owner);
+        void KeepSummonsUntargeted(Player* owner, BonkRun const* run);
         void UpdateAffixes(uint32 diff, Player* owner);
         void UpdatePhases(uint32 diff, Player* owner);
         bool IsBossOrMini() const { return m_kind == BONK_SPAWN_BOSS || m_kind == BONK_SPAWN_MINIBOSS; }
