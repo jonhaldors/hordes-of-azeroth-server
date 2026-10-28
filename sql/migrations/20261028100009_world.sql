@@ -10,6 +10,7 @@ INSERT INTO `migrations` VALUES ('20261028100009');
 UPDATE `bonk_weapon` SET `damage_fraction` = 5 WHERE `id` = 1014;
 UPDATE `bonk_weapon` SET `damage_fraction` = 3.5 WHERE `id` = 1016;
 UPDATE `bonk_weapon` SET `damage_fraction` = 2.2 WHERE `id` = 1022;
+UPDATE `bonk_weapon` SET `damage_fraction` = 0.5 WHERE `id` = 423;
 
 UPDATE `bonk_weapon` SET `damage_fraction` = 1.1 WHERE `id` = 408;
 UPDATE `bonk_weapon` SET `damage_fraction` = 1.2 WHERE `id` = 427;
