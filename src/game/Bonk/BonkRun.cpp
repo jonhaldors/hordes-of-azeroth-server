@@ -11172,9 +11172,22 @@ bool BonkRun::IsStatCapped(BonkPassiveEffect effect) const
     return cap > 0.0f && GetPassiveTotal(effect) >= cap;
 }
 
+bool BonkRun::IsGainTooSmall(BonkPassiveEffect effect, float gain) const
+{
+    if (IsStatCapped(effect))
+        return true;
+    float const ceiling = effect == BONK_PASSIVE_HASTE ? BONK_MAX_HASTE : effect == BONK_PASSIVE_AREA ? BONK_MAX_AREA : 0.0f;
+    if (ceiling <= 0.0f || gain <= 0.0f)
+        return false;
+    float const raw = GetPassiveTotal(effect);
+    return CurveStat(raw + gain, ceiling) - CurveStat(raw, ceiling) < BONK_MIN_CURVED_GAIN;
+}
+
 bool BonkRun::IsPassiveCapped(BonkPassive const& passive) const
 {
-    return IsStatCapped(passive.effect);
+    auto rank = m_passiveRanks.find(passive.id);
+    uint32 const next = (rank != m_passiveRanks.end() ? rank->second : 0) + 1;
+    return IsGainTooSmall(passive.effect, passive.valuePerRank * passive.RankWeight(next));
 }
 
 bool BonkRun::RefreshKeptOffer(Offer& offer) const

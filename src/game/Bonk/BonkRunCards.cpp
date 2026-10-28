@@ -233,12 +233,14 @@ bool BonkRun::IsCardCapped(BonkCard const& card) const
         return !HasEvolutionLeft();
     if (card.effect != BONK_CARD_NONE)
         return false;
+    uint32 const nextCopy = GetCardCopies(card.id) + 1;
     bool grantsStat = false;
-    for (BonkPassiveEffect stat : card.stats)
+    for (uint8 i = 0; i < 2; ++i)
     {
+        BonkPassiveEffect const stat = card.stats[i];
         if (stat >= MAX_BONK_PASSIVE_EFFECT)
             continue;
-        if (!IsStatCapped(stat))
+        if (!IsGainTooSmall(stat, card.statValues[i] * GetStatCopyWeight(stat, nextCopy)))
             return false;
         grantsStat = true;
     }

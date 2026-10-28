@@ -979,6 +979,7 @@ class BonkRun
         bool RefreshKeptOffer(Offer& offer) const;
         bool IsPassiveAllowed(BonkPassive const& passive) const;
         bool IsStatCapped(BonkPassiveEffect effect) const;
+        bool IsGainTooSmall(BonkPassiveEffect effect, float gain) const;
         bool IsPassiveCapped(BonkPassive const& passive) const;
         size_t GetSpellSlots() const;
         size_t GetPassiveSlots() const;
