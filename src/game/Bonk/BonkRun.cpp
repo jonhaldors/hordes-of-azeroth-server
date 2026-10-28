@@ -8926,7 +8926,8 @@ void BonkRun::UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey)
         bool const strikeReach = ability.value > 0.0f ? pet->IsWithinDistInMap(prey, ability.value) && pet->IsWithinLOSInMap(prey) : inReach;
         if (ability.kind == BONK_PET_ABILITY_STRIKE && strikeReach)
         {
-            PetStrike(owned, pet, prey, ability);
+            PetStrike(owned, pet, PickHydraHeadTarget(*family, pet, prey, i, ability.value), ability);
+            StrikeSearingTotemSecondTarget(owned, *family, pet, prey, ability);
             state.readyAtMs[i] = now + uint32(ability.cooldownMs * pace * GetClawRate(owned));
             OnWarlockPetStrike(owned, pet, prey, uint32(i));
             OnDruidPetStrike(owned, pet, prey);

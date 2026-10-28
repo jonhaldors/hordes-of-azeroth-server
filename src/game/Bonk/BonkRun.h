@@ -789,6 +789,8 @@ class BonkRun
         void UsePetAbilities(OwnedWeapon& owned, Creature* pet, Creature* prey);
         bool Pounce(OwnedWeapon& owned, Creature* pet, Creature* prey);
         void PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkPetAbility const& ability);
+        Creature* PickHydraHeadTarget(BonkPetFamily const& family, Creature* pet, Creature* prey, size_t head, float range) const;
+        void StrikeSearingTotemSecondTarget(OwnedWeapon& owned, BonkPetFamily const& family, Creature* pet, Creature* prey, BonkPetAbility const& ability);
         bool PetPulse(OwnedWeapon& owned, Creature* pet, BonkPetAbility const& ability, Creature* coneTarget = nullptr);
         void DespawnPets();
         bool IsSummon(Unit const* unit) const;

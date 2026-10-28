@@ -451,6 +451,20 @@ void BonkRun::SplashPyroblast(OwnedWeapon& owned, SpellEntry const* spellInfo, P
         }
 }
 
+Creature* BonkRun::PickHydraHeadTarget(BonkPetFamily const& family, Creature* pet, Creature* prey, size_t head, float range) const
+{
+    if (family.id != BONK_PET_FAMILY_HYDRA || head == 0)
+        return prey;
+    std::vector<Creature*> others = GetMobsNear(prey->GetPositionX(), prey->GetPositionY(), range);
+    others.erase(std::remove_if(others.begin(), others.end(), [pet, prey, range](Creature* mob)
+    {
+        return mob == prey || !pet->IsWithinDistInMap(mob, range) || !pet->IsWithinLOSInMap(mob);
+    }), others.end());
+    if (others.empty())
+        return prey;
+    return others[(head - 1) % others.size()];
+}
+
 uint32 BonkRun::GetElementalFamily() const
 {
     for (OwnedWeapon const& owned : m_weapons)
