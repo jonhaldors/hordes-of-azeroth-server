@@ -80,6 +80,7 @@ namespace
         SENDER_RESET,
         SENDER_LEAVE,
         SENDER_SET_LEVEL,
+        SENDER_CROWD_DUMMY,
     };
 
     enum SandboxMenu : uint32
@@ -103,6 +104,7 @@ namespace
         TOGGLE_GOD,
         TOGGLE_MOVES_OFF,
         TOGGLE_REACH_REPORT,
+        TOGGLE_DEEP_DUMMIES,
     };
 
     enum SandboxReset : uint32
@@ -259,13 +261,15 @@ namespace
         AddItem(player, GOSSIP_ICON_TAXI, "Leave the sandbox", SENDER_LEAVE, 0);
     }
 
-    void AddDummyItems(Player* player)
+    void AddDummyItems(Player* player, bool deep)
     {
         AddItem(player, GOSSIP_ICON_BATTLE, "1 dummy", SENDER_DUMMY, DummyAction(1, BONK_SPAWN_NORMAL));
         AddItem(player, GOSSIP_ICON_BATTLE, "Row of 5 dummies", SENDER_DUMMY, DummyAction(5, BONK_SPAWN_NORMAL));
         AddItem(player, GOSSIP_ICON_BATTLE, "Grid of 20 dummies", SENDER_DUMMY, DummyAction(20, BONK_SPAWN_NORMAL));
+        AddItem(player, GOSSIP_ICON_BATTLE, "Circle of 20 dummies around you", SENDER_CROWD_DUMMY, 20);
         AddItem(player, GOSSIP_ICON_BATTLE, "1 elite dummy", SENDER_DUMMY, DummyAction(1, BONK_SPAWN_ELITE));
         AddItem(player, GOSSIP_ICON_BATTLE, "1 boss dummy", SENDER_DUMMY, DummyAction(1, BONK_SPAWN_BOSS));
+        AddItem(player, GOSSIP_ICON_INTERACT_1, Toggled(deep, "Deep dummies: 100 times the health, refill below half"), SENDER_TOGGLE, TOGGLE_DEEP_DUMMIES);
         AddItem(player, GOSSIP_ICON_INTERACT_1, "Refill dummies", SENDER_RESET, RESET_DUMMIES);
         AddBack(player, MENU_MAIN);
     }
@@ -791,6 +795,13 @@ void BonkRun::ToggleSandbox(uint32 toggle)
         bonk->Notify(on ? "God mode is on: damage stops at 1 health." : "God mode is off.");
         return;
     }
+    if (toggle == TOGGLE_DEEP_DUMMIES)
+    {
+        m_sandboxDeepDummies = !m_sandboxDeepDummies;
+        bonk->Notify(m_sandboxDeepDummies ? "New dummies have 100 times the health and refill below half, so every hit counts on the meter." :
+            "New dummies are normal again.");
+        return;
+    }
     if (toggle == TOGGLE_REACH_REPORT)
     {
         m_sandboxReachReport = !m_sandboxReachReport;
@@ -1216,7 +1227,7 @@ void BonkRun::ShowSandboxMenu(Creature* keeper, uint32 menu)
     switch (MenuOf(menu))
     {
         case MENU_DUMMIES:
-            AddDummyItems(m_player);
+            AddDummyItems(m_player, m_sandboxDeepDummies);
             break;
         case MENU_ENEMIES:
             AddEnemyItems(m_player, m_sandboxPassive, m_sandboxUnkillable, m_sandboxMovesOff, m_sandboxReachReport);
@@ -1365,6 +1376,9 @@ void BonkRun::SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action
             break;
         case SENDER_DUMMY:
             SpawnSandboxDummies(action & 0xFF, BonkSpawnKind(action >> 8));
+            break;
+        case SENDER_CROWD_DUMMY:
+            SpawnSandboxDummies(std::min(action, BONK_CROWD_DUMMY_MAX), BONK_SPAWN_NORMAL, -1.0f);
             break;
         case SENDER_PACK:
             QueueSandboxPack(action, false);
@@ -1554,11 +1568,7 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
     else if (verb == "reach")
         ToggleSandbox(TOGGLE_REACH_REPORT);
     else if (verb == "deep")
-    {
-        m_sandboxDeepDummies = !m_sandboxDeepDummies;
-        bonk->Notify(m_sandboxDeepDummies ? "New dummies have 100 times the health and refill below half, so every hit counts on the meter." :
-            "New dummies are normal again.");
-    }
+        ToggleSandbox(TOGGLE_DEEP_DUMMIES);
     else if (verb == "minute")
     {
         m_sandboxMinute = first ? float(first) : -1.0f;
