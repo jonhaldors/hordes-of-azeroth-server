@@ -317,6 +317,8 @@ void BonkPlayer::LoadMastery()
     if (result)
         m_classFloor = result->Fetch()[0].GetUInt32();
 
+    m_accountHasRun = bool(CharacterDatabase.PQuery("SELECT 1 FROM `bonk_account_mastery` WHERE `account` = %u AND `xp` > 0 LIMIT 1", accountId));
+
     m_titleId = 0;
     result = CharacterDatabase.PQuery("SELECT `title` FROM `bonk_character_title` WHERE `guid` = %u", m_player->GetGUIDLow());
     if (result)
@@ -488,6 +490,15 @@ void BonkPlayer::SendMasteryState() const
         std::to_string(level < BONK_MASTERY_MAX_LEVEL ? BonkMastery::GetXpForLevel(level + 1) : 0) + "~" +
         std::to_string(BONK_MASTERY_MAX_LEVEL) + "~" + std::to_string(earned > spent ? earned - spent : 0) + "~" +
         (sBonkMastery.HasTrees(m_player->GetClass()) ? "1" : "0"));
+}
+
+bool BonkPlayer::CanSeeTownObject(uint32 entry, bool gameObject) const
+{
+    if (!gameObject && entry == BONK_TIER_VENDOR)
+        return IsTierCleared("heroic");
+    if (gameObject && entry == BONK_DECK_OBJECT)
+        return m_accountHasRun;
+    return true;
 }
 
 BonkTitle const* BonkPlayer::GetActiveTitle() const
@@ -743,6 +754,7 @@ void BonkPlayer::RecordRun(uint32 stage, uint32 seconds, uint32 kills, uint32 go
     if (IsInSandbox())
         return;
     ++m_record.runs;
+    m_accountHasRun = true;
     m_record.bestStage = std::max(m_record.bestStage, stage);
     m_record.bestSeconds = std::max(m_record.bestSeconds, seconds);
     m_record.kills += kills;

@@ -7746,6 +7746,10 @@ void Unit::ApplyDiminishingAura(DiminishingGroup group, bool apply)
 
 bool Unit::IsVisibleForInState(WorldObject const* pDetector, WorldObject const* viewPoint, bool inVisibleList) const
 {
+    if (IsCreature() && pDetector->IsPlayer() && !static_cast<Player const*>(pDetector)->IsGameMaster())
+        if (BonkPlayer const* bonk = static_cast<Player const*>(pDetector)->GetBonkPlayer())
+            if (!bonk->CanSeeTownObject(GetEntry(), false))
+                return false;
     return IsVisibleForOrDetect(pDetector, viewPoint, false, inVisibleList);
 }
 

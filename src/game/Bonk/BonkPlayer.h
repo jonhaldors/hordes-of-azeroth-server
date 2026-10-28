@@ -163,6 +163,7 @@ class BonkPlayer
         void SendTitles() const;
         bool SetTitle(uint32 titleId, std::string& error);
         BonkTitle const* GetActiveTitle() const;
+        bool CanSeeTownObject(uint32 entry, bool gameObject) const;
         void SendWallet() const;
 
         void OpenShop(BonkShop shop, Creature const* npc);
@@ -379,6 +380,7 @@ class BonkPlayer
         uint32 m_masteryXp = 0;
         uint32 m_classFloor = 0;
         uint32 m_titleId = 0;
+        bool m_accountHasRun = false;
         std::map<uint32, uint8> m_masteryRanks;
         uint32 m_starterChoice = 0;
         BonkShop m_shop{};

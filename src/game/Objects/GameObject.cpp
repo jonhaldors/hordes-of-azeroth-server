@@ -49,6 +49,7 @@
 #include <G3D/Quat.h>
 #include "Geometry.h"
 #include "Utilities/Random.h"
+#include "Bonk/BonkPlayer.h"
 
 bool QuaternionData::isUnit() const
 {
@@ -1142,6 +1143,11 @@ bool GameObject::IsVisibleForInState(WorldObject const* pDetector, WorldObject c
     // quick check visibility false cases for non-GM-mode
     if (!pDetector->IsPlayer() || !static_cast<Player const*>(pDetector)->IsGameMaster())
     {
+        if (pDetector->IsPlayer())
+            if (BonkPlayer const* bonk = static_cast<Player const*>(pDetector)->GetBonkPlayer())
+                if (!bonk->CanSeeTownObject(GetEntry(), true))
+                    return false;
+
         if (!IsVisible())
             return false;
 

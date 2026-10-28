@@ -82,7 +82,8 @@ namespace
     uint32 const BONK_STAGE_CROWD_GROWTH_STAGES = 2;
     float const BONK_MILESTONE_VETERAN_CHANCE = 5.0f;
     float const BONK_VETERAN_HEALTH        = 2.5f;
-    float const BONK_ARMOR_HALF            = 200.0f;
+    float const BONK_ARMOR_BASE            = 100.0f;
+    float const BONK_ARMOR_SLOPE           = 4.0f / 3.0f;
     float const BONK_ARMOR_MAX_REDUCTION   = 0.6f;
     float const BONK_VETERAN_DAMAGE        = 1.25f;
     float const BONK_VETERAN_REWARD        = 3.5f;
@@ -3555,7 +3556,7 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     if (float const armor = std::max(0.0f, GetStat(BONK_PASSIVE_ARMOR)))
     {
         uint32 const before = damage;
-        float const reduction = std::min(BONK_ARMOR_MAX_REDUCTION, armor / (armor + BONK_ARMOR_HALF));
+        float const reduction = std::min(BONK_ARMOR_MAX_REDUCTION, armor / (armor * BONK_ARMOR_SLOPE + BONK_ARMOR_BASE));
         damage = std::max(1u, uint32(damage * (1.0f - reduction)));
         m_armorUnreported += before - damage;
     }
