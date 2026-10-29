@@ -750,6 +750,15 @@ class BonkRun
             bool nearestOnly = false;
         };
         std::vector<GlyphBurst> m_glyphBursts;
+        struct GlacialShatter
+        {
+            ObjectGuid dead;
+            float x = 0.0f;
+            float y = 0.0f;
+            float damage = 0.0f;
+        };
+        std::vector<GlacialShatter> m_glacialShatters;
+        void ReleaseGlacialShatters();
 
         void SpawnPowerup(WorldObject const* at = nullptr);
         void UpdatePowerups(uint32 diff, bool spawn);

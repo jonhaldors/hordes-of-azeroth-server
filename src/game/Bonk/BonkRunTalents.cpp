@@ -614,6 +614,7 @@ void BonkRun::OnTalentHowl(Creature* wolf)
 
 void BonkRun::UpdateTalents(uint32 diff)
 {
+    ReleaseGlacialShatters();
     bool const mongoose = m_mastery.Special(BONK_SPECIAL_MONGOOSE_FURY) > 0.0f;
     bool const bulwark = m_mastery.Special(BONK_SPECIAL_BULWARK) > 0.0f;
     bool const madness = m_mastery.Special(BONK_SPECIAL_ANCIENT_MADNESS) > 0.0f;
@@ -816,19 +817,33 @@ void BonkRun::OnTalentKill(Unit* victim)
         ReduceTimer(BONK_WEAPON_SHADOW_DANCE, int32(deepening * IN_MILLISECONDS));
     if (share <= 0.0f || !dead || !IsFrozen(dead))
         return;
-    SpellEntry const* shards = sSpellMgr.GetSpellEntry(BONK_SPELL_GLACIAL_FRAGMENTS);
-    if (!shards)
+    GlacialShatter shatter;
+    shatter.dead = dead->GetObjectGuid();
+    shatter.x = dead->GetPositionX();
+    shatter.y = dead->GetPositionY();
+    shatter.damage = dead->GetMaxHealth() * share / 100.0f;
+    m_glacialShatters.push_back(shatter);
+}
+
+void BonkRun::ReleaseGlacialShatters()
+{
+    if (m_glacialShatters.empty())
         return;
-    float const damage = dead->GetMaxHealth() * share / 100.0f;
+    std::vector<GlacialShatter> shatters;
+    shatters.swap(m_glacialShatters);
+    SpellEntry const* shards = sSpellMgr.GetSpellEntry(BONK_SPELL_GLACIAL_FRAGMENTS);
+    if (!shards || m_state != STATE_RUNNING)
+        return;
     uint32 const chill = uint32(m_mastery.Special(BONK_SPECIAL_GLACIAL_FRAGMENTS_CHILL));
     FiringWeapon firing(m_player->GetBonkPlayer());
-    for (Creature* mob : GetMobsNear(dead->GetPositionX(), dead->GetPositionY(), BONK_GLACIAL_FRAGMENTS_RADIUS))
-        if (mob != dead)
-        {
-            DealSpellHit(shards, mob, damage);
-            if (chill)
-                ApplyKeyword(mob, BONK_KEYWORD_CHILL, chill, 0, 1.0f, shards->Id);
-        }
+    for (GlacialShatter const& shatter : shatters)
+        for (Creature* mob : GetMobsNear(shatter.x, shatter.y, BONK_GLACIAL_FRAGMENTS_RADIUS))
+            if (mob->GetObjectGuid() != shatter.dead && mob->IsAlive())
+            {
+                DealSpellHit(shards, mob, shatter.damage);
+                if (chill && mob->IsAlive())
+                    ApplyKeyword(mob, BONK_KEYWORD_CHILL, chill, 0, 1.0f, shards->Id);
+            }
 }
 
 void BonkRun::BlowFreezingWinds(PendingCast const& cast)
