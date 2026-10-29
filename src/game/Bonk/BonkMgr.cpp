@@ -216,23 +216,6 @@ namespace
         }
     }
 
-    std::string JoinValues(std::vector<std::string> const& values)
-    {
-        auto bare = [](std::string const& value) { return !value.empty() && value[0] == '+' ? value.substr(1) : value; };
-        std::vector<std::string> unique;
-        for (std::string const& value : values)
-            if (std::none_of(unique.begin(), unique.end(), [&](std::string const& seen) { return bare(seen) == bare(value); }))
-                unique.push_back(value);
-        std::string text;
-        for (size_t i = 0; i < unique.size(); ++i)
-        {
-            if (i)
-                text += i + 1 == unique.size() ? " and " : ", ";
-            text += unique[i];
-        }
-        return text;
-    }
-
     std::vector<std::string> SplitSentences(std::string const& text)
     {
         std::vector<std::string> sentences;
@@ -2294,15 +2277,7 @@ void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std:
 
 std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank) const
 {
-    std::string text = DescribePassive(passive, 1);
-    if (!rank)
-        return text;
-
-    std::vector<std::string> now;
-    ScalePassiveText(passive.description, passive.RankScale(rank), &now);
-    if (!now.empty())
-        text += BONK_LINE_BREAK + std::string("Current: ") + JoinValues(now) + ".";
-    return text;
+    return DescribePassive(passive, rank);
 }
 
 bool BonkMgr::IsArenaLocation(uint32 mapId, uint32 zoneId) const
