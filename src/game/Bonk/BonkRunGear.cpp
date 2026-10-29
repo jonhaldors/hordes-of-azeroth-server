@@ -1186,7 +1186,7 @@ void BonkRun::SendVault() const
         bonk->SendAddon("vaultitem~" + std::to_string(find.guid.GetCounter()) + "~" + std::to_string(find.entry) + "~" +
             std::to_string(find.quality) + "~" + (find.worn ? "1" : "0") + "~" + std::to_string(find.sellCopper) + "~" +
             DescribeBroughtGearFor(find.entry) + "~" + std::to_string(find.tier) + "~" + std::to_string(find.bestOwnedTier) + "~" +
-            (find.owned ? "1" : "0"));
+            (find.owned ? "1" : "0") + "~" + std::to_string(GetScrapPoints(find.entry)));
         if (find.inVault && !m_pillarMode)
             chosen += (chosen.empty() ? "" : ",") + std::to_string(find.guid.GetCounter());
     }
