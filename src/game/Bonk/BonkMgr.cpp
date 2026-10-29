@@ -321,7 +321,7 @@ void BonkMgr::LoadTiers()
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_affixes`, "
         "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth`, `details`, `opening_crowd`, `opening_sec`, "
-        "`stage_compound`, `floor_knee`, `late_health_growth`, `late_damage_growth`, `floor_knee2`, `last_health_growth`, `last_damage_growth` FROM `bonk_tier`"));
+        "`stage_compound`, `floor_knee`, `late_health_growth`, `late_damage_growth`, `floor_knee2`, `last_health_growth`, `last_damage_growth`, `knee_health_step`, `knee2_health_step` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -376,6 +376,8 @@ void BonkMgr::LoadTiers()
         tier.floorKnee2 = fields[39].GetUInt32();
         tier.lastHealthGrowth = fields[40].GetFloat();
         tier.lastDamageGrowth = fields[41].GetFloat();
+        tier.kneeHealthStep = std::max(1.0f, fields[42].GetFloat());
+        tier.knee2HealthStep = std::max(1.0f, fields[43].GetFloat());
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());
@@ -2241,7 +2243,10 @@ float BonkPassive::RankWeight(uint32 rank) const
         return 0.0f;
     if (effect == BONK_PASSIVE_AMOUNT)
         return 1.0f;
-    return std::max(BONK_PASSIVE_RANK_FLOOR, std::pow(BONK_PASSIVE_RANK_DECAY, float(rank - 1)));
+    float const weight = std::pow(BONK_PASSIVE_RANK_DECAY, float(rank - 1));
+    if (effect == BONK_PASSIVE_GROWTH)
+        return weight;
+    return std::max(BONK_PASSIVE_RANK_FLOOR, weight);
 }
 
 float BonkPassive::RankScale(uint32 rank) const

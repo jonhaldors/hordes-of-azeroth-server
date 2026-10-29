@@ -167,7 +167,7 @@ namespace
             .Line("Caps and diminishing returns apply to the total. Haste and Area curve; Dodge, Count and Movement Speed stop at their cap. Crit chance has no cap.")
             .Line("Spell ranks, Hunter's Mark, Judged, keyword payoffs, class damage bonuses and capstones multiply with Power.")
             .Line("Vulnerabilities and Sunder Armor multiply last, on the target.")
-            .Line("Each passive rank is worth 85% of the one before, never below 20%. Each extra card copy is worth 85% of the one before, never below 25%. Chance cards roll each copy separately.")
+            .Line("Each passive rank is worth 85% of the one before, never below 20% (Rested has no floor). Each extra card copy is worth 85% of the one before, never below 25%. Chance cards roll each copy separately.")
             .Line("Two trinkets with the same effect both give their stats, but the effect counts once.");
     }
 
