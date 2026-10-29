@@ -1507,6 +1507,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateRecovery(diff);
     UpdateCards(diff);
     UpdateGlyphs(diff);
+    UpdateWeaponGlows(diff);
     ExpireTrinketSpeed();
     UpdateShield(diff);
     UpdateNecrotic(diff);
@@ -10662,6 +10663,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
 {
     if (m_state != STATE_RUNNING)
         return;
+    ShakeOnKill(kind);
 
     ForgetEnemyAttacks(mob);
     if (kind == BONK_SPAWN_BOSS || kind == BONK_SPAWN_MINIBOSS)

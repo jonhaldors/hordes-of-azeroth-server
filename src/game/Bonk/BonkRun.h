@@ -268,6 +268,8 @@ class BonkRun
         void ApplySummonHitKeyword(Unit* summon, Unit* victim, SpellEntry const* spell);
         void OnPetBite(Creature* pet, Unit* victim);
         void OnKillingBlow(Unit* victim);
+        void PlayMeleeHitFeel(Unit* victim, SpellEntry const* spell);
+        void PlayKillFeel(Unit* victim, uint32 damage, uint32 health);
         void ResetOnKill(uint32 spellId);
         void OnSpellKill(uint32 spellId);
         void OnSummonKill(Unit* summon, Unit* victim);
@@ -1184,6 +1186,10 @@ class BonkRun
         uint32 m_armorUnreported = 0;
         uint32 m_projectilesUnreported = 0;
         uint32 m_castAnimationMs = 0;
+        uint32 m_meleeHitSoundMs = 0;
+        uint32 m_killBurstMs = 0;
+        uint32 m_cameraShakeMs = 0;
+        int32 m_weaponGlowTimer = 0;
         uint32 m_maxHealthReported = 0;
         uint32 m_unhurtReported = 0;
         uint32 m_overtimeReported = 0;
@@ -2050,6 +2056,13 @@ class BonkRun
         void HideHeroRing(BonkHeroRing ring);
         void RemoveHeroRingAuras(BonkHeroRing ring);
         void RemoveHeroLooks();
+        uint32 GetMeleeHitSoundKit() const;
+        void ShakeCamera(bool heavy);
+        void ShakeOnKill(BonkSpawnKind kind);
+        void ShakeOnHeroHit(uint32 damage);
+        void UpdateWeaponGlows(uint32 diff);
+        void ShowWeaponGlow(uint8 slot, uint32 enchantId);
+        void ClearWeaponGlows();
         uint32 m_heroRingSpells[size_t(BonkHeroRing::Count)] = {};
         void OnBleedingDeath(Creature const* dead);
         KeywordCloudKind GetBloodPoolKind() const;

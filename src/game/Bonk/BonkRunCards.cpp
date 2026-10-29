@@ -656,6 +656,7 @@ bool BonkRun::RollFreeChest() const
 
 void BonkRun::OnHeroHitBy(Creature* attacker, uint32 damage)
 {
+    ShakeOnHeroHit(damage);
     if (damage)
         TriggerGlyphNova();
     BonkCard const* choker = m_cardByEffect[BONK_CARD_THORNS];
