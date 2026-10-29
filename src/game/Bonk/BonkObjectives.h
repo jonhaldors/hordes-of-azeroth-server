@@ -17,6 +17,8 @@ enum BonkObjectiveKind : uint8
     BONK_OBJECTIVE_EVENT   = 2,
     BONK_OBJECTIVE_EXTRACT = 3,
     BONK_OBJECTIVE_CHEST   = 4,
+    BONK_OBJECTIVE_BOSS    = 5,
+    BONK_OBJECTIVE_MINIBOSS = 6,
     MAX_BONK_OBJECTIVE_KIND
 };
 
@@ -45,6 +47,7 @@ class BonkObjectives
         uint32 Follow(Player* hero, BonkObjectiveKind kind, Creature const* target, std::string const& label, uint32 seconds,
             std::string const& icon = "", std::string const& description = "");
         void Remove(Player* hero, uint32 id);
+        void RemoveFollowing(Player* hero, ObjectGuid const& target);
         void Clear(Player* hero);
         std::vector<BonkObjective> Update(Player* hero, uint32 diff);
         void Resend(Player* hero) const;

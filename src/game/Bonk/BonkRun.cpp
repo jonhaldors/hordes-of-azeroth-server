@@ -314,6 +314,8 @@ namespace
     size_t const BONK_MAX_FLARES           = 12;
     size_t const BONK_MAX_FLARE_SPLITS     = 10;
     size_t const BONK_MAX_SHARD_BURSTS     = 10;
+    char const* const BONK_BOSS_PIN_ICON     = "INV_Misc_Bone_HumanSkull_01";
+    char const* const BONK_MINIBOSS_PIN_ICON = "INV_Misc_Bone_ElfSkull_01";
     int32 const BONK_SHARD_BURST_DELAY_MS  = 100;
     uint32 const BONK_KIT_SHARD_BURST      = 988;
     float const BONK_VENOM_BOLT_RANGE      = 12.0f;
@@ -4367,7 +4369,12 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
         return mob;
     }
     if (creature.kind == BONK_SPAWN_BOSS || creature.kind == BONK_SPAWN_MINIBOSS)
+    {
         m_bossArrivals[mob->GetObjectGuid()] = { m_totalMs, m_damageTaken };
+        bool const boss = creature.kind == BONK_SPAWN_BOSS;
+        m_objectives.Follow(m_player, boss ? BONK_OBJECTIVE_BOSS : BONK_OBJECTIVE_MINIBOSS, mob, mob->GetName(), 0,
+            boss ? BONK_BOSS_PIN_ICON : BONK_MINIBOSS_PIN_ICON, boss ? "Boss" : "Mini-boss");
+    }
     if (creature.kind == BONK_SPAWN_BOSS)
         m_bossGuid = mob->GetObjectGuid();
     return mob;
@@ -10657,6 +10664,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
         return;
 
     ForgetEnemyAttacks(mob);
+    if (kind == BONK_SPAWN_BOSS || kind == BONK_SPAWN_MINIBOSS)
+        m_objectives.RemoveFollowing(m_player, mob->GetObjectGuid());
 
     bool const eventGroup = m_miniEventActive &&
         std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), mob->GetObjectGuid()) != m_miniEvent.targets.end();

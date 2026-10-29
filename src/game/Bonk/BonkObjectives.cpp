@@ -28,7 +28,7 @@ namespace
         return dx * dx + dy * dy;
     }
 
-    char const* const KIND_NAMES[MAX_BONK_OBJECTIVE_KIND] = { "shrine", "vendor", "event", "extract", "chest" };
+    char const* const KIND_NAMES[MAX_BONK_OBJECTIVE_KIND] = { "shrine", "vendor", "event", "extract", "chest", "boss", "miniboss" };
 
     bool HasPillar(BonkObjective const& objective)
     {
@@ -109,6 +109,13 @@ void BonkObjectives::Remove(Player* hero, uint32 id)
     Despawn(hero, *itr);
     hero->GetBonkPlayer()->SendAddon("objectiveclear~" + std::to_string(id));
     m_objectives.erase(itr);
+}
+
+void BonkObjectives::RemoveFollowing(Player* hero, ObjectGuid const& target)
+{
+    auto const itr = std::find_if(m_objectives.begin(), m_objectives.end(), [&target](BonkObjective const& objective) { return objective.follows == target; });
+    if (itr != m_objectives.end())
+        Remove(hero, itr->id);
 }
 
 void BonkObjectives::Clear(Player* hero)
