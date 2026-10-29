@@ -253,6 +253,12 @@ ChatCommand * ChatHandler::getCommandTable()
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 
+    static ChatCommand bonkStringsCommandTable[] =
+    {
+        { "export",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleBonkStringsExportCommand,   "", nullptr },
+        { nullptr,          0,                  false, nullptr,                                        "", nullptr }
+    };
+
     static ChatCommand bonkCommandTable[] =
     {
         { "start",          SEC_PLAYER,         false, &ChatHandler::HandleBonkStartCommand,           "", nullptr },
@@ -269,6 +275,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "toggle",         SEC_PLAYER,         false, &ChatHandler::HandleBonkToggleCommand,          "", nullptr },
         { "respec",         SEC_PLAYER,         false, &ChatHandler::HandleBonkRespecCommand,          "", nullptr },
         { "hello",         SEC_PLAYER,         false, &ChatHandler::HandleBonkHelloCommand,           "", nullptr },
+        { "lang",           SEC_PLAYER,         false, &ChatHandler::HandleBonkLangCommand,            "", nullptr },
+        { "strings",        SEC_ADMINISTRATOR,  true,  nullptr,                                        "", bonkStringsCommandTable },
         { "quests",        SEC_PLAYER,         false, &ChatHandler::HandleBonkQuestsCommand,          "", nullptr },
         { "codex",          SEC_PLAYER,         false, &ChatHandler::HandleBonkCodexCommand,           "", nullptr },
         { "maps",           SEC_PLAYER,         false, &ChatHandler::HandleBonkMapsCommand,            "", nullptr },
@@ -1246,7 +1254,7 @@ ChatCommand * ChatHandler::getCommandTable()
     {
         { "account",        SEC_PLAYER,         true, nullptr,                                         "", accountCommandTable  },
         { "auction",        SEC_TICKETMASTER,   false, nullptr,                                        "", auctionCommandTable  },
-        { "bonk",           SEC_PLAYER,         false, nullptr,                                        "", bonkCommandTable     },
+        { "bonk",           SEC_PLAYER,         true,  nullptr,                                        "", bonkCommandTable     },
         { "cast",           SEC_DEVELOPER,      false, nullptr,                                        "", castCommandTable     },
         { "character",      SEC_TICKETMASTER,   true, nullptr,                                         "", characterCommandTable},
         { "charge",         SEC_GAMEMASTER,     false, &ChatHandler::HandleChargeCommand,              "", nullptr },
