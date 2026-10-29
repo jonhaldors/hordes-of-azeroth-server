@@ -31,11 +31,19 @@ class BonkCrowd
             float turnRateSmall = 240.0f;
             float turnRateLarge = 120.0f;
             float flowAngle = 50.0f;
+            float shoveDistance = 0.5f;
+            float shoveSpeed = 8.0f;
+            float shoveGapMs = 450.0f;
+            float levelPushRadius = 10.0f;
+            float levelPushDistance = 4.0f;
+            float levelPushSpeed = 16.0f;
         };
 
         void Update(uint32 diff, Player* hero, std::vector<ObjectGuid> const& mobs, bool heroPerched, std::vector<Creature*>& stuck);
         void Clear() { m_movers.clear(); m_tickTimer = 0; }
+        bool Shove(Creature* mob, Player* hero, float fromX, float fromY, float distance, float speed, uint32 gapMs);
         static std::vector<std::pair<char const*, float*>> GetTunables();
+        static Settings const& GetSettings() { return m_settings; }
         std::string Describe() const;
 
     private:
@@ -58,6 +66,8 @@ class BonkCrowd
             uint32 flowUntilMs = 0;
             float flowAngle = 0.0f;
             float heading = 0.0f;
+            uint32 shovedMs = 0;
+            bool shoved = false;
         };
 
         struct Body

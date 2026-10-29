@@ -270,6 +270,7 @@ class BonkRun
         void OnKillingBlow(Unit* victim);
         void PlayMeleeHitFeel(Unit* victim, SpellEntry const* spell);
         void PlayKillFeel(Unit* victim, uint32 damage, uint32 health);
+        void StaggerOnHit(Unit* victim);
         void ResetOnKill(uint32 spellId);
         void OnSpellKill(uint32 spellId);
         void OnSummonKill(Unit* summon, Unit* victim);
@@ -1188,6 +1189,7 @@ class BonkRun
         uint32 m_killBurstMs = 0;
         uint32 m_cameraShakeMs = 0;
         int32 m_weaponGlowTimer = 0;
+        bool m_levelPushPending = false;
         uint32 m_maxHealthReported = 0;
         uint32 m_unhurtReported = 0;
         uint32 m_overtimeReported = 0;
@@ -2059,6 +2061,9 @@ class BonkRun
         void ShakeOnKill(BonkSpawnKind kind);
         void ShakeOnHeroHit(uint32 damage);
         void UpdateWeaponGlows(uint32 diff);
+        void UpdateFeel(uint32 diff);
+        void UpdateLevelPush();
+        bool CanBeShoved(Creature const* mob) const;
         void ShowWeaponGlow(uint8 slot, uint32 enchantId);
         void ClearWeaponGlows();
         uint32 m_heroRingSpells[size_t(BonkHeroRing::Count)] = {};

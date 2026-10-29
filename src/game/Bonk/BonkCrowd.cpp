@@ -52,6 +52,7 @@ namespace
     float const BONK_CROWD_OVERLAP_SLOP     = 0.25f;
     uint32 const BONK_CROWD_KEEP_OUT_PASSES = 2;
     float const BONK_CROWD_FLOW_RANGE       = 14.0f;
+    float const BONK_CROWD_MIN_SHOVE        = 0.15f;
 
     bool WalkRay(uint32 mapId, float fromX, float fromY, float fromZ, float& x, float& y, float& z)
     {
@@ -148,6 +149,12 @@ std::vector<std::pair<char const*, float*>> BonkCrowd::GetTunables()
         { "turnRateSmall", &m_settings.turnRateSmall },
         { "turnRateLarge", &m_settings.turnRateLarge },
         { "flowAngle", &m_settings.flowAngle },
+        { "shoveDistance", &m_settings.shoveDistance },
+        { "shoveSpeed", &m_settings.shoveSpeed },
+        { "shoveGapMs", &m_settings.shoveGapMs },
+        { "levelPushRadius", &m_settings.levelPushRadius },
+        { "levelPushDistance", &m_settings.levelPushDistance },
+        { "levelPushSpeed", &m_settings.levelPushSpeed },
     };
 }
 
@@ -696,4 +703,36 @@ void BonkCrowd::Stand(Body& body, float heroX, float heroY)
     mover.standing = true;
 
     mob->SetOrientation(mob->GetAngle(heroX, heroY));
+}
+
+bool BonkCrowd::Shove(Creature* mob, Player* hero, float fromX, float fromY, float distance, float speed, uint32 gapMs)
+{
+    if (distance <= 0.0f || speed <= 0.0f || GetHold(mob, hero, false) != HOLD_NONE)
+        return false;
+    Mover& mover = m_movers[mob->GetObjectGuid().GetRawValue()];
+    if (mover.shoved && !MillisecondsPassed(mover.shovedMs, m_clockMs, gapMs))
+        return false;
+
+    float const angle = std::atan2(mob->GetPositionY() - fromY, mob->GetPositionX() - fromX);
+    float x = mob->GetPositionX() + std::cos(angle) * distance;
+    float y = mob->GetPositionY() + std::sin(angle) * distance;
+    float z = mob->GetPositionZ();
+    if (!WalkRay(mob->GetMapId(), mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), x, y, z))
+        return false;
+    if (Distance2d(mob->GetPositionX(), mob->GetPositionY(), x, y) < BONK_CROWD_MIN_SHOVE)
+        return false;
+    mob->UpdateAllowedPositionZ(x, y, z);
+
+    Movement::MoveSplineInit init(*mob, "BonkShove");
+    init.MoveTo(x, y, z, MOVE_FORCE_DESTINATION);
+    init.SetFacingGUID(hero->GetObjectGuid().GetRawValue());
+    init.SetVelocity(speed);
+    init.Launch();
+
+    mover.shoved = true;
+    mover.shovedMs = m_clockMs;
+    mover.sentMoving = false;
+    mover.standing = false;
+    mover.lastSeenMs = m_clockMs;
+    return true;
 }
