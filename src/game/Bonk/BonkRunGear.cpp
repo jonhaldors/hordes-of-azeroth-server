@@ -110,6 +110,7 @@ namespace
     uint32 const BONK_GEAR_LEGENDARY_LAST_FLOOR = 20;
     float const BONK_INVASION_UPGRADE_CHANCE = 50.0f;
     uint32 const BONK_ENDLESS_SCRAP_MULTIPLIER = 2;
+    uint32 const BONK_SCRAP_PER_FIND = 2;
     uint32 const BONK_SCRAP_BY_TIERS_AHEAD[] = { 0, 20, 35, 50 };
     size_t const BONK_SCRAP_STEPS = sizeof(BONK_SCRAP_BY_TIERS_AHEAD) / sizeof(BONK_SCRAP_BY_TIERS_AHEAD[0]);
     uint32 const BONK_GO_PILLAR            = 900070;
@@ -321,10 +322,8 @@ uint32 BonkRun::GetScrapPoints(uint32 entry) const
         return 0;
     uint32 const tier = BonkMgr::GetGearTier(entry);
     uint32 const stock = m_player->GetBonkPlayer()->GetStockTier();
-    if (tier <= stock)
-        return 0;
     size_t const steps = BONK_SCRAP_STEPS;
-    uint32 const points = BONK_SCRAP_BY_TIERS_AHEAD[std::min<size_t>(tier - stock, steps - 1)];
+    uint32 const points = tier <= stock ? BONK_SCRAP_PER_FIND : BONK_SCRAP_BY_TIERS_AHEAD[std::min<size_t>(tier - stock, steps - 1)];
     return m_stage > BONK_TIER_GEAR_TIERS ? points * BONK_ENDLESS_SCRAP_MULTIPLIER : points;
 }
 
@@ -853,8 +852,8 @@ void BonkRun::ResolveRunGear(bool extract)
     if (scrap)
     {
         bonk->AddScrap(scrap);
-        bonk->Notify("Your unextracted finds became " + std::to_string(scrap) + " Scrap (" + std::to_string(bonk->GetScrap()) + "/" +
-            std::to_string(BONK_SCRAP_PER_UPGRADE) + "). Spend it at the Quartermaster.");
+        bonk->Notify("You receive " + std::to_string(scrap) + " Scrap from unextracted finds (" + std::to_string(bonk->GetScrap()) + "/" +
+            std::to_string(BONK_SCRAP_PER_UPGRADE) + ").");
     }
 }
 
