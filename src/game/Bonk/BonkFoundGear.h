@@ -15,6 +15,7 @@ class Player;
 
 uint8 const BONK_FOUND_MAX_LINES = 2;
 float const BONK_FOUND_TIER_GROWTH = 1.12f;
+uint32 const BONK_FOUND_AWAKEN_COPPER = 5000000;
 
 struct BonkFoundLine
 {
@@ -51,6 +52,8 @@ namespace BonkFound
     float LineValue(BonkFoundLine const& line, uint32 tier);
     uint32 GetItemTier(Item const* item);
     uint32 GetUpgradeCost(uint32 tier);
+    bool IsAwakening(uint32 tier);
+    std::string DescribeTier(uint32 tier);
     void AddWornStats(Item const* item, float* passives);
     std::string DescribeLines(BonkFoundGear const& found, uint32 tier);
     std::string DescribeExtra(Item const* item, uint32 tier);

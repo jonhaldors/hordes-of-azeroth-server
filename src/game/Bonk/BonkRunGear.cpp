@@ -283,7 +283,7 @@ bool BonkRun::PlaceTierPiece(Creature const* mob)
 
 std::string BonkRun::DescribeFoundDrop(BonkFoundGear const& found) const
 {
-    std::string text = "Tier " + std::to_string(found.tier);
+    std::string text = BonkFound::DescribeTier(found.tier);
     if (found.lines.size() == 1)
         text += ", 1 bonus line";
     else if (found.lines.size() > 1)

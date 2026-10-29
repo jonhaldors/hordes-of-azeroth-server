@@ -2193,9 +2193,11 @@ void BonkPlayer::SendFoundUpgrades() const
         BonkFoundGear found;
         sBonkFound.Get(item->GetGUIDLow(), found);
         uint32 const tier = BonkFound::GetItemTier(item);
+        bool const awakening = BonkFound::IsAwakening(tier);
+        uint32 const cost = awakening ? BONK_FOUND_AWAKEN_COPPER : BonkFound::GetUpgradeCost(tier);
         SendAddon("qmup~" + std::to_string(item->GetGUIDLow()) + "~" + std::to_string(item->GetEntry()) + "~" + std::to_string(tier) + "~" +
-            std::to_string(BonkFound::GetUpgradeCost(tier)) + "~" + (tier < ceiling ? "1" : "0") + "~" + (item->IsEquipped() ? "1" : "0") + "~" +
-            BonkFound::DescribeLines(found, tier) + "~" + BonkFound::DescribeExtra(item, tier));
+            std::to_string(cost) + "~" + (tier < ceiling ? "1" : "0") + "~" + (item->IsEquipped() ? "1" : "0") + "~" +
+            BonkFound::DescribeLines(found, tier) + "~" + BonkFound::DescribeExtra(item, tier) + "~" + (awakening ? "gold" : "scrap"));
     }
     SendAddon("qmupend~" + std::to_string(m_scrap) + "~" + std::to_string(ceiling));
 }
@@ -2244,13 +2246,19 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
     }
     Item* item = *itr;
     uint32 const tier = BonkFound::GetItemTier(item);
-    uint32 const cost = BonkFound::GetUpgradeCost(tier);
+    bool const awakening = BonkFound::IsAwakening(tier);
+    uint32 const cost = awakening ? BONK_FOUND_AWAKEN_COPPER : BonkFound::GetUpgradeCost(tier);
     if (tier >= GetUpgradeCeiling())
     {
-        error = "Clear Mythic floor " + std::to_string(tier + 1) + " to upgrade this to Tier " + std::to_string(tier + 1) + ".";
+        error = "Clear Mythic floor " + std::to_string(tier + 1) + " to raise this to " + BonkFound::DescribeTier(tier + 1) + ".";
         return false;
     }
-    if (m_scrap < cost)
+    if (awakening && m_player->GetMoney() < cost)
+    {
+        error = "Awakening costs " + FormatBonkMoney(cost) + ".";
+        return false;
+    }
+    if (!awakening && m_scrap < cost)
     {
         error = "You need " + std::to_string(cost) + " Scrap. You have " + std::to_string(m_scrap) + ".";
         return false;
@@ -2276,10 +2284,19 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
     }
     BonkFound::Remember(item, found);
 
-    m_scrap -= cost;
-    CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `scrap`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `scrap` = VALUES(`scrap`)",
-        GetProgressAccount(), m_scrap);
-    Notify(name + " is now Tier " + std::to_string(found.tier) + ".");
+    if (awakening)
+    {
+        m_player->ModifyMoney(-int32(cost));
+        Notify(name + " awakens! It is now Ancestral +1 and can keep growing.");
+    }
+    else
+    {
+        m_scrap -= cost;
+        CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `scrap`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `scrap` = VALUES(`scrap`)",
+            GetProgressAccount(), m_scrap);
+        Notify(name + " is now " + (found.tier > BONK_TIER_GEAR_TIERS ? "Ancestral +" + std::to_string(found.tier - BONK_TIER_GEAR_TIERS) :
+            "Tier " + std::to_string(found.tier)) + ".");
+    }
     SendQuartermaster();
     SendFoundUpgrades();
     SendFoundItems();

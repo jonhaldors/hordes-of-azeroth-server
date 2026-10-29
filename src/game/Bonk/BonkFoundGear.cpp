@@ -211,6 +211,18 @@ uint32 BonkFound::GetUpgradeCost(uint32 tier)
     return BONK_FOUND_UPGRADE_BASE_SCRAP + BONK_FOUND_UPGRADE_SCRAP_PER_TIER * tier;
 }
 
+bool BonkFound::IsAwakening(uint32 tier)
+{
+    return tier == BONK_TIER_GEAR_TIERS;
+}
+
+std::string BonkFound::DescribeTier(uint32 tier)
+{
+    if (tier <= BONK_TIER_GEAR_TIERS)
+        return "Tier " + std::to_string(tier);
+    return "Tier " + std::to_string(BONK_TIER_GEAR_TIERS) + ", Ancestral +" + std::to_string(tier - BONK_TIER_GEAR_TIERS);
+}
+
 void BonkFound::AddWornStats(Item const* item, float* passives)
 {
     BonkFoundGear found;
