@@ -1397,7 +1397,7 @@ uint32 BonkPlayer::GetFortuneSpentAbove(uint8 row, uint32 refundedId) const
     uint32 spent = 0;
     for (auto const& itr : m_talentRanks)
         if (BonkTalent const* talent = sBonkMgr.GetTalent(itr.first))
-            if (talent->layout.row < row && !talent->IsEndless())
+            if (talent->layout.tree && talent->layout.row < row && !talent->IsEndless())
             {
                 uint8 const ranks = itr.first == refundedId && itr.second ? itr.second - 1 : itr.second;
                 for (uint8 rank = 0; rank < ranks; ++rank)
