@@ -337,7 +337,7 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
         uint32 const gold = m_map.goldPerKill * 25;
         uint32 const paid = uint32(gold * GetGoldMultiplier());
         GiveGold(gold);
-        m_player->GetBonkPlayer()->Notify(paid ? BONK_STRING_DECK_EMPTY_GOLD : BONK_STRING_DECK_EMPTY, { FormatBonkMoney(paid) });
+        m_player->GetBonkPlayer()->Notify(paid ? BONK_STRING_DECK_EMPTY_GOLD : BONK_STRING_DECK_EMPTY, { FormatBonkMoney(paid, GetLocale()) });
         return false;
     }
 
@@ -550,31 +550,31 @@ std::string BonkRun::DescribeCardNow(BonkCard const& card) const
         case BONK_CARD_KILL_POWER:
         {
             float const power = std::min(card.values[1], card.values[0] * m_cardKills) * GetCopySum(GetCardCopies(card.id));
-            return "Now: +" + percent(power) + "% Power";
+            return GetString(BONK_STRING_CARD_NOW_POWER, { percent(power) });
         }
         case BONK_CARD_UNHIT_POWER:
         {
             float const seconds = float(m_totalMs - (m_hurt ? m_lastHurtMs : 0)) / IN_MILLISECONDS;
             float const power = std::min(GetCardTotal(BONK_CARD_UNHIT_POWER, 1), GetCardTotal(BONK_CARD_UNHIT_POWER, 0) * std::floor(seconds));
-            return "Now: +" + percent(power) + "% Power";
+            return GetString(BONK_STRING_CARD_NOW_POWER, { percent(power) });
         }
         case BONK_CARD_HASTE_BURST:
             if (m_cardHasteUntilMs > m_totalMs)
-                return "Active: +" + percent(GetCardTotal(BONK_CARD_HASTE_BURST, 1)) + "% Haste";
+                return GetString(BONK_STRING_CARD_ACTIVE_HASTE, { percent(GetCardTotal(BONK_CARD_HASTE_BURST, 1)) });
             return "";
         case BONK_CARD_POWER_SURGE:
             if (m_cardSurgeUntilMs > m_totalMs)
             {
                 uint32 const left = (m_cardSurgeUntilMs - m_totalMs + 999) / IN_MILLISECONDS;
-                return "Active: +" + percent(GetCardTotal(BONK_CARD_POWER_SURGE, 0)) + "% Power for " + std::to_string(left) +
-                    (left == 1 ? " more second" : " more seconds");
+                return GetString(left == 1 ? BONK_STRING_CARD_ACTIVE_POWER_ONE : BONK_STRING_CARD_ACTIVE_POWER,
+                    { percent(GetCardTotal(BONK_CARD_POWER_SURGE, 0)), std::to_string(left) });
             }
             return "";
         case BONK_CARD_SOULSTONE:
-            return std::to_string(m_soulstones) + (m_soulstones == 1 ? " charge left" : " charges left");
+            return GetString(m_soulstones == 1 ? BONK_STRING_CARD_CHARGES_LEFT_ONE : BONK_STRING_CARD_CHARGES_LEFT, { std::to_string(m_soulstones) });
         case BONK_CARD_ASCENSION:
             if (OwnedWeapon const* owned = FindAscensionWeapon())
-                return "Ready: your next level-up offers the evolution of " + Localize(BONK_FIELD_WEAPON_NAME, owned->weapon.id, owned->weapon.name);
+                return GetString(BONK_STRING_CARD_ASCENSION_READY, { Localize(BONK_FIELD_WEAPON_NAME, owned->weapon.id, owned->weapon.name) });
             return "";
         default:
             return "";
@@ -853,12 +853,12 @@ std::string BonkRun::DescribeHeldCard(BonkCard const& card, uint32 copies, Local
     std::string const description = sBonkLocale.Localize(BONK_FIELD_CARD_DESCRIPTION, card.id, card.description, locale);
     if (copies <= 1)
         return description;
-    std::string const total = BonkCodex::DescribeCardTotal(card, copies);
+    std::string const total = BonkCodex::DescribeCardTotal(card, copies, locale);
     if (total.empty())
         return description;
     if (card.effect == BONK_CARD_NONE)
-        return total + ".";
-    return description + BONK_LINE_BREAK + "Current: " + total + ".";
+        return sBonkLocale.GetString(BONK_STRING_SENTENCE, locale, { total });
+    return description + BONK_LINE_BREAK + sBonkLocale.GetString(BONK_STRING_CURRENT_TOTAL, locale, { total });
 }
 
 void BonkRun::SendCards() const

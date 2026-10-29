@@ -1,7 +1,7 @@
 #include "BonkMobAI.h"
+#include "BonkLocale.h"
 #include "BonkPlayer.h"
 #include "BonkRun.h"
-#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "DBCStores.h"
@@ -420,24 +420,24 @@ namespace
 
     struct AffixInfo
     {
-        char const* name;
+        BonkString name;
         char const* icon;
         AffixCategory category;
         uint32 glow;
     };
     AffixInfo const BONK_AFFIXES[] =
     {
-        { "Swift",      "Ability_Rogue_Sprint",              AFFIX_PRESSURE, 22580 },
-        { "Explosive",  "Spell_Fire_SelfDestruct",           AFFIX_PRESSURE, 22579 },
-        { "Necrotic",   "Spell_Shadow_AbominationExplosion", AFFIX_PRESSURE, 22577 },
-        { "Vampiric",   "Spell_Shadow_LifeDrain02",          AFFIX_SUSTAIN,  22578 },
-        { "Bolstering", "Ability_Warrior_BattleShout",       AFFIX_SUSTAIN,  22581 },
-        { "Sanguine",   "Spell_Shadow_BloodBoil",            AFFIX_SUSTAIN,  22518 },
-        { "Bulwark",    "Spell_Holy_PowerWordShield",        AFFIX_BULK,     26388 },
-        { "Fortified",  "Ability_Warrior_DefensiveStance",   AFFIX_BULK,     22576 },
-        { "Frenzied",   "Ability_GhoulFrenzy",               AFFIX_ENRAGE,   28126 },
-        { "Raging",     "Ability_Racial_BloodRage",          AFFIX_ENRAGE,   31309 },
-        { "Volcanic",   "Spell_Fire_Volcano",                AFFIX_PRESSURE, 22579 },
+        { BONK_STRING_AFFIX_SWIFT,      "Ability_Rogue_Sprint",              AFFIX_PRESSURE, 22580 },
+        { BONK_STRING_AFFIX_EXPLOSIVE,  "Spell_Fire_SelfDestruct",           AFFIX_PRESSURE, 22579 },
+        { BONK_STRING_AFFIX_NECROTIC,   "Spell_Shadow_AbominationExplosion", AFFIX_PRESSURE, 22577 },
+        { BONK_STRING_AFFIX_VAMPIRIC,   "Spell_Shadow_LifeDrain02",          AFFIX_SUSTAIN,  22578 },
+        { BONK_STRING_AFFIX_BOLSTERING, "Ability_Warrior_BattleShout",       AFFIX_SUSTAIN,  22581 },
+        { BONK_STRING_AFFIX_SANGUINE,   "Spell_Shadow_BloodBoil",            AFFIX_SUSTAIN,  22518 },
+        { BONK_STRING_AFFIX_BULWARK,    "Spell_Holy_PowerWordShield",        AFFIX_BULK,     26388 },
+        { BONK_STRING_AFFIX_FORTIFIED,  "Ability_Warrior_DefensiveStance",   AFFIX_BULK,     22576 },
+        { BONK_STRING_AFFIX_FRENZIED,   "Ability_GhoulFrenzy",               AFFIX_ENRAGE,   28126 },
+        { BONK_STRING_AFFIX_RAGING,     "Ability_Racial_BloodRage",          AFFIX_ENRAGE,   31309 },
+        { BONK_STRING_AFFIX_VOLCANIC,   "Spell_Fire_Volcano",                AFFIX_PRESSURE, 22579 },
     };
 }
 
@@ -526,7 +526,7 @@ void BonkMobAI::Setup(BonkSpawnKind kind)
 
     uint32 const plateKind = GetPlateKind();
     if (plateKind && owner)
-        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(plateKind) + "~" + m_creature->GetName() + "~" + m_plateIcon + "~" +
+        owner->GetBonkPlayer()->SendAddon("mob~" + std::to_string(plateKind) + "~" + owner->GetBonkPlayer()->GetLocalName(m_creature) + "~" + m_plateIcon + "~" +
             std::to_string(m_creature->GetPlateId()) + "~" + GetUnitGuidText(m_creature));
 }
 
@@ -572,7 +572,7 @@ void BonkMobAI::RollAffixes(uint32 count)
     for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
         available.push_back(Affix(affix));
 
-    std::vector<std::string> names;
+    std::vector<BonkString> names;
     for (uint32 i = 0; i < count && !available.empty(); ++i)
     {
         uint32 const pick = urand(0, uint32(available.size() - 1));
@@ -607,10 +607,11 @@ void BonkMobAI::RollAffixes(uint32 count)
     if (!names.empty())
         if (Player* owner = GetOwner())
         {
-            std::string list;
-            for (size_t i = 0; i < names.size(); ++i)
-                list += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
-            owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_AFFIXES, { std::string(m_creature->GetName()), list });
+            BonkPlayer const* bonk = owner->GetBonkPlayer();
+            std::vector<std::string> shown;
+            for (BonkString name : names)
+                shown.push_back(bonk->GetString(name));
+            bonk->Notify(BONK_STRING_ENEMY_AFFIXES, { bonk->GetLocalName(m_creature), bonk->JoinList(shown, BONK_STRING_LIST_AND) });
         }
 }
 
@@ -643,12 +644,12 @@ uint32 BonkMobAI::GetAffixCount() const
     return count;
 }
 
-std::string BonkMobAI::GetAffixNames() const
+std::string BonkMobAI::GetAffixNames(LocaleConstant locale) const
 {
     std::string names;
     for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
         if (HasAffix(Affix(affix)))
-            names += (names.empty() ? "" : ",") + std::string(BONK_AFFIXES[affix].name);
+            names += (names.empty() ? "" : ",") + sBonkLocale.GetString(BONK_AFFIXES[affix].name, locale);
     return names;
 }
 
@@ -660,11 +661,9 @@ void BonkMobAI::SendAffixInfo(BonkPlayer* bonk)
         snprintf(text, sizeof(text), "%g%%", value);
         return std::string(text);
     };
-    auto seconds = [](uint32 ms)
+    auto seconds = [bonk](uint32 ms)
     {
-        char text[16];
-        snprintf(text, sizeof(text), ms == 1000 ? "%g second" : "%g seconds", ms / 1000.0f);
-        return std::string(text);
+        return bonk->GetString(ms == 1000 ? BONK_STRING_DURATION_SECOND : BONK_STRING_DURATION_SECONDS, { FormatBonkNumber(ms / 1000.0f) });
     };
 
     for (uint8 affix = 0; affix < MAX_AFFIX; ++affix)
@@ -672,21 +671,20 @@ void BonkMobAI::SendAffixInfo(BonkPlayer* bonk)
         std::string text;
         switch (Affix(affix))
         {
-            case AFFIX_SWIFT:      text = "Moves " + percent((BONK_SWIFT_SPEED - 1.0f) * 100.0f) + " faster."; break;
-            case AFFIX_EXPLOSIVE:  text = "While you are near it, fire erupts around it every " + seconds(BONK_BURN_INTERVAL) + ". A red circle warns you first."; break;
-            case AFFIX_NECROTIC:   text = "Each hit reduces the healing you receive, and the effect stacks. Move away from it to clear the effect."; break;
-            case AFFIX_VAMPIRIC:   text = "Heals for " + percent(BONK_VAMPIRIC_HEAL * 100.0f) + " of the damage it deals."; break;
-            case AFFIX_BOLSTERING: text = "When it dies, nearby enemies gain " + percent(BONK_BOLSTER_BONUS * 100.0f) + " more health and damage."; break;
-            case AFFIX_SANGUINE:   text = "When it dies, it leaves a pool that heals enemies standing in it."; break;
-            case AFFIX_BULWARK:    text = "Shields itself for " + percent(BONK_SHIELD_HEALTH * 100.0f) + " of its health, and gets a new shield " +
-                                       seconds(BONK_SHIELD_INTERVAL) + " after the old one breaks or fades."; break;
-            case AFFIX_FORTIFIED:  text = "Has " + percent((BONK_FORTIFIED_HEALTH - 1.0f) * 100.0f) + " more health."; break;
-            case AFFIX_FRENZIED:   text = "Attacks " + percent((BONK_FRENZIED_SPEED - 1.0f) * 100.0f) + " faster."; break;
-            case AFFIX_RAGING:     text = "Deals " + percent((BONK_RAGING_DAMAGE - 1.0f) * 100.0f) + " more damage when below " + percent(BONK_RAGING_HEALTH) + " health."; break;
-            case AFFIX_VOLCANIC:   text = "Now and then, fire erupts under you. A red circle warns you first."; break;
+            case AFFIX_SWIFT:      text = bonk->GetString(BONK_STRING_AFFIX_SWIFT_TEXT, { percent((BONK_SWIFT_SPEED - 1.0f) * 100.0f) }); break;
+            case AFFIX_EXPLOSIVE:  text = bonk->GetString(BONK_STRING_AFFIX_EXPLOSIVE_TEXT, { seconds(BONK_BURN_INTERVAL) }); break;
+            case AFFIX_NECROTIC:   text = bonk->GetString(BONK_STRING_AFFIX_NECROTIC_TEXT); break;
+            case AFFIX_VAMPIRIC:   text = bonk->GetString(BONK_STRING_AFFIX_VAMPIRIC_TEXT, { percent(BONK_VAMPIRIC_HEAL * 100.0f) }); break;
+            case AFFIX_BOLSTERING: text = bonk->GetString(BONK_STRING_AFFIX_BOLSTERING_TEXT, { percent(BONK_BOLSTER_BONUS * 100.0f) }); break;
+            case AFFIX_SANGUINE:   text = bonk->GetString(BONK_STRING_AFFIX_SANGUINE_TEXT); break;
+            case AFFIX_BULWARK:    text = bonk->GetString(BONK_STRING_AFFIX_BULWARK_TEXT, { percent(BONK_SHIELD_HEALTH * 100.0f), seconds(BONK_SHIELD_INTERVAL) }); break;
+            case AFFIX_FORTIFIED:  text = bonk->GetString(BONK_STRING_AFFIX_FORTIFIED_TEXT, { percent((BONK_FORTIFIED_HEALTH - 1.0f) * 100.0f) }); break;
+            case AFFIX_FRENZIED:   text = bonk->GetString(BONK_STRING_AFFIX_FRENZIED_TEXT, { percent((BONK_FRENZIED_SPEED - 1.0f) * 100.0f) }); break;
+            case AFFIX_RAGING:     text = bonk->GetString(BONK_STRING_AFFIX_RAGING_TEXT, { percent((BONK_RAGING_DAMAGE - 1.0f) * 100.0f), percent(BONK_RAGING_HEALTH) }); break;
+            case AFFIX_VOLCANIC:   text = bonk->GetString(BONK_STRING_AFFIX_VOLCANIC_TEXT); break;
             default: break;
         }
-        bonk->SendAddon("affixinfo~" + std::string(BONK_AFFIXES[affix].name) + "~" + BONK_AFFIXES[affix].icon + "~" + text);
+        bonk->SendAddon("affixinfo~" + bonk->GetString(BONK_AFFIXES[affix].name) + "~" + BONK_AFFIXES[affix].icon + "~" + text);
     }
 }
 
@@ -1483,7 +1481,7 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
     {
         m_enraged = true;
         m_creature->AddAura(BONK_SPELL_RAGING);
-        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_ENRAGED, { std::string(m_creature->GetName()) });
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_ENRAGED, { owner->GetBonkPlayer()->GetLocalName(m_creature) });
     }
 }
 
@@ -2191,7 +2189,7 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
     uint8 const phases = boss ? 2 : 1;
     uint32 const step = run->GetDifficultyStep();
     BonkPlayer* bonk = owner->GetBonkPlayer();
-    std::string const name = m_creature->GetName();
+    std::string const name = bonk->GetLocalName(m_creature);
     if (m_phase < phases && m_creature->GetHealthPercent() < (boss ? BONK_PHASE_BOSS[m_phase] : BONK_PHASE_MINIBOSS))
     {
         ++m_phase;
@@ -2322,7 +2320,7 @@ void BonkMobAI::RaiseWards(BonkRun* run, uint32 step)
     {
         m_wardsAnnounced = true;
         if (Player* owner = GetOwner())
-            owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_RAISES_HEALING_WARDS, { std::string(m_creature->GetName()) });
+            owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_RAISES_HEALING_WARDS, { owner->GetBonkPlayer()->GetLocalName(m_creature) });
     }
 }
 
@@ -2366,7 +2364,7 @@ void BonkMobAI::StartLanes(Player* owner)
     if (!m_lanesAnnounced)
     {
         m_lanesAnnounced = true;
-        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_GROUND_ERUPTS, { std::string(m_creature->GetName()) });
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_GROUND_ERUPTS, { owner->GetBonkPlayer()->GetLocalName(m_creature) });
     }
 }
 
@@ -2428,7 +2426,7 @@ void BonkMobAI::StartBossBlink(Player* owner)
     m_creature->SetFacingToObject(owner);
     m_creature->SendPlaySpellVisualKit(BONK_KIT_BLINK_LEAVE);
     Hold(BONK_BLINK_WINDUP_MS);
-    owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_BLINKS_TO_YOU, { std::string(m_creature->GetName()) });
+    owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_BLINKS_TO_YOU, { owner->GetBonkPlayer()->GetLocalName(m_creature) });
 }
 
 void BonkMobAI::FinishBossBlink(Player* owner, BonkRun* run)
@@ -2484,7 +2482,7 @@ void BonkMobAI::UpdateHeroMarks(uint32 diff, Player* owner, BonkRun* run)
     if (!m_markAnnounced)
     {
         m_markAnnounced = true;
-        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_MARKS_YOU, { std::string(m_creature->GetName()) });
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_MARKS_YOU, { owner->GetBonkPlayer()->GetLocalName(m_creature) });
     }
 }
 
@@ -2508,7 +2506,7 @@ void BonkMobAI::UpdateFarBlast(uint32 diff, Player* owner, BonkRun* run)
     if (!m_farAnnounced)
     {
         m_farAnnounced = true;
-        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_BOMBARDS_YOU, { std::string(m_creature->GetName()) });
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_BOMBARDS_YOU, { owner->GetBonkPlayer()->GetLocalName(m_creature) });
     }
 }
 
@@ -2532,7 +2530,7 @@ void BonkMobAI::UpdateLeash(uint32 diff, Player* owner)
     if (!m_leashAnnounced)
     {
         m_leashAnnounced = true;
-        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_RECOVERS, { std::string(m_creature->GetName()) });
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_RECOVERS, { owner->GetBonkPlayer()->GetLocalName(m_creature) });
     }
 }
 

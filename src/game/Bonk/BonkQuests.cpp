@@ -27,27 +27,26 @@ namespace
 
     struct ClassLook
     {
-        char const* name;
         char const* icon;
     };
     ClassLook const CLASS_LOOKS[] = {
-        { "", "" },
-        { "Warrior", "Ability_Warrior_BattleShout" },
-        { "Paladin", "Spell_Holy_SealOfMight" },
-        { "Hunter", "Ability_Hunter_SniperShot" },
-        { "Rogue", "Ability_Stealth" },
-        { "Priest", "Spell_Holy_PowerWordShield" },
-        { "", "" },
-        { "Shaman", "Spell_Nature_BloodLust" },
-        { "Mage", "Spell_Frost_FrostBolt02" },
-        { "Warlock", "Spell_Shadow_SummonImp" },
-        { "", "" },
-        { "Druid", "Ability_Druid_CatForm" },
+        { "" },
+        { "Ability_Warrior_BattleShout" },
+        { "Spell_Holy_SealOfMight" },
+        { "Ability_Hunter_SniperShot" },
+        { "Ability_Stealth" },
+        { "Spell_Holy_PowerWordShield" },
+        { "" },
+        { "Spell_Nature_BloodLust" },
+        { "Spell_Frost_FrostBolt02" },
+        { "Spell_Shadow_SummonImp" },
+        { "" },
+        { "Ability_Druid_CatForm" },
     };
 
     ClassLook const* GetClassLook(uint32 classId)
     {
-        if (classId >= sizeof(CLASS_LOOKS) / sizeof(CLASS_LOOKS[0]) || !*CLASS_LOOKS[classId].name)
+        if (classId >= sizeof(CLASS_LOOKS) / sizeof(CLASS_LOOKS[0]) || !*CLASS_LOOKS[classId].icon)
             return nullptr;
         return &CLASS_LOOKS[classId];
     }
@@ -701,60 +700,61 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
     {
         case BONK_REWARD_GOLD:
             *icon = "INV_Misc_Coin_02";
-            return FormatBonkMoney(quest.rewardValue);
+            return FormatBonkMoney(quest.rewardValue, locale);
         case BONK_REWARD_SHARDS:
             *icon = "INV_Misc_Ticket_Darkmoon_01";
-            return FormatBonkShards(quest.rewardValue);
+            return FormatBonkShards(quest.rewardValue, locale);
         case BONK_REWARD_WEAPON:
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
             {
                 *icon = weapon->icon;
-                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name, locale);
+                return sBonkLocale.GetString(BONK_STRING_REWARD_UNLOCKS, locale, { sBonkLocale.Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name, locale) });
             }
             break;
         case BONK_REWARD_PASSIVE:
             if (BonkPassive const* passive = sBonkMgr.GetPassive(quest.rewardValue))
             {
                 *icon = passive->icon;
-                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_PASSIVE_NAME, passive->id, passive->name, locale);
+                return sBonkLocale.GetString(BONK_STRING_REWARD_UNLOCKS, locale, { sBonkLocale.Localize(BONK_FIELD_PASSIVE_NAME, passive->id, passive->name, locale) });
             }
             break;
         case BONK_REWARD_TALENT:
             if (BonkTalent const* talent = sBonkMgr.GetTalent(quest.rewardValue))
             {
                 *icon = talent->layout.icon;
-                return "Unlocks the fortune " + sBonkLocale.Localize(BONK_FIELD_TALENT_NAME, talent->id, talent->name, locale) + " at Sayge";
+                return sBonkLocale.GetString(BONK_STRING_REWARD_UNLOCKS_FORTUNE, locale, { sBonkLocale.Localize(BONK_FIELD_TALENT_NAME, talent->id, talent->name, locale) });
             }
             break;
         case BONK_REWARD_UPGRADE:
             if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(quest.rewardValue))
             {
                 *icon = upgrade->layout.icon;
-                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_UPGRADE_NAME, upgrade->id, upgrade->name, locale) + " at the Upgrades vendor";
+                return sBonkLocale.GetString(BONK_STRING_REWARD_UNLOCKS_UPGRADE, locale, { sBonkLocale.Localize(BONK_FIELD_UPGRADE_NAME, upgrade->id, upgrade->name, locale) });
             }
             break;
         case BONK_REWARD_MASTERY:
             *icon = "Spell_Holy_SealOfWisdom";
-            return std::to_string(quest.rewardValue) + (quest.rewardValue == 1 ? " talent point" : " talent points");
+            return sBonkLocale.GetString(quest.rewardValue == 1 ? BONK_STRING_REWARD_TALENT_POINTS_ONE : BONK_STRING_REWARD_TALENT_POINTS, locale,
+                { std::to_string(quest.rewardValue) });
         case BONK_REWARD_CLASS:
             if (ClassLook const* look = GetClassLook(quest.rewardValue))
             {
                 *icon = look->icon;
-                return std::string("Unlocks the ") + look->name + " class";
+                return sBonkLocale.GetString(BONK_STRING_REWARD_UNLOCKS_CLASS, locale, { sBonkLocale.GetString(GetBonkClassName(quest.rewardValue), locale) });
             }
             break;
         case BONK_REWARD_EPIC_RANK:
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
             {
                 *icon = weapon->icon;
-                return "An Epic rank for " + sBonkLocale.Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name, locale);
+                return sBonkLocale.GetString(BONK_STRING_REWARD_EPIC_RANK, locale, { sBonkLocale.Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name, locale) });
             }
             break;
         case BONK_REWARD_CAPSTONE:
             if (BonkMasteryNode const* node = sBonkMastery.GetNode(quest.rewardValue))
             {
                 *icon = node->icon;
-                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_MASTERY_NAME, node->id, node->name, locale) + ", the final talent in its tree";
+                return sBonkLocale.GetString(BONK_STRING_REWARD_UNLOCKS_CAPSTONE, locale, { sBonkLocale.Localize(BONK_FIELD_MASTERY_NAME, node->id, node->name, locale) });
             }
             break;
         case BONK_REWARD_CARD:
@@ -762,29 +762,29 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             {
                 *icon = card->icon;
                 std::string const name = sBonkLocale.Localize(BONK_FIELD_CARD_NAME, card->id, card->name, locale);
-                return "Unlocks " + (card->name.compare(0, 13, "Darkmoon Card") == 0 ? name : "the Darkmoon Card " + name);
+                return sBonkLocale.GetString(card->name.compare(0, 13, "Darkmoon Card") == 0 ? BONK_STRING_REWARD_UNLOCKS : BONK_STRING_REWARD_UNLOCKS_CARD, locale, { name });
             }
             break;
         case BONK_REWARD_GLYPH:
             if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(quest.rewardValue))
             {
                 *icon = glyph->icon;
-                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_GLYPH_NAME, glyph->id, glyph->name, locale);
+                return sBonkLocale.GetString(BONK_STRING_REWARD_UNLOCKS, locale, { sBonkLocale.Localize(BONK_FIELD_GLYPH_NAME, glyph->id, glyph->name, locale) });
             }
             break;
         case BONK_REWARD_CARD_BAN:
             *icon = "INV_Misc_Ticket_Tarot_Stack_01";
-            return quest.rewardValue == 1 ? "A Darkmoon Card ban slot" : std::to_string(quest.rewardValue) + " Darkmoon Card ban slots";
+            return sBonkLocale.GetString(quest.rewardValue == 1 ? BONK_STRING_REWARD_CARD_BAN_ONE : BONK_STRING_REWARD_CARD_BANS, locale, { std::to_string(quest.rewardValue) });
         case BONK_REWARD_GLYPH_BAN:
             *icon = "INV_Misc_Ticket_Tarot_Stack_01";
-            return quest.rewardValue == 1 ? "A Glyph ban slot" : std::to_string(quest.rewardValue) + " Glyph ban slots";
+            return sBonkLocale.GetString(quest.rewardValue == 1 ? BONK_STRING_REWARD_GLYPH_BAN_ONE : BONK_STRING_REWARD_GLYPH_BANS, locale, { std::to_string(quest.rewardValue) });
         case BONK_REWARD_TITLE:
         {
             auto const title = m_titles.find(quest.rewardValue);
             if (title != m_titles.end())
             {
                 *icon = "INV_Misc_Note_02";
-                return "The title \"" + sBonkLocale.Localize(BONK_FIELD_TITLE_NAME, title->first, title->second.name, locale) + "\"";
+                return sBonkLocale.GetString(BONK_STRING_REWARD_TITLE, locale, { sBonkLocale.Localize(BONK_FIELD_TITLE_NAME, title->first, title->second.name, locale) });
             }
             break;
         }
@@ -856,7 +856,8 @@ bool GossipHello_npc_bonk_quests(Player* player, Creature* creature)
 {
     if (player->GetBonkPlayer()->IsAddonReady())
     {
-        sBonkQuests.SendLog(player, creature->GetName());
+        player->GetBonkPlayer()->SendNpcName(creature);
+        sBonkQuests.SendLog(player, player->GetBonkPlayer()->GetLocalName(creature));
         player->SEND_GOSSIP_MENU(BONK_TEXT_QUEST_BOARD, creature->GetObjectGuid());
         return true;
     }

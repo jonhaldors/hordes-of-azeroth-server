@@ -69,14 +69,14 @@ namespace
 
     char const* const RARITY_NAMES[MAX_BONK_RARITY] = { "Common", "Uncommon", "Rare", "Epic", "Legendary" };
 
-    std::string FormatTimes(float times)
+    std::string FormatTimes(float times, LocaleConstant locale)
     {
         uint32 const whole = uint32(times + 0.5f);
         if (whole == 2)
-            return "double";
+            return sBonkLocale.GetString(BONK_STRING_TIMES_DOUBLE, locale);
         if (whole == 3)
-            return "triple";
-        return std::to_string(whole) + " times your normal";
+            return sBonkLocale.GetString(BONK_STRING_TIMES_TRIPLE, locale);
+        return sBonkLocale.GetString(BONK_STRING_TIMES_NORMAL, locale, { std::to_string(whole) });
     }
 }
 
@@ -347,10 +347,10 @@ std::string BonkRun::DescribeDivineShieldRecharge(BonkGlyph const& shield) const
 {
     uint32 const floors = uint32(shield.values[1]);
     if (!floors)
-        return "It won't be ready again this run.";
+        return GetString(BONK_STRING_DIVINE_SHIELD_NEVER);
     if (floors == 1)
-        return "It will be ready again next floor.";
-    return "It will be ready again in " + std::to_string(floors) + " floors.";
+        return GetString(BONK_STRING_DIVINE_SHIELD_NEXT_FLOOR);
+    return GetString(BONK_STRING_DIVINE_SHIELD_FLOORS, { std::to_string(floors) });
 }
 
 bool BonkRun::IsProdigySpell(SpellEntry const* spell) const
@@ -673,7 +673,7 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
         {
             m_soulHarvestUntilMs = m_totalMs + uint32(harvest->values[2]);
             m_player->SendPlaySpellVisualKit(BONK_KIT_SOUL_HARVEST);
-            bonk->Notify(BONK_STRING_YOUR_GLYPH_OF_SOUL_HARVEST, { FormatTimes(harvest->values[1]), std::to_string(uint32(harvest->values[2] / IN_MILLISECONDS + 0.5f)) });
+            bonk->Notify(BONK_STRING_YOUR_GLYPH_OF_SOUL_HARVEST, { FormatTimes(harvest->values[1], GetLocale()), std::to_string(uint32(harvest->values[2] / IN_MILLISECONDS + 0.5f)) });
         }
 }
 

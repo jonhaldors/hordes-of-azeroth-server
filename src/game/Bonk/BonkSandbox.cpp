@@ -787,7 +787,7 @@ bool BonkRun::RunSandboxBossVerb(std::string const& verb, uint32 first, std::str
         if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
             if (!ai->ForceAbility(first))
             {
-                error = GetString(BONK_STRING_ENEMY_HAS_NO_MOVE, { std::string(mob->GetName()), std::to_string(first) });
+                error = GetString(BONK_STRING_ENEMY_HAS_NO_MOVE, { m_player->GetBonkPlayer()->GetLocalName(mob), std::to_string(first) });
                 return false;
             }
     return true;
@@ -915,7 +915,7 @@ void BonkRun::SpawnSandboxCrystals(Creature const* keeper)
         SpawnOrb(x, y, GroundHeight(m_player, x, y, centerZ), xp, grunt.orb);
     }
     m_player->GetBonkPlayer()->Notify(keeper ? BONK_STRING_EXPERIENCE_CRYSTALS_AROUND : BONK_STRING_EXPERIENCE_CRYSTALS_SURROUND_YOU,
-        { keeper ? std::string(keeper->GetName()) : std::string() });
+        { keeper ? m_player->GetBonkPlayer()->GetLocalName(keeper) : std::string() });
 }
 
 BonkRun::OwnedWeapon* BonkRun::FindSandboxSpell(uint32 baseId)

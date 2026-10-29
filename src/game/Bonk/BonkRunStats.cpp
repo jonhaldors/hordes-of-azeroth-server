@@ -131,11 +131,11 @@ namespace
         return summoner && *summoner->GetName() ? summoner : creature;
     }
 
-    BonkRecentHit DescribeHit(Unit* attacker, SpellEntry const* spellProto)
+    BonkRecentHit DescribeHit(Unit* attacker, SpellEntry const* spellProto, int localeIndex)
     {
         BonkRecentHit hit;
         Creature* source = NamedSource(attacker);
-        hit.source = source ? source->GetName() : attacker->GetName();
+        hit.source = source ? source->GetNameForLocaleIdx(localeIndex) : attacker->GetNameForLocaleIdx(localeIndex);
         hit.kind = SpawnKindOf(source);
         hit.spell = spellProto ? spellProto->SpellName[0] : "Melee";
         hit.icon = SpellIconName(spellProto);
@@ -437,7 +437,7 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
             SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(dot.first);
             std::string const icon = keyword && !keyword->icon.empty() ? keyword->icon : "INV_Misc_QuestionMark";
             std::string const name = keyword ? bonk->Localize(BONK_FIELD_KEYWORD_NAME, uint32(keyword->id), keyword->name) :
-                spellInfo ? spellInfo->SpellName[0] : "Spell " + std::to_string(dot.first);
+                spellInfo ? spellInfo->SpellName[0] : bonk->GetString(BONK_STRING_SPELL_NUMBERED, { std::to_string(dot.first) });
             bonk->SendAddon("sums~" + icon + "~" + name + "~" + std::to_string(dot.second.damage) + "~" + std::to_string(dot.second.kills));
         }
     }
@@ -447,7 +447,7 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
         if (sent.count(itr.first) || (!itr.second.damage && !itr.second.kills))
             continue;
         std::string icon = "INV_Misc_QuestionMark";
-        std::string name = "Spell " + std::to_string(itr.first);
+        std::string name = bonk->GetString(BONK_STRING_SPELL_NUMBERED, { std::to_string(itr.first) });
         if (!itr.first)
         {
             icon = "INV_Sword_04";
@@ -513,8 +513,8 @@ void BonkStats::UpdateBossBar(Player* player, uint32 diff)
     if (shown)
     {
         BonkMobAI const* ai = static_cast<BonkMobAI const*>(shown->AI());
-        line += std::string(shown->GetName()) + "~" + std::to_string(ai->GetTrueHealth(shown->GetHealth())) + "~" + std::to_string(ai->GetTrueHealth(shown->GetMaxHealth())) + "~" +
-            (ai->GetKind() == BONK_SPAWN_BOSS ? "boss" : "mini") + "~" + ai->GetAffixNames() + "~" + KeywordStacksText(player, shown) + "~" + BonkMobAI::GetUnitGuidText(shown);
+        line += player->GetBonkPlayer()->GetLocalName(shown) + "~" + std::to_string(ai->GetTrueHealth(shown->GetHealth())) + "~" + std::to_string(ai->GetTrueHealth(shown->GetMaxHealth())) + "~" +
+            (ai->GetKind() == BONK_SPAWN_BOSS ? "boss" : "mini") + "~" + ai->GetAffixNames(player->GetBonkPlayer()->GetLocale()) + "~" + KeywordStacksText(player, shown) + "~" + BonkMobAI::GetUnitGuidText(shown);
     }
     if (line == bar->lastLine)
         return;
@@ -628,7 +628,7 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             s_stats[player->GetObjectGuid()].damageTaken += dealt;
         }
 
-        BonkRecentHit hit = DescribeHit(attacker, spellProto);
+        BonkRecentHit hit = DescribeHit(attacker, spellProto, player->GetSession()->GetSessionDbLocaleIndex());
         hit.amount = dealt;
         hit.healthAfter = health - dealt;
         PushRecentHit(player, std::move(hit));

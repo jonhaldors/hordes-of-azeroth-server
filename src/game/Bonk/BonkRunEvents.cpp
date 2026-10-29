@@ -1,8 +1,8 @@
 #include "BonkRun.h"
+#include "BonkLocale.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
-#include "BonkStrings.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Player.h"
@@ -244,9 +244,9 @@ bool BonkRun::SpawnTreasureGoblin()
                     SpawnMobAt(*guard, guardX, guardY, guardZ);
             }
 
-    StartMiniEventTarget(mob, "Treasure Goblin", seconds);
-    m_miniEvent.objectiveId = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Treasure Goblin", seconds,
-        BONK_GOBLIN_ICON, "Catch it before it gets away to get Valor and a chest.");
+    StartMiniEventTarget(mob, GetString(BONK_STRING_EVENT_TREASURE_GOBLIN), seconds);
+    m_miniEvent.objectiveId = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, GetString(BONK_STRING_EVENT_TREASURE_GOBLIN), seconds,
+        BONK_GOBLIN_ICON, GetString(BONK_STRING_EVENT_TREASURE_GOBLIN_TEXT));
     m_player->GetBonkPlayer()->Notify(BONK_STRING_TREASURE_GOBLIN_APPEARED_CATCH_IT);
     return true;
 }
@@ -267,9 +267,9 @@ bool BonkRun::SpawnBounty()
     if (!mob)
         return false;
 
-    std::string const name = mob->GetName();
+    std::string const name = m_player->GetBonkPlayer()->GetLocalName(mob);
     uint32 const seconds = BONK_BOUNTY_SECONDS + uint32(GetUtility(BONK_UTILITY_EVENT_TIME));
-    StartMiniEventTarget(mob, "Bounty: " + name, seconds);
+    StartMiniEventTarget(mob, GetString(BONK_STRING_EVENT_BOUNTY, { name }), seconds);
     m_player->GetBonkPlayer()->Notify(BONK_STRING_BOUNTY_IS_OUT_ON_KILL, { name, std::to_string(seconds) });
     return true;
 }
@@ -301,8 +301,8 @@ void BonkRun::UpdateMiniEventTarget(uint32 diff)
     }
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
-    bonk->Notify(m_miniEvent.type == BONK_MINI_EVENT_GOBLIN ? BONK_STRING_TREASURE_GOBLIN_GOT_AWAY : BONK_STRING_SLIPPED_AWAY, { std::string(target->GetName()) });
-    bonk->SendAddon("mobdead~" + std::string(target->GetName()) + "~" + std::to_string(target->GetPlateId()) + "~" +
+    bonk->Notify(m_miniEvent.type == BONK_MINI_EVENT_GOBLIN ? BONK_STRING_TREASURE_GOBLIN_GOT_AWAY : BONK_STRING_SLIPPED_AWAY, { bonk->GetLocalName(target) });
+    bonk->SendAddon("mobdead~" + bonk->GetLocalName(target) + "~" + std::to_string(target->GetPlateId()) + "~" +
         BonkMobAI::GetUnitGuidText(target));
     target->CastSpell(target, BONK_SPELL_SPAWN_SMOKE, true);
     target->DespawnOrUnsummon(500);
@@ -333,7 +333,7 @@ void BonkRun::OnMiniEventTargetKilled(Creature* mob)
     {
         BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
         SpawnChest(true, x, y, z, 3 + (ai ? ai->GetAffixCount() : 0));
-        bonk->Notify(BONK_STRING_YOU_CLAIMED_BOUNTY_ON_AND, { std::string(mob->GetName()) });
+        bonk->Notify(BONK_STRING_YOU_CLAIMED_BOUNTY_ON_AND, { bonk->GetLocalName(mob) });
     }
     EndMiniEvent();
     SendState();
@@ -470,13 +470,13 @@ bool BonkRun::SpawnKoboldThieves()
             mob->MonsterSay(GetString(BONK_STRING_KOBOLD_SHOUT).c_str());
         m_miniEvent.stolen[mob->GetObjectGuid()] = StealOrbs(x, y, BONK_KOBOLD_GRAB_RANGE) + bonus;
         m_miniEvent.targets.push_back(mob->GetObjectGuid());
-        m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Kobold Thief", seconds,
-            BONK_GOBLIN_ICON, "It stole your experience. Kill it to get it back, plus a bonus.");
+        m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, GetString(BONK_STRING_EVENT_KOBOLD_THIEF), seconds,
+            BONK_GOBLIN_ICON, GetString(BONK_STRING_EVENT_KOBOLD_THIEF_TEXT));
     }
     if (m_miniEvent.targets.empty())
         return false;
 
-    StartMiniEventGroup("Kobold Thieves", seconds);
+    StartMiniEventGroup(GetString(BONK_STRING_EVENT_KOBOLD_THIEVES), seconds);
     m_player->GetBonkPlayer()->Notify(BONK_STRING_KOBOLD_THIEVES_STOLE_YOUR_EXPERIENCE);
     return true;
 }
@@ -527,8 +527,8 @@ bool BonkRun::SpawnScourgeInvasion()
             ai->SetStationary();
         placed.emplace_back(x, y);
         m_miniEvent.targets.push_back(mob->GetObjectGuid());
-        m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Necrotic Shard", seconds,
-            BONK_SHARD_ICON, "It raises undead until you destroy it. Each shard you destroy gives Valor and experience.");
+        m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, GetString(BONK_STRING_EVENT_NECROTIC_SHARD), seconds,
+            BONK_SHARD_ICON, GetString(BONK_STRING_EVENT_NECROTIC_SHARD_TEXT));
         if (step >= 2)
             SpawnEventAdds(mob, 0, 1);
     }
@@ -536,7 +536,7 @@ bool BonkRun::SpawnScourgeInvasion()
         return false;
 
     m_miniEvent.spawnMs = BONK_SHARD_SPAWN_MS / 2;
-    StartMiniEventGroup("Scourge Invasion", seconds);
+    StartMiniEventGroup(GetString(BONK_STRING_EVENT_SCOURGE_INVASION), seconds);
     m_player->GetBonkPlayer()->Notify(BONK_STRING_SCOURGE_INVADES_DESTROY_NECROTIC_SHARDS);
     return true;
 }
@@ -562,10 +562,10 @@ bool BonkRun::SpawnDemonPortal()
 
     uint32 const seconds = BONK_PORTAL_SECONDS + uint32(GetUtility(BONK_UTILITY_EVENT_TIME));
     m_miniEvent.targets.assign(1, mob->GetObjectGuid());
-    m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, "Demon Portal", seconds,
-        BONK_PORTAL_ICON, "Demons pour out of it until you destroy it. Destroy it for a chest.");
+    m_miniEvent.objectives[mob->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, mob, GetString(BONK_STRING_EVENT_DEMON_PORTAL), seconds,
+        BONK_PORTAL_ICON, GetString(BONK_STRING_EVENT_DEMON_PORTAL_TEXT));
     m_miniEvent.spawnMs = 0;
-    StartMiniEventGroup("Demon Portal", seconds);
+    StartMiniEventGroup(GetString(BONK_STRING_EVENT_DEMON_PORTAL), seconds);
     m_player->GetBonkPlayer()->Notify(BONK_STRING_DEMON_PORTAL_OPENS_DESTROY_IT);
     return true;
 }
@@ -743,7 +743,7 @@ void BonkRun::UpdateMiniEventGroup(uint32 diff)
     for (ObjectGuid const& guid : m_miniEvent.targets)
         if (Creature* target = map->GetCreature(guid))
         {
-            bonk->SendAddon("mobdead~" + std::string(target->GetName()) + "~" + std::to_string(target->GetPlateId()) + "~" +
+            bonk->SendAddon("mobdead~" + bonk->GetLocalName(target) + "~" + std::to_string(target->GetPlateId()) + "~" +
                 BonkMobAI::GetUnitGuidText(target));
             target->CastSpell(target, BONK_SPELL_SPAWN_SMOKE, true);
             target->DespawnOrUnsummon(500);
@@ -871,9 +871,9 @@ bool BonkRun::SpawnCaravan()
     caravan->GetMotionMaster()->MovePoint(1, path[0].x, path[0].y, path[0].z, MOVE_WALK_MODE, BONK_CARAVAN_SPEED);
 
     uint32 const seconds = uint32(BONK_CARAVAN_LEG * path.size() / BONK_CARAVAN_SPEED) + BONK_CARAVAN_SPARE_SECONDS;
-    m_miniEvent.objectives[caravan->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, caravan, "Kodo Caravan", seconds,
-        BONK_CARAVAN_ICON, "Keep the raiders off it until it gets across, and it will leave you a chest with extra choices.");
-    StartMiniEventGroup("Kodo Caravan", seconds);
+    m_miniEvent.objectives[caravan->GetObjectGuid()] = m_objectives.Follow(m_player, BONK_OBJECTIVE_EVENT, caravan, GetString(BONK_STRING_EVENT_KODO_CARAVAN), seconds,
+        BONK_CARAVAN_ICON, GetString(BONK_STRING_EVENT_KODO_CARAVAN_TEXT));
+    StartMiniEventGroup(GetString(BONK_STRING_EVENT_KODO_CARAVAN), seconds);
     m_player->GetBonkPlayer()->Notify(BONK_STRING_KODO_CARAVAN_IS_PASSING_THROUGH);
     return true;
 }

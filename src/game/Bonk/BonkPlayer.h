@@ -21,6 +21,8 @@ class BonkRun;
 class Creature;
 class GameObject;
 class Player;
+class WorldObject;
+struct ItemPrototype;
 enum BonkShop : uint8;
 enum BonkQuestReward : uint8;
 enum BonkUpgradeUtility : uint8;
@@ -258,10 +260,16 @@ class BonkPlayer
 
         void SetAddonReady() { m_addonReady = true; m_zoneArtSent = false; }
         bool IsAddonReady() const { return m_addonReady; }
-        void SetLocale(LocaleConstant locale) { m_locale = locale; }
+        void SetLocale(LocaleConstant locale);
+        void ApplyLocale(LocaleConstant locale);
         LocaleConstant GetLocale() const { return m_locale; }
         std::string GetString(BonkString id, std::vector<std::string> const& args = {}) const;
         std::string Localize(BonkTextField field, uint32 id, std::string const& english) const;
+        std::string JoinList(std::vector<std::string> const& items, BonkString last) const;
+        std::string GetLocalName(WorldObject const* object) const;
+        void SendNpcName(WorldObject const* npc) const;
+        std::string GetItemName(ItemPrototype const* proto) const;
+        std::string GetCreatureName(uint32 entry, std::string const& fallback) const;
 
         void SendAddon(std::string const& line) const;
         void Notify(std::string const& text) const;

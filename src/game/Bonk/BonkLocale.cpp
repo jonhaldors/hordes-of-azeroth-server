@@ -65,6 +65,22 @@ namespace
         { BONK_FIELD_WAVE_NAME,                  "bonk_wave",           "name",        "start_sec", nullptr  },
     };
 
+    uint32 const BONK_FIRST_OWN_ENTRY = 900000;
+
+    struct BonkNameSource
+    {
+        char const* table;
+        char const* column;
+        char const* localeTable;
+    };
+
+    BonkNameSource const NAME_SOURCES[] =
+    {
+        { "item_template",     "name",    "locales_item"     },
+        { "creature_template", "name",    "locales_creature" },
+        { "creature_template", "subname", "locales_creature" },
+    };
+
     std::string KeyColumns(BonkFieldSource const& source)
     {
         std::string columns = std::string("`") + source.key + "`";
@@ -233,6 +249,14 @@ std::string BonkLocale::Localize(BonkTextField field, uint32 id, std::string con
     return itr->second[locale];
 }
 
+std::string BonkLocale::JoinList(std::vector<std::string> const& items, BonkString last, LocaleConstant locale) const
+{
+    std::string text = items.empty() ? std::string() : items.front();
+    for (size_t i = 1; i < items.size(); ++i)
+        text = GetString(i + 1 == items.size() ? last : BONK_STRING_LIST_ITEM, locale, { text, items[i] });
+    return text;
+}
+
 bool BonkLocale::Export(LocaleConstant locale, std::string& path) const
 {
     std::string directory = sConfig.GetStringDefault("LogsDir", "");
@@ -289,6 +313,27 @@ bool BonkLocale::Export(LocaleConstant locale, std::string& path) const
         } while (result->NextRow());
     }
 
+    for (BonkNameSource const& source : NAME_SOURCES)
+    {
+        std::string const translated = locale == LOCALE_enUS ? std::string("''") :
+            "IFNULL(l.`" + std::string(source.column) + "_loc" + std::to_string(int(locale)) + "`, '')";
+        std::unique_ptr<QueryResult> result(WorldDatabase.PQuery(
+            "SELECT t.`entry`, t.`%s`, %s FROM `%s` t LEFT JOIN `%s` l ON l.`entry` = t.`entry` WHERE t.`entry` >= %u AND t.`%s` <> '' ORDER BY t.`entry`",
+            source.column, translated.c_str(), source.table, source.localeTable, BONK_FIRST_OWN_ENTRY, source.column));
+        if (!result)
+            continue;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            std::string const translation = fields[2].GetCppString();
+            file << separator << "    { \"table\": " << JsonString(source.table) << ", \"column\": " << JsonString(source.column)
+                 << ", \"entry\": " << fields[0].GetUInt32() << ", \"english\": " << JsonString(fields[1].GetCppString())
+                 << ", \"translation\": " << JsonString(translation) << ", \"status\": \"" << TranslationStatus(translation, "") << "\" }";
+            separator = ",\n";
+        } while (result->NextRow());
+    }
+
     file << "\n  ]\n}\n";
     return bool(file);
 }
@@ -310,6 +355,51 @@ std::string BonkLocale::ListLocales()
     for (char const* name : localeNames)
         names += (names.empty() ? "" : ", ") + std::string(name);
     return names;
+}
+
+namespace
+{
+    size_t SentenceEnd(std::string const& text, size_t pos, size_t& next)
+    {
+        size_t const point = text.find(". ", pos);
+        size_t const fullStop = text.find("\xE3\x80\x82", pos);
+        if (fullStop != std::string::npos && (point == std::string::npos || fullStop < point))
+        {
+            next = fullStop + 3;
+            return next;
+        }
+        if (point == std::string::npos)
+            return std::string::npos;
+        next = point + 2;
+        return point + 1;
+    }
+}
+
+std::vector<std::string> BonkLocale::SplitSentences(std::string const& text)
+{
+    std::vector<std::string> sentences;
+    size_t pos = 0;
+    while (pos < text.size())
+    {
+        size_t next = 0;
+        size_t const end = SentenceEnd(text, pos, next);
+        if (end == std::string::npos)
+        {
+            sentences.push_back(text.substr(pos));
+            break;
+        }
+        sentences.push_back(text.substr(pos, end - pos));
+        pos = next;
+    }
+    return sentences;
+}
+
+std::string BonkLocale::AfterFirstSentence(std::string const& text)
+{
+    size_t next = 0;
+    if (SentenceEnd(text, 0, next) == std::string::npos || next >= text.size())
+        return text;
+    return text.substr(next);
 }
 
 uint32 BonkLocale::SourceHash(std::string const& text)

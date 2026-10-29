@@ -62,39 +62,35 @@ namespace
     float const BONK_STONE_BOSS_DISTANCE   = 8.0f;
 
     char const* const SHRINE_NAMES[MAX_BONK_SHRINE] = { "leyline", "greed", "altar", "moonwell", "stone" };
-    char const* const SHRINE_LABELS[MAX_BONK_SHRINE] = { "Ley Line", "Greed Totem", "Challenge Altar", "Moonwell", "Summoning Stone" };
+    BonkString const SHRINE_LABELS[MAX_BONK_SHRINE] = { BONK_STRING_SHRINE_LEY_LINE, BONK_STRING_SHRINE_GREED_TOTEM, BONK_STRING_SHRINE_CHALLENGE_ALTAR,
+        BONK_STRING_SHRINE_MOONWELL, BONK_STRING_SHRINE_SUMMONING_STONE };
     char const* const SHRINE_ICONS[MAX_BONK_SHRINE] = {
         "Spell_Arcane_StarFire", "INV_Misc_Coin_02", "Ability_Warrior_Challange", "Spell_Arcane_TeleportMoonglade", "Spell_Shadow_Twilight" };
-    char const* const SHRINE_DESCRIPTIONS[MAX_BONK_SHRINE] = {
-        "Stand in its ring for 8 seconds to choose a blessing for the rest of the run.",
-        "Click it to earn 5% more gold and Darkmoon Tickets for the rest of the run, but more enemies will come. Each totem you use adds more.",
-        "Click it to face elite guards with two affixes. Beat them for a free chest.",
-        "Click it to heal 8% of your health every second for 10 seconds while you stand in it. Enemies that die inside it give double experience.",
-        "Click it to summon this floor's boss early. Defeat it to open the portal and skip the rest of the floor.",
-    };
+    BonkString const SHRINE_DESCRIPTIONS[MAX_BONK_SHRINE] = { BONK_STRING_SHRINE_LEY_LINE_TEXT, BONK_STRING_SHRINE_GREED_TOTEM_TEXT,
+        BONK_STRING_SHRINE_CHALLENGE_ALTAR_TEXT, BONK_STRING_SHRINE_MOONWELL_TEXT, BONK_STRING_SHRINE_SUMMONING_STONE_TEXT };
 
     struct LeyStat
     {
         BonkPassiveEffect effect;
         float value;
-        char const* name;
-        char const* phrase;
+        BonkString name;
+        BonkString phrase;
         char const* icon;
         bool points;
     };
     LeyStat const LEY_STATS[] = {
-        { BONK_PASSIVE_POWER,       15.0f, "Power",                  "Power",                                   "Spell_Nature_Strength",       false },
-        { BONK_PASSIVE_MAX_HEALTH,  15.0f, "Maximum Health",         "maximum health",                          "Spell_Holy_WordFortitude",    false },
-        { BONK_PASSIVE_ARMOR,       10.0f, "Armor",                  "Armor",                                   "Spell_Holy_DevotionAura",     true },
-        { BONK_PASSIVE_DODGE,        6.0f, "Dodge Chance",           "chance to dodge enemy swings",            "Spell_Shadow_ShadowWard",     false },
-        { BONK_PASSIVE_CRIT,         8.0f, "Critical Strike Chance", "critical strike chance",                  "Ability_CriticalStrike",      false },
-        { BONK_PASSIVE_CRIT_DAMAGE, 25.0f, "Critical Strike Damage", "critical strike damage",                  "Spell_Holy_PowerInfusion",    false },
-        { BONK_PASSIVE_SHIELD,      15.0f, "Shield",                 "of your maximum health as a Shield",      "Spell_Holy_InnerFire",        false },
-        { BONK_PASSIVE_HASTE,       10.0f, "Haste",                  "Haste",                                   "Racial_Troll_Berserk",        false },
-        { BONK_PASSIVE_AREA,        20.0f, "Area",                   "Area: bigger AoE spells", "Spell_Holy_ArcaneIntellect", false },
-        { BONK_PASSIVE_MOVE_SPEED,  10.0f, "Movement Speed",         "movement speed",                          "Ability_Mount_JungleTiger",   false },
-        { BONK_PASSIVE_PICKUP,      40.0f, "Pickup Range",           "pickup range",                            "INV_Gizmo_02",                false },
-        { BONK_PASSIVE_LUCK,        10.0f, "Luck",                   "Luck",                                    "INV_Misc_Foot_Kodo",          true },
+        { BONK_PASSIVE_POWER,       15.0f, BONK_STRING_STAT_POWER,          BONK_STRING_STAT_POWER,           "Spell_Nature_Strength",      false },
+        { BONK_PASSIVE_MAX_HEALTH,  15.0f, BONK_STRING_LEY_MAX_HEALTH,      BONK_STRING_LEY_MAX_HEALTH_TEXT,  "Spell_Holy_WordFortitude",   false },
+        { BONK_PASSIVE_ARMOR,       10.0f, BONK_STRING_STAT_ARMOR,          BONK_STRING_STAT_ARMOR,           "Spell_Holy_DevotionAura",    true },
+        { BONK_PASSIVE_DODGE,        6.0f, BONK_STRING_LEY_DODGE,           BONK_STRING_LEY_DODGE_TEXT,       "Spell_Shadow_ShadowWard",    false },
+        { BONK_PASSIVE_CRIT,         8.0f, BONK_STRING_LEY_CRIT,            BONK_STRING_LEY_CRIT_TEXT,        "Ability_CriticalStrike",     false },
+        { BONK_PASSIVE_CRIT_DAMAGE, 25.0f, BONK_STRING_LEY_CRIT_DAMAGE,     BONK_STRING_LEY_CRIT_DAMAGE_TEXT, "Spell_Holy_PowerInfusion",   false },
+        { BONK_PASSIVE_SHIELD,      15.0f, BONK_STRING_STAT_SHIELD,         BONK_STRING_LEY_SHIELD_TEXT,      "Spell_Holy_InnerFire",       false },
+        { BONK_PASSIVE_HASTE,       10.0f, BONK_STRING_STAT_HASTE,          BONK_STRING_STAT_HASTE,           "Racial_Troll_Berserk",       false },
+        { BONK_PASSIVE_AREA,        20.0f, BONK_STRING_STAT_AREA,           BONK_STRING_LEY_AREA_TEXT,        "Spell_Holy_ArcaneIntellect", false },
+        { BONK_PASSIVE_MOVE_SPEED,  10.0f, BONK_STRING_STAT_MOVEMENT_SPEED, BONK_STRING_LEY_MOVE_SPEED_TEXT,  "Ability_Mount_JungleTiger",  false },
+        { BONK_PASSIVE_PICKUP,      40.0f, BONK_STRING_STAT_PICKUP_RANGE,   BONK_STRING_LEY_PICKUP_TEXT,      "INV_Gizmo_02",               false },
+        { BONK_PASSIVE_LUCK,        10.0f, BONK_STRING_STAT_LUCK,           BONK_STRING_STAT_LUCK,            "INV_Misc_Foot_Kodo",         true },
     };
     float const LEY_RARITY_SCALE[] = { 1.0f, 1.3f, 1.6f, 2.0f };
 
@@ -106,11 +102,12 @@ namespace
         return nullptr;
     }
 
-    std::string FormatLeyValue(LeyStat const& stat, float value)
+    std::string FormatLeyValue(LeyStat const& stat, float value, LocaleConstant locale)
     {
-        char text[96];
-        std::snprintf(text, sizeof(text), stat.points ? "+%.0f %s" : "+%.0f%% %s", value, stat.phrase);
-        return text;
+        char number[32];
+        std::snprintf(number, sizeof(number), "%.0f", value);
+        return sBonkLocale.GetString(stat.points ? BONK_STRING_LEY_VALUE_POINTS : BONK_STRING_LEY_VALUE_PERCENT, locale,
+            { number, sBonkLocale.GetString(stat.phrase, locale) });
     }
 
     std::string LeyStatIcon(LeyStat const& stat)
@@ -223,8 +220,8 @@ bool BonkRun::PlaceShrine(BonkShrineType type)
     else if (GameObject* model = m_player->SummonGameObject(BONK_GO_SHRINE + type, spot.x, spot.y, spot.z, frand(0.0f, 2.0f * M_PI_F),
         0.0f, 0.0f, 0.0f, 0.0f, BONK_SHRINE_MODEL_SEC, false))
         shrine.model = model->GetObjectGuid();
-    shrine.objectiveId = m_objectives.Add(m_player, BONK_OBJECTIVE_SHRINE, spot.x, spot.y, spot.z, SHRINE_LABELS[type], 0, SHRINE_ICONS[type],
-        SHRINE_DESCRIPTIONS[type]);
+    shrine.objectiveId = m_objectives.Add(m_player, BONK_OBJECTIVE_SHRINE, spot.x, spot.y, spot.z, GetString(SHRINE_LABELS[type]), 0, SHRINE_ICONS[type],
+        GetString(SHRINE_DESCRIPTIONS[type]));
     if (type == BONK_SHRINE_MOONWELL)
         m_moonwellPlaced = true;
     if (type == BONK_SHRINE_STONE)
@@ -257,7 +254,7 @@ void BonkRun::UpdateLeyLine(size_t index, uint32 diff)
     {
         if (m_captureShown && shrine.progressMs)
         {
-            bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~-1");
+            bonk->SendAddon("capture~" + GetString(SHRINE_LABELS[BONK_SHRINE_LEY_LINE]) + "~-1");
             m_captureShown = false;
         }
         return;
@@ -268,8 +265,8 @@ void BonkRun::UpdateLeyLine(size_t index, uint32 diff)
     m_captureSendMs += diff;
     if (shrine.progressMs >= captureMs)
     {
-        bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~100");
-        bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~-1");
+        bonk->SendAddon("capture~" + GetString(SHRINE_LABELS[BONK_SHRINE_LEY_LINE]) + "~100");
+        bonk->SendAddon("capture~" + GetString(SHRINE_LABELS[BONK_SHRINE_LEY_LINE]) + "~-1");
         m_captureShown = false;
         bonk->Notify(BONK_STRING_YOU_CAPTURED_LEY_LINE);
         RemoveShrine(index);
@@ -280,7 +277,7 @@ void BonkRun::UpdateLeyLine(size_t index, uint32 diff)
     {
         m_captureSendMs = 0;
         m_captureShown = true;
-        bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~" +
+        bonk->SendAddon("capture~" + GetString(SHRINE_LABELS[BONK_SHRINE_LEY_LINE]) + "~" +
             std::to_string(shrine.progressMs * 100 / captureMs));
     }
 }
@@ -357,8 +354,8 @@ void BonkRun::SendLeyOffer() const
             LeyStat const* stat = GetLeyStat(buff.effect);
             if (!stat)
                 continue;
-            bonk->SendAddon("leyopt~" + std::to_string(i + 1) + "~" + stat->name + "~" + LeyStatIcon(*stat) + "~" +
-                FormatLeyValue(*stat, buff.value) + " for the rest of the run." + "~" + std::to_string(buff.rarity));
+            bonk->SendAddon("leyopt~" + std::to_string(i + 1) + "~" + GetString(stat->name) + "~" + LeyStatIcon(*stat) + "~" +
+                GetString(BONK_STRING_LEY_FOR_THE_RUN, { FormatLeyValue(*stat, buff.value, GetLocale()) }) + "~" + std::to_string(buff.rarity));
         }
         bonk->SendAddon("leyofferend");
         return;
@@ -374,7 +371,7 @@ void BonkRun::SendLeyOffer() const
                 handler.PSendSysMessage("%u. %s: %s", uint32(i + 1), card->name.c_str(), card->description.c_str());
         }
         else if (LeyStat const* stat = GetLeyStat(m_leyOffer[i].effect))
-            handler.PSendSysMessage("%u. %s", uint32(i + 1), FormatLeyValue(*stat, m_leyOffer[i].value).c_str());
+            handler.PSendSysMessage("%u. %s", uint32(i + 1), FormatLeyValue(*stat, m_leyOffer[i].value, LOCALE_enUS).c_str());
     }
 }
 
@@ -386,7 +383,7 @@ void BonkRun::SendLeyBlessings() const
     {
         LeyStat const* stat = GetLeyStat(BonkPassiveEffect(effect));
         if (stat && m_shrineBonuses[effect] > 0.0f)
-            bonk->SendAddon("leybless~" + std::string(stat->name) + "~" + LeyStatIcon(*stat) + "~" + FormatLeyValue(*stat, m_shrineBonuses[effect]));
+            bonk->SendAddon("leybless~" + GetString(stat->name) + "~" + LeyStatIcon(*stat) + "~" + FormatLeyValue(*stat, m_shrineBonuses[effect], GetLocale()));
     }
     bonk->SendAddon("leyblessend");
 }
@@ -421,7 +418,7 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
         m_shrineBonuses[buff.effect] += buff.value;
         ApplyPassives();
         if (LeyStat const* stat = GetLeyStat(buff.effect))
-            bonk->Notify(BONK_STRING_LEY_LINE_GRANTS_YOU, { FormatLeyValue(*stat, buff.value) });
+            bonk->Notify(BONK_STRING_LEY_LINE_GRANTS_YOU, { FormatLeyValue(*stat, buff.value, GetLocale()) });
         SendLeyBlessings();
     }
     ResumeUnlessChoiceOpen();
@@ -596,7 +593,7 @@ void BonkRun::UpdatePendingSummons(uint32 diff)
         }
         mob->CastSpell(mob, BONK_SPELL_SUMMON_SMOKE, true);
         if (summon.boss)
-            bonk->Notify(BONK_STRING_SUMMONED_ANSWERS, { std::string(mob->GetName()) });
+            bonk->Notify(BONK_STRING_SUMMONED_ANSWERS, { bonk->GetLocalName(mob) });
         if (summon.altar.IsEmpty())
             continue;
         for (Shrine& shrine : m_shrines)
@@ -715,7 +712,7 @@ void BonkRun::DespawnShrines()
     m_shrinesToPlace = 0;
     if (m_captureShown)
     {
-        m_player->GetBonkPlayer()->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~-1");
+        m_player->GetBonkPlayer()->SendAddon("capture~" + GetString(SHRINE_LABELS[BONK_SHRINE_LEY_LINE]) + "~-1");
         m_captureShown = false;
     }
 }
@@ -729,7 +726,7 @@ bool BonkRun::PlaceShrineNow(BonkShrineType type, std::string& error)
     }
     if ((type == BONK_SHRINE_MOONWELL && m_moonwellPlaced) || (type == BONK_SHRINE_STONE && m_stonePlaced))
     {
-        error = GetString(BONK_STRING_FLOOR_ALREADY_HAD_SHRINE, { SHRINE_LABELS[type] });
+        error = GetString(BONK_STRING_FLOOR_ALREADY_HAD_SHRINE, { GetString(SHRINE_LABELS[type]) });
         return false;
     }
     if (type == BONK_SHRINE_LEY_LINE && m_leyLinesPlaced >= BONK_MAX_LEY_LINES)

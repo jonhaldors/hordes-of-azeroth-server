@@ -116,7 +116,7 @@ bool BonkRun::PickEnchant(uint8 index, std::string& error)
     m_enchantOffers.clear();
     UpdateGear();
     m_player->GetBonkPlayer()->SendGearInfo();
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_ENCHANT_APPLIED, { BonkEnchanting::GetGradeName(picked.grade) });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_ENCHANT_APPLIED, { GetString(BonkEnchanting::GetGradeName(picked.grade)) });
     return true;
 }
 

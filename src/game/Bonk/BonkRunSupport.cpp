@@ -7,7 +7,7 @@
 
 namespace
 {
-    BonkSupportSource const BONK_SUPPORT_OTHER = { "INV_Misc_QuestionMark", "Other" };
+    char const BONK_SUPPORT_OTHER_ICON[] = "INV_Misc_QuestionMark";
 
     std::string CleanField(std::string text)
     {
@@ -18,15 +18,15 @@ namespace
 
 BonkRun::SupportCredit& BonkRun::GetSupportCredit(BonkSupportSource const& source)
 {
-    BonkSupportSource const& named = source.name.empty() ? BONK_SUPPORT_OTHER : source;
-    auto itr = m_supportCredits.find(named.name);
+    std::string const name = source.name.empty() ? GetString(BONK_STRING_SUPPORT_OTHER) : source.name;
+    auto itr = m_supportCredits.find(name);
     if (itr == m_supportCredits.end())
     {
         SupportCredit credit;
         credit.order = uint32(m_supportCredits.size());
-        itr = m_supportCredits.emplace(named.name, credit).first;
+        itr = m_supportCredits.emplace(name, credit).first;
     }
-    itr->second.icon = named.icon.empty() ? BONK_SUPPORT_OTHER.icon : named.icon;
+    itr->second.icon = source.name.empty() || source.icon.empty() ? BONK_SUPPORT_OTHER_ICON : source.icon;
     return itr->second;
 }
 

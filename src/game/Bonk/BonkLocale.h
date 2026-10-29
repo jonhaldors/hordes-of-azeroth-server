@@ -61,12 +61,15 @@ class BonkLocale
     public:
         void Load();
 
-        std::string GetString(BonkString id, LocaleConstant locale, std::vector<std::string> const& args) const;
+        std::string GetString(BonkString id, LocaleConstant locale, std::vector<std::string> const& args = {}) const;
         std::string Localize(BonkTextField field, uint32 id, std::string const& english, LocaleConstant locale) const;
+        std::string JoinList(std::vector<std::string> const& items, BonkString last, LocaleConstant locale) const;
         bool Export(LocaleConstant locale, std::string& path) const;
 
         static bool ParseLocale(std::string const& name, LocaleConstant& locale);
         static std::string ListLocales();
+        static std::vector<std::string> SplitSentences(std::string const& text);
+        static std::string AfterFirstSentence(std::string const& text);
         static uint32 SourceHash(std::string const& text);
         static std::string Substitute(std::string const& pattern, std::vector<std::string> const& args);
 

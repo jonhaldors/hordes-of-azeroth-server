@@ -954,12 +954,10 @@ class BonkRun
         std::string DescribeRankUp(Offer const& offer, BonkWeapon const& weapon) const;
         struct WeaponStrength
         {
-            std::string lead;
-            std::string tail;
-            std::string label;
+            BonkString sentence{};
+            BonkString label{};
             float value = 0.0f;
             BonkSpellUpgrade folded = BONK_SPELL_UPGRADE_NONE;
-            std::string Describe() const;
         };
         bool GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, float const* upgrades, WeaponStrength& strength) const;
         void AddRankGains(OwnedWeapon& owned, Offer const& offer) const;
@@ -1152,7 +1150,7 @@ class BonkRun
         std::string DescribeFoundDrop(BonkFoundGear const& found) const;
         void AddEliteScrap();
         bool GetKeepInfo(uint32 entry, uint32& keepEntry, uint8& quality) const;
-        void MailKeptPiece(uint32 entry, std::string const& subject, std::string const& body, BonkFoundGear const* found);
+        void MailKeptPiece(uint32 entry, std::string const& body, BonkFoundGear const* found);
         uint32 GetScrapPoints(Item const* item) const;
         void GetOwnedTiers(uint32 entry, uint32& bestTier, bool& owned) const;
         uint8 RollGearQuality(BonkSpawnKind kind) const;

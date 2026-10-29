@@ -1,8 +1,8 @@
 #include "BonkRun.h"
+#include "BonkLocale.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
-#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "Log.h"
@@ -31,9 +31,12 @@ namespace
     BonkRarity const BONK_VENDOR_MIN_RARITY = BONK_RARITY_RARE;
 
     char const* const BONK_VENDOR_NAME        = "Zixil";
-    char const* const BONK_VENDOR_LABEL       = "Wandering Merchant";
     char const* const BONK_VENDOR_ICON        = "INV_Misc_Bag_10";
-    char const* const BONK_VENDOR_DESCRIPTION = "Zixil sells spells and upgrades for Valor. Click him before he moves on.";
+
+    std::string VendorName(Player* player)
+    {
+        return player->GetBonkPlayer()->GetCreatureName(BONK_VENDOR_ENTRY, BONK_VENDOR_NAME);
+    }
 
     enum BonkVendorCharge : uint8
     {
@@ -42,13 +45,10 @@ namespace
         BONK_VENDOR_CHARGE_SKIP   = 2,
         MAX_BONK_VENDOR_CHARGE
     };
-    char const* const CHARGE_NAMES[MAX_BONK_VENDOR_CHARGE] = { "Reroll", "Banish", "Skip" };
+    BonkString const CHARGE_NAMES[MAX_BONK_VENDOR_CHARGE] = { BONK_STRING_CHARGE_REROLL, BONK_STRING_CHARGE_BANISH, BONK_STRING_CHARGE_SKIP };
     char const* const CHARGE_ICONS[MAX_BONK_VENDOR_CHARGE] = { "Spell_Nature_Reincarnation", "Spell_Shadow_Cripple", "Ability_Rogue_Sprint" };
-    char const* const CHARGE_DESCRIPTIONS[MAX_BONK_VENDOR_CHARGE] = {
-        "Gives you 1 more Reroll, to draw new choices on a level-up or chest.",
-        "Gives you 1 more Banish, to remove a choice from this run for good.",
-        "Gives you 1 more Skip, to pass on a choice for a little Valor.",
-    };
+    BonkString const CHARGE_DESCRIPTIONS[MAX_BONK_VENDOR_CHARGE] = { BONK_STRING_CHARGE_REROLL_TEXT, BONK_STRING_CHARGE_BANISH_TEXT,
+        BONK_STRING_CHARGE_SKIP_TEXT };
 }
 
 void BonkRun::ResetVendor()
@@ -85,7 +85,7 @@ void BonkRun::UpdateVendor(uint32 diff)
             return;
         }
         if (vendor)
-            m_player->GetBonkPlayer()->Notify(BONK_STRING_VENDOR_LEAVES, { std::string(BONK_VENDOR_NAME) });
+            m_player->GetBonkPlayer()->Notify(BONK_STRING_VENDOR_LEAVES, { VendorName(m_player) });
         DespawnVendor();
         return;
     }
@@ -136,10 +136,10 @@ bool BonkRun::SpawnVendor()
     m_vendorGuid = vendor->GetObjectGuid();
     m_vendorLeftMs = BONK_VENDOR_SECONDS * IN_MILLISECONDS;
     m_vendorRerolls = 0;
-    m_vendorObjective = m_objectives.Add(m_player, BONK_OBJECTIVE_VENDOR, spot.x, spot.y, spot.z, BONK_VENDOR_LABEL, BONK_VENDOR_SECONDS,
-        BONK_VENDOR_ICON, BONK_VENDOR_DESCRIPTION);
+    m_vendorObjective = m_objectives.Add(m_player, BONK_OBJECTIVE_VENDOR, spot.x, spot.y, spot.z, GetString(BONK_STRING_VENDOR_LABEL), BONK_VENDOR_SECONDS,
+        BONK_VENDOR_ICON, GetString(BONK_STRING_VENDOR_TEXT, { VendorName(m_player) }));
     StockVendor(false);
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_VENDOR_ARRIVES, { std::string(BONK_VENDOR_NAME) });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_VENDOR_ARRIVES, { VendorName(m_player) });
     return true;
 }
 
@@ -296,7 +296,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { std::string(BONK_VENDOR_NAME) });
+        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { VendorName(m_player) });
         return false;
     }
     if (index < 1 || index > m_vendorStock.size())
@@ -333,7 +333,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
             case BONK_VENDOR_CHARGE_BANISH: ++m_banishes; break;
             default:                        ++m_skips; break;
         }
-        name = std::string("1 more ") + CHARGE_NAMES[slot.charge < MAX_BONK_VENDOR_CHARGE ? slot.charge : BONK_VENDOR_CHARGE_SKIP];
+        name = GetString(BONK_STRING_VENDOR_ONE_MORE, { GetString(CHARGE_NAMES[slot.charge < MAX_BONK_VENDOR_CHARGE ? slot.charge : BONK_VENDOR_CHARGE_SKIP]) });
     }
     else
     {
@@ -378,7 +378,7 @@ bool BonkRun::LockVendorSlot(uint32 index, std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { std::string(BONK_VENDOR_NAME) });
+        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { VendorName(m_player) });
         return false;
     }
     if (index < 1 || index > m_vendorStock.size() || m_vendorStock[index - 1].state != VENDOR_FOR_SALE)
@@ -396,13 +396,13 @@ bool BonkRun::RerollVendor(std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { std::string(BONK_VENDOR_NAME) });
+        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { VendorName(m_player) });
         return false;
     }
     if (GetVendorRestocksLeft() == 0)
     {
         error = GetString(GetUtility(BONK_UTILITY_VENDOR_REROLLS) > 0.0f ? BONK_STRING_VENDOR_NO_MORE_WARES : BONK_STRING_VENDOR_DOESNT_RESTOCK,
-            { std::string(BONK_VENDOR_NAME) });
+            { VendorName(m_player) });
         SendVendor();
         return false;
     }
@@ -480,9 +480,9 @@ void BonkRun::SendVendor() const
             if (slot.isCharge)
             {
                 uint8 const charge = slot.charge < MAX_BONK_VENDOR_CHARGE ? slot.charge : BONK_VENDOR_CHARGE_SKIP;
-                name = std::string(CHARGE_NAMES[charge]) + " charge";
+                name = GetString(BONK_STRING_VENDOR_CHARGE, { GetString(CHARGE_NAMES[charge]) });
                 icon = CHARGE_ICONS[charge];
-                description = CHARGE_DESCRIPTIONS[charge];
+                description = GetString(CHARGE_DESCRIPTIONS[charge]);
             }
             else
             {
@@ -518,7 +518,7 @@ void BonkRun::SendVendor() const
         VendorSlot const& slot = m_vendorStock[i];
         std::string name;
         if (slot.isCharge)
-            name = std::string(CHARGE_NAMES[slot.charge < MAX_BONK_VENDOR_CHARGE ? slot.charge : BONK_VENDOR_CHARGE_SKIP]) + " charge";
+            name = GetString(BONK_STRING_VENDOR_CHARGE, { GetString(CHARGE_NAMES[slot.charge < MAX_BONK_VENDOR_CHARGE ? slot.charge : BONK_VENDOR_CHARGE_SKIP]) });
         else
         {
             name = DescribeOffer(slot.card, nullptr) + " rank " + std::to_string(slot.card.newLevel);
