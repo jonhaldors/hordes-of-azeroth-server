@@ -9,6 +9,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "SpellEntry.h"
 #include "SpellMgr.h"
@@ -40,6 +41,26 @@ namespace
     bool InRun(Player const* player)
     {
         return player->GetBonkPlayer()->GetRun() != nullptr;
+    }
+
+    BonkRun const* GetPausedRunOf(Unit const* victim)
+    {
+        Creature const* mob = victim->ToCreature();
+        BonkMobAI const* ai = mob ? dynamic_cast<BonkMobAI const*>(mob->AI()) : nullptr;
+        Player* owner = ai ? sObjectAccessor.FindPlayer(ai->GetOwnerGuid()) : nullptr;
+        BonkRun const* run = owner ? owner->GetBonkPlayer()->GetRun() : nullptr;
+        return run && run->IsPaused() ? run : nullptr;
+    }
+
+    void LogPausedHit(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const* spellProto)
+    {
+        if (!GetPausedRunOf(victim))
+            return;
+        uint32 const createdBy = attacker->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk paused hit: %s (entry %u, %s, created by spell %u, time frozen %s) hit %s (entry %u) for %u with spell %u %s, health %u of %u",
+            attacker->GetName(), attacker->GetEntry(), attacker->GetGuidStr().c_str(), createdBy, attacker->IsTimeFrozen() ? "yes" : "no",
+            victim->GetName(), victim->GetEntry(), damage, spellProto ? spellProto->Id : 0, spellProto ? spellProto->SpellName[0].c_str() : "melee",
+            victim->GetHealth(), victim->GetMaxHealth());
     }
 
     std::string KeywordStacksText(Player* player, Creature const* victim)
@@ -524,6 +545,8 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
 {
     if (!damage || attacker == victim)
         return;
+
+    LogPausedHit(attacker, victim, damage, spellProto);
 
     uint32 const health = victim->GetHealth();
     uint32 const dealt = std::min(damage, health);
