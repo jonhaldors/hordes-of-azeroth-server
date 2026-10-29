@@ -91,6 +91,11 @@ float BonkRun::GetStackedChance(float percent, uint32 copies)
     return StackChance(percent, copies);
 }
 
+float BonkRun::GetChampionMaxReduction()
+{
+    return BONK_CHAMPION_MAX_REDUCTION;
+}
+
 float BonkRun::GetCopySum(uint32 copies)
 {
     float sum = 0.0f;

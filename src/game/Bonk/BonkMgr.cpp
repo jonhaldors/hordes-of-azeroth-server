@@ -1,4 +1,5 @@
 #include "BonkMgr.h"
+#include "BonkRun.h"
 #include "BonkMastery.h"
 #include "BonkQuests.h"
 #include "Database/DatabaseEnv.h"
@@ -2273,7 +2274,11 @@ void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std:
 
 std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank) const
 {
-    return DescribePassive(passive, rank);
+    float scale = passive.RankScale(std::max(1u, rank));
+    float const cap = BonkRun::GetPassiveCap(passive.effect);
+    if (cap > 0.0f && passive.valuePerRank > 0.0f)
+        scale = std::min(scale, cap / passive.valuePerRank);
+    return ScalePassiveText(passive.description, scale);
 }
 
 bool BonkMgr::IsArenaLocation(uint32 mapId, uint32 zoneId) const

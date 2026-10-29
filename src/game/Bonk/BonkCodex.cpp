@@ -70,9 +70,9 @@ namespace
             case BONK_CARD_CAMPFIRE:
                 return Number(card.values[0] * sum) + "% health a second";
             case BONK_CARD_JERKY:
-                return "+" + Number(card.values[0] * sum) + "% turkey legs";
+                return "+" + Number(card.values[0] * sum) + "% turkey legs, healing " + Number(card.values[1] * sum) + "% more";
             case BONK_CARD_CRIT_HEAL:
-                return "up to " + Number(card.values[2] * sum) + "% health a second";
+                return chance() + ", up to " + Number(card.values[2] * sum) + "% health a second";
             case BONK_CARD_OVERHEAL:
                 return "Shield up to " + Number(card.values[0] * sum) + "%";
             case BONK_CARD_THORNS:
@@ -82,6 +82,7 @@ namespace
             case BONK_CARD_DEATH_RAY:
             case BONK_CARD_ECHO:
             case BONK_CARD_FREE_CHEST:
+            case BONK_CARD_SHADOW_BURST:
                 return chance();
             case BONK_CARD_HASTE_BURST:
                 return chance() + ", +" + Number(card.values[1] * sum) + "% Haste";
@@ -91,6 +92,9 @@ namespace
             case BONK_CARD_POWER_SURGE:
                 return "+" + Number(card.values[0] * sum) + "% Power";
             case BONK_CARD_BIG_GAME:
+                if (card.values[1] > 0.0f)
+                    return "+" + Number(card.values[0] * sum) + "% damage, " +
+                        Number(std::min(BonkRun::GetChampionMaxReduction(), card.values[1] * sum)) + "% less damage taken";
                 return "+" + Number(card.values[0] * sum) + "% damage";
             case BONK_CARD_VALOR:
                 return "+" + Number(card.values[0] * sum) + "% Valor";
