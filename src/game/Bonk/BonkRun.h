@@ -548,7 +548,6 @@ class BonkRun
         void RewardMythicFloor();
         bool IsMythic() const { return m_tier.key == "mythic"; }
         float GetFloorRewardScale() const;
-        float GetFloorTicketScale() const;
         float GetScrapMultiplier() const;
         void PlacePortal(float x, float y, float baseZ);
 
@@ -1211,7 +1210,7 @@ class BonkRun
         void LogDeath();
         void LogLoadout() const;
         void LogBuild() const;
-        void LogRunEnd(bool wentHome) const;
+        void LogRunEnd(bool wentHome, std::string const& build) const;
         void LogBossFight(Creature const* mob, BonkSpawnKind kind, BossArrival const& arrival);
         uint32 m_nextLogMinute = 1;
         uint32 m_minuteDamage = 0;
@@ -1480,6 +1479,7 @@ class BonkRun
         uint32 m_kills = 0;
         uint32 m_goldEarned = 0;
         uint32 m_shardsEarned = 0;
+        uint32 m_scrapEarned = 0;
         uint32 m_coins = 0;
         float m_leechCarry = 0.0f;
         uint32 m_necroticStacks = 0;

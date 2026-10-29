@@ -2413,13 +2413,13 @@ void BonkRun::LogBuild() const
         m_player->GetLevel() + m_overcapLevel, DescribeBuildTotals().c_str());
 }
 
-void BonkRun::LogRunEnd(bool wentHome) const
+void BonkRun::LogRunEnd(bool wentHome, std::string const& build) const
 {
     char const* outcome = m_victory ? "victory" : wentHome ? "home" : m_player->IsAlive() ? "stopped" : "died";
     sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
-        "Bonk end: %s at run minute %.2f (stage %u, %s, %s, class %u): %s, level %u, %u kills, gold earned %u; %s",
+        "Bonk end: %s at run minute %.2f (stage %u, %s, %s, class %u): %s, level %u, %u kills, gold earned %u, tickets earned %u, scrap earned %u; %s",
         m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), outcome,
-        m_player->GetLevel() + m_overcapLevel, m_kills, m_goldEarned, DescribeBuildTotals().c_str());
+        m_player->GetLevel() + m_overcapLevel, m_kills, m_goldEarned, m_shardsEarned, m_scrapEarned, build.c_str());
 }
 
 void BonkRun::LogBossFight(Creature const* mob, BonkSpawnKind kind, BossArrival const& arrival)
@@ -4900,7 +4900,10 @@ void BonkRun::RewardMythicFloor()
     std::string const floor = "Mythic floor " + std::to_string(m_stage);
     uint32 const tickets = GetFloorFirstClearTickets(m_stage);
     if (tickets)
+    {
         bonk->AddShards(tickets);
+        m_shardsEarned += tickets;
+    }
     if (IsMythicMilestoneFloor(m_stage))
         bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "! Legendary gear drops more often from now on.");
     else if (tickets)
@@ -4919,11 +4922,6 @@ float BonkRun::FloorRewardScale(BonkTier const& tier, uint32 stage)
 float BonkRun::GetFloorRewardScale() const
 {
     return FloorRewardScale(m_tier, m_stage);
-}
-
-float BonkRun::GetFloorTicketScale() const
-{
-    return m_tier.key == "mythic" ? 1.0f + BONK_FLOOR_TICKET_GROWTH * float(m_stage - 1) : 1.0f;
 }
 
 BonkMap const* BonkRun::GetNextMap() const
@@ -10407,7 +10405,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
         case BONK_SPAWN_BOSS:     count = m_tier.shardsBoss; break;
         default: break;
     }
-    uint32 const scaled = uint32(count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent()) * GetAmbitionReward(kind) * GetFloorTicketScale());
+    uint32 const scaled = uint32(count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent()) * GetAmbitionReward(kind) * GetFloorRewardScale());
     count = scaled / 100 + (roll_chance_u(scaled % 100) ? 1 : 0);
     if (!count)
         return;
@@ -12280,10 +12278,11 @@ void BonkRun::Finish(bool wentHome)
     if (wentHome)
         CollectAllShards();
 
-    if (!m_sandbox)
-        LogRunEnd(wentHome);
+    std::string const build = DescribeBuildTotals();
     DropOffers();
     ResolveRunGear(wentHome);
+    if (!m_sandbox)
+        LogRunEnd(wentHome, build);
 
     m_player->GetBonkPlayer()->RecordRun(m_stage, m_totalMs / IN_MILLISECONDS, m_kills, m_goldEarned);
     AwardMastery();

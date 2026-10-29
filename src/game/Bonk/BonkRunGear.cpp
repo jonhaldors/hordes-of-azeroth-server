@@ -858,6 +858,7 @@ void BonkRun::ResolveRunGear(bool extract)
     if (scrap)
     {
         bonk->AddScrap(scrap);
+        m_scrapEarned += scrap;
         bonk->Notify("You receive " + std::to_string(scrap) + " Scrap from unextracted finds (" + std::to_string(bonk->GetScrap()) + "/" +
             std::to_string(BONK_SCRAP_PER_UPGRADE) + ").");
     }
