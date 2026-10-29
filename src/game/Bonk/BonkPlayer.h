@@ -148,6 +148,8 @@ class BonkPlayer
         uint32 GetMasterySpentAbove(uint32 treeId, uint8 row) const;
         uint32 GetFloorTalentPoints() const;
         uint32 GetClassFloor() const { return m_classFloor; }
+        std::vector<uint32> GetCheckpoints(BonkTier const& tier) const;
+        void SendCheckpoints() const;
         void RecordClassFloor(uint32 floor);
         void TakeTalentResetNotice();
         uint32 GetMasterySpent() const;

@@ -49,8 +49,8 @@ namespace
 
     BonkEnchantStat const BONK_ENCHANT_STATS[] =
     {
-        { BONK_PASSIVE_POWER,       1.5f,  true },
-        { BONK_PASSIVE_MAX_HEALTH,  1.75f, true },
+        { BONK_PASSIVE_POWER,       1.0f,  true },
+        { BONK_PASSIVE_MAX_HEALTH,  1.15f, true },
         { BONK_PASSIVE_CRIT,        0.5f,  false },
         { BONK_PASSIVE_CRIT_DAMAGE, 1.0f,  false },
         { BONK_PASSIVE_DODGE,       0.4f,  false },

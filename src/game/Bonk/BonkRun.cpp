@@ -1062,6 +1062,8 @@ BonkRun::BonkRun(Player* player, BonkTier const& tier, BonkRunChoice const& choi
     m_dungeonId = dungeon && !choice.invade ? dungeon->id : 0;
     m_invaderId = dungeon && choice.invade ? dungeon->id : 0;
     m_startMapId = choice.startMap && !m_dungeonId ? choice.startMap->id : 0;
+    m_startFloor = std::max(1u, choice.startFloor);
+    m_stage = m_startFloor;
     uint32 const classMask = player->GetClassMask();
     for (bool const ownClass : { true, false })
         for (auto const& itr : sBonkMgr.GetWeapons())
@@ -1432,6 +1434,7 @@ void BonkRun::StartStage()
             GiveStartLevels();
             if (GetUtility(BONK_UTILITY_START_GLYPH) > 0.0f)
                 QueueGlyphPick();
+            GiveCheckpointCatchUp();
         }
     }
     else
@@ -10003,6 +10006,49 @@ uint32 BonkRun::GetNextLevelXp() const
     if (m_player->GetLevel() < maxLevel)
         return m_player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
     return sObjectMgr.GetXPForLevel(maxLevel - 1);
+}
+
+uint32 BonkRun::CheckpointLevel(uint32 floor)
+{
+    struct LevelAtFloor
+    {
+        uint32 floor;
+        uint32 level;
+    };
+    static LevelAtFloor const MEDIAN_LEVELS[] = { { 1, 1 }, { 5, 70 }, { 10, 96 }, { 15, 106 }, { 20, 117 } };
+    static float const LEVELS_PER_FLOOR_PAST_TABLE = 0.8f;
+    size_t const count = sizeof(MEDIAN_LEVELS) / sizeof(MEDIAN_LEVELS[0]);
+    LevelAtFloor const& last = MEDIAN_LEVELS[count - 1];
+    if (floor >= last.floor)
+        return last.level + uint32(float(floor - last.floor) * LEVELS_PER_FLOOR_PAST_TABLE + 0.5f);
+    for (size_t i = 1; i < count; ++i)
+        if (floor <= MEDIAN_LEVELS[i].floor)
+        {
+            LevelAtFloor const& low = MEDIAN_LEVELS[i - 1];
+            LevelAtFloor const& high = MEDIAN_LEVELS[i];
+            float const share = float(floor - low.floor) / float(high.floor - low.floor);
+            return low.level + uint32(share * float(high.level - low.level) + 0.5f);
+        }
+    return 1;
+}
+
+void BonkRun::GiveCheckpointCatchUp()
+{
+    if (m_startFloor <= 1)
+        return;
+    uint32 const target = CheckpointLevel(m_startFloor);
+    while (m_player->GetLevel() + m_overcapLevel < target)
+    {
+        uint32 const next = GetNextLevelXp();
+        uint32 const have = m_player->GetUInt32Value(PLAYER_XP);
+        if (!next || next <= have)
+            break;
+        GiveExperience(next - have);
+    }
+    for (uint32 floor = 1; floor < m_startFloor && CanGainGlyphPick(); ++floor)
+        QueueGlyphPick();
+    m_player->GetBonkPlayer()->Notify("You start on floor " + std::to_string(m_startFloor) + " at level " + std::to_string(m_player->GetLevel() + m_overcapLevel) +
+        ". Pick your build, then the floor begins. Skipped floors give no rewards.");
 }
 
 void BonkRun::GiveStartLevels()

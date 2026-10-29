@@ -167,6 +167,8 @@ class BonkRun
         uint32 GetFloorMilestones() const;
         static float CompoundStageScale(uint32 stage, float growth, float lateGrowth, uint32 knee, float lastGrowth, uint32 knee2);
         static float TierHealthScale(BonkTier const& tier, uint32 stage);
+        static uint32 CheckpointLevel(uint32 floor);
+        void GiveCheckpointCatchUp();
         static float TierKneeHealthSteps(BonkTier const& tier, uint32 stage);
         static float TierDamageScale(BonkTier const& tier, uint32 stage);
         static uint32 FloorMilestones(BonkTier const& tier, uint32 stage);
@@ -1192,6 +1194,7 @@ class BonkRun
         uint32 m_dungeonId = 0;
         uint32 m_invaderId = 0;
         uint32 m_startMapId = 0;
+        uint32 m_startFloor = 1;
         uint32 m_floorBestAtStart = 0;
         void ApplyInvader();
 

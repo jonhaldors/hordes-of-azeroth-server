@@ -455,6 +455,29 @@ uint32 BonkPlayer::GetFloorTalentPoints() const
     return std::min(BONK_FLOOR_TALENT_POINTS_MAX, m_classFloor / BONK_FLOORS_PER_TALENT_POINT);
 }
 
+std::vector<uint32> BonkPlayer::GetCheckpoints(BonkTier const& tier) const
+{
+    std::vector<uint32> checkpoints;
+    if (tier.key != "mythic" || m_classFloor < BONK_CHECKPOINT_GAP + BONK_CHECKPOINT_STEP)
+        return checkpoints;
+    uint32 const highest = (m_classFloor - BONK_CHECKPOINT_GAP) / BONK_CHECKPOINT_STEP * BONK_CHECKPOINT_STEP;
+    for (uint32 floor = BONK_CHECKPOINT_STEP; floor <= highest; floor += BONK_CHECKPOINT_STEP)
+        checkpoints.push_back(floor);
+    return checkpoints;
+}
+
+void BonkPlayer::SendCheckpoints() const
+{
+    for (auto const& itr : sBonkMgr.GetTiers())
+    {
+        std::string list;
+        for (uint32 floor : GetCheckpoints(itr.second))
+            list += (list.empty() ? "" : ",") + std::to_string(floor);
+        if (!list.empty())
+            SendAddon("checkpoints~" + std::to_string(itr.first) + "~" + list);
+    }
+}
+
 void BonkPlayer::RecordClassFloor(uint32 floor)
 {
     if (floor <= m_classFloor)
@@ -2490,6 +2513,17 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkRunChoic
         return false;
     }
 
+    if (choice.startFloor > 1)
+    {
+        std::vector<uint32> const checkpoints = GetCheckpoints(tier);
+        if (choice.dungeon || std::find(checkpoints.begin(), checkpoints.end(), choice.startFloor) == checkpoints.end())
+        {
+            error = "You can't start on floor " + std::to_string(choice.startFloor) + " yet. Checkpoints open " +
+                std::to_string(BONK_CHECKPOINT_GAP) + " floors below your best Mythic floor for this class.";
+            return false;
+        }
+    }
+
     if (m_player->IsInCombat())
     {
         error = "You can't start a run while in combat.";
@@ -2739,6 +2773,7 @@ void BonkPlayer::SendTierList() const
 
 void BonkPlayer::OpenArena(Creature const* npc) const
 {
+    SendCheckpoints();
     SendArena(npc->GetName());
 }
 

@@ -219,7 +219,11 @@ struct BonkRunChoice
     BonkMap const* startMap = nullptr;
     BonkMap const* dungeon = nullptr;
     bool invade = false;
+    uint32 startFloor = 1;
 };
+
+uint32 const BONK_CHECKPOINT_STEP = 5;
+uint32 const BONK_CHECKPOINT_GAP = 15;
 
 struct BonkMapStart
 {
