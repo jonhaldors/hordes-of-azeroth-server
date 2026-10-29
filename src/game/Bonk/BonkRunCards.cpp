@@ -462,7 +462,7 @@ void BonkRun::UpdateCards(uint32 diff)
         {
             SupportScope scope(*this, CardSupport(BONK_CARD_HEALTHSTONE));
             HealHero(ReduceHealing(uint32(maxHealth * stone->values[1] / 100.0f)), BONK_SPELL_HEALTHSTONE);
-            StartCardCooldown(BONK_CARD_HEALTHSTONE, stone->cooldownMs);
+            StartCardCooldown(BONK_CARD_HEALTHSTONE, GetCardCooldown(BONK_CARD_HEALTHSTONE));
         }
 
     if (BonkCard const* potion = m_cardByEffect[BONK_CARD_SWIFTNESS])
@@ -636,7 +636,7 @@ void BonkRun::OnCardHitTaken()
         if (m_cardCooldowns[BONK_CARD_HIT_IMMUNE] <= 0)
         {
             m_cardImmuneUntilMs = m_totalMs + uint32(insignia->values[0]);
-            StartCardCooldown(BONK_CARD_HIT_IMMUNE, insignia->cooldownMs);
+            StartCardCooldown(BONK_CARD_HIT_IMMUNE, GetCardCooldown(BONK_CARD_HIT_IMMUNE));
         }
 }
 
