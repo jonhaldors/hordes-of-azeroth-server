@@ -512,7 +512,7 @@ bool BonkRun::OpenRogueWindow(OwnedWeapon& owned, uint32& untilMs, uint32 auraSp
         return false;
     }
     owned.timer = GetWeaponCooldown(owned);
-    int32 const lengthMs = int32(owned.weapon.durationMs * GetWeaponDurationScale(owned));
+    int32 const lengthMs = int32(GetWindowLengthMs(owned));
     untilMs = m_totalMs + uint32(lengthMs);
     if (auraSpellId)
     {
@@ -915,7 +915,7 @@ void BonkRun::Evade(OwnedWeapon& owned)
         return;
     m_player->RemoveAurasDueToSpell(BONK_SPELL_EVASION);
     m_player->CastCustomSpell(m_player, BONK_SPELL_EVASION, dodge, {}, {}, true);
-    SetAuraLength(m_player, BONK_SPELL_EVASION, int32(owned.weapon.durationMs * GetWeaponDurationScale(owned)));
+    SetAuraLength(m_player, BONK_SPELL_EVASION, int32(GetWindowLengthMs(owned)));
 }
 
 bool BonkRun::IsHiddenInSmoke() const

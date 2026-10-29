@@ -297,18 +297,31 @@ uint8 BonkRun::GetRankUpgradeCount(OwnedWeapon const* owned, BonkRarity rarity) 
     return std::min(count, BONK_MAX_RANK_UPGRADES);
 }
 
-bool BonkRun::KeepsWindowUptime(OwnedWeapon const& owned, float const* rolled, BonkSpellUpgrade upgrade, float step) const
+bool BonkRun::IsWindowSpell(BonkWeapon const& weapon) const
 {
-    bool const window = owned.weapon.behavior == BONK_BEHAVIOR_BLADE_FLURRY || owned.weapon.behavior == BONK_BEHAVIOR_SHADOW_DANCE ||
-        owned.weapon.behavior == BONK_BEHAVIOR_EVASION;
-    if (!window || owned.weapon.durationMs == 0 || (upgrade != BONK_SPELL_UPGRADE_HASTE && upgrade != BONK_SPELL_UPGRADE_DURATION))
+    bool const window = weapon.behavior == BONK_BEHAVIOR_BLADE_FLURRY || weapon.behavior == BONK_BEHAVIOR_SHADOW_DANCE ||
+        weapon.behavior == BONK_BEHAVIOR_EVASION;
+    return window && weapon.durationMs > 0;
+}
+
+float BonkRun::GetWindowLengthMs(OwnedWeapon const& owned) const
+{
+    float const lengthMs = owned.weapon.durationMs * GetWeaponDurationScale(owned);
+    if (!IsWindowSpell(owned.weapon))
+        return lengthMs;
+    return std::min(lengthMs, GetWeaponCooldown(owned) * BONK_WINDOW_MAX_UPTIME);
+}
+
+bool BonkRun::DurationGrowsWindow(OwnedWeapon const& owned, float const* rolled, BonkSpellUpgrade upgrade, float step) const
+{
+    if (upgrade != BONK_SPELL_UPGRADE_DURATION || !IsWindowSpell(owned.weapon))
         return true;
-    OwnedWeapon after = owned;
+    OwnedWeapon before = owned;
     for (uint8 index = 0; index < MAX_BONK_SPELL_UPGRADE; ++index)
-        after.upgrades[index] += rolled[index];
+        before.upgrades[index] += rolled[index];
+    OwnedWeapon after = before;
     after.upgrades[upgrade] += step;
-    uint32 const cooldown = GetWeaponCooldown(after);
-    return cooldown > 0 && owned.weapon.durationMs * GetWeaponDurationScale(after) <= cooldown * BONK_WINDOW_MAX_UPTIME;
+    return GetWindowLengthMs(after) > GetWindowLengthMs(before) + 1.0f;
 }
 
 float BonkRun::GetShownHit(OwnedWeapon const& owned, float extraPower) const
@@ -544,8 +557,7 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
                 if (weapon.durationMs > 0)
                 {
                     BonkStatChange stat = SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]);
-                    stats.push_back({ stat.label, ShownSeconds(weapon.durationMs * GetWeaponDurationScale(owned)),
-                        ShownSeconds(weapon.durationMs * GetWeaponDurationScale(next)) });
+                    stats.push_back({ stat.label, ShownSeconds(GetWindowLengthMs(owned)), ShownSeconds(GetWindowLengthMs(next)) });
                 }
                 else
                     stats.push_back(SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]));
@@ -682,7 +694,7 @@ std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string tex
 
     if (weapon.durationMs)
     {
-        float const scale = GetWeaponDurationScale(owned);
+        float const scale = GetWindowLengthMs(owned) / weapon.durationMs;
         std::string const base = TrimNumber(weapon.durationMs / 1000.0f);
         std::string const marked = MarkNumber(TrimNumber(weapon.durationMs * scale / 1000.0f), scale > BONK_SHOWN_BETTER);
         if (!MarkNumberAfter(text, "for ", base, marked))
