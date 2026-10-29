@@ -448,7 +448,7 @@ void BonkRun::AddCurvedTotal(BonkPassiveEffect effect, float gain, std::vector<B
         snprintf(text, sizeof(text), fine ? "%.1f%%" : "%.0f%%", value);
         return std::string(text);
     };
-    stats.push_back({ "Total", percent(before), percent(after) });
+    stats.push_back({ effect == BONK_PASSIVE_HASTE ? "Total Haste" : "Total Area", percent(before), percent(after) });
 }
 
 void BonkRun::DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>& stats) const
@@ -462,7 +462,8 @@ void BonkRun::DescribeOfferStats(Offer const& offer, std::vector<BonkStatChange>
         if (BonkPassive const* passive = sBonkMgr.GetPassive(offer.id))
         {
             sBonkMgr.DescribePassiveStats(*passive, offer.newLevel, stats);
-            AddCurvedTotal(BonkPassiveEffect(passive->effect), passive->valuePerRank * passive->RankWeight(offer.newLevel), stats);
+            if (!stats.empty())
+                AddCurvedTotal(BonkPassiveEffect(passive->effect), passive->valuePerRank * passive->RankWeight(offer.newLevel), stats);
         }
         return;
     }
