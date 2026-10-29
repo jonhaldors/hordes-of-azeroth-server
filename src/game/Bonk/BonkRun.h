@@ -545,6 +545,8 @@ class BonkRun
         void RewardMythicFloor();
         bool IsMythic() const { return m_tier.key == "mythic"; }
         float GetFloorRewardScale() const;
+        float GetFloorTicketScale() const;
+        float GetScrapMultiplier() const;
         void PlacePortal(float x, float y, float baseZ);
 
         void PruneMobs();

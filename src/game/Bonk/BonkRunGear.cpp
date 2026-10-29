@@ -316,6 +316,11 @@ void BonkRun::MailKeptPiece(uint32 entry, std::string const& subject, std::strin
         .SendMailTo(MailReceiver(m_player), MailSender(MAIL_CREATURE, BONK_BANKER_ENTRY));
 }
 
+float BonkRun::GetScrapMultiplier() const
+{
+    return 1.0f + m_bonuses.scrapBonus / 100.0f;
+}
+
 uint32 BonkRun::GetScrapPoints(uint32 entry) const
 {
     if (!IsMythic() || m_sandbox)
@@ -849,6 +854,7 @@ void BonkRun::ResolveRunGear(bool extract)
         bonk->AnnounceMailAtCamp();
     }
 
+    scrap = uint32(float(scrap) * GetScrapMultiplier() + 0.5f);
     if (scrap)
     {
         bonk->AddScrap(scrap);
@@ -1190,7 +1196,8 @@ void BonkRun::SendVault() const
         if (find.inVault && !m_pillarMode)
             chosen += (chosen.empty() ? "" : ",") + std::to_string(find.guid.GetCounter());
     }
-    bonk->SendAddon("vaultopen~" + std::to_string(m_pillarMode ? 1u : GetVaultSlots()) + "~" + chosen + "~" + (m_pillarMode ? "pillar" : "vault"));
+    bonk->SendAddon("vaultopen~" + std::to_string(m_pillarMode ? 1u : GetVaultSlots()) + "~" + chosen + "~" + (m_pillarMode ? "pillar" : "vault") + "~" +
+        std::to_string(uint32(m_bonuses.scrapBonus + 0.5f)));
 }
 
 bool BonkRun::IsOwnPillar(GameObject const* pillar) const

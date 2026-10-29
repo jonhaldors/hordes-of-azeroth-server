@@ -1061,6 +1061,7 @@ uint32 const BONK_FLOORS_PER_TALENT_POINT = 2;
 uint32 const BONK_FLOOR_TALENT_POINTS_MAX = 10;
 uint32 const BONK_MYTHIC_MILESTONE_FLOORS = 5;
 float const BONK_FLOOR_GOLD_GROWTH = 0.1f;
+float const BONK_FLOOR_TICKET_GROWTH = 0.05f;
 uint32 const BONK_FLOOR_TICKETS_BASE = 3;
 uint32 const BONK_MILESTONE_TICKET_FACTOR = 2;
 
@@ -1115,8 +1116,12 @@ enum BonkTalentEffect : uint8
     BONK_TALENT_ELITE_AFFIX  = 16,
     BONK_TALENT_CARD_BANS    = 17,
     BONK_TALENT_GLYPH_BANS   = 18,
+    BONK_TALENT_MIGHT        = 19,
+    BONK_TALENT_FORTUNE      = 20,
     MAX_BONK_TALENT_EFFECT
 };
+
+uint8 const BONK_TALENT_ENDLESS_RANKS = 255;
 
 struct BonkTalent
 {
@@ -1138,6 +1143,7 @@ struct BonkTalent
             effect == BONK_TALENT_ELITE_AFFIX;
     }
     uint32 GetCost(uint8 ownedRanks) const;
+    bool IsEndless() const { return maxRank == BONK_TALENT_ENDLESS_RANKS; }
 };
 
 uint32 const BONK_FORTUNE_ROW_GATES[] = { 0, 0, 10, 30 };
@@ -1157,6 +1163,7 @@ struct BonkRunBonuses
     float spawnRate = 0.0f;
     float eliteRate = 0.0f;
     float goldBonus = 0.0f;
+    float scrapBonus = 0.0f;
     uint32 rerolls = 0;
     uint32 banishes = 0;
     uint32 skips = 0;

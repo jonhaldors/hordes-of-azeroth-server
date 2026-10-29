@@ -4854,6 +4854,11 @@ float BonkRun::GetFloorRewardScale() const
     return FloorRewardScale(m_tier, m_stage);
 }
 
+float BonkRun::GetFloorTicketScale() const
+{
+    return m_tier.key == "mythic" ? 1.0f + BONK_FLOOR_TICKET_GROWTH * float(m_stage - 1) : 1.0f;
+}
+
 BonkMap const* BonkRun::GetNextMap() const
 {
     return sBonkMgr.GetMap(m_nextMapId);
@@ -10330,7 +10335,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
         case BONK_SPAWN_BOSS:     count = m_tier.shardsBoss; break;
         default: break;
     }
-    uint32 const scaled = uint32(count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent()) * GetAmbitionReward(kind) * GetFloorRewardScale());
+    uint32 const scaled = uint32(count * (GetBonkMapRewardPercent(m_map.type) + GetGreedRewardPercent()) * GetAmbitionReward(kind) * GetFloorTicketScale());
     count = scaled / 100 + (roll_chance_u(scaled % 100) ? 1 : 0);
     if (!count)
         return;

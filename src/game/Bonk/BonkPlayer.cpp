@@ -1397,7 +1397,7 @@ uint32 BonkPlayer::GetFortuneSpentAbove(uint8 row, uint32 refundedId) const
     uint32 spent = 0;
     for (auto const& itr : m_talentRanks)
         if (BonkTalent const* talent = sBonkMgr.GetTalent(itr.first))
-            if (talent->layout.row < row)
+            if (talent->layout.row < row && !talent->IsEndless())
             {
                 uint8 const ranks = itr.first == refundedId && itr.second ? itr.second - 1 : itr.second;
                 for (uint8 rank = 0; rank < ranks; ++rank)
@@ -1819,6 +1819,14 @@ BonkRunBonuses BonkPlayer::GetRunBonuses() const
             case BONK_TALENT_CURSED_GROUND: bonuses.healingCut += value; break;
             case BONK_TALENT_DOOM_CLOCK:   bonuses.earlierBossSeconds += uint32(value); break;
             case BONK_TALENT_ELITE_AFFIX:  bonuses.eliteAffixes += uint32(value); break;
+            case BONK_TALENT_MIGHT:
+                bonuses.passives[BONK_PASSIVE_POWER] += value;
+                bonuses.passives[BONK_PASSIVE_MAX_HEALTH] += value;
+                break;
+            case BONK_TALENT_FORTUNE:
+                bonuses.goldBonus += value;
+                bonuses.scrapBonus += value;
+                break;
             default: break;
         }
     }
