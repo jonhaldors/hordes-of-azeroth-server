@@ -1564,7 +1564,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateRecovery(diff);
     UpdateCards(diff);
     UpdateGlyphs(diff);
-    UpdateWeaponGlows(diff);
+    UpdateFeel(diff);
     ExpireTrinketSpeed();
     UpdateShield(diff);
     UpdateNecrotic(diff);
@@ -10067,6 +10067,7 @@ void BonkRun::GiveExperience(uint32 xp)
 
 void BonkRun::OfferLevelsBeforeDing()
 {
+    m_levelPushPending = true;
     if (m_state == STATE_RUNNING || m_state == STATE_PORTAL)
         UpdateOffers();
 }

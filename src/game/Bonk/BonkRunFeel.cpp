@@ -1,5 +1,6 @@
 #include "BonkRun.h"
 #include "BonkMgr.h"
+#include "BonkMobAI.h"
 #include "Creature.h"
 #include "Item.h"
 #include "Player.h"
@@ -124,6 +125,47 @@ void BonkRun::ShakeOnHeroHit(uint32 damage)
         ShakeCamera(true);
     else if (share >= BONK_LIGHT_SHAKE_HIT_SHARE)
         ShakeCamera(false);
+}
+
+bool BonkRun::CanBeShoved(Creature const* mob) const
+{
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+    return ai && ai->GetKind() != BONK_SPAWN_BOSS && ai->GetKind() != BONK_SPAWN_MINIBOSS;
+}
+
+void BonkRun::StaggerOnHit(Unit* victim)
+{
+    Creature* mob = victim->ToCreature();
+    if (!mob || !mob->IsAlive() || !CanBeShoved(mob))
+        return;
+    BonkCrowd::Settings const& settings = BonkCrowd::GetSettings();
+    m_crowd.Shove(mob, m_player, m_player->GetPositionX(), m_player->GetPositionY(), settings.shoveDistance, settings.shoveSpeed,
+        uint32(settings.shoveGapMs));
+}
+
+void BonkRun::UpdateLevelPush()
+{
+    if (!m_levelPushPending || m_paused || !m_player->IsAlive())
+        return;
+    m_levelPushPending = false;
+    BonkCrowd::Settings const& settings = BonkCrowd::GetSettings();
+    float const radius = settings.levelPushRadius;
+    if (radius <= 0.0f)
+        return;
+    float const heroX = m_player->GetPositionX(), heroY = m_player->GetPositionY();
+    for (Creature* mob : GetMobsInRange(radius))
+    {
+        if (!CanBeShoved(mob))
+            continue;
+        float const closeness = 1.0f - std::min(1.0f, mob->GetDistance2d(heroX, heroY) / radius);
+        m_crowd.Shove(mob, m_player, heroX, heroY, settings.levelPushDistance * (0.25f + 0.75f * closeness), settings.levelPushSpeed, 0);
+    }
+}
+
+void BonkRun::UpdateFeel(uint32 diff)
+{
+    UpdateLevelPush();
+    UpdateWeaponGlows(diff);
 }
 
 void BonkRun::UpdateWeaponGlows(uint32 diff)
