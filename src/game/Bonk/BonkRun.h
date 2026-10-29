@@ -2901,7 +2901,7 @@ class BonkRun
         void HealInSandbox();
         void ResetSandboxCooldowns();
         void RefillSandboxDummies();
-        void AddSandboxSpellItems();
+        void AddSandboxSpellItems(uint32 page);
         void AddSandboxSpellPage(uint32 baseId);
         void AddSandboxPassiveItems(uint32 page);
         void AddSandboxCardItems(uint32 page);

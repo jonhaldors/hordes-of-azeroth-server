@@ -46,6 +46,7 @@ namespace
     float const BONK_SANDBOX_CRYSTAL_MARGIN   = 4.0f;
     float const BONK_SANDBOX_CRYSTAL_SPREAD   = 35.0f;
     uint32 const BONK_SANDBOX_PAGE            = 12;
+    uint32 const BONK_SANDBOX_SPELL_PAGE      = 9;
     uint32 const BONK_SANDBOX_RANKS[]         = { 1, 5, 10, 15 };
 
     uint32 const BONK_DUMMY_REFILL_MS  = 3000;
@@ -163,9 +164,9 @@ namespace
         return std::string(on ? "[On] " : "[Off] ") + label;
     }
 
-    uint32 ClampPage(uint32 page, size_t total)
+    uint32 ClampPage(uint32 page, size_t total, uint32 pageSize = BONK_SANDBOX_PAGE)
     {
-        uint32 const last = total ? uint32((total - 1) / BONK_SANDBOX_PAGE) : 0;
+        uint32 const last = total ? uint32((total - 1) / pageSize) : 0;
         return std::min(page, last);
     }
 
@@ -1237,7 +1238,7 @@ void BonkRun::ShowSandboxMenu(Creature* keeper, uint32 menu)
             AddLevelItems(m_player);
             break;
         case MENU_SPELLS:
-            AddSandboxSpellItems();
+            AddSandboxSpellItems(PageOf(menu));
             break;
         case MENU_SPELL:
             AddSandboxSpellPage(ContextOf(menu));
@@ -1258,20 +1259,29 @@ void BonkRun::ShowSandboxMenu(Creature* keeper, uint32 menu)
     talk->SendGossipMenu(BONK_TEXT_SANDBOX_MENU, keeper->GetObjectGuid());
 }
 
-void BonkRun::AddSandboxSpellItems()
+void BonkRun::AddSandboxSpellItems(uint32 page)
 {
     uint32 const classMask = m_player->GetClassMask();
+    std::vector<BonkWeapon const*> spells;
     for (auto const& itr : sBonkMgr.GetWeapons())
     {
         BonkWeapon const& base = itr.second;
-        if (base.evolvesFrom || (base.classMask && !(base.classMask & classMask)))
-            continue;
-        if (m_player->PlayerTalkClass->GetGossipMenu().MenuItemCount() >= GOSSIP_MAX_MENU_ITEMS - 4)
-            break;
+        if (!base.evolvesFrom && (!base.classMask || (base.classMask & classMask)))
+            spells.push_back(&base);
+    }
+    page = ClampPage(page, spells.size(), BONK_SANDBOX_SPELL_PAGE);
+    size_t const end = std::min(spells.size(), size_t(page + 1) * BONK_SANDBOX_SPELL_PAGE);
+    for (size_t i = size_t(page) * BONK_SANDBOX_SPELL_PAGE; i < end; ++i)
+    {
+        BonkWeapon const& base = *spells[i];
         OwnedWeapon const* owned = FindSandboxSpell(base.id);
         std::string const text = owned ? owned->weapon.name + " (rank " + std::to_string(owned->rank) + ")" : base.name;
         AddItem(m_player, owned ? GOSSIP_ICON_TRAINER : GOSSIP_ICON_CHAT, text, SENDER_OPEN, MenuAction(MENU_SPELL, 0, base.id));
     }
+    if (page > 0)
+        AddItem(m_player, GOSSIP_ICON_CHAT, "Previous page", SENDER_OPEN, MenuAction(MENU_SPELLS, page - 1));
+    if (end < spells.size())
+        AddItem(m_player, GOSSIP_ICON_CHAT, "Next page", SENDER_OPEN, MenuAction(MENU_SPELLS, page + 1));
     AddItem(m_player, GOSSIP_ICON_TRAINER, "Give a passive", SENDER_OPEN, MenuAction(MENU_PASSIVES));
     AddItem(m_player, GOSSIP_ICON_TRAINER, "Give a Darkmoon Card", SENDER_OPEN, MenuAction(MENU_CARDS));
     AddItem(m_player, GOSSIP_ICON_INTERACT_1, "Remove all spells", SENDER_RESET, RESET_SPELLS);
