@@ -32,6 +32,7 @@ class BonkMobAI : public CreatureAI
         static bool MayCry(Creature* creature);
 
         void Setup(BonkSpawnKind kind);
+        void SetHealthOverflow(float overflow) { m_healthOverflow = std::max(1.0f, overflow); }
         void SetFrozen(bool frozen);
         void Arrive(bool flash = true);
         void ShowArrivalFlash();
@@ -194,6 +195,7 @@ class BonkMobAI : public CreatureAI
 
         ObjectGuid m_ownerGuid;
         BonkSpawnKind m_kind = BONK_SPAWN_NORMAL;
+        float m_healthOverflow = 1.0f;
         BonkArchetype m_archetype = BONK_ARCHETYPE_GRUNT;
         bool m_veteran = false;
         bool m_flyingIn = false;

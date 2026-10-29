@@ -18,6 +18,7 @@
 namespace
 {
     uint32 const BONK_ARRIVE_MS = 750;
+    float const BONK_MAX_HEALTH = 2000000000.0f;
     uint32 const BONK_AGGRO_CRY_MS = 250;
 
     float const BONK_FLEE_STEP          = 12.0f;
@@ -614,8 +615,10 @@ void BonkMobAI::RollAffixes(uint32 count)
 
 void BonkMobAI::ScaleHealth(float factor)
 {
-    float const maxHealth = m_creature->GetMaxHealth() * factor;
-    uint32 const health = std::max(1u, uint32(m_creature->GetHealth() * factor));
+    float const scaled = m_creature->GetMaxHealth() * factor;
+    float const maxHealth = std::min(BONK_MAX_HEALTH, scaled);
+    m_healthOverflow *= scaled / maxHealth;
+    uint32 const health = std::max(1u, uint32(std::min(maxHealth, m_creature->GetHealth() * factor)));
     m_creature->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, maxHealth);
     m_creature->SetMaxHealth(uint32(maxHealth));
     m_creature->SetHealth(std::min(health, m_creature->GetMaxHealth()));
@@ -2164,6 +2167,9 @@ void BonkMobAI::DamageTaken(Unit* attacker, uint32& damage)
 {
     if (m_fleeing && m_blinks && damage && damage < m_creature->GetHealth() && m_blinkTimer <= 0)
         m_blinkPending = true;
+
+    if (damage && m_healthOverflow > 1.0f)
+        damage = std::max(1u, uint32(damage / m_healthOverflow));
 
     if (!damage || !attacker || attacker->GetObjectGuid() != m_ownerGuid)
         return;

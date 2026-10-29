@@ -321,7 +321,8 @@ void BonkMgr::LoadTiers()
         "`shard_chance_normal`, `shard_chance_elite`, `shards_miniboss`, `shards_boss`, `description`, `art`, "
         "`mastery_xp_minute`, `mastery_xp_miniboss`, `mastery_xp_boss`, `elite_affixes`, "
         "`stage_damage_accel`, `min_alive_multiplier`, `max_alive`, `max_bruisers`, `first_elite_sec`, `charge_interval_ms`, `stages`, `endless`, `veteran_chance`, `chest_cost_minute_growth`, `details`, `opening_crowd`, `opening_sec`, "
-        "`stage_compound`, `floor_knee`, `late_health_growth`, `late_damage_growth`, `floor_knee2`, `last_health_growth`, `last_damage_growth`, `knee_health_step`, `knee2_health_step` FROM `bonk_tier`"));
+        "`stage_compound`, `floor_knee`, `late_health_growth`, `late_damage_growth`, `floor_knee2`, `last_health_growth`, `last_damage_growth`, `knee_health_step`, `knee2_health_step`, "
+        "`boss_health_multiplier`, `miniboss_health_multiplier`, `boss_health_ramp_floors` FROM `bonk_tier`"));
 
     if (!result)
     {
@@ -378,6 +379,9 @@ void BonkMgr::LoadTiers()
         tier.lastDamageGrowth = fields[41].GetFloat();
         tier.kneeHealthStep = std::max(1.0f, fields[42].GetFloat());
         tier.knee2HealthStep = std::max(1.0f, fields[43].GetFloat());
+        tier.bossHealthMultiplier = std::max(1.0f, fields[44].GetFloat());
+        tier.minibossHealthMultiplier = std::max(1.0f, fields[45].GetFloat());
+        tier.bossHealthRampFloors = fields[46].GetUInt32();
 
         m_tiers[tier.id] = std::move(tier);
     } while (result->NextRow());

@@ -84,6 +84,7 @@ namespace
     uint32 const BONK_STAGE_CROWD_GROWTH_STAGES = 2;
     float const BONK_MILESTONE_VETERAN_CHANCE = 5.0f;
     float const BONK_VETERAN_HEALTH        = 2.5f;
+    float const BONK_MAX_MOB_HEALTH        = 2000000000.0f;
     float const BONK_ARMOR_BASE            = 100.0f;
     float const BONK_ARMOR_SLOPE           = 4.0f / 3.0f;
     float const BONK_ARMOR_MAX_REDUCTION   = 0.6f;
@@ -3510,12 +3511,24 @@ void BonkRun::MoveMob(Creature* mob, float x, float y, float z)
         ai->Arrive(false);
 }
 
-uint32 BonkRun::GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const
+float BonkRun::GetSpawnHealthUncapped(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const
 {
     uint32 const level = std::min(GetMobLevel() + GetKindLevelBonus(kind), 63u);
     float const archetypeHealth = kind == BONK_SPAWN_NORMAL ? sBonkMgr.GetArchetype(archetype).healthMultiplier : 1.0f;
-    return std::max(1u, uint32(GetMobHealth(level) * GetStageHealthMultiplier() * m_map.healthMultiplier * creatureMultiplier * archetypeHealth *
-        GetCrowdOverflow() * GetKindHealth(kind) * GetScalingNow().health));
+    return std::max(1.0f, GetMobHealth(level) * GetStageHealthMultiplier() * m_map.healthMultiplier * creatureMultiplier * archetypeHealth *
+        GetCrowdOverflow() * GetKindHealth(kind) * GetTierKindHealth(kind) * GetScalingNow().health);
+}
+
+uint32 BonkRun::GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, float creatureMultiplier) const
+{
+    return uint32(std::min(BONK_MAX_MOB_HEALTH, GetSpawnHealthUncapped(kind, archetype, creatureMultiplier)));
+}
+
+float BonkRun::GetTierKindHealth(BonkSpawnKind kind) const
+{
+    float const full = kind == BONK_SPAWN_BOSS ? m_tier.bossHealthMultiplier : kind == BONK_SPAWN_MINIBOSS ? m_tier.minibossHealthMultiplier : 1.0f;
+    float const ramp = m_tier.bossHealthRampFloors ? std::min(1.0f, float(m_stage) / float(m_tier.bossHealthRampFloors)) : 1.0f;
+    return 1.0f + (full - 1.0f) * ramp;
 }
 
 float BonkRun::GetProcBaseHealth() const
@@ -4361,10 +4374,13 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     float const archetypeDamage = archetype ? archetype->damageMultiplier : 1.0f;
     float const veteranDamage = (veteran ? BONK_VETERAN_DAMAGE : 1.0f) *
         (creature.kind == BONK_SPAWN_MINIBOSS ? 1.0f + GetGlyphValue(BONK_GLYPH_AMBITION, 2) / 100.0f : 1.0f);
-    uint32 const health = GetSpawnHealth(creature.kind, creature.archetype, creature.healthMultiplier * (veteran ? BONK_VETERAN_HEALTH : 1.0f));
+    float const fullHealth = GetSpawnHealthUncapped(creature.kind, creature.archetype, creature.healthMultiplier * (veteran ? BONK_VETERAN_HEALTH : 1.0f));
+    uint32 const health = uint32(std::min(BONK_MAX_MOB_HEALTH, fullHealth));
     mob->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, float(health));
     mob->SetMaxHealth(health);
     mob->SetHealth(health);
+    if (BonkMobAI* ai = dynamic_cast<BonkMobAI*>(mob->AI()))
+        ai->SetHealthOverflow(fullHealth / float(health));
 
     {
         float const damage = std::max(1.0f, GetHeroBaseHealth() * GetScalingNow().hitShare * GetStageDamageMultiplier() *
