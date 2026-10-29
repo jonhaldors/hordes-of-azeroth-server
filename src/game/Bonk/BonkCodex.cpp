@@ -50,6 +50,9 @@ namespace
             case BONK_PASSIVE_CRIT:         return "+" + Number(value) + "% crit";
             case BONK_PASSIVE_CRIT_DAMAGE:  return "+" + Number(value) + "% crit damage";
             case BONK_PASSIVE_SHIELD:       return Number(value) + "% Shield";
+            case BONK_PASSIVE_AMOUNT:       return "+" + Number(value) + " Count";
+            case BONK_PASSIVE_PICKUP:       return "+" + Number(value) + "% pickup range";
+            case BONK_PASSIVE_LUCK:         return "+" + Number(value) + " Luck";
             default:                        return "+" + Number(value);
         }
     }
@@ -106,7 +109,13 @@ namespace
         std::string text;
         for (uint8 i = 0; i < 2; ++i)
             if (card.stats[i] < MAX_BONK_PASSIVE_EFFECT)
-                text += (text.empty() ? "" : ", ") + DescribeStat(card.stats[i], card.statValues[i] * BonkRun::GetStatCopySum(card.stats[i], copies));
+            {
+                float value = card.statValues[i] * BonkRun::GetStatCopySum(card.stats[i], copies);
+                float const cap = BonkRun::GetPassiveCap(card.stats[i]);
+                if (cap > 0.0f)
+                    value = std::min(value, cap);
+                text += (text.empty() ? "" : ", ") + DescribeStat(card.stats[i], value);
+            }
         return text;
     }
 
