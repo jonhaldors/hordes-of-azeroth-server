@@ -10010,26 +10010,59 @@ uint32 BonkRun::GetNextLevelXp() const
 
 uint32 BonkRun::CheckpointLevel(uint32 floor)
 {
-    struct LevelAtFloor
-    {
-        uint32 floor;
-        uint32 level;
-    };
-    static LevelAtFloor const MEDIAN_LEVELS[] = { { 1, 1 }, { 5, 70 }, { 10, 96 }, { 15, 106 }, { 20, 117 } };
-    static float const LEVELS_PER_FLOOR_PAST_TABLE = 0.8f;
-    size_t const count = sizeof(MEDIAN_LEVELS) / sizeof(MEDIAN_LEVELS[0]);
-    LevelAtFloor const& last = MEDIAN_LEVELS[count - 1];
-    if (floor >= last.floor)
-        return last.level + uint32(float(floor - last.floor) * LEVELS_PER_FLOOR_PAST_TABLE + 0.5f);
+    size_t const count = sizeof(BONK_CHECKPOINT_TABLE_FLOORS) / sizeof(BONK_CHECKPOINT_TABLE_FLOORS[0]);
+    if (floor >= BONK_CHECKPOINT_TABLE_FLOORS[count - 1])
+        return BONK_CHECKPOINT_TABLE_LEVELS[count - 1] +
+            uint32(float(floor - BONK_CHECKPOINT_TABLE_FLOORS[count - 1]) * BONK_CHECKPOINT_LEVELS_PER_FLOOR + 0.5f);
     for (size_t i = 1; i < count; ++i)
-        if (floor <= MEDIAN_LEVELS[i].floor)
+        if (floor <= BONK_CHECKPOINT_TABLE_FLOORS[i])
         {
-            LevelAtFloor const& low = MEDIAN_LEVELS[i - 1];
-            LevelAtFloor const& high = MEDIAN_LEVELS[i];
-            float const share = float(floor - low.floor) / float(high.floor - low.floor);
-            return low.level + uint32(share * float(high.level - low.level) + 0.5f);
+            float const share = float(floor - BONK_CHECKPOINT_TABLE_FLOORS[i - 1]) /
+                float(BONK_CHECKPOINT_TABLE_FLOORS[i] - BONK_CHECKPOINT_TABLE_FLOORS[i - 1]);
+            return BONK_CHECKPOINT_TABLE_LEVELS[i - 1] +
+                uint32(share * float(BONK_CHECKPOINT_TABLE_LEVELS[i] - BONK_CHECKPOINT_TABLE_LEVELS[i - 1]) + 0.5f);
         }
     return 1;
+}
+
+size_t BonkRun::ChooseAutoPick() const
+{
+    size_t best = 0;
+    int32 bestScore = -1;
+    for (size_t i = 0; i < m_offer.size(); ++i)
+    {
+        Offer const& offer = m_offer[i];
+        bool owned = false;
+        if (offer.isCard)
+            owned = std::any_of(m_cards.begin(), m_cards.end(), [&offer](OwnedCard const& held) { return held.card && held.card->id == offer.id; });
+        else if (offer.isWeapon)
+            owned = FindOwned(offer.id) != nullptr;
+        else
+        {
+            auto rank = m_passiveRanks.find(offer.id);
+            owned = rank != m_passiveRanks.end() && rank->second > 0;
+        }
+        int32 const score = (owned ? 100 : 0) + int32(offer.rarity) * 10 + (offer.isWeapon ? 2 : offer.isCard ? 0 : 1);
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = i;
+        }
+    }
+    return best;
+}
+
+bool BonkRun::AutoPickCatchUp(std::string& error)
+{
+    if (!m_catchUpLevels)
+    {
+        error = "There are no catch-up level-ups left.";
+        return false;
+    }
+    m_autoPickCatchUp = true;
+    if (IsAutoPicking() && !m_offer.empty())
+        return Pick(uint32(ChooseAutoPick() + 1), error);
+    return true;
 }
 
 void BonkRun::GiveCheckpointCatchUp()
@@ -10037,6 +10070,7 @@ void BonkRun::GiveCheckpointCatchUp()
     if (m_startFloor <= 1)
         return;
     uint32 const target = CheckpointLevel(m_startFloor);
+    uint32 const before = m_player->GetLevel() + m_overcapLevel;
     while (m_player->GetLevel() + m_overcapLevel < target)
     {
         uint32 const next = GetNextLevelXp();
@@ -10045,6 +10079,7 @@ void BonkRun::GiveCheckpointCatchUp()
             break;
         GiveExperience(next - have);
     }
+    m_catchUpLevels = m_player->GetLevel() + m_overcapLevel - before;
     for (uint32 floor = 1; floor < m_startFloor && CanGainGlyphPick(); ++floor)
         QueueGlyphPick();
     m_player->GetBonkPlayer()->Notify("You start on floor " + std::to_string(m_startFloor) + " at level " + std::to_string(m_player->GetLevel() + m_overcapLevel) +
@@ -11657,6 +11692,12 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
 
     m_offerSource = source;
     SetPaused(true);
+    if (IsAutoPicking())
+    {
+        std::string error;
+        Pick(uint32(ChooseAutoPick() + 1), error);
+        return true;
+    }
     SendOffer();
     return true;
 }
@@ -11937,6 +11978,8 @@ void BonkRun::CloseOffer(uint32 pickedIndex)
     }
     else if (m_pendingLevels)
         --m_pendingLevels;
+    if (m_offerSource == OFFER_LEVEL && m_catchUpLevels)
+        --m_catchUpLevels;
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->SendAddon("picked");
@@ -12285,9 +12328,9 @@ void BonkRun::SendOffer() const
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (bonk->IsAddonReady())
     {
-        bonk->SendAddon("offer~" + std::to_string(m_player->GetLevel()) + "~" + std::to_string(m_offer.size()) + "~" +
+        bonk->SendAddon("offer~" + std::to_string(m_player->GetLevel() + m_overcapLevel) + "~" + std::to_string(m_offer.size()) + "~" +
             (m_offerSource == OFFER_CHEST ? "chest" : "level") + "~" + std::to_string(m_rerolls) + "~" + std::to_string(m_banishes) + "~" +
-            std::to_string(m_skips));
+            std::to_string(m_skips) + "~" + std::to_string(m_offerSource == OFFER_LEVEL ? m_catchUpLevels : 0));
         for (size_t i = 0; i < m_offer.size(); ++i)
         {
             Offer const& offer = m_offer[i];

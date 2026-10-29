@@ -223,6 +223,9 @@ struct BonkRunChoice
 };
 
 uint32 const BONK_CHECKPOINT_STEP = 5;
+uint32 const BONK_CHECKPOINT_TABLE_FLOORS[] = { 1, 5, 10, 15, 20 };
+uint32 const BONK_CHECKPOINT_TABLE_LEVELS[] = { 1, 69, 89, 96, 104 };
+float const BONK_CHECKPOINT_LEVELS_PER_FLOOR = 0.5f;
 uint32 const BONK_CHECKPOINT_GAP = 15;
 
 struct BonkMapStart

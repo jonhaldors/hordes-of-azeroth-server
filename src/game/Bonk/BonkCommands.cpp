@@ -138,11 +138,23 @@ bool ChatHandler::HandleBonkStopCommand(char*)
 
 bool ChatHandler::HandleBonkPickCommand(char* args)
 {
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (args && std::string(args) == "auto")
+    {
+        std::string error = "You are not in a run.";
+        if (!run || !run->AutoPickCatchUp(error))
+        {
+            SendSysMessage(error.c_str());
+            SetSentErrorMessage(true);
+            return false;
+        }
+        return true;
+    }
+
     uint32 choice;
     if (!ExtractUInt32(&args, choice))
         return false;
 
-    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error = "You are not in a run.";
     if (!run || !run->Pick(choice, error))
     {
