@@ -18,9 +18,11 @@
 set(EXECUTABLE_NAME mangosd)
 set(EXECUTABLE_SRCS
   CliRunnable.h
+  CrashDump.h
   Master.h
   WorldRunnable.h
   CliRunnable.cpp
+  CrashDump.cpp
   Main.cpp
   Master.cpp
   WorldRunnable.cpp

@@ -6,6 +6,7 @@
 #include "BonkPlayer.h"
 #include "Chat.h"
 #include "Creature.h"
+#include "Database/DatabaseEnv.h"
 #include "GameObject.h"
 #include "Item.h"
 #include "Mail.h"
@@ -687,7 +688,7 @@ bool BonkRun::ChooseGear(GearChoice choice, uint8 slot, std::string& error)
             error += ".";
             return false;
         }
-        m_runGear.push_back(item->GetObjectGuid());
+        TrackRunGear(item->GetObjectGuid());
         bonk->Notify("You put " + name + " in your bags. Put it in the Extraction Vault to keep it.");
     }
     else
@@ -761,7 +762,7 @@ bool BonkRun::EquipRunGear(uint32 entry, uint8 slot, std::string& error)
         error = "You couldn't equip " + name;
         return false;
     }
-    m_runGear.push_back(item->GetObjectGuid());
+    TrackRunGear(item->GetObjectGuid());
     UpdateGear();
     return true;
 }
@@ -769,9 +770,35 @@ bool BonkRun::EquipRunGear(uint32 entry, uint8 slot, std::string& error)
 void BonkRun::SnapshotBroughtGear()
 {
     m_broughtGear.clear();
+    uint32 const owner = m_player->GetGUIDLow();
+    CharacterDatabase.PExecute("DELETE FROM `bonk_run_item` WHERE `owner` = %u AND `slot` <> %u", owner, BONK_RUN_ITEM_FIND_SLOT);
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+        {
             m_broughtGear[slot] = item->GetObjectGuid();
+            CharacterDatabase.PExecute("REPLACE INTO `bonk_run_item` (`owner`, `item`, `slot`) VALUES (%u, %u, %u)",
+                owner, item->GetGUIDLow(), slot);
+        }
+}
+
+void BonkRun::ReturnBroughtGear()
+{
+    RestoreBroughtGear();
+    m_broughtGear.clear();
+    CharacterDatabase.PExecute("DELETE FROM `bonk_run_item` WHERE `owner` = %u AND `slot` <> %u", m_player->GetGUIDLow(), BONK_RUN_ITEM_FIND_SLOT);
+}
+
+void BonkRun::TrackRunGear(ObjectGuid const& guid)
+{
+    m_runGear.push_back(guid);
+    CharacterDatabase.PExecute("REPLACE INTO `bonk_run_item` (`owner`, `item`, `slot`) VALUES (%u, %u, %u)",
+        m_player->GetGUIDLow(), guid.GetCounter(), BONK_RUN_ITEM_FIND_SLOT);
+}
+
+void BonkRun::UntrackRunGear(ObjectGuid const& guid)
+{
+    m_runGear.erase(std::remove(m_runGear.begin(), m_runGear.end(), guid), m_runGear.end());
+    CharacterDatabase.PExecute("DELETE FROM `bonk_run_item` WHERE `owner` = %u AND `item` = %u", m_player->GetGUIDLow(), guid.GetCounter());
 }
 
 void BonkRun::RestoreBroughtGear()
@@ -822,11 +849,9 @@ void BonkRun::ResolveRunGear(bool extract)
     }
     m_runGear.clear();
     m_vault.clear();
+    CharacterDatabase.PExecute("DELETE FROM `bonk_run_item` WHERE `owner` = %u AND `slot` = %u", m_player->GetGUIDLow(), BONK_RUN_ITEM_FIND_SLOT);
     if (m_player->IsAlive())
-    {
-        RestoreBroughtGear();
-        m_broughtGear.clear();
-    }
+        ReturnBroughtGear();
     EndHearth();
     if (m_player->HasItemCount(BONK_ITEM_HEARTHSTONE, 1, true))
         m_player->DestroyItemCount(BONK_ITEM_HEARTHSTONE, 255, true, false, true);
@@ -1236,7 +1261,7 @@ bool BonkRun::SendHomeFromPillar(uint32 guidLow, std::string& error)
 
     std::string const name = item->GetProto()->Name1;
     bool const worn = item->IsEquipped();
-    m_runGear.erase(std::remove(m_runGear.begin(), m_runGear.end(), guid), m_runGear.end());
+    UntrackRunGear(guid);
     m_vault.erase(std::remove(m_vault.begin(), m_vault.end(), guid), m_vault.end());
     m_player->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
     if (worn)

@@ -12534,8 +12534,7 @@ void BonkRun::Exit()
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->ResetCharacter();
-    RestoreBroughtGear();
-    m_broughtGear.clear();
+    ReturnBroughtGear();
     ClearSky();
     bonk->TeleportToCamp();
 }
@@ -12554,8 +12553,7 @@ void BonkRun::Abort()
     CleanUp();
     m_state = STATE_FINISHED;
     m_player->GetBonkPlayer()->ResetCharacter();
-    RestoreBroughtGear();
-    m_broughtGear.clear();
+    ReturnBroughtGear();
 }
 
 void BonkRun::Surrender()
