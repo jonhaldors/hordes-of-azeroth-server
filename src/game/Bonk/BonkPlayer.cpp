@@ -2076,7 +2076,7 @@ uint32 BonkPlayer::GetStockTier() const
 {
     uint32 const cleared = GetMythicFloorsCleared();
     uint32 const lagged = cleared > BONK_STOCK_TIER_LAG ? cleared - BONK_STOCK_TIER_LAG : 1u;
-    return std::min(BONK_TIER_GEAR_TIERS, std::max(1u, lagged));
+    return std::min(BONK_STOCK_TIER_MAX, std::max(1u, lagged));
 }
 
 std::vector<uint32> BonkPlayer::GetTierStock() const
