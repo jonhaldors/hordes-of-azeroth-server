@@ -138,8 +138,15 @@ void BonkRun::StaggerOnHit(Unit* victim)
     Creature* mob = victim->ToCreature();
     if (!mob || !mob->IsAlive() || !CanBeShoved(mob))
         return;
+    BonkMobAI const* ai = static_cast<BonkMobAI const*>(mob->AI());
     BonkCrowd::Settings const& settings = BonkCrowd::GetSettings();
-    m_crowd.Shove(mob, m_player, m_player->GetPositionX(), m_player->GetPositionY(), settings.shoveDistance, settings.shoveSpeed,
+    if (ai->GetKind() == BONK_SPAWN_ELITE || ai->GetArchetype() == BONK_ARCHETYPE_BRUISER)
+    {
+        m_crowd.Halt(mob, m_player, uint32(settings.haltMs), uint32(settings.haltGapMs));
+        return;
+    }
+    float const distance = ai->IsVeteran() ? settings.veteranShoveDistance : settings.shoveDistance;
+    m_crowd.Shove(mob, m_player, m_player->GetPositionX(), m_player->GetPositionY(), distance, settings.shoveSpeed,
         uint32(settings.shoveGapMs));
 }
 
