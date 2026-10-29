@@ -1108,6 +1108,7 @@ class BonkRun
         uint32 m_pillarObjective = 0;
         bool m_pillarRaised = false;
         bool m_pillarMode = false;
+        std::vector<std::pair<uint32, uint32>> m_pillarSent;
         uint32 m_floorMiniBosses = 0;
         ObjectGuid FindRunGear(uint32 guidLow) const;
         bool IsInVault(ObjectGuid const& guid) const;

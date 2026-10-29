@@ -1186,6 +1186,10 @@ void BonkRun::SendVault() const
     if (!bonk->IsAddonReady())
         return;
     bonk->SendAddon("vaultclear");
+    std::string sent;
+    for (auto const& piece : m_pillarSent)
+        sent += (sent.empty() ? "" : ",") + std::to_string(piece.first) + ":" + std::to_string(piece.second);
+    bonk->SendAddon("vaultsent~" + sent);
     std::string chosen;
     for (VaultFind const& find : GetVaultFinds())
     {
@@ -1242,6 +1246,7 @@ bool BonkRun::SendHomeFromPillar(uint32 guidLow, std::string& error)
     }
 
     std::string const name = item->GetProto()->Name1;
+    uint32 const foundEntry = item->GetEntry();
     bool const worn = item->IsEquipped();
     m_runGear.erase(std::remove(m_runGear.begin(), m_runGear.end(), guid), m_runGear.end());
     m_vault.erase(std::remove(m_vault.begin(), m_vault.end(), guid), m_vault.end());
@@ -1249,6 +1254,7 @@ bool BonkRun::SendHomeFromPillar(uint32 guidLow, std::string& error)
     if (worn)
         UpdateGear();
     MailKeptPiece(keepEntry, "Extracted: ", "The Extraction Pillar sent this home from " + m_map.name + ". It is yours to keep.");
+    m_pillarSent.emplace_back(foundEntry, m_stage);
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     bonk->Notify("The pillar sent " + name + " home. It's waiting in your mailbox.");
