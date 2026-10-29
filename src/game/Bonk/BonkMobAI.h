@@ -33,6 +33,7 @@ class BonkMobAI : public CreatureAI
 
         void Setup(BonkSpawnKind kind);
         void SetHealthOverflow(float overflow) { m_healthOverflow = std::max(1.0f, overflow); }
+        uint64 GetTrueHealth(uint32 health) const { return uint64(double(health) * m_healthOverflow); }
         void SetFrozen(bool frozen);
         void Arrive(bool flash = true);
         void ShowArrivalFlash();
