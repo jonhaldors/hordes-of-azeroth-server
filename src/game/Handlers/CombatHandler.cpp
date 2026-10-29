@@ -58,7 +58,8 @@ void WorldSession::HandleAttackSwingOpcode(WorldPackets::Combat::AttackSwing con
         return;
     }
 
-    _player->Attack(pEnemy, true);
+    if (!_player->Attack(pEnemy, true))
+        SendAttackStop(pEnemy);
 }
 
 void WorldSession::HandleAttackStopOpcode(NullClientPacket const& /*packet*/)

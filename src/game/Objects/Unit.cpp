@@ -4518,6 +4518,9 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
     if (IsPlayer() && IsMounted())
         return false;
 
+    if (meleeAttack && IsPlayer() && ToPlayer()->GetBonkPlayer())
+        return false;
+
     // nobody can attack GM in GM-mode
     if (victim->IsPlayer())
     {
