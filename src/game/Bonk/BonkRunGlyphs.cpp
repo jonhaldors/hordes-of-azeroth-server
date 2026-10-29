@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <limits>
 
 namespace
 {
@@ -441,9 +442,25 @@ void BonkRun::ReleaseGlyphBursts()
             mobs[i]->SendPlaySpellVisualKit(kit);
         m_cardProc = true;
         for (Creature* mob : mobs)
-            DealSpellHit(spellInfo, mob, burst.damage);
+        {
+            if (burst.effect == BONK_GLYPH_CLEAVE)
+                DealCarriedDamage(spellInfo, mob, burst.damage);
+            else
+                DealSpellHit(spellInfo, mob, burst.damage);
+        }
         m_cardProc = false;
     }
+}
+
+void BonkRun::DealCarriedDamage(SpellEntry const* spellInfo, Unit* target, float damage)
+{
+    if (!target->IsAlive() || damage < 1.0f || !m_player->IsAlive())
+        return;
+    SpellNonMeleeDamage hit(m_player, target, spellInfo->Id, SpellSchools(spellInfo->School));
+    hit.damage = uint32(std::min(damage, float(std::numeric_limits<int32>::max())));
+    m_player->DealDamageMods(target, hit.damage, &hit.absorb);
+    m_player->SendSpellNonMeleeDamageLog(&hit);
+    m_player->DealSpellDamage(&hit, true);
 }
 
 void BonkRun::RaiseSkeleton(Creature const* corpse)

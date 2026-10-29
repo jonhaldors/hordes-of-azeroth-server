@@ -799,6 +799,7 @@ class BonkRun
         void ShowTrapSprung(OwnedWeapon const& owned, uint32 prop, float x, float y, float z);
         uint32 PlaceTrapProp(uint32 display, float x, float y, float z);
         void DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster = nullptr, bool forceCrit = false);
+        void DealCarriedDamage(SpellEntry const* spellInfo, Unit* target, float damage);
         std::vector<Creature*> GetMobsInLine(OwnedWeapon const& owned, float range, float angle) const;
         bool Howl(OwnedWeapon& owned);
         float GetFrenzyDamage() const;
