@@ -164,6 +164,7 @@ class BonkRun
         uint32 GetFloorMilestones() const;
         static float CompoundStageScale(uint32 stage, float growth, float lateGrowth, uint32 knee, float lastGrowth, uint32 knee2);
         static float TierHealthScale(BonkTier const& tier, uint32 stage);
+        static float TierKneeHealthSteps(BonkTier const& tier, uint32 stage);
         static float TierDamageScale(BonkTier const& tier, uint32 stage);
         static uint32 FloorMilestones(BonkTier const& tier, uint32 stage);
         static uint32 MilestoneAffixes(BonkTier const& tier, uint32 stage);

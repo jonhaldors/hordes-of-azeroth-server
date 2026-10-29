@@ -3527,8 +3527,10 @@ uint32 BonkRun::GetSpawnHealth(BonkSpawnKind kind, BonkArchetype archetype, floa
 float BonkRun::GetTierKindHealth(BonkSpawnKind kind) const
 {
     float const full = kind == BONK_SPAWN_BOSS ? m_tier.bossHealthMultiplier : kind == BONK_SPAWN_MINIBOSS ? m_tier.minibossHealthMultiplier : 1.0f;
+    if (full <= 1.0f)
+        return 1.0f;
     float const ramp = m_tier.bossHealthRampFloors ? std::min(1.0f, float(m_stage) / float(m_tier.bossHealthRampFloors)) : 1.0f;
-    return 1.0f + (full - 1.0f) * ramp;
+    return std::max(1.0f, (1.0f + (full - 1.0f) * ramp) / TierKneeHealthSteps(m_tier, m_stage));
 }
 
 float BonkRun::GetProcBaseHealth() const
@@ -3590,14 +3592,19 @@ float BonkRun::CompoundStageScale(uint32 stage, float growth, float lateGrowth, 
 float BonkRun::TierHealthScale(BonkTier const& tier, uint32 stage)
 {
     if (tier.stageCompound)
-    {
-        float const kneeStep = tier.floorKnee && stage > tier.floorKnee ? tier.kneeHealthStep : 1.0f;
-        float const knee2Step = tier.floorKnee2 && stage > tier.floorKnee2 ? tier.knee2HealthStep : 1.0f;
-        return tier.healthMultiplier * kneeStep * knee2Step *
+        return tier.healthMultiplier * TierKneeHealthSteps(tier, stage) *
             CompoundStageScale(stage, tier.stageHealthGrowth, tier.lateHealthGrowth, tier.floorKnee, tier.lastHealthGrowth, tier.floorKnee2);
-    }
     float const stages = float(stage - 1);
     return tier.healthMultiplier * (1.0f + tier.stageHealthGrowth * stages + tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f));
+}
+
+float BonkRun::TierKneeHealthSteps(BonkTier const& tier, uint32 stage)
+{
+    if (!tier.stageCompound)
+        return 1.0f;
+    float const kneeStep = tier.floorKnee && stage > tier.floorKnee ? tier.kneeHealthStep : 1.0f;
+    float const knee2Step = tier.floorKnee2 && stage > tier.floorKnee2 ? tier.knee2HealthStep : 1.0f;
+    return kneeStep * knee2Step;
 }
 
 float BonkRun::TierDamageScale(BonkTier const& tier, uint32 stage)
