@@ -133,7 +133,8 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
             choice.startMap = map;
         else
         {
-            SendSysMessage(GetString(m_session, BONK_STRING_NO_ZONE_OR_DUNGEON_CALLED, { tier->name, option }).c_str());
+            SendSysMessage(GetString(m_session, BONK_STRING_NO_ZONE_OR_DUNGEON_CALLED,
+                { m_session->GetPlayer()->GetBonkPlayer()->Localize(BONK_FIELD_TIER_NAME, tier->id, tier->name), option }).c_str());
             SetSentErrorMessage(true);
             return false;
         }

@@ -1,8 +1,8 @@
 #include "BonkPlayer.h"
+#include "BonkLocale.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkQuests.h"
-#include "BonkStrings.h"
 #include "Database/DatabaseEnv.h"
 #include "Player.h"
 #include "WorldSession.h"
@@ -19,14 +19,15 @@ namespace
     std::string DescribeStarterUnlock(BonkPlayer const* bonk, BonkMasteryNode const& node)
     {
         if (BonkMasteryTree const* tree = sBonkMastery.GetTree(node.tree))
-            return bonk->GetString(BONK_STRING_LEARN_IN_TALENTS_TO_UNLOCK, { node.name, tree->name });
-        return bonk->GetString(BONK_STRING_LEARN_TO_UNLOCK, { node.name });
+            return bonk->GetString(BONK_STRING_LEARN_IN_TALENTS_TO_UNLOCK, { bonk->Localize(BONK_FIELD_MASTERY_NAME, node.id, node.name),
+                bonk->Localize(BONK_FIELD_MASTERY_TREE_NAME, tree->id, tree->name) });
+        return bonk->GetString(BONK_STRING_LEARN_TO_UNLOCK, { bonk->Localize(BONK_FIELD_MASTERY_NAME, node.id, node.name) });
     }
 
     std::string DescribeSpellUnlock(BonkPlayer const* bonk, uint32 weaponId)
     {
         if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(BONK_REWARD_WEAPON, weaponId))
-            return bonk->GetString(BONK_STRING_FINISH_QUEST_FIRST, { quest->name });
+            return bonk->GetString(BONK_STRING_FINISH_QUEST_FIRST, { bonk->Localize(BONK_FIELD_QUEST_NAME, quest->id, quest->name) });
         return bonk->GetString(BONK_STRING_UNLOCK_IT_FIRST);
     }
 }
@@ -116,8 +117,9 @@ void BonkPlayer::SendStarters() const
     for (StarterOption const& option : GetStarterOptions())
     {
         BonkWeapon const& weapon = *option.weapon;
-        SendAddon("starter~" + std::to_string(weapon.id) + "~" + weapon.icon + "~" + weapon.name + "~" + (option.unlocked ? "1" : "0") + "~" +
-            (&weapon == chosen ? "1" : "0") + "~" + option.hint + "~" + weapon.description);
+        SendAddon("starter~" + std::to_string(weapon.id) + "~" + weapon.icon + "~" + Localize(BONK_FIELD_WEAPON_NAME, weapon.id, weapon.name) + "~" +
+            (option.unlocked ? "1" : "0") + "~" + (&weapon == chosen ? "1" : "0") + "~" + option.hint + "~" +
+            Localize(BONK_FIELD_WEAPON_DESCRIPTION, weapon.id, weapon.description));
     }
     SendAddon("starterend");
 }

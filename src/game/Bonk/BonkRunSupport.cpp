@@ -1,4 +1,5 @@
 #include "BonkRun.h"
+#include "BonkLocale.h"
 #include "BonkPlayer.h"
 #include "Player.h"
 
@@ -87,7 +88,7 @@ std::string BonkRun::DescribeSupport() const
 
 BonkSupportSource BonkRun::WeaponSupport(OwnedWeapon const& owned) const
 {
-    return { owned.weapon.icon, owned.weapon.name };
+    return { owned.weapon.icon, Localize(BONK_FIELD_WEAPON_NAME, owned.weapon.id, owned.weapon.name) };
 }
 
 BonkSupportSource BonkRun::SpellSupport(uint32 spellId) const
@@ -104,21 +105,21 @@ BonkSupportSource BonkRun::PassiveSupport(BonkPassiveEffect effect) const
     for (auto const& itr : m_passiveRanks)
         if (BonkPassive const* passive = sBonkMgr.GetPassive(itr.first))
             if (passive->effect == effect)
-                return { passive->icon, passive->name };
+                return { passive->icon, Localize(BONK_FIELD_PASSIVE_NAME, passive->id, passive->name) };
     return {};
 }
 
 BonkSupportSource BonkRun::CardSupport(BonkCardEffect effect) const
 {
     if (BonkCard const* card = m_cardByEffect[effect])
-        return { card->icon, card->name };
+        return { card->icon, Localize(BONK_FIELD_CARD_NAME, card->id, card->name) };
     return {};
 }
 
 BonkSupportSource BonkRun::GlyphSupport(BonkGlyphEffect effect) const
 {
     if (BonkGlyph const* glyph = GetGlyph(effect))
-        return { glyph->icon, glyph->name };
+        return { glyph->icon, Localize(BONK_FIELD_GLYPH_NAME, glyph->id, glyph->name) };
     return {};
 }
 
@@ -127,7 +128,7 @@ BonkSupportSource BonkRun::TalentSupport(BonkMasteryEffect effect) const
     for (auto const& itr : m_player->GetBonkPlayer()->GetMasteryRanks())
         if (BonkMasteryNode const* node = itr.second ? sBonkMastery.GetNode(itr.first) : nullptr)
             if (node->effect == effect)
-                return { node->icon, node->name };
+                return { node->icon, Localize(BONK_FIELD_MASTERY_NAME, node->id, node->name) };
     return {};
 }
 
@@ -136,6 +137,6 @@ BonkSupportSource BonkRun::CapstoneSupport(BonkCapstone capstone) const
     for (auto const& itr : m_player->GetBonkPlayer()->GetMasteryRanks())
         if (BonkMasteryNode const* node = itr.second ? sBonkMastery.GetNode(itr.first) : nullptr)
             if (node->effect == BONK_MASTERY_CAPSTONE && node->target == uint32(capstone))
-                return { node->icon, node->name };
+                return { node->icon, Localize(BONK_FIELD_MASTERY_NAME, node->id, node->name) };
     return {};
 }

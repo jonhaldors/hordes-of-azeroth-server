@@ -23,6 +23,7 @@ class GameObject;
 class Item;
 class Player;
 enum BonkString : uint32;
+enum BonkTextField : uint8;
 
 enum BonkMiniEventType : uint8
 {
@@ -131,6 +132,8 @@ class BonkRun
 
         bool Begin(std::string& error);
         std::string GetString(BonkString id, std::vector<std::string> const& args = {}) const;
+        std::string Localize(BonkTextField field, uint32 id, std::string const& english) const;
+        LocaleConstant GetLocale() const;
         void Update(uint32 diff);
         void Abort();
         void Surrender();
@@ -1089,7 +1092,7 @@ class BonkRun
         void SendCardCooldown(BonkCardEffect effect) const;
         void SendCardCooldowns() const;
         std::string DescribeCardNow(BonkCard const& card) const;
-        static std::string DescribeHeldCard(BonkCard const& card, uint32 copies);
+        static std::string DescribeHeldCard(BonkCard const& card, uint32 copies, LocaleConstant locale);
         void SendCardStatus(bool force) const;
         mutable std::map<uint32, std::string> m_cardNowSent;
         uint32 m_cardCooldownTotals[MAX_BONK_CARD_EFFECT] = {};

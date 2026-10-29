@@ -1,9 +1,9 @@
 #include "BonkRun.h"
+#include "BonkLocale.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
 #include "BonkRunStats.h"
-#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "Player.h"
@@ -199,7 +199,7 @@ bool BonkRun::ChooseGlyph(uint32 choice, std::string& error)
     if (glyph)
     {
         TakeGlyph(*glyph);
-        bonk->Notify(BONK_STRING_YOU_CHOSE, { glyph->name });
+        bonk->Notify(BONK_STRING_YOU_CHOSE, { Localize(BONK_FIELD_GLYPH_NAME, glyph->id, glyph->name) });
     }
 
     ResumeUnlessChoiceOpen();
@@ -323,7 +323,7 @@ void BonkRun::EchoRankPick(OwnedWeapon& owned, Offer const& offer)
     if (!echoes || offer.step != BONK_STEP_RANK || !roll_chance_f(echoes->values[0]))
         return;
     RankUpWeapon(owned, 1);
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOUR_GLYPH_OF_ECHOES_GIVES, { owned.weapon.name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOUR_GLYPH_OF_ECHOES_GIVES, { Localize(BONK_FIELD_WEAPON_NAME, owned.weapon.id, owned.weapon.name) });
 }
 
 bool BonkRun::IsGlyphBossFloor() const
@@ -646,7 +646,7 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
     if (BonkGlyph const* wind = GetGlyph(BONK_GLYPH_SECOND_WIND))
         if (kind != BONK_SPAWN_NORMAL && m_player->IsWithinDistInMap(mob, wind->values[1]))
         {
-            SupportScope scope(*this, { wind->icon, wind->name });
+            SupportScope scope(*this, { wind->icon, Localize(BONK_FIELD_GLYPH_NAME, wind->id, wind->name) });
             HealHero(ReduceHealing(uint32(std::max(1.0f, m_player->GetMaxHealth() * wind->values[0] / 100.0f))));
         }
 

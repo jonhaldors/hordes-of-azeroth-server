@@ -1,4 +1,5 @@
 #include "BonkRunStats.h"
+#include "BonkLocale.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
@@ -435,7 +436,8 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
             BonkKeywordInfo const* keyword = sBonkMgr.GetKeywordBySpell(dot.first);
             SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(dot.first);
             std::string const icon = keyword && !keyword->icon.empty() ? keyword->icon : "INV_Misc_QuestionMark";
-            std::string const name = keyword ? keyword->name : spellInfo ? spellInfo->SpellName[0] : "Spell " + std::to_string(dot.first);
+            std::string const name = keyword ? bonk->Localize(BONK_FIELD_KEYWORD_NAME, uint32(keyword->id), keyword->name) :
+                spellInfo ? spellInfo->SpellName[0] : "Spell " + std::to_string(dot.first);
             bonk->SendAddon("sums~" + icon + "~" + name + "~" + std::to_string(dot.second.damage) + "~" + std::to_string(dot.second.kills));
         }
     }
@@ -454,7 +456,7 @@ void BonkStats::SendSummary(Player* player, std::vector<BonkSummaryWeapon> const
         else if (BonkKeywordInfo const* keyword = sBonkMgr.GetKeywordBySpell(itr.first))
         {
             icon = keyword->icon.empty() ? icon : keyword->icon;
-            name = keyword->name;
+            name = bonk->Localize(BONK_FIELD_KEYWORD_NAME, uint32(keyword->id), keyword->name);
         }
         else if (SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(itr.first))
             name = spellInfo->SpellName[0];

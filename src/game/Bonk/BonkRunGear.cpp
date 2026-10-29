@@ -1,10 +1,10 @@
 #include "BonkRun.h"
 #include "Bag.h"
+#include "BonkLocale.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkObjectives.h"
 #include "BonkPlayer.h"
-#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "Database/DatabaseEnv.h"
@@ -929,7 +929,7 @@ void BonkRun::ResolveRunGear(bool extract)
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(piece.entry);
         if (!proto)
             continue;
-        MailKeptPiece(piece.entry, "Extracted: ", "You brought this home from " + m_map.name + ". It is yours to keep.", piece.found ? &piece.gear : nullptr);
+        MailKeptPiece(piece.entry, "Extracted: ", "You brought this home from " + Localize(BONK_FIELD_MAP_NAME, m_map.id, m_map.name) + ". It is yours to keep.", piece.found ? &piece.gear : nullptr);
         bonk->Notify(BONK_STRING_YOU_EXTRACTED_ITS_WAITING_IN, { std::string(proto->Name1) });
         bonk->AnnounceMailAtCamp();
     }
@@ -1341,7 +1341,7 @@ bool BonkRun::SendHomeFromPillar(uint32 guidLow, std::string& error)
     m_player->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
     if (worn)
         UpdateGear();
-    MailKeptPiece(keepEntry, "Extracted: ", "The Extraction Pillar sent this home from " + m_map.name + ". It is yours to keep.", wasFound ? &found : nullptr);
+    MailKeptPiece(keepEntry, "Extracted: ", "The Extraction Pillar sent this home from " + Localize(BONK_FIELD_MAP_NAME, m_map.id, m_map.name) + ". It is yours to keep.", wasFound ? &found : nullptr);
     m_pillarSent.emplace_back(foundEntry, m_stage);
 
     BonkPlayer* bonk = m_player->GetBonkPlayer();

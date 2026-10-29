@@ -1,7 +1,7 @@
 #include "BonkRun.h"
+#include "BonkLocale.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
-#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "GameObject.h"
@@ -349,7 +349,8 @@ void BonkRun::SendLeyOffer() const
             if (buff.cardId)
             {
                 if (BonkCard const* card = sBonkMgr.GetCard(buff.cardId))
-                    bonk->SendAddon("leyopt~" + std::to_string(i + 1) + "~" + card->name + "~" + card->icon + "~" + card->description + "~" +
+                    bonk->SendAddon("leyopt~" + std::to_string(i + 1) + "~" + Localize(BONK_FIELD_CARD_NAME, card->id, card->name) + "~" + card->icon + "~" +
+                        Localize(BONK_FIELD_CARD_DESCRIPTION, card->id, card->description) + "~" +
                         std::to_string(buff.rarity) + "~c~" + std::to_string(GetCardCopies(card->id) + 1) + "~" + std::to_string(uint32(card->maxCopies)));
                 continue;
             }
@@ -412,7 +413,7 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
         if (BonkCard const* card = sBonkMgr.GetCard(buff.cardId))
         {
             AddCard(*card);
-            bonk->Notify(BONK_STRING_LEY_LINE_GRANTS_YOU, { card->name });
+            bonk->Notify(BONK_STRING_LEY_LINE_GRANTS_YOU, { Localize(BONK_FIELD_CARD_NAME, card->id, card->name) });
         }
     }
     else

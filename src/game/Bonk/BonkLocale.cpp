@@ -19,14 +19,64 @@ namespace
         BonkTextField field;
         char const* table;
         char const* column;
+        char const* key;
+        char const* subKey;
     };
 
     BonkFieldSource const FIELD_SOURCES[] =
     {
-        { BONK_FIELD_GLYPH_NAME,        "bonk_glyph", "name"        },
-        { BONK_FIELD_GLYPH_DESCRIPTION, "bonk_glyph", "description" },
-        { BONK_FIELD_GLYPH_DRAWBACK,    "bonk_glyph", "drawback"    },
+        { BONK_FIELD_GLYPH_NAME,                 "bonk_glyph",          "name",        "id",        nullptr  },
+        { BONK_FIELD_GLYPH_DESCRIPTION,          "bonk_glyph",          "description", "id",        nullptr  },
+        { BONK_FIELD_GLYPH_DRAWBACK,             "bonk_glyph",          "drawback",    "id",        nullptr  },
+        { BONK_FIELD_WEAPON_NAME,                "bonk_weapon",         "name",        "id",        nullptr  },
+        { BONK_FIELD_WEAPON_DESCRIPTION,         "bonk_weapon",         "description", "id",        nullptr  },
+        { BONK_FIELD_CARD_NAME,                  "bonk_card",           "name",        "id",        nullptr  },
+        { BONK_FIELD_CARD_DESCRIPTION,           "bonk_card",           "description", "id",        nullptr  },
+        { BONK_FIELD_KEYWORD_NAME,               "bonk_keyword",        "name",        "id",        nullptr  },
+        { BONK_FIELD_KEYWORD_DESCRIPTION,        "bonk_keyword",        "description", "id",        nullptr  },
+        { BONK_FIELD_MAP_NAME,                   "bonk_map",            "name",        "id",        nullptr  },
+        { BONK_FIELD_MAP_SUMMARY,                "bonk_map",            "summary",     "id",        nullptr  },
+        { BONK_FIELD_MAP_DESCRIPTION,            "bonk_map",            "description", "id",        nullptr  },
+        { BONK_FIELD_TIER_NAME,                  "bonk_tier",           "name",        "id",        nullptr  },
+        { BONK_FIELD_TIER_DESCRIPTION,           "bonk_tier",           "description", "id",        nullptr  },
+        { BONK_FIELD_TIER_DETAILS,               "bonk_tier",           "details",     "id",        nullptr  },
+        { BONK_FIELD_MASTERY_NAME,               "bonk_mastery",        "name",        "id",        nullptr  },
+        { BONK_FIELD_MASTERY_DESCRIPTION,        "bonk_mastery",        "description", "id",        nullptr  },
+        { BONK_FIELD_MASTERY_TREE_NAME,          "bonk_mastery_tree",   "name",        "id",        nullptr  },
+        { BONK_FIELD_PASSIVE_NAME,               "bonk_passive",        "name",        "id",        nullptr  },
+        { BONK_FIELD_PASSIVE_DESCRIPTION,        "bonk_passive",        "description", "id",        nullptr  },
+        { BONK_FIELD_PET_FAMILY_NAME,            "bonk_pet_family",     "name",        "id",        nullptr  },
+        { BONK_FIELD_PET_FAMILY_DESCRIPTION,     "bonk_pet_family",     "description", "id",        nullptr  },
+        { BONK_FIELD_QUEST_NAME,                 "bonk_quest",          "name",        "id",        nullptr  },
+        { BONK_FIELD_QUEST_DESCRIPTION,          "bonk_quest",          "description", "id",        nullptr  },
+        { BONK_FIELD_TALENT_NAME,                "bonk_talent",         "name",        "id",        nullptr  },
+        { BONK_FIELD_TALENT_DESCRIPTION,         "bonk_talent",         "description", "id",        nullptr  },
+        { BONK_FIELD_UPGRADE_NAME,               "bonk_upgrade",        "name",        "id",        nullptr  },
+        { BONK_FIELD_UPGRADE_DESCRIPTION,        "bonk_upgrade",        "description", "id",        nullptr  },
+        { BONK_FIELD_ARCHETYPE_NAME,             "bonk_archetype",      "name",        "id",        nullptr  },
+        { BONK_FIELD_ITEM_SET_NAME,              "bonk_item_set",       "name",        "id",        nullptr  },
+        { BONK_FIELD_ITEM_SET_BONUS_DESCRIPTION, "bonk_item_set_bonus", "description", "set_id",    "pieces" },
+        { BONK_FIELD_HIDDEN_NAME,                "bonk_hidden",         "name",        "id",        nullptr  },
+        { BONK_FIELD_HIDDEN_YELL,                "bonk_hidden",         "yell",        "id",        nullptr  },
+        { BONK_FIELD_HIDDEN_FOUND_TEXT,          "bonk_hidden",         "found_text",  "id",        nullptr  },
+        { BONK_FIELD_SHOP_TREE_NAME,             "bonk_shop_tree",      "name",        "id",        nullptr  },
+        { BONK_FIELD_TITLE_NAME,                 "bonk_title",          "name",        "id",        nullptr  },
+        { BONK_FIELD_TITLE_PATTERN,              "bonk_title",          "pattern",     "id",        nullptr  },
+        { BONK_FIELD_WAVE_NAME,                  "bonk_wave",           "name",        "start_sec", nullptr  },
     };
+
+    std::string KeyColumns(BonkFieldSource const& source)
+    {
+        std::string columns = std::string("`") + source.key + "`";
+        if (source.subKey)
+            columns += std::string(", `") + source.subKey + "`";
+        return columns;
+    }
+
+    uint32 ReadKey(BonkFieldSource const& source, Field const* fields)
+    {
+        return source.subKey ? BonkTextKey(fields[0].GetUInt32(), fields[1].GetUInt8()) : fields[0].GetUInt32();
+    }
 
     bool ReadLocale(std::string const& name, char const* table, uint32 id, LocaleConstant& locale)
     {
@@ -136,20 +186,21 @@ void BonkLocale::LoadFields()
     uint32 count = 0;
     for (BonkFieldSource const& source : FIELD_SOURCES)
     {
+        std::string const table = std::string(source.table) + "_locale";
         std::unique_ptr<QueryResult> result(WorldDatabase.PQuery(
-            "SELECT `id`, `locale`, `%s` FROM `%s_locale` WHERE `%s` <> ''", source.column, source.table, source.column));
+            "SELECT %s, `locale`, `%s` FROM `%s` WHERE `%s` <> ''", KeyColumns(source).c_str(), source.column, table.c_str(), source.column));
         if (!result)
             continue;
 
+        uint32 const keys = source.subKey ? 2 : 1;
         do
         {
             Field* fields = result->Fetch();
-            uint32 const id = fields[0].GetUInt32();
             LocaleConstant locale;
-            if (!ReadLocale(fields[1].GetCppString(), source.table, id, locale))
+            if (!ReadLocale(fields[keys].GetCppString(), table.c_str(), fields[0].GetUInt32(), locale))
                 continue;
 
-            m_fields[source.field][id][locale] = fields[2].GetCppString();
+            m_fields[source.field][ReadKey(source, fields)][locale] = fields[keys + 1].GetCppString();
             ++count;
         } while (result->NextRow());
     }
@@ -215,19 +266,23 @@ bool BonkLocale::Export(LocaleConstant locale, std::string& path) const
     separator = "\n";
     for (BonkFieldSource const& source : FIELD_SOURCES)
     {
+        std::string const keyColumns = KeyColumns(source);
         std::unique_ptr<QueryResult> result(WorldDatabase.PQuery(
-            "SELECT `id`, `%s` FROM `%s` WHERE `%s` <> '' ORDER BY `id`", source.column, source.table, source.column));
+            "SELECT %s, `%s` FROM `%s` WHERE `%s` <> '' ORDER BY %s", keyColumns.c_str(), source.column, source.table, source.column, keyColumns.c_str()));
         if (!result)
             continue;
 
+        uint32 const keys = source.subKey ? 2 : 1;
         do
         {
             Field* fields = result->Fetch();
-            uint32 const id = fields[0].GetUInt32();
-            auto const itr = m_fields[source.field].find(id);
+            auto const itr = m_fields[source.field].find(ReadKey(source, fields));
             std::string const translation = itr == m_fields[source.field].end() ? "" : itr->second[locale];
-            file << separator << "    { \"table\": " << JsonString(source.table) << ", \"column\": " << JsonString(source.column) << ", \"id\": " << id
-                 << ", \"english\": " << JsonString(fields[1].GetCppString())
+            file << separator << "    { \"table\": " << JsonString(source.table) << ", \"column\": " << JsonString(source.column)
+                 << ", " << JsonString(source.key) << ": " << fields[0].GetUInt32();
+            if (source.subKey)
+                file << ", " << JsonString(source.subKey) << ": " << fields[1].GetUInt32();
+            file << ", \"english\": " << JsonString(fields[keys].GetCppString())
                  << ", \"translation\": " << JsonString(translation)
                  << ", \"status\": \"" << TranslationStatus(translation, "") << "\" }";
             separator = ",\n";

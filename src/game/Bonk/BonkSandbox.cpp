@@ -1,9 +1,9 @@
 #include "BonkSandbox.h"
+#include "BonkLocale.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkRun.h"
-#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "GossipDef.h"
@@ -943,7 +943,7 @@ bool BonkRun::AddSandboxGlyph(uint32 glyphId, std::string& error)
         return false;
     }
     TakeGlyph(*glyph);
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_GAINED, { glyph->name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_GAINED, { Localize(BONK_FIELD_GLYPH_NAME, glyph->id, glyph->name) });
     return true;
 }
 
@@ -992,7 +992,7 @@ bool BonkRun::SetSandboxTier(uint32 tierId, uint32 stage, std::string& error)
     }
     m_tier = *tier;
     m_stage = std::max(1u, stage);
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_SANDBOX_ENEMIES_NOW_FIGHT_AS, { m_tier.name, std::to_string(m_stage) });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_SANDBOX_ENEMIES_NOW_FIGHT_AS, { Localize(BONK_FIELD_TIER_NAME, m_tier.id, m_tier.name), std::to_string(m_stage) });
     return true;
 }
 
@@ -1029,7 +1029,7 @@ bool BonkRun::AddSandboxSpell(uint32 baseId, std::string& error)
         return false;
     if (UsesShotSources())
         WarmShotSources();
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_LEARNED, { base->name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_LEARNED, { Localize(BONK_FIELD_WEAPON_NAME, base->id, base->name) });
     return true;
 }
 
@@ -1058,7 +1058,7 @@ void BonkRun::SetSandboxRank(uint32 baseId, uint32 rank, bool epicRoundRobin)
         ApplyStep(*owned, step);
     }
     SendLoadout();
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_NOW_RANK, { owned->weapon.name, std::to_string(owned->rank) });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_NOW_RANK, { Localize(BONK_FIELD_WEAPON_NAME, owned->weapon.id, owned->weapon.name), std::to_string(owned->rank) });
 }
 
 void BonkRun::PickUpgradesInTurn(OwnedWeapon const& owned, Offer& offer, size_t& nextUpgrade) const
@@ -1428,7 +1428,7 @@ void BonkRun::SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action
         case SENDER_SPELL_REMOVE:
             if (OwnedWeapon const* owned = FindSandboxSpell(action))
             {
-                std::string const name = owned->weapon.name;
+                std::string const name = Localize(BONK_FIELD_WEAPON_NAME, owned->weapon.id, owned->weapon.name);
                 RemoveSandboxSpells(action);
                 m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_FORGOT, { name });
             }
@@ -1443,7 +1443,7 @@ void BonkRun::SelectSandboxOption(Creature* keeper, uint32 sender, uint32 action
         {
             BonkCard const* card = sBonkMgr.GetCard(action);
             if (card && card->maxCopies && GetCardCopies(action) >= card->maxCopies)
-                error = GetString(BONK_STRING_YOU_ALREADY_HOLD_EVERY_COPY, { card->name });
+                error = GetString(BONK_STRING_YOU_ALREADY_HOLD_EVERY_COPY, { Localize(BONK_FIELD_CARD_NAME, card->id, card->name) });
             else
                 GiveCard(action, error);
             break;

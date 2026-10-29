@@ -1,4 +1,5 @@
 #include "BonkCodex.h"
+#include "BonkLocale.h"
 #include "BonkMgr.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
@@ -293,7 +294,8 @@ namespace
     void SendLock(BonkPlayer* bonk, char const* kind, uint32 id, BonkQuestReward type)
     {
         if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(type, id))
-            bonk->SendAddon(std::string("cdxq~") + kind + "~" + std::to_string(id) + "~" + quest->name + "~" + quest->description + "~" +
+            bonk->SendAddon(std::string("cdxq~") + kind + "~" + std::to_string(id) + "~" + bonk->Localize(BONK_FIELD_QUEST_NAME, quest->id, quest->name) + "~" +
+                bonk->Localize(BONK_FIELD_QUEST_DESCRIPTION, quest->id, quest->description) + "~" +
                 std::to_string(sBonkQuests.GetProgress(bonk->GetProgressAccount(), *quest)) + "~" + std::to_string(quest->amount));
     }
 }
@@ -324,9 +326,10 @@ void BonkCodex::Send(Player* player, std::string const& npc, bool deck)
         std::string const id = std::to_string(weapon.id);
         uint32 price;
         std::string const locked = lockState(BONK_REWARD_WEAPON, weapon.id, price);
-        bonk->SendAddon("cdxw~" + id + "~" + weapon.name + "~" + weapon.icon + "~" + std::to_string(weapon.classMask) + "~" +
+        bonk->SendAddon("cdxw~" + id + "~" + bonk->Localize(BONK_FIELD_WEAPON_NAME, weapon.id, weapon.name) + "~" + weapon.icon + "~" + std::to_string(weapon.classMask) + "~" +
             std::to_string(weapon.starterClassMask | weapon.starterOptionMask) + "~" + std::to_string(weapon.evolvesFrom) + "~" + locked + "~" + std::to_string(price));
-        bonk->SendAddon("cdxwd~" + id + "~" + weapon.description + "~" + DescribeBonkWeaponTags(weapon, GetBonkMagicSchoolName(weapon.spellId)));
+        bonk->SendAddon("cdxwd~" + id + "~" + bonk->Localize(BONK_FIELD_WEAPON_DESCRIPTION, weapon.id, weapon.description) + "~" +
+            DescribeBonkWeaponTags(weapon, GetBonkMagicSchoolName(weapon.spellId), bonk->GetLocale()));
         if (locked == "1")
             SendLock(bonk, "w", weapon.id, BONK_REWARD_WEAPON);
     }
@@ -336,8 +339,8 @@ void BonkCodex::Send(Player* player, std::string const& npc, bool deck)
         BonkPassive const& passive = itr.second;
         uint32 price;
         std::string const locked = lockState(BONK_REWARD_PASSIVE, passive.id, price);
-        bonk->SendAddon("cdxp~" + std::to_string(passive.id) + "~" + passive.name + "~" + passive.icon + "~" +
-            std::to_string(passive.maxRank) + "~" + locked + "~" + sBonkMgr.DescribePassive(passive) + "~" + std::to_string(price));
+        bonk->SendAddon("cdxp~" + std::to_string(passive.id) + "~" + bonk->Localize(BONK_FIELD_PASSIVE_NAME, passive.id, passive.name) + "~" + passive.icon + "~" +
+            std::to_string(passive.maxRank) + "~" + locked + "~" + sBonkMgr.DescribePassive(passive, 1, bonk->GetLocale()) + "~" + std::to_string(price));
         if (locked == "1")
             SendLock(bonk, "p", passive.id, BONK_REWARD_PASSIVE);
     }
@@ -350,9 +353,9 @@ void BonkCodex::Send(Player* player, std::string const& npc, bool deck)
         uint32 price;
         std::string const locked = lockState(BONK_REWARD_CARD, card.id, price);
         std::string const id = std::to_string(card.id);
-        bonk->SendAddon("cdxc~" + id + "~" + card.name + "~" + card.icon + "~" + std::to_string(uint32(card.rarity)) + "~" +
+        bonk->SendAddon("cdxc~" + id + "~" + bonk->Localize(BONK_FIELD_CARD_NAME, card.id, card.name) + "~" + card.icon + "~" + std::to_string(uint32(card.rarity)) + "~" +
             std::to_string(uint32(card.maxCopies)) + "~" + locked + "~" + std::to_string(price));
-        bonk->SendAddon("cdxcd~" + id + "~" + card.description);
+        bonk->SendAddon("cdxcd~" + id + "~" + bonk->Localize(BONK_FIELD_CARD_DESCRIPTION, card.id, card.description));
         std::string const one = DescribeCardStack(card, 1);
         if (card.maxCopies != 1 && !one.empty())
             bonk->SendAddon("cdxcs~" + id + "~" + one + "~" + DescribeCardStack(card, 5));
@@ -390,8 +393,9 @@ void BonkCodex::Send(Player* player, std::string const& npc, bool deck)
     {
         BonkKeywordInfo const& keyword = itr.second;
         if (!keyword.description.empty())
-            bonk->SendAddon("cdxk~" + std::to_string(uint32(keyword.id)) + "~" + keyword.name + "~" + keyword.icon + "~" +
-                std::to_string(uint32(keyword.maxStacks)) + "~" + std::to_string(keyword.durationMs) + "~" + keyword.description);
+            bonk->SendAddon("cdxk~" + std::to_string(uint32(keyword.id)) + "~" + bonk->Localize(BONK_FIELD_KEYWORD_NAME, uint32(keyword.id), keyword.name) + "~" +
+                keyword.icon + "~" + std::to_string(uint32(keyword.maxStacks)) + "~" + std::to_string(keyword.durationMs) + "~" +
+                bonk->Localize(BONK_FIELD_KEYWORD_DESCRIPTION, uint32(keyword.id), keyword.description));
     }
 
     SendRules(bonk);
@@ -409,7 +413,7 @@ void BonkCodex::SendTermGlossary(BonkPlayer* bonk)
         std::string description = fields[3].GetCppString();
         if (uint32 const keywordId = fields[2].GetUInt32())
             if (BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(BonkKeyword(keywordId)))
-                description = keyword->description;
+                description = bonk->Localize(BONK_FIELD_KEYWORD_DESCRIPTION, keywordId, keyword->description);
         if (!description.empty())
             bonk->SendAddon("gls~" + fields[0].GetCppString() + "~" + fields[1].GetCppString() + "~" + description);
     } while (result->NextRow());
@@ -421,9 +425,10 @@ void BonkCodex::SendKeywordGlossary(BonkPlayer* bonk)
     {
         BonkKeywordInfo const& keyword = itr.second;
         std::string const id = std::to_string(uint32(keyword.id));
+        std::string const name = bonk->Localize(BONK_FIELD_KEYWORD_NAME, uint32(keyword.id), keyword.name);
         if (!keyword.description.empty())
-            bonk->SendAddon("kwd~" + id + "~" + keyword.name + "~" + keyword.icon + "~" + keyword.description);
-        bonk->SendAddon("kwdaura~" + id + "~" + keyword.name + "~" + keyword.icon + "~" + std::to_string(keyword.spellId) + "~" +
+            bonk->SendAddon("kwd~" + id + "~" + name + "~" + keyword.icon + "~" + bonk->Localize(BONK_FIELD_KEYWORD_DESCRIPTION, uint32(keyword.id), keyword.description));
+        bonk->SendAddon("kwdaura~" + id + "~" + name + "~" + keyword.icon + "~" + std::to_string(keyword.spellId) + "~" +
             std::to_string(uint32(keyword.maxStacks)));
     }
     SendTermGlossary(bonk);

@@ -672,11 +672,12 @@ void BonkQuests::Complete(Player* player, BonkQuest const& quest)
     }
 
     std::string icon;
-    std::string const reward = DescribeReward(quest, &icon);
+    std::string const reward = DescribeReward(quest, &icon, bonk->GetLocale());
+    std::string const name = bonk->Localize(BONK_FIELD_QUEST_NAME, quest.id, quest.name);
     if (bonk->IsAddonReady())
-        bonk->SendAddon("questdone~" + std::to_string(quest.id) + "~" + quest.name + "~" + reward + "~" + icon);
+        bonk->SendAddon("questdone~" + std::to_string(quest.id) + "~" + name + "~" + reward + "~" + icon);
     else
-        bonk->Notify(BONK_STRING_QUEST_COMPLETE, { quest.name, reward });
+        bonk->Notify(BONK_STRING_QUEST_COMPLETE, { name, reward });
 
     OnProgress(player, BONK_QUEST_QUESTS_DONE, 0, CountCompleted(account), true);
 }
@@ -694,7 +695,7 @@ uint32 BonkQuests::CountCompleted(uint32 account) const
     return count;
 }
 
-std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon) const
+std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon, LocaleConstant locale) const
 {
     switch (quest.rewardType)
     {
@@ -708,28 +709,28 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
             {
                 *icon = weapon->icon;
-                return "Unlocks " + weapon->name;
+                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name, locale);
             }
             break;
         case BONK_REWARD_PASSIVE:
             if (BonkPassive const* passive = sBonkMgr.GetPassive(quest.rewardValue))
             {
                 *icon = passive->icon;
-                return "Unlocks " + passive->name;
+                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_PASSIVE_NAME, passive->id, passive->name, locale);
             }
             break;
         case BONK_REWARD_TALENT:
             if (BonkTalent const* talent = sBonkMgr.GetTalent(quest.rewardValue))
             {
                 *icon = talent->layout.icon;
-                return "Unlocks the fortune " + talent->name + " at Sayge";
+                return "Unlocks the fortune " + sBonkLocale.Localize(BONK_FIELD_TALENT_NAME, talent->id, talent->name, locale) + " at Sayge";
             }
             break;
         case BONK_REWARD_UPGRADE:
             if (BonkUpgrade const* upgrade = sBonkMgr.GetUpgrade(quest.rewardValue))
             {
                 *icon = upgrade->layout.icon;
-                return "Unlocks " + upgrade->name + " at the Upgrades vendor";
+                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_UPGRADE_NAME, upgrade->id, upgrade->name, locale) + " at the Upgrades vendor";
             }
             break;
         case BONK_REWARD_MASTERY:
@@ -746,28 +747,29 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (BonkWeapon const* weapon = sBonkMgr.GetWeapon(quest.rewardValue))
             {
                 *icon = weapon->icon;
-                return "An Epic rank for " + weapon->name;
+                return "An Epic rank for " + sBonkLocale.Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name, locale);
             }
             break;
         case BONK_REWARD_CAPSTONE:
             if (BonkMasteryNode const* node = sBonkMastery.GetNode(quest.rewardValue))
             {
                 *icon = node->icon;
-                return "Unlocks " + node->name + ", the final talent in its tree";
+                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_MASTERY_NAME, node->id, node->name, locale) + ", the final talent in its tree";
             }
             break;
         case BONK_REWARD_CARD:
             if (BonkCard const* card = sBonkMgr.GetCard(quest.rewardValue))
             {
                 *icon = card->icon;
-                return "Unlocks " + (card->name.compare(0, 13, "Darkmoon Card") == 0 ? card->name : "the Darkmoon Card " + card->name);
+                std::string const name = sBonkLocale.Localize(BONK_FIELD_CARD_NAME, card->id, card->name, locale);
+                return "Unlocks " + (card->name.compare(0, 13, "Darkmoon Card") == 0 ? name : "the Darkmoon Card " + name);
             }
             break;
         case BONK_REWARD_GLYPH:
             if (BonkGlyph const* glyph = sBonkMgr.GetGlyph(quest.rewardValue))
             {
                 *icon = glyph->icon;
-                return "Unlocks " + glyph->name;
+                return "Unlocks " + sBonkLocale.Localize(BONK_FIELD_GLYPH_NAME, glyph->id, glyph->name, locale);
             }
             break;
         case BONK_REWARD_CARD_BAN:
@@ -782,7 +784,7 @@ std::string BonkQuests::DescribeReward(BonkQuest const& quest, std::string* icon
             if (title != m_titles.end())
             {
                 *icon = "INV_Misc_Note_02";
-                return "The title \"" + title->second.name + "\"";
+                return "The title \"" + sBonkLocale.Localize(BONK_FIELD_TITLE_NAME, title->first, title->second.name, locale) + "\"";
             }
             break;
         }
@@ -815,8 +817,9 @@ void BonkQuests::SendLog(Player* player, std::string const& npc)
             continue;
         Progress const& entry = progress[quest.id];
         std::string rewardIcon;
-        std::string const reward = DescribeReward(quest, &rewardIcon);
-        bonk->SendAddon("q~" + std::to_string(quest.id) + "~" + quest.name + "~" + quest.description + "~" + quest.icon + "~" +
+        std::string const reward = DescribeReward(quest, &rewardIcon, bonk->GetLocale());
+        bonk->SendAddon("q~" + std::to_string(quest.id) + "~" + bonk->Localize(BONK_FIELD_QUEST_NAME, quest.id, quest.name) + "~" +
+            bonk->Localize(BONK_FIELD_QUEST_DESCRIPTION, quest.id, quest.description) + "~" + quest.icon + "~" +
             std::to_string(GetShownProgress(quest, entry)) + "~" + std::to_string(quest.amount) + "~" +
             (entry.completed ? "1" : "0") + "~" + reward + "~" + rewardIcon + "~" + (quest.classId ? "1" : "0") + "~" +
             GetCategoryKey(quest.category));

@@ -773,7 +773,7 @@ struct BonkWeapon
     }
 };
 
-std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount);
+std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount, LocaleConstant locale);
 
 struct BonkStatChange
 {
@@ -782,7 +782,7 @@ struct BonkStatChange
     std::string after;
 };
 std::string GetBonkMagicSchoolName(uint32 spellId);
-std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& school);
+std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& school, LocaleConstant locale);
 
 uint32 const BONK_MAX_SUMMONS        = 12;
 
@@ -1366,8 +1366,8 @@ class BonkMgr
         std::vector<BonkWeapon const*> GetEvolutions(uint32 weaponId) const;
         bool HasStarterSpell(uint32 classMask) const;
         bool HasPoisonSpell(uint32 classMask) const;
-        std::string DescribeEvolutionNames(uint32 weaponId) const;
-        std::string DescribeEvolutionAdds(BonkWeapon const& evolved) const;
+        std::string DescribeEvolutionNames(uint32 weaponId, LocaleConstant locale) const;
+        std::string DescribeEvolutionAdds(BonkWeapon const& evolved, LocaleConstant locale) const;
 
         BonkProjectileInfo const* GetProjectile(uint32 spellId) const;
 
@@ -1383,10 +1383,10 @@ class BonkMgr
         std::vector<BonkScalingPoint> const& GetScaling() const { return m_scaling; }
 
         BonkPassive const* GetPassive(uint32 id) const;
-        std::string DescribePassive(BonkPassive const& passive, uint32 rank = 1) const;
-        std::string DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const;
+        std::string DescribePassive(BonkPassive const& passive, uint32 rank, LocaleConstant locale) const;
+        std::string DescribePassiveRankUp(BonkPassive const& passive, uint32 rank, LocaleConstant locale) const;
         void DescribePassiveStats(BonkPassive const& passive, uint32 rank, std::vector<BonkStatChange>& stats) const;
-        std::string DescribePassiveNow(BonkPassive const& passive, uint32 rank) const;
+        std::string DescribePassiveNow(BonkPassive const& passive, uint32 rank, LocaleConstant locale) const;
         std::map<uint32, BonkPassive> const& GetPassives() const { return m_passives; }
 
         std::vector<BonkPowerup> const& GetPowerups() const { return m_powerups; }

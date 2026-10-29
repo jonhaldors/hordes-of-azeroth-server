@@ -1,4 +1,5 @@
 #include "BonkCodex.h"
+#include "BonkLocale.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkPlayer.h"
@@ -297,7 +298,8 @@ bool GOHello_go_bonk_portal(Player* player, GameObject* go)
     {
         BonkTier const& tier = run->GetTier();
         bool const endless = tier.stages && run->GetStage() + 1 > tier.stages;
-        std::string const text = std::string(endless ? "Go on to Endless floor " : "Go on to floor ") + std::to_string(run->GetStage() + 1) + ": " + next->name;
+        std::string const text = std::string(endless ? "Go on to Endless floor " : "Go on to floor ") + std::to_string(run->GetStage() + 1) + ": " +
+            run->Localize(BONK_FIELD_MAP_NAME, next->id, next->name);
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, text.c_str(), GOSSIP_SENDER_MAIN, PORTAL_ACTION_NEXT);
     }
     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_TAXI, "Return to the Inn (ends the run)", GOSSIP_SENDER_MAIN, PORTAL_ACTION_HOME);

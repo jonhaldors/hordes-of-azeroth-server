@@ -1,10 +1,10 @@
 #include "BonkRun.h"
 #include "BonkCodex.h"
+#include "BonkLocale.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
 #include "BonkRunStats.h"
-#include "BonkStrings.h"
 #include "CellImpl.h"
 #include "Chat.h"
 #include "Creature.h"
@@ -1093,6 +1093,16 @@ std::string BonkRun::GetString(BonkString id, std::vector<std::string> const& ar
     return m_player->GetBonkPlayer()->GetString(id, args);
 }
 
+std::string BonkRun::Localize(BonkTextField field, uint32 id, std::string const& english) const
+{
+    return m_player->GetBonkPlayer()->Localize(field, id, english);
+}
+
+LocaleConstant BonkRun::GetLocale() const
+{
+    return m_player->GetBonkPlayer()->GetLocale();
+}
+
 bool BonkRun::Begin(std::string& error)
 {
     BonkStats::Reset(m_player->GetObjectGuid());
@@ -1100,7 +1110,7 @@ bool BonkRun::Begin(std::string& error)
     BonkMap const* first = ChooseNextMap();
     if (!first)
     {
-        error = GetString(BONK_STRING_NO_MAPS_ARE_SET_UP, { m_tier.name });
+        error = GetString(BONK_STRING_NO_MAPS_ARE_SET_UP, { Localize(BONK_FIELD_TIER_NAME, m_tier.id, m_tier.name) });
         return false;
     }
     m_map = *first;
@@ -1350,7 +1360,7 @@ bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
 
     if (!m_player->TeleportTo(map.mapId, x, y, z, o))
     {
-        error = GetString(BONK_STRING_YOU_COULDNT_TRAVEL_TO, { map.name });
+        error = GetString(BONK_STRING_YOU_COULDNT_TRAVEL_TO, { Localize(BONK_FIELD_MAP_NAME, map.id, map.name) });
         return false;
     }
 
@@ -1383,7 +1393,7 @@ void BonkRun::Update(uint32 diff)
             m_enterTimer += diff;
             if (m_enterTimer >= BONK_ENTER_TIMEOUT_MS)
             {
-                m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_COULDNT_TRAVEL_TO, { m_map.name });
+                m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_COULDNT_TRAVEL_TO, { Localize(BONK_FIELD_MAP_NAME, m_map.id, m_map.name) });
                 Exit();
             }
             break;
@@ -1588,17 +1598,17 @@ void BonkRun::StartStage()
     std::string const minuteText = GetString(minutes == 1 ? BONK_STRING_DURATION_MINUTE : BONK_STRING_DURATION_MINUTES, { std::to_string(minutes) });
     std::string const secondText = GetString(seconds == 1 ? BONK_STRING_DURATION_SECOND : BONK_STRING_DURATION_SECONDS, { std::to_string(seconds) });
     std::string const bossIn = !minutes ? secondText : !seconds ? minuteText : GetString(BONK_STRING_DURATION_MINUTES_AND_SECONDS, { minuteText, secondText });
-    m_player->GetBonkPlayer()->Notify(IsMythic() ? BONK_STRING_MYTHIC_FLOOR_BEGINS : BONK_STRING_FLOOR_BEGINS, { std::to_string(m_stage), m_map.name, bossIn });
+    m_player->GetBonkPlayer()->Notify(IsMythic() ? BONK_STRING_MYTHIC_FLOOR_BEGINS : BONK_STRING_FLOOR_BEGINS, { std::to_string(m_stage), Localize(BONK_FIELD_MAP_NAME, m_map.id, m_map.name), bossIn });
 }
 
 void BonkRun::SendFullState() const
 {
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (m_sandbox)
-        bonk->SendAddon("start~" + m_map.name + "~Sandbox~0~" + std::to_string(m_stage) + "~0~");
+        bonk->SendAddon("start~" + Localize(BONK_FIELD_MAP_NAME, m_map.id, m_map.name) + "~Sandbox~0~" + std::to_string(m_stage) + "~0~");
     else
-        bonk->SendAddon("start~" + m_map.name + "~" + m_tier.name + "~" + std::to_string(m_map.durationSeconds) + "~" + std::to_string(m_stage) + "~" +
-            std::to_string(GetFirstMinibossSecond()) + "~" + DescribeTimelineMarks() + "~" + (IsMythic() ? "1" : "0"));
+        bonk->SendAddon("start~" + Localize(BONK_FIELD_MAP_NAME, m_map.id, m_map.name) + "~" + Localize(BONK_FIELD_TIER_NAME, m_tier.id, m_tier.name) + "~" +
+            std::to_string(m_map.durationSeconds) + "~" + std::to_string(m_stage) + "~" + std::to_string(GetFirstMinibossSecond()) + "~" + DescribeTimelineMarks() + "~" + (IsMythic() ? "1" : "0"));
     SendLoadout();
     SendState();
     SendRunXp();
@@ -1818,7 +1828,7 @@ void BonkRun::UpdateBoundary(uint32 diff)
     }
 
     m_player->NearTeleportTo(m_safeX, m_safeY, m_safeZ, m_player->GetOrientation());
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_CANT_LEAVE, { m_map.name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_CANT_LEAVE, { Localize(BONK_FIELD_MAP_NAME, m_map.id, m_map.name) });
 }
 
 void BonkRun::UpdateNatives(uint32 diff)
@@ -2293,7 +2303,7 @@ void BonkRun::UpdateWaves()
         m_waveWarned = next;
         BonkWave const& coming = waves[next];
         if (coming.beat == BONK_BEAT_WALL || coming.beat == BONK_BEAT_MINIBOSS)
-            m_player->GetBonkPlayer()->SendAddon("beat~" + coming.name + "~" + std::to_string(coming.beat) + "~" +
+            m_player->GetBonkPlayer()->SendAddon("beat~" + Localize(BONK_FIELD_WAVE_NAME, coming.startSecond, coming.name) + "~" + std::to_string(coming.beat) + "~" +
                 std::to_string(coming.startSecond > second ? coming.startSecond - second : 0));
     }
 }
@@ -2334,11 +2344,11 @@ void BonkRun::EnterWave(size_t index)
             elites |= SpawnMob(*creature) != nullptr;
 
     if (wave.beat == BONK_BEAT_WALL)
-        bonk->Notify(BONK_STRING_EXCLAIM, { wave.name });
+        bonk->Notify(BONK_STRING_EXCLAIM, { Localize(BONK_FIELD_WAVE_NAME, wave.startSecond, wave.name) });
     else if (elites)
         bonk->Notify(BONK_STRING_ELITES_ARE_CLOSING_IN);
     if (wave.beat == BONK_BEAT_WALL || wave.beat == BONK_BEAT_MINIBOSS)
-        bonk->SendAddon("beat~" + wave.name + "~" + std::to_string(wave.beat) + "~0");
+        bonk->SendAddon("beat~" + Localize(BONK_FIELD_WAVE_NAME, wave.startSecond, wave.name) + "~" + std::to_string(wave.beat) + "~0");
 }
 
 std::string BonkRun::DescribeTimelineMarks() const
@@ -2347,7 +2357,7 @@ std::string BonkRun::DescribeTimelineMarks() const
     for (BonkWave const& wave : sBonkMgr.GetWaves())
         if (wave.beat == BONK_BEAT_WALL || wave.beat == BONK_BEAT_MINIBOSS)
         {
-            std::string name = wave.name;
+            std::string name = Localize(BONK_FIELD_WAVE_NAME, wave.startSecond, wave.name);
             name.erase(std::remove_if(name.begin(), name.end(), [](char c) { return c == ':' || c == ',' || c == '~'; }), name.end());
             marks += (marks.empty() ? "" : ",") + std::to_string(wave.startSecond) + ":" + std::to_string(wave.beat) + ":" + name;
         }
@@ -5147,9 +5157,9 @@ void BonkRun::OpenPortal(Creature* boss)
     if (!last)
         bonk->Notify(IsMythic() ? BONK_STRING_CLEARED_MYTHIC_FLOOR_TAKE_PORTAL : BONK_STRING_CLEARED_FLOOR_TAKE_PORTAL, { std::to_string(m_stage) });
     else if (!m_tier.endless)
-        bonk->Notify(BONK_STRING_VICTORY_YOU_CLEARED_TAKE_PORTAL, { m_tier.name });
+        bonk->Notify(BONK_STRING_VICTORY_YOU_CLEARED_TAKE_PORTAL, { Localize(BONK_FIELD_TIER_NAME, m_tier.id, m_tier.name) });
     else if (m_stage == m_tier.stages)
-        bonk->Notify(BONK_STRING_VICTORY_YOU_CLEARED_TAKE_PORTAL_HOME, { m_tier.name });
+        bonk->Notify(BONK_STRING_VICTORY_YOU_CLEARED_TAKE_PORTAL_HOME, { Localize(BONK_FIELD_TIER_NAME, m_tier.id, m_tier.name) });
     else
         bonk->Notify(BONK_STRING_YOU_CLEARED_ENDLESS_FLOOR_TAKE, { std::to_string(m_stage) });
     SendState();
@@ -11211,7 +11221,7 @@ std::string BonkRun::DescribeEvolutionChance(OwnedWeapon const& owned, uint32& c
         if (!sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, evolved->id))
             continue;
         BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(BONK_REWARD_WEAPON, evolved->id);
-        locks.push_back((quest ? "Finish the quest \"" + quest->name + "\"" : std::string("Finish its quest")) + " to unlock " + evolved->name + ".");
+        locks.push_back((quest ? "Finish the quest \"" + Localize(BONK_FIELD_QUEST_NAME, quest->id, quest->name) + "\"" : std::string("Finish its quest")) + " to unlock " + Localize(BONK_FIELD_WEAPON_NAME, evolved->id, evolved->name) + ".");
     }
 
     if (!CanEvolve(owned))
@@ -11224,7 +11234,8 @@ std::string BonkRun::DescribeEvolutionChance(OwnedWeapon const& owned, uint32& c
     else if (FindAscensionWeapon() == &owned)
     {
         chance = 100;
-        sentences.push_back(m_cardByEffect[BONK_CARD_ASCENSION]->name + " guarantees it at your next level-up.");
+        BonkCard const* ascension = m_cardByEffect[BONK_CARD_ASCENSION];
+        sentences.push_back(Localize(BONK_FIELD_CARD_NAME, ascension->id, ascension->name) + " guarantees it at your next level-up.");
     }
     else
     {
@@ -11262,9 +11273,9 @@ void BonkRun::UseAscension(OwnedWeapon const& owned)
     BonkCard const* ascension = m_cardByEffect[BONK_CARD_ASCENSION];
     if (!ascension)
         return;
-    std::string const name = ascension->name;
+    std::string const name = Localize(BONK_FIELD_CARD_NAME, ascension->id, ascension->name);
     RemoveCard(*ascension);
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_ASCENSION_REVEALS_EVOLUTION, { name, owned.weapon.name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_ASCENSION_REVEALS_EVOLUTION, { name, Localize(BONK_FIELD_WEAPON_NAME, owned.weapon.id, owned.weapon.name) });
 }
 
 void BonkRun::ShowAllEvolutions(std::vector<Offer>& cards) const
@@ -11463,7 +11474,7 @@ void BonkRun::ApplyStep(OwnedWeapon& owned, Offer const& offer)
 
 void BonkRun::EvolveWeapon(OwnedWeapon& owned, BonkWeapon const& evolved)
 {
-    std::string const from = owned.weapon.name;
+    std::string const from = Localize(BONK_FIELD_WEAPON_NAME, owned.weapon.id, owned.weapon.name);
     owned.weapon = evolved;
     ApplyMasteryTo(owned.weapon);
     owned.timer = 500;
@@ -11472,7 +11483,7 @@ void BonkRun::EvolveWeapon(OwnedWeapon& owned, BonkWeapon const& evolved)
         WarmShotSources();
     if (evolved.IsBlink() || evolved.IsArcaneMissiles())
         m_player->GetBonkPlayer()->SendDash();
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_EVOLVED_INTO, { from, evolved.name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_EVOLVED_INTO, { from, Localize(BONK_FIELD_WEAPON_NAME, evolved.id, evolved.name) });
 }
 
 bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
@@ -11489,6 +11500,8 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
         error = GetString(BONK_STRING_THERE_IS_NO_SPELL, { std::to_string(weaponId) });
         return false;
     }
+
+    std::string const name = Localize(BONK_FIELD_WEAPON_NAME, evolved->id, evolved->name);
     bool const held = std::any_of(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned)
     {
         return owned.weapon.id == weaponId || owned.weapon.evolvesFrom == weaponId;
@@ -11497,7 +11510,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
     {
         if (m_weapons.size() >= GetSpellSlots())
         {
-            error = GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR, { evolved->name });
+            error = GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR, { name });
             return false;
         }
         AddWeapon(*evolved);
@@ -11508,8 +11521,8 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
     {
         std::string choices;
         for (BonkWeapon const* evolution : sBonkMgr.GetEvolutions(weaponId))
-            choices += (choices.empty() ? "" : ", ") + evolution->name + " (" + std::to_string(evolution->id) + ")";
-        error = choices.empty() ? GetString(BONK_STRING_NOT_AN_EVOLUTION_NONE, { evolved->name }) : GetString(BONK_STRING_NOT_AN_EVOLUTION, { evolved->name, choices });
+            choices += (choices.empty() ? "" : ", ") + Localize(BONK_FIELD_WEAPON_NAME, evolution->id, evolution->name) + " (" + std::to_string(evolution->id) + ")";
+        error = choices.empty() ? GetString(BONK_STRING_NOT_AN_EVOLUTION_NONE, { name }) : GetString(BONK_STRING_NOT_AN_EVOLUTION, { name, choices });
         return false;
     }
 
@@ -11527,7 +11540,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
         BonkWeapon const* base = sBonkMgr.GetWeapon(evolved->evolvesFrom);
         if (!base || m_weapons.size() >= GetSpellSlots())
         {
-            error = base ? GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR, { base->name }) : GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR_BASE);
+            error = base ? GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR, { Localize(BONK_FIELD_WEAPON_NAME, base->id, base->name) }) : GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR_BASE);
             return false;
         }
         AddWeapon(*base);
@@ -11535,7 +11548,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
     }
     if (!owned || owned->weapon.id == evolved->id)
     {
-        error = GetString(BONK_STRING_YOU_ALREADY_HAVE, { evolved->name });
+        error = GetString(BONK_STRING_YOU_ALREADY_HAVE, { name });
         return false;
     }
 
@@ -11556,24 +11569,26 @@ bool BonkRun::GivePassive(uint32 passiveId, std::string& error)
         return false;
     }
 
+    std::string const name = Localize(BONK_FIELD_PASSIVE_NAME, passive->id, passive->name);
+
     auto rank = m_passiveRanks.find(passiveId);
     uint8 const current = rank != m_passiveRanks.end() ? rank->second : 0;
     size_t const ownedPassives = std::count_if(m_passiveRanks.begin(), m_passiveRanks.end(), [](auto const& itr) { return itr.second > 0; });
     if (passive->IsMaxed(current))
     {
-        error = GetString(BONK_STRING_ALREADY_HIGHEST_RANK, { passive->name });
+        error = GetString(BONK_STRING_ALREADY_HIGHEST_RANK, { name });
         return false;
     }
     if (!current && ownedPassives >= GetPassiveSlots())
     {
-        error = GetString(BONK_STRING_NO_FREE_PASSIVE_SLOT_FOR, { passive->name });
+        error = GetString(BONK_STRING_NO_FREE_PASSIVE_SLOT_FOR, { name });
         return false;
     }
 
     m_passiveRanks[passiveId] = uint8(current + 1);
     ApplyPassives();
     SendLoadout();
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_NOW_RANK, { passive->name, std::to_string(current + 1) });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_NOW_RANK, { name, std::to_string(current + 1) });
     return true;
 }
 
@@ -11919,7 +11934,7 @@ std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon) const
         BonkCard const* card = sBonkMgr.GetCard(offer.id);
         if (icon)
             *icon = card ? card->icon : "";
-        return card ? card->name : "?";
+        return card ? Localize(BONK_FIELD_CARD_NAME, card->id, card->name) : "?";
     }
 
     if (offer.isWeapon)
@@ -11929,7 +11944,7 @@ std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon) const
             return "?";
         if (icon)
             *icon = weapon->icon;
-        return weapon->name;
+        return Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name);
     }
 
     BonkPassive const* passive = sBonkMgr.GetPassive(offer.id);
@@ -11937,7 +11952,7 @@ std::string BonkRun::DescribeOffer(Offer const& offer, std::string* icon) const
         return "?";
     if (icon)
         *icon = passive->icon;
-    return passive->name;
+    return Localize(BONK_FIELD_PASSIVE_NAME, passive->id, passive->name);
 }
 
 std::string BonkRun::DescribeStep(Offer const& offer) const
@@ -11949,13 +11964,14 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
             return "";
         uint32 const owned = GetCardCopies(card->id);
         std::string const total = owned ? BonkCodex::DescribeCardTotal(*card, owned + 1) : std::string();
-        return total.empty() ? card->description : card->description + BONK_LINE_BREAK + "With this copy: " + total + ".";
+        std::string const description = Localize(BONK_FIELD_CARD_DESCRIPTION, card->id, card->description);
+        return total.empty() ? description : description + BONK_LINE_BREAK + "With this copy: " + total + ".";
     }
 
     if (!offer.isWeapon)
     {
         BonkPassive const* passive = sBonkMgr.GetPassive(offer.id);
-        return passive ? sBonkMgr.DescribePassiveRankUp(*passive, offer.newLevel) : "";
+        return passive ? sBonkMgr.DescribePassiveRankUp(*passive, offer.newLevel, GetLocale()) : "";
     }
 
     BonkWeapon const* weapon = sBonkMgr.GetWeapon(offer.id);
@@ -11964,7 +11980,7 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
 
     if (offer.step == BONK_STEP_NEW)
     {
-        std::string description = weapon->description;
+        std::string description = Localize(BONK_FIELD_WEAPON_DESCRIPTION, weapon->id, weapon->description);
         size_t const firstSentence = description.find(". ");
         if (weapon->IsBlink() && IsBlinkDash() && firstSentence != std::string::npos)
             description = description.substr(firstSentence + 2);
@@ -11973,7 +11989,8 @@ std::string BonkRun::DescribeStep(Offer const& offer) const
     if (offer.step == BONK_STEP_EVOLVE)
     {
         BonkWeapon const* evolved = sBonkMgr.GetWeapon(offer.evolveTo);
-        return evolved ? "Evolves " + weapon->name + " into " + evolved->name + ". " + sBonkMgr.DescribeEvolutionAdds(*evolved) : "";
+        return evolved ? "Evolves " + Localize(BONK_FIELD_WEAPON_NAME, weapon->id, weapon->name) + " into " + Localize(BONK_FIELD_WEAPON_NAME, evolved->id, evolved->name) +
+            ". " + sBonkMgr.DescribeEvolutionAdds(*evolved, GetLocale()) : "";
     }
     if (offer.rarity >= BONK_RARITY_LEGENDARY)
         return "";
@@ -12029,7 +12046,7 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
         if (current.damageFraction > 0.0f || (!ticks && !strengthens))
             return amount + " damage";
         if (ticks && keyword)
-            return amount + " " + keyword->name + " damage";
+            return amount + " " + Localize(BONK_FIELD_KEYWORD_NAME, uint32(keyword->id), keyword->name) + " damage";
         return "";
     };
     auto join = [](std::vector<std::string> const& parts)
@@ -12046,13 +12063,13 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
         adds.push_back(describeDamage(damage));
     for (BonkSpellUpgrade upgrade : order)
         if (!strengthens || upgrade != strength.folded)
-            adds.push_back(DescribeBonkSpellUpgrade(current, upgrade, amounts[upgrade]));
+            adds.push_back(DescribeBonkSpellUpgrade(current, upgrade, amounts[upgrade], GetLocale()));
     if (strengthens)
     {
         float const gain = strength.folded == BONK_SPELL_UPGRADE_SHIELD_SIZE ?
             (before.value > 0.0f ? (strength.value / before.value - 1.0f) * 100.0f : 0.0f) : strength.value - before.value;
         if (gain >= 0.05f)
-            adds.push_back(DescribeBonkSpellUpgrade(current, strength.folded, std::round(gain * 10.0f) / 10.0f));
+            adds.push_back(DescribeBonkSpellUpgrade(current, strength.folded, std::round(gain * 10.0f) / 10.0f, GetLocale()));
     }
 
     std::stable_partition(adds.begin(), adds.end(), [](std::string const& part)
@@ -12410,20 +12427,21 @@ void BonkRun::SendLoadout() const
         if (weapon.evolvesFrom)
         {
             if (BonkWeapon const* base = sBonkMgr.GetWeapon(weapon.evolvesFrom))
-                evolvedFrom = base->name;
+                evolvedFrom = Localize(BONK_FIELD_WEAPON_NAME, base->id, base->name);
         }
         else if (!evolutions.empty())
         {
-            evolution = sBonkMgr.DescribeEvolutionNames(weapon.id);
+            evolution = sBonkMgr.DescribeEvolutionNames(weapon.id, GetLocale());
             if (evolutions.size() == 1)
-                evolutionText = sBonkMgr.DescribeEvolutionAdds(*evolutions.front());
+                evolutionText = sBonkMgr.DescribeEvolutionAdds(*evolutions.front(), GetLocale());
             chanceText = DescribeEvolutionChance(owned, chance);
         }
         bonk->SendAddon("pwe~" + std::to_string(index) + "~" + evolution + "~" + evolutionText + "~" + evolvedFrom + "~" + chanceText + "~" +
             std::to_string(chance));
         if (!weapon.evolvesFrom && evolutions.size() > 1)
             for (BonkWeapon const* evolved : evolutions)
-                bonk->SendAddon("pwev~" + std::to_string(index) + "~" + evolved->name + "~" + sBonkMgr.DescribeEvolutionAdds(*evolved));
+                bonk->SendAddon("pwev~" + std::to_string(index) + "~" + Localize(BONK_FIELD_WEAPON_NAME, evolved->id, evolved->name) + "~" +
+                    sBonkMgr.DescribeEvolutionAdds(*evolved, GetLocale()));
     }
     for (auto const& itr : m_passiveRanks)
     {
@@ -12431,7 +12449,8 @@ void BonkRun::SendLoadout() const
         if (!passive)
             continue;
         ++index;
-        bonk->SendAddon("pw~" + std::to_string(index) + "~" + passive->name + "~~0~0~~" + sBonkMgr.DescribePassiveNow(*passive, itr.second));
+        bonk->SendAddon("pw~" + std::to_string(index) + "~" + Localize(BONK_FIELD_PASSIVE_NAME, passive->id, passive->name) + "~~0~0~~" +
+            sBonkMgr.DescribePassiveNow(*passive, itr.second, GetLocale()));
     }
 }
 
@@ -12509,15 +12528,15 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIf
         {
             if ((strengthens && upgrade == strength.folded) || IsUpgradeShownInNumbers(BonkSpellUpgrade(upgrade)))
                 continue;
-            std::string const added = DescribeBonkSpellUpgrade(weapon, BonkSpellUpgrade(upgrade), amount);
+            std::string const added = DescribeBonkSpellUpgrade(weapon, BonkSpellUpgrade(upgrade), amount, GetLocale());
             if (!added.empty())
                 addPick(added);
         }
-    std::string description = weapon.description;
+    std::string description = Localize(BONK_FIELD_WEAPON_DESCRIPTION, weapon.id, weapon.description);
     if (weapon.behavior == BONK_BEHAVIOR_PET && !weapon.HasFlag(BONK_WEAPON_FLAG_HYDRA) && !weapon.HasFlag(BONK_WEAPON_FLAG_ELEMENTAL_SHIFT))
         if (BonkPetFamily const* family = GetPetFamily(owned))
             if (!family->description.empty())
-                description += " " + family->description;
+                description += " " + Localize(BONK_FIELD_PET_FAMILY_DESCRIPTION, family->id, family->description);
     description = DescribeLiveSpell(owned, description);
     if (weapon.behavior == BONK_BEHAVIOR_ROLLING_THUNDER)
         description += " " + DescribeThunderCount(owned);
@@ -12529,9 +12548,9 @@ void BonkRun::SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIf
     if (onlyIfChanged && shown == owned.shownTip)
         return;
     owned.shownTip = shown;
-    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + weapon.name + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() || weapon.behavior == BONK_BEHAVIOR_PET ? 0u : interval) + "~" +
+    m_player->GetBonkPlayer()->SendAddon("pw~" + std::to_string(index) + "~" + Localize(BONK_FIELD_WEAPON_NAME, weapon.id, weapon.name) + "~" + owned.rarities + "~" + std::to_string(weapon.IsTrigger() || weapon.IsBlink() || weapon.IsSeal() || weapon.behavior == BONK_BEHAVIOR_PET ? 0u : interval) + "~" +
         std::to_string(std::max<int32>(0, owned.timer)) + "~" + picks + "~" + description + "~" + (owned.shownDamage = DescribeShownDamage(owned)) + "~" +
-        header + "~" + (faster ? "1" : "0") + "~" + DescribeBonkWeaponTags(weapon, GetShownSchool(owned)) + "~" + radius);
+        header + "~" + (faster ? "1" : "0") + "~" + DescribeBonkWeaponTags(weapon, GetShownSchool(owned), GetLocale()) + "~" + radius);
 }
 
 void BonkRun::SendOffer() const
@@ -12652,7 +12671,7 @@ void BonkRun::Finish(bool wentHome)
             BonkSummaryWeapon weapon;
             weapon.spellId = owned.weapon.spellId;
             weapon.spellIds = BonkStats::GetWeaponSpells(owned.weapon);
-            weapon.name = owned.weapon.name;
+            weapon.name = Localize(BONK_FIELD_WEAPON_NAME, owned.weapon.id, owned.weapon.name);
             weapon.icon = owned.weapon.icon;
             weapon.level = owned.rank;
             weapon.maxLevel = 0;

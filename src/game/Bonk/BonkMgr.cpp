@@ -1042,10 +1042,10 @@ std::string GetBonkMagicSchoolName(uint32 spellId)
     }
 }
 
-std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& school)
+std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& school, LocaleConstant locale)
 {
     BonkMasteryTree const* tree = sBonkMastery.GetTree(BonkMastery::GetSpec(weapon.id));
-    std::string spec = tree ? tree->name : "";
+    std::string spec = tree ? sBonkLocale.Localize(BONK_FIELD_MASTERY_TREE_NAME, tree->id, tree->name, locale) : "";
     if (spec.empty() && weapon.behavior == BONK_BEHAVIOR_PET)
         spec = "Pet";
     bool const aimed = weapon.target == BONK_TARGET_NEAREST || weapon.target == BONK_TARGET_RANDOM ||
@@ -1054,7 +1054,7 @@ std::string DescribeBonkWeaponTags(BonkWeapon const& weapon, std::string const& 
         FormatScaled(aimed ? weapon.range : 0.0f);
 }
 
-std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount)
+std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float amount, LocaleConstant locale)
 {
     char number[32];
     snprintf(number, sizeof(number), "%g", amount);
@@ -1102,7 +1102,7 @@ std::string DescribeBonkSpellUpgrade(BonkWeapon const& weapon, BonkSpellUpgrade 
         {
             BonkKeywordInfo const* keyword = sBonkMgr.GetKeyword(weapon.applies);
             std::string const stacks = std::string("applies ") + number + (amount == 1.0f ? " more stack" : " more stacks");
-            return stacks + " of " + (keyword ? keyword->name : std::string("its effect"));
+            return stacks + " of " + (keyword ? sBonkLocale.Localize(BONK_FIELD_KEYWORD_NAME, uint32(keyword->id), keyword->name, locale) : std::string("its effect"));
         }
         default:                      return "";
     }
@@ -1860,19 +1860,20 @@ bool BonkMgr::HasPoisonSpell(uint32 classMask) const
     });
 }
 
-std::string BonkMgr::DescribeEvolutionAdds(BonkWeapon const& evolved) const
+std::string BonkMgr::DescribeEvolutionAdds(BonkWeapon const& evolved, LocaleConstant locale) const
 {
+    std::string const description = sBonkLocale.Localize(BONK_FIELD_WEAPON_DESCRIPTION, evolved.id, evolved.description, locale);
     BonkWeapon const* base = GetWeapon(evolved.evolvesFrom);
     if (!base)
-        return evolved.description;
+        return description;
 
-    std::vector<std::string> const baseSentences = SplitSentences(base->description);
-    std::vector<std::string> const sentences = SplitSentences(evolved.description);
+    std::vector<std::string> const baseSentences = SplitSentences(sBonkLocale.Localize(BONK_FIELD_WEAPON_DESCRIPTION, base->id, base->description, locale));
+    std::vector<std::string> const sentences = SplitSentences(description);
     size_t shared = 0;
     while (shared < baseSentences.size() && shared < sentences.size() && baseSentences[shared] == sentences[shared])
         ++shared;
     if (!shared || shared == sentences.size())
-        return evolved.description;
+        return description;
 
     std::string adds;
     for (size_t i = shared; i < sentences.size(); ++i)
@@ -1880,7 +1881,7 @@ std::string BonkMgr::DescribeEvolutionAdds(BonkWeapon const& evolved) const
     return adds;
 }
 
-std::string BonkMgr::DescribeEvolutionNames(uint32 weaponId) const
+std::string BonkMgr::DescribeEvolutionNames(uint32 weaponId, LocaleConstant locale) const
 {
     std::vector<BonkWeapon const*> const evolutions = GetEvolutions(weaponId);
     std::string text;
@@ -1888,7 +1889,7 @@ std::string BonkMgr::DescribeEvolutionNames(uint32 weaponId) const
     {
         if (i)
             text += i + 1 == evolutions.size() ? " or " : ", ";
-        text += evolutions[i]->name;
+        text += sBonkLocale.Localize(BONK_FIELD_WEAPON_NAME, evolutions[i]->id, evolutions[i]->name, locale);
     }
     return text;
 }
@@ -2260,14 +2261,16 @@ float BonkPassive::RankScale(uint32 rank) const
     return scale;
 }
 
-std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank) const
+std::string BonkMgr::DescribePassive(BonkPassive const& passive, uint32 rank, LocaleConstant locale) const
 {
-    return ScalePassiveText(passive.description, passive.RankScale(std::max(1u, rank)));
+    return ScalePassiveText(sBonkLocale.Localize(BONK_FIELD_PASSIVE_DESCRIPTION, passive.id, passive.description, locale), passive.RankScale(std::max(1u, rank)));
 }
 
-std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank) const
+std::string BonkMgr::DescribePassiveRankUp(BonkPassive const& passive, uint32 rank, LocaleConstant locale) const
 {
-    return rank <= 1 ? DescribePassive(passive, 1) : ScalePassiveText(passive.description, passive.RankWeight(rank));
+    if (rank <= 1)
+        return DescribePassive(passive, 1, locale);
+    return ScalePassiveText(sBonkLocale.Localize(BONK_FIELD_PASSIVE_DESCRIPTION, passive.id, passive.description, locale), passive.RankWeight(rank));
 }
 
 void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std::vector<BonkStatChange>& stats) const
@@ -2290,13 +2293,13 @@ void BonkMgr::DescribePassiveStats(BonkPassive const& passive, uint32 rank, std:
     }
 }
 
-std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank) const
+std::string BonkMgr::DescribePassiveNow(BonkPassive const& passive, uint32 rank, LocaleConstant locale) const
 {
     float scale = passive.RankScale(std::max(1u, rank));
     float const cap = BonkRun::GetPassiveCap(passive.effect);
     if (cap > 0.0f && passive.valuePerRank > 0.0f)
         scale = std::min(scale, cap / passive.valuePerRank);
-    return ScalePassiveText(passive.description, scale);
+    return ScalePassiveText(sBonkLocale.Localize(BONK_FIELD_PASSIVE_DESCRIPTION, passive.id, passive.description, locale), scale);
 }
 
 bool BonkMgr::IsArenaLocation(uint32 mapId, uint32 zoneId) const

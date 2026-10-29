@@ -1,4 +1,5 @@
 #include "BonkRun.h"
+#include "BonkLocale.h"
 #include "BonkMgr.h"
 #include "Creature.h"
 #include "Map.h"
@@ -89,10 +90,10 @@ namespace
         return "Casts every";
     }
 
-    BonkStatChange SplitUpgradeText(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float before, float after)
+    BonkStatChange SplitUpgradeText(BonkWeapon const& weapon, BonkSpellUpgrade upgrade, float before, float after, LocaleConstant locale)
     {
-        std::string const now = DescribeBonkSpellUpgrade(weapon, upgrade, before);
-        std::string const next = DescribeBonkSpellUpgrade(weapon, upgrade, after);
+        std::string const now = DescribeBonkSpellUpgrade(weapon, upgrade, before, locale);
+        std::string const next = DescribeBonkSpellUpgrade(weapon, upgrade, after, locale);
         size_t const nowSpace = now.find(' ');
         size_t const nextSpace = next.find(' ');
         if (nowSpace == std::string::npos || nextSpace == std::string::npos)
@@ -404,7 +405,7 @@ std::string BonkRun::DescribeShownDamage(OwnedWeapon const& owned) const
     if (float const tick = GetShownTick(owned, 0.0f))
         if (BonkKeywordInfo const* info = sBonkMgr.GetKeyword(owned.weapon.applies))
             text += (text.empty() ? "" : ", ") + std::to_string(uint32(std::max(1.0f, std::round(tick)))) + " " +
-                GetSchoolName(sSpellMgr.GetSpellEntry(info->spellId)) + " damage a tick per stack of " + info->name;
+                GetSchoolName(sSpellMgr.GetSpellEntry(info->spellId)) + " damage a tick per stack of " + Localize(BONK_FIELD_KEYWORD_NAME, uint32(info->id), info->name);
     return text;
 }
 
@@ -526,7 +527,7 @@ void BonkRun::AddDamageStats(OwnedWeapon const& owned, OwnedWeapon const& next, 
     float const tick = GetShownTick(next, 0.0f);
     if (tick > 0.0f)
         if (BonkKeywordInfo const* info = sBonkMgr.GetKeyword(next.weapon.applies))
-            stats.push_back({ info->name + " damage per stack", ShownNumber(GetShownTick(owned, 0.0f)), ShownNumber(tick) });
+            stats.push_back({ Localize(BONK_FIELD_KEYWORD_NAME, uint32(info->id), info->name) + " damage per stack", ShownNumber(GetShownTick(owned, 0.0f)), ShownNumber(tick) });
 }
 
 void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next, bool hasDamage, std::vector<BonkStatChange>& stats) const
@@ -563,17 +564,17 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
             case BONK_SPELL_UPGRADE_DURATION:
                 if (weapon.durationMs > 0)
                 {
-                    BonkStatChange stat = SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]);
+                    BonkStatChange stat = SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade], GetLocale());
                     stats.push_back({ stat.label, ShownSeconds(GetWindowLengthMs(owned)), ShownSeconds(GetWindowLengthMs(next)) });
                 }
                 else
-                    stats.push_back(SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]));
+                    stats.push_back(SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade], GetLocale()));
                 break;
             case BONK_SPELL_UPGRADE_STACKS:
             {
                 BonkKeywordInfo const* info = sBonkMgr.GetKeyword(weapon.applies);
                 uint32 const base = std::max<uint32>(1, weapon.applyStacks);
-                stats.push_back({ (info ? info->name : std::string("Effect")) + " stacks per hit", std::to_string(base + uint32(now[upgrade])),
+                stats.push_back({ (info ? Localize(BONK_FIELD_KEYWORD_NAME, uint32(info->id), info->name) : std::string("Effect")) + " stacks per hit", std::to_string(base + uint32(now[upgrade])),
                     std::to_string(base + uint32(after[upgrade])) });
                 break;
             }
@@ -593,7 +594,7 @@ void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next,
                 break;
             default:
             {
-                BonkStatChange stat = SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade]);
+                BonkStatChange stat = SplitUpgradeText(weapon, upgrade, now[upgrade], after[upgrade], GetLocale());
                 if (!stat.label.empty())
                     stats.push_back(stat);
                 break;
@@ -689,7 +690,7 @@ std::string BonkRun::DescribeLiveSpell(OwnedWeapon const& owned, std::string tex
         if (info)
         {
             bool const better = tick > GetShownTick(fresh, 0.0f) * BONK_SHOWN_BETTER;
-            keywordLine = "|n|n" + info->name + ": " + MarkNumber(ShownNumber(tick), better) + " " +
+            keywordLine = "|n|n" + Localize(BONK_FIELD_KEYWORD_NAME, uint32(info->id), info->name) + ": " + MarkNumber(ShownNumber(tick), better) + " " +
                 GetSchoolName(sSpellMgr.GetSpellEntry(info->spellId)) + " damage per stack every tick";
             if (keyword == BONK_KEYWORD_AGONY)
             {

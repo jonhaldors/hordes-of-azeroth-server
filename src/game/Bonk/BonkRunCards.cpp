@@ -1,10 +1,10 @@
 #include "BonkRun.h"
 #include "BonkCodex.h"
+#include "BonkLocale.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
-#include "BonkStrings.h"
 #include "Creature.h"
 #include "Item.h"
 #include "Player.h"
@@ -231,7 +231,7 @@ void BonkRun::GiveStartCard()
         return;
     BonkCard const& card = *pool[urand(0, uint32(pool.size()) - 1)];
     AddCard(card);
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_LUCKY_DRAW_GAVE_YOU, { card.name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_LUCKY_DRAW_GAVE_YOU, { Localize(BONK_FIELD_CARD_NAME, card.id, card.name) });
 }
 
 bool BonkRun::IsCardCapped(BonkCard const& card) const
@@ -442,7 +442,7 @@ bool BonkRun::GiveCard(uint32 cardId, std::string& error)
         return false;
     }
     AddCard(*card);
-    m_player->GetBonkPlayer()->Notify(BONK_STRING_EXCLAIM, { card->name });
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_EXCLAIM, { Localize(BONK_FIELD_CARD_NAME, card->id, card->name) });
     return true;
 }
 
@@ -486,7 +486,7 @@ void BonkRun::UpdateCards(uint32 diff)
         {
             m_cardSurgeUntilMs = m_totalMs + uint32(charm->values[1]);
             StartCardCooldown(BONK_CARD_POWER_SURGE, charm->cooldownMs);
-            m_player->GetBonkPlayer()->Notify(BONK_STRING_POWER_SURGE, { charm->name, FormatBonkNumber(GetCardTotal(BONK_CARD_POWER_SURGE, 0)),
+            m_player->GetBonkPlayer()->Notify(BONK_STRING_POWER_SURGE, { Localize(BONK_FIELD_CARD_NAME, charm->id, charm->name), FormatBonkNumber(GetCardTotal(BONK_CARD_POWER_SURGE, 0)),
                 FormatBonkNumber(charm->values[1] / 1000.0f) });
         }
 
@@ -574,7 +574,7 @@ std::string BonkRun::DescribeCardNow(BonkCard const& card) const
             return std::to_string(m_soulstones) + (m_soulstones == 1 ? " charge left" : " charges left");
         case BONK_CARD_ASCENSION:
             if (OwnedWeapon const* owned = FindAscensionWeapon())
-                return "Ready: your next level-up offers the evolution of " + owned->weapon.name;
+                return "Ready: your next level-up offers the evolution of " + Localize(BONK_FIELD_WEAPON_NAME, owned->weapon.id, owned->weapon.name);
             return "";
         default:
             return "";
@@ -823,7 +823,7 @@ void BonkRun::OnHeroHit(Unit* victim, double damage, SpellEntry const* spell)
                 m_cardProc = false;
                 if (struck)
                 {
-                    SupportScope scope(*this, { blade->icon, blade->name });
+                    SupportScope scope(*this, { blade->icon, Localize(BONK_FIELD_CARD_NAME, blade->id, blade->name) });
                     HealHero(ReduceHealing(uint32(burst * multiplier * struck * BONK_SHADOW_BURST_HEAL)));
                 }
             }
@@ -848,16 +848,17 @@ void BonkRun::OnHeroHit(Unit* victim, double damage, SpellEntry const* spell)
         }
 }
 
-std::string BonkRun::DescribeHeldCard(BonkCard const& card, uint32 copies)
+std::string BonkRun::DescribeHeldCard(BonkCard const& card, uint32 copies, LocaleConstant locale)
 {
+    std::string const description = sBonkLocale.Localize(BONK_FIELD_CARD_DESCRIPTION, card.id, card.description, locale);
     if (copies <= 1)
-        return card.description;
+        return description;
     std::string const total = BonkCodex::DescribeCardTotal(card, copies);
     if (total.empty())
-        return card.description;
+        return description;
     if (card.effect == BONK_CARD_NONE)
         return total + ".";
-    return card.description + BONK_LINE_BREAK + "Current: " + total + ".";
+    return description + BONK_LINE_BREAK + "Current: " + total + ".";
 }
 
 void BonkRun::SendCards() const
@@ -871,7 +872,8 @@ void BonkRun::SendCards() const
     bonk->SendAddon(line);
     for (OwnedCard const& owned : m_cards)
         if (!m_glyphCardIds.count(owned.card->id))
-            bonk->SendAddon("cardtip~" + std::to_string(owned.card->id) + "~" + owned.card->name + "~" + DescribeHeldCard(*owned.card, owned.copies));
+            bonk->SendAddon("cardtip~" + std::to_string(owned.card->id) + "~" + Localize(BONK_FIELD_CARD_NAME, owned.card->id, owned.card->name) + "~" +
+                DescribeHeldCard(*owned.card, owned.copies, GetLocale()));
     SendCardCooldowns();
     SendCardStatus(true);
 }
