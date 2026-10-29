@@ -420,6 +420,8 @@ class BonkRun
             BonkSpellUpgrade upgrades[BONK_MAX_RANK_UPGRADES] = {};
             bool locked = false;
         };
+        bool IsOwnedOffer(Offer const& offer) const;
+        bool HasOwnedOffer() const;
 
         struct Orb
         {

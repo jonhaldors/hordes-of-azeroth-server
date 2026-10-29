@@ -10025,6 +10025,21 @@ uint32 BonkRun::CheckpointLevel(uint32 floor)
     return 1;
 }
 
+bool BonkRun::IsOwnedOffer(Offer const& offer) const
+{
+    if (offer.isCard)
+        return std::any_of(m_cards.begin(), m_cards.end(), [&offer](OwnedCard const& held) { return held.card && held.card->id == offer.id; });
+    if (offer.isWeapon)
+        return FindOwned(offer.id) != nullptr;
+    auto rank = m_passiveRanks.find(offer.id);
+    return rank != m_passiveRanks.end() && rank->second > 0;
+}
+
+bool BonkRun::HasOwnedOffer() const
+{
+    return std::any_of(m_offer.begin(), m_offer.end(), [this](Offer const& offer) { return IsOwnedOffer(offer); });
+}
+
 size_t BonkRun::ChooseAutoPick() const
 {
     size_t best = 0;
@@ -10032,17 +10047,7 @@ size_t BonkRun::ChooseAutoPick() const
     for (size_t i = 0; i < m_offer.size(); ++i)
     {
         Offer const& offer = m_offer[i];
-        bool owned = false;
-        if (offer.isCard)
-            owned = std::any_of(m_cards.begin(), m_cards.end(), [&offer](OwnedCard const& held) { return held.card && held.card->id == offer.id; });
-        else if (offer.isWeapon)
-            owned = FindOwned(offer.id) != nullptr;
-        else
-        {
-            auto rank = m_passiveRanks.find(offer.id);
-            owned = rank != m_passiveRanks.end() && rank->second > 0;
-        }
-        int32 const score = (owned ? 100 : 0) + int32(offer.rarity) * 10 + (offer.isWeapon ? 2 : offer.isCard ? 0 : 1);
+        int32 const score = (IsOwnedOffer(offer) ? 100 : 0) + int32(offer.rarity) * 10 + (offer.isWeapon ? 2 : offer.isCard ? 0 : 1);
         if (score > bestScore)
         {
             bestScore = score;
@@ -10060,9 +10065,15 @@ bool BonkRun::AutoPickCatchUp(std::string& error)
         return false;
     }
     m_autoPickCatchUp = true;
-    if (IsAutoPicking() && !m_offer.empty())
-        return Pick(uint32(ChooseAutoPick() + 1), error);
-    return true;
+    if (!IsAutoPicking() || m_offer.empty())
+        return true;
+    if (!HasOwnedOffer())
+    {
+        m_autoPickCatchUp = false;
+        error = "This selection only shows new cards. Pick one yourself.";
+        return false;
+    }
+    return Pick(uint32(ChooseAutoPick() + 1), error);
 }
 
 void BonkRun::GiveCheckpointCatchUp()
@@ -11692,12 +11703,13 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
 
     m_offerSource = source;
     SetPaused(true);
-    if (IsAutoPicking())
+    if (IsAutoPicking() && HasOwnedOffer())
     {
         std::string error;
         Pick(uint32(ChooseAutoPick() + 1), error);
         return true;
     }
+    m_autoPickCatchUp = false;
     SendOffer();
     return true;
 }
