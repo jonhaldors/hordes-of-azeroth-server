@@ -935,7 +935,9 @@ class BonkRun
         bool RankDamageCounts(OwnedWeapon const& owned) const;
         float GetRankDamage(OwnedWeapon const* owned, BonkRarity rarity) const;
         uint8 GetRankUpgradeCount(OwnedWeapon const* owned, BonkRarity rarity) const;
-        bool KeepsWindowUptime(OwnedWeapon const& owned, float const* rolled, BonkSpellUpgrade upgrade, float step) const;
+        bool IsWindowSpell(BonkWeapon const& weapon) const;
+        float GetWindowLengthMs(OwnedWeapon const& owned) const;
+        bool DurationGrowsWindow(OwnedWeapon const& owned, float const* rolled, BonkSpellUpgrade upgrade, float step) const;
         float GetShownHit(OwnedWeapon const& owned, float extraPower) const;
         float GetShownSpread(OwnedWeapon const& owned) const;
         void ResendShownDamage(OwnedWeapon const& owned) const;

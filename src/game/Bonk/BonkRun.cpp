@@ -11016,7 +11016,7 @@ std::vector<BonkWeaponUpgrade const*> BonkRun::GetUpgradeOptions(OwnedWeapon con
             continue;
         if (upgrade.upgrade == BONK_SPELL_UPGRADE_HASTE && !HasteShortensCooldown(owned, rolled[upgrade.upgrade], upgrade.step))
             continue;
-        if (!KeepsWindowUptime(owned, rolled, upgrade.upgrade, upgrade.step))
+        if (!DurationGrowsWindow(owned, rolled, upgrade.upgrade, upgrade.step))
             continue;
         options.push_back(&upgrade);
     }
@@ -11026,6 +11026,8 @@ std::vector<BonkWeaponUpgrade const*> BonkRun::GetUpgradeOptions(OwnedWeapon con
 bool BonkRun::OfferGainsAnything(OwnedWeapon const& owned, Offer const& offer) const
 {
     if (offer.step != BONK_STEP_RANK || offer.rarity >= BONK_RARITY_LEGENDARY || RankDamageCounts(owned))
+        return true;
+    if (owned.rank < GetEvolveRank() && CanEvolve(owned))
         return true;
     return offer.upgrades[0] != BONK_SPELL_UPGRADE_NONE;
 }
