@@ -1034,6 +1034,7 @@ class BonkRun
         void SendCardCooldown(BonkCardEffect effect) const;
         void SendCardCooldowns() const;
         std::string DescribeCardNow(BonkCard const& card) const;
+        static std::string DescribeHeldCard(BonkCard const& card, uint32 copies);
         void SendCardStatus(bool force) const;
         mutable std::map<uint32, std::string> m_cardNowSent;
         uint32 m_cardCooldownTotals[MAX_BONK_CARD_EFFECT] = {};

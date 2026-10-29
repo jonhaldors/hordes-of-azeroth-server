@@ -1,4 +1,5 @@
 #include "BonkRun.h"
+#include "BonkCodex.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -844,6 +845,18 @@ void BonkRun::OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell)
         }
 }
 
+std::string BonkRun::DescribeHeldCard(BonkCard const& card, uint32 copies)
+{
+    if (copies <= 1)
+        return card.description;
+    std::string const total = BonkCodex::DescribeCardTotal(card, copies);
+    if (total.empty())
+        return card.description;
+    if (card.effect == BONK_CARD_NONE)
+        return total + ".";
+    return card.description + BONK_LINE_BREAK + "Current: " + total + ".";
+}
+
 void BonkRun::SendCards() const
 {
     BonkPlayer* bonk = m_player->GetBonkPlayer();
@@ -855,7 +868,7 @@ void BonkRun::SendCards() const
     bonk->SendAddon(line);
     for (OwnedCard const& owned : m_cards)
         if (!m_glyphCardIds.count(owned.card->id))
-            bonk->SendAddon("cardtip~" + std::to_string(owned.card->id) + "~" + owned.card->name + "~" + owned.card->description);
+            bonk->SendAddon("cardtip~" + std::to_string(owned.card->id) + "~" + owned.card->name + "~" + DescribeHeldCard(*owned.card, owned.copies));
     SendCardCooldowns();
     SendCardStatus(true);
 }
