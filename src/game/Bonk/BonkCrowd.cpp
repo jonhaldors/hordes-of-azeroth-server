@@ -152,6 +152,9 @@ std::vector<std::pair<char const*, float*>> BonkCrowd::GetTunables()
         { "shoveDistance", &m_settings.shoveDistance },
         { "shoveSpeed", &m_settings.shoveSpeed },
         { "shoveGapMs", &m_settings.shoveGapMs },
+        { "veteranShoveDistance", &m_settings.veteranShoveDistance },
+        { "haltMs", &m_settings.haltMs },
+        { "haltGapMs", &m_settings.haltGapMs },
         { "levelPushRadius", &m_settings.levelPushRadius },
         { "levelPushDistance", &m_settings.levelPushDistance },
         { "levelPushSpeed", &m_settings.levelPushSpeed },
@@ -544,6 +547,8 @@ void BonkCrowd::KeepOut(Body const& body, float otherX, float otherY, float cont
 void BonkCrowd::Steer(Body& body, std::vector<Body> const& bodies, float heroX, float heroY, bool heroMoving, std::vector<Creature*>& stuck)
 {
     Mover& mover = *body.mover;
+    if (int32(mover.haltUntilMs - m_clockMs) > 0)
+        return;
     float stepX = body.qx - body.px;
     float stepY = body.qy - body.py;
     if (!body.overlapping)
@@ -733,6 +738,25 @@ bool BonkCrowd::Shove(Creature* mob, Player* hero, float fromX, float fromY, flo
     mover.shovedMs = m_clockMs;
     mover.sentMoving = false;
     mover.standing = false;
+    mover.lastSeenMs = m_clockMs;
+    return true;
+}
+
+bool BonkCrowd::Halt(Creature* mob, Player* hero, uint32 haltMs, uint32 gapMs)
+{
+    if (!haltMs || GetHold(mob, hero, false) != HOLD_NONE)
+        return false;
+    Mover& mover = m_movers[mob->GetObjectGuid().GetRawValue()];
+    if (mover.shoved && !MillisecondsPassed(mover.shovedMs, m_clockMs, gapMs))
+        return false;
+
+    if (!mob->movespline->Finalized())
+        mob->StopMoving();
+    mover.shoved = true;
+    mover.shovedMs = m_clockMs;
+    mover.haltUntilMs = m_clockMs + haltMs;
+    mover.sentMoving = false;
+    mover.standing = true;
     mover.lastSeenMs = m_clockMs;
     return true;
 }
