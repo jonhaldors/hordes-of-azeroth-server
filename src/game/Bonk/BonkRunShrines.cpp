@@ -112,6 +112,14 @@ namespace
         return text;
     }
 
+    std::string LeyStatIcon(LeyStat const& stat)
+    {
+        for (auto const& itr : sBonkMgr.GetPassives())
+            if (itr.second.effect == stat.effect && !itr.second.icon.empty())
+                return itr.second.icon;
+        return stat.icon;
+    }
+
     float DistanceSq(float x1, float y1, float x2, float y2)
     {
         return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2);
@@ -347,14 +355,7 @@ void BonkRun::SendLeyOffer() const
             LeyStat const* stat = GetLeyStat(buff.effect);
             if (!stat)
                 continue;
-            std::string icon = stat->icon;
-            for (auto const& itr : sBonkMgr.GetPassives())
-                if (itr.second.effect == buff.effect && !itr.second.icon.empty())
-                {
-                    icon = itr.second.icon;
-                    break;
-                }
-            bonk->SendAddon("leyopt~" + std::to_string(i + 1) + "~" + stat->name + "~" + icon + "~" +
+            bonk->SendAddon("leyopt~" + std::to_string(i + 1) + "~" + stat->name + "~" + LeyStatIcon(*stat) + "~" +
                 FormatLeyValue(*stat, buff.value) + " for the rest of the run." + "~" + std::to_string(buff.rarity));
         }
         bonk->SendAddon("leyofferend");
@@ -373,6 +374,19 @@ void BonkRun::SendLeyOffer() const
         else if (LeyStat const* stat = GetLeyStat(m_leyOffer[i].effect))
             handler.PSendSysMessage("%u. %s", uint32(i + 1), FormatLeyValue(*stat, m_leyOffer[i].value).c_str());
     }
+}
+
+void BonkRun::SendLeyBlessings() const
+{
+    BonkPlayer* bonk = m_player->GetBonkPlayer();
+    bonk->SendAddon("leyblessings");
+    for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+    {
+        LeyStat const* stat = GetLeyStat(BonkPassiveEffect(effect));
+        if (stat && m_shrineBonuses[effect] > 0.0f)
+            bonk->SendAddon("leybless~" + std::string(stat->name) + "~" + LeyStatIcon(*stat) + "~" + FormatLeyValue(*stat, m_shrineBonuses[effect]));
+    }
+    bonk->SendAddon("leyblessend");
 }
 
 bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
@@ -406,6 +420,7 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
         ApplyPassives();
         if (LeyStat const* stat = GetLeyStat(buff.effect))
             bonk->Notify("The Ley Line grants you " + FormatLeyValue(*stat, buff.value) + "!");
+        SendLeyBlessings();
     }
     ResumeUnlessChoiceOpen();
     SendState();

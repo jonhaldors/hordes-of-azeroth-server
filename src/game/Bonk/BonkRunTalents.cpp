@@ -819,7 +819,7 @@ void BonkRun::OnTalentKill(Unit* victim)
     SpellEntry const* shards = sSpellMgr.GetSpellEntry(BONK_SPELL_GLACIAL_FRAGMENTS);
     if (!shards)
         return;
-    float const damage = dead->GetMaxHealth() * share / 100.0f;
+    float const damage = GetTrueAmount(dead, dead->GetMaxHealth()) * share / 100.0f;
     uint32 const chill = uint32(m_mastery.Special(BONK_SPECIAL_GLACIAL_FRAGMENTS_CHILL));
     FiringWeapon firing(m_player->GetBonkPlayer());
     for (Creature* mob : GetMobsNear(dead->GetPositionX(), dead->GetPositionY(), BONK_GLACIAL_FRAGMENTS_RADIUS))

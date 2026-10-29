@@ -629,7 +629,7 @@ void BonkRun::LaunchPenanceBolt(OwnedWeapon& owned, SpellEntry const* bolt, Pend
     hit.penanceHit = true;
     hit.target = target->GetObjectGuid();
     hit.leftMs = int32(GetMissileDelay(m_player, target, BONK_PENANCE_BOLT_SPEED));
-    hit.incoming = GetWeaponDamage(owned) * GetDamageMultiplier(bolt, target);
+    hit.incoming = GetWeaponDamage(owned) * GetDamageMultiplier(bolt, target) * GetHealthScale(target);
     target->GetPosition(hit.x, hit.y, hit.z);
     m_penanceIncoming[hit.target] += hit.incoming;
     m_pendingCasts.push_back(hit);

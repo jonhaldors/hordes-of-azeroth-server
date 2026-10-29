@@ -539,7 +539,7 @@ void BonkRun::HarvestDecay()
             if (mob->IsAlive() && m_player->IsWithinDistInMap(mob, owned->weapon.range))
             {
                 ShowStrike(m_player, look, mob);
-                DealExactHit(look, mob, uint32(std::max<int64>(1, int64(itr.second * BONK_DARK_HARVEST_TICKS * GetDamageMultiplier(look, mob)))));
+                DealExactHit(look, mob, std::max(1u, ToDamage(double(itr.second) * BONK_DARK_HARVEST_TICKS * GetDamageMultiplier(look, mob) * GetHealthScale(mob))));
             }
 }
 

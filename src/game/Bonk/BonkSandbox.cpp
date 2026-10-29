@@ -767,6 +767,15 @@ bool BonkRun::RunSandboxBossVerb(std::string const& verb, uint32 first, std::str
         error = "No boss is here. Use .bonk sandbox boss <entry> first.";
         return false;
     }
+    if (verb == "bosshealth" && !first)
+    {
+        for (Creature* mob : bosses)
+            if (BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI()))
+                m_player->GetBonkPlayer()->Notify(std::string(mob->GetName()) + " has " + std::to_string(ai->GetTrueHealth(mob->GetHealth())) + " of " +
+                    std::to_string(ai->GetTrueHealth(mob->GetMaxHealth())) + " health, kept as " + std::to_string(mob->GetHealth()) + " at 1/" +
+                    std::to_string(ai->GetHealthOverflow()) + ".");
+        return true;
+    }
     if (verb == "bosshealth")
     {
         float const percent = float(std::max(1u, std::min(first, 100u)));
@@ -1553,6 +1562,14 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         SetSandboxTraining(first);
     else if (verb == "vitals")
         ReportSandboxVitals();
+    else if (verb == "valor")
+    {
+        GainValor(first);
+        SendState();
+    }
+    else if (verb == "enchanter")
+        PlaceEnchanter(m_player->GetPositionX() + 4.0f * std::cos(m_player->GetOrientation()), m_player->GetPositionY() + 4.0f * std::sin(m_player->GetOrientation()),
+            m_player->GetPositionZ(), m_player->GetOrientation() + M_PI_F);
     else if (verb == "forget")
         RemoveSandboxSpells(first);
     else if (verb == "level")
@@ -1606,7 +1623,7 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
     else
     {
         error = "Use .bonk sandbox pack|dummies|spell|evolve|rank|maxrank|passive|forget|level|clear|heal|cooldowns|god|passive|unkillable|moves|reach|deep|quiet|minute|"
-            "boss|miniboss|bosshealth|ability|bench.";
+            "boss|miniboss|bosshealth|ability|bench|enchanter|valor.";
         return false;
     }
     return true;

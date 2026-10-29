@@ -2168,9 +2168,6 @@ void BonkMobAI::DamageTaken(Unit* attacker, uint32& damage)
     if (m_fleeing && m_blinks && damage && damage < m_creature->GetHealth() && m_blinkTimer <= 0)
         m_blinkPending = true;
 
-    if (damage && m_healthOverflow > 1.0f)
-        damage = std::max(1u, uint32(damage / m_healthOverflow));
-
     if (!damage || !attacker || attacker->GetObjectGuid() != m_ownerGuid)
         return;
 

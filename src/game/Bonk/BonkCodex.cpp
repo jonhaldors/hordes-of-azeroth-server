@@ -153,7 +153,7 @@ namespace
     void SendStatRules(BonkPlayer* bonk)
     {
         RulesPage(bonk, "Stats")
-            .Term("Power", "+1% damage per point, for you and your summons.")
+            .Term("Power", "+1% damage per point, for you and your summons. Power from gear multiplies with Power from everything else.")
             .Term("Max Health", "+1% maximum health per point.")
             .Term("Critical strike chance", "" + Number(BONK_BASE_CRIT) + "% base. Spells crit for 150% damage; melee, ranged and pet attacks for 200%. Above 100%, a hit can crit again with the chance over 100%.")
             .Term("Critical strike damage", "+1% to the crit bonus per point.")
@@ -188,7 +188,7 @@ namespace
     {
         RulesPage(bonk, "Spells")
             .Term("Cooldown", "base cooldown divided by 1 + Haste, including the spell's own Haste upgrades. Never below 0.2 sec. A spell with no target waits instead of starting its cooldown.")
-            .Term("Ranks", "Common +" + Number(BONK_RANK_DAMAGE[0]) + "% damage, Uncommon +" + Number(BONK_RANK_DAMAGE[1]) + "%, Rare +" + Number(BONK_RANK_DAMAGE[2]) + "% and 1 upgrade, Epic +" + Number(BONK_RANK_DAMAGE[3]) + "% and 2 upgrades. Spells without damage get upgrades instead.")
+            .Term("Ranks", "Common +" + Number(BONK_RANK_DAMAGE[0]) + "% damage, Uncommon +" + Number(BONK_RANK_DAMAGE[1]) + "%, Rare +" + Number(BONK_RANK_DAMAGE[2]) + "% and 1 upgrade, Epic +" + Number(BONK_RANK_DAMAGE[3]) + "% and 2 upgrades. Spells without damage get upgrades instead. Past rank 20 the damage per rank shrinks: rank 40 adds half, rank 80 a quarter.")
             .Line("Hit Twice, Echo and Targets come only from Epic ranks.")
             .Line("Evolutions can appear from rank 10 and keep your rank, damage and upgrades.")
             .Line("Direct hits vary by 7% either way. Damage over time ticks don't.")

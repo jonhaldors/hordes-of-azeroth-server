@@ -326,7 +326,7 @@ void BonkRun::OnMiniEventTargetKilled(Creature* mob)
     if (m_miniEvent.type == BONK_MINI_EVENT_GOBLIN)
     {
         uint32 const valor = GetChestCost();
-        m_coins += valor;
+        GainValor(valor);
         SpawnChest(true, x, y, z);
         bonk->Notify("You caught the treasure goblin! It drops " + std::to_string(valor) + " Valor and a chest.");
     }
@@ -781,7 +781,7 @@ void BonkRun::OnMiniEventGroupKilled(Creature* mob)
         case BONK_MINI_EVENT_SCOURGE:
         {
             uint32 const valor = std::max(1u, uint32(GetChestCost() * BONK_SHARD_VALOR + 0.5f));
-            m_coins += valor;
+            GainValor(valor);
             SpawnOrb(x, y, z, uint32(GetNextLevelXp() * BONK_SHARD_EXPERIENCE), BONK_ORB_RED);
             bonk->Notify("You destroyed a Necrotic Shard (" + std::to_string(done) + "/" + std::to_string(m_miniEvent.total) + ") and earned " +
                 std::to_string(valor) + " Valor!");

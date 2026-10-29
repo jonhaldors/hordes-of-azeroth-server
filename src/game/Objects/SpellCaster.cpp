@@ -42,7 +42,7 @@ namespace
         BonkRun const* run = player ? player->GetBonkPlayer()->GetRun() : nullptr;
         if (!run)
             return 1.0f;
-        float const multiplier = run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetMinionScale(attacker));
+        float const multiplier = run->GetDamageMultiplier(attacker->IsPlayer() ? spell : nullptr, victim, run->GetMinionScale(attacker)) * BonkRun::GetHealthScale(victim);
         return attacker->IsPlayer() ? multiplier : multiplier * run->GetSummonDamageMultiplier(attacker);
     }
 
@@ -1024,7 +1024,7 @@ uint32 SpellCaster::SpellCriticalDamageBonus(SpellEntry const* spellProto, uint3
     {
         bool const weaponAttack = spellProto->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_RANGED;
         run->OnCriticalStrike(this, spellProto, pVictim);
-        return uint32(damage * run->RollCritMultiplier(weaponAttack, pVictim, spellProto, ToUnit()));
+        return BonkRun::ToDamage(double(damage) * run->RollCritMultiplier(weaponAttack, pVictim, spellProto, ToUnit()));
     }
 
     // Calculate critical bonus
@@ -1359,7 +1359,7 @@ void SpellCaster::CalculateSpellDamage(SpellNonMeleeDamage* damageInfo, float da
     }
     else
         damage = 0;
-    damageInfo->damage = rand_ditheru(damage);
+    damageInfo->damage = rand_ditheru(std::min(damage, BonkRun::MaxHitDamage));
 }
 
 /**

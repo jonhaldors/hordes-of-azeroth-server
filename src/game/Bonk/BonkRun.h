@@ -2,6 +2,7 @@
 #define MANGOS_BONKRUN_H
 
 #include "BonkCrowd.h"
+#include "BonkEnchant.h"
 #include "BonkFoundGear.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
@@ -139,12 +140,19 @@ class BonkRun
         void ClearDropLooks();
         void UseShrine(GameObject* go);
         bool PickLeyBuff(uint32 index, std::string& error);
+        void SendLeyBlessings() const;
         uint32 GetGreedRewardPercent() const;
         float GetGreedCrowdPercent() const;
         void OpenVendor(Creature* vendor);
         bool BuyFromVendor(uint32 index, std::string& error);
         bool LockVendorSlot(uint32 index, std::string& error);
         bool RerollVendor(std::string& error);
+        void OpenEnchanter();
+        bool RollEnchant(uint8 slot, std::string& error);
+        bool PickEnchant(uint8 index, std::string& error);
+        void DiscardEnchantOffers();
+        void SendEnchants() const;
+        void PlaceEnchanter(float x, float y, float z, float facing);
         void CloseVendor();
         bool SpawnVendorNow(std::string& error);
 
@@ -194,10 +202,17 @@ class BonkRun
         void HitAgain(SpellEntry const* spellInfo, Unit* target, float damage, SpellEffectIndex effectIndex, WeaponAttackType attackType);
         void AddNecroticStack();
         float GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float minionScale = 1.0f, float extraPower = 0.0f) const;
+        float GetRunPower() const;
+        float GetGearDamageScale() const;
+        static float GetRankDamageScale(uint32 rank);
         float RollDamageSpread() const;
         float GetMinionScale(Unit const* attacker) const;
 
         static BonkRun* FromAttack(SpellCaster const* attacker, Unit const* victim);
+        static float GetHealthScale(Unit const* victim);
+        static uint64 GetTrueAmount(Unit const* victim, uint32 amount);
+        static uint32 ToDamage(double damage);
+        static constexpr float MaxHitDamage = 2000000000.0f;
         static uint32 GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed);
         BonkSpot const& GetHeroPositionThisTick() const { return m_heroNow; }
         void ReportSandboxSwing(Creature const* mob) const;
@@ -223,8 +238,8 @@ class BonkRun
 
         void OnHeroHitBy(Creature* attacker, uint32 damage);
         void ModifyHeroHit(Unit* victim, uint32& damage);
-        void OnHeroHit(Unit* victim, uint32 damage, SpellEntry const* spell);
-        void OnTrinketHit(Unit* victim, uint32 damage, SpellEntry const* spell);
+        void OnHeroHit(Unit* victim, double damage, SpellEntry const* spell);
+        void OnTrinketHit(Unit* victim, double damage, SpellEntry const* spell);
         bool GiveCard(uint32 cardId, std::string& error);
         static float GetCopyWeight(uint32 copy);
         static float GetCopySum(uint32 copies);
@@ -590,6 +605,9 @@ class BonkRun
         void UpdateOvertime(uint32 diff);
         BonkScalingPoint GetScalingNow() const;
         float GetHeroBaseHealth() const;
+        float GetArmorReduction() const;
+        float GetArmorOverflowHealth() const;
+        std::string DescribeDefense() const;
         bool IsQuietTime() const;
         static bool IsQuietEvent(BonkEventType type);
         uint32 CountAlive(uint32 entry) const;
@@ -908,6 +926,8 @@ class BonkRun
         void FinishOrbMerge(OrbMerge const& merge);
         void CollectAllOrbs();
         void PullAllOrbs();
+        void PullAllCurrency();
+        void CollectAllValorPouches();
         void DespawnOrbs();
 
         void DropShards(Creature const* mob, BonkSpawnKind kind);
@@ -1177,6 +1197,7 @@ class BonkRun
         ObjectGuid m_hearthSwirl;
 
         void SendState() const;
+        void GainValor(uint32 amount);
         void SendLoadout() const;
         void SendWeaponInfo(uint32 index, OwnedWeapon const& owned, bool onlyIfChanged = false) const;
         void RefreshChangedWeaponInfo() const;
@@ -1519,6 +1540,20 @@ class BonkRun
         uint32 m_shardsEarned = 0;
         uint32 m_scrapEarned = 0;
         uint32 m_coins = 0;
+        uint32 m_valorEarned = 0;
+        uint32 m_valorOnChests = 0;
+        uint32 m_valorInShops = 0;
+        uint32 m_valorOnEnchants = 0;
+        std::map<uint8, BonkEnchant> m_enchants;
+        std::vector<BonkEnchant> m_enchantOffers;
+        uint8 m_enchantOfferSlot = 0;
+        uint32 m_enchantRolls = 0;
+        ObjectGuid m_enchanterGuid;
+        uint32 GetEnchantPrice() const;
+        uint32 GetEnchantTier(uint8 slot) const;
+        void AddEnchantStats(float* passives) const;
+        void DespawnEnchanter();
+        bool IsNearEnchanter() const;
         float m_leechCarry = 0.0f;
         uint32 m_necroticStacks = 0;
         uint32 m_necroticCheckMs = 0;

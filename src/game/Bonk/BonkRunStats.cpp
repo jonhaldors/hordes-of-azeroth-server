@@ -583,8 +583,9 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             run->ApplySummonHitKeyword(attacker, victim, hitSpell);
         if ((!owner || attacker->GetEntry() == BONK_PROJECTILE) && !dotSpellId)
         {
-            run->OnHeroHit(victim, damage, spellProto);
-            run->OnTrinketHit(victim, damage, spellProto);
+            double const trueDamage = double(BonkRun::GetTrueAmount(victim, damage));
+            run->OnHeroHit(victim, trueDamage, spellProto);
+            run->OnTrinketHit(victim, trueDamage, spellProto);
         }
         if (!owner)
             run->CountThunderHit(spellProto);
@@ -595,13 +596,14 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             BonkRunStats& stats = s_stats[player->GetObjectGuid()];
             for (auto const& credit : credits)
             {
-                stats.bySpell[credit.first].damage += credit.second;
+                stats.bySpell[credit.first].damage += BonkRun::GetTrueAmount(victim, credit.second);
                 if (dotSpellId && credit.first != dotSpellId)
-                    stats.dotBySpell[credit.first][dotSpellId].damage += credit.second;
+                    stats.dotBySpell[credit.first][dotSpellId].damage += BonkRun::GetTrueAmount(victim, credit.second);
             }
-            if (damage > stats.biggestHit)
+            uint64 const trueHit = BonkRun::GetTrueAmount(victim, damage);
+            if (trueHit > stats.biggestHit)
             {
-                stats.biggestHit = damage;
+                stats.biggestHit = trueHit;
                 newBiggestHit = true;
             }
             if (damage >= health)
@@ -612,7 +614,7 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             }
         }
         if (newBiggestHit && run->IsSandbox())
-            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk biggest hit: %s %u from spell %u | %s", player->GetName(), damage, spellProto ? spellProto->Id : 0,
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Bonk biggest hit: %s %llu from spell %u | %s", player->GetName(), (unsigned long long)BonkRun::GetTrueAmount(victim, damage), spellProto ? spellProto->Id : 0,
                 run->DescribeBigHit(spellProto, victim).c_str());
     }
     else if (Player* player = victim->ToPlayer())

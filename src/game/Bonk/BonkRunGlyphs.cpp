@@ -646,7 +646,7 @@ void BonkRun::OnGlyphKill(Creature const* mob, BonkSpawnKind kind)
     if (BonkGlyph const* corpse = GetGlyph(BONK_GLYPH_CORPSE_BLAST))
         if (roll_chance_f(corpse->values[0]))
             QueueGlyphBurst(*corpse, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), corpse->values[2],
-                mob->GetMaxHealth() * corpse->values[1] / 100.0f, false);
+                GetTrueAmount(mob, mob->GetMaxHealth()) * corpse->values[1] / 100.0f, false);
 
     if (BonkGlyph const* lust = GetGlyph(BONK_GLYPH_KILL_HASTE))
         if (lust->values[0] >= 1.0f && m_glyphKills % uint32(lust->values[0]) == 0)

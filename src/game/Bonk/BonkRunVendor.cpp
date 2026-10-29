@@ -319,6 +319,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
     }
 
     m_coins -= slot.price;
+    m_valorInShops += slot.price;
     slot.state = VENDOR_SOLD;
     sBonkQuests.OnProgress(m_player, BONK_QUEST_VENDOR_BOUGHT, 0, 1);
     slot.locked = false;
@@ -414,6 +415,7 @@ bool BonkRun::RerollVendor(std::string& error)
     }
 
     m_coins -= cost;
+    m_valorInShops += cost;
     ++m_vendorRerolls;
     StockVendor(true);
     SendState();

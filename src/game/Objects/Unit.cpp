@@ -1384,7 +1384,7 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
         float fdamage = CalculateDamage(damageInfo->attackType, false, i);
         // Add melee damage bonus
         fdamage = MeleeDamageBonusDone(damageInfo->target, fdamage, damageInfo->attackType, nullptr, EFFECT_INDEX_0, DIRECT_DAMAGE, 1, nullptr, i == 0);
-        subDamage.damage = rand_dither(damageInfo->target->MeleeDamageBonusTaken(this, rand_dither(fdamage), damageInfo->attackType, nullptr, EFFECT_INDEX_0, DIRECT_DAMAGE, 1, nullptr, i == 0));
+        subDamage.damage = rand_dither(damageInfo->target->MeleeDamageBonusTaken(this, rand_dither(std::min(fdamage, BonkRun::MaxHitDamage)), damageInfo->attackType, nullptr, EFFECT_INDEX_0, DIRECT_DAMAGE, 1, nullptr, i == 0));
 
         // Calculate armor reduction
         if (subDamage.damageSchoolMask == SPELL_SCHOOL_MASK_NORMAL)
@@ -1452,10 +1452,10 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* da
             float multiplier = (200.0f + mod) / 100.0f;
             if (BonkRun const* run = BonkRun::FromAttack(this, damageInfo->target))
                 multiplier = run->RollCritMultiplier(true, damageInfo->target, nullptr, this);
-            damageInfo->totalDamage = uint32((damageInfo->totalDamage) * multiplier);
+            damageInfo->totalDamage = BonkRun::ToDamage(double(damageInfo->totalDamage) * multiplier);
 
             for (uint8 i = 0; i < m_weaponDamageCount[damageInfo->attackType]; i++)
-                damageInfo->subDamage[i].damage = uint32((damageInfo->subDamage[i].damage) * multiplier);
+                damageInfo->subDamage[i].damage = BonkRun::ToDamage(double(damageInfo->subDamage[i].damage) * multiplier);
 
             break;
         }

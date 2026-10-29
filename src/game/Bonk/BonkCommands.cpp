@@ -251,6 +251,16 @@ bool ChatHandler::HandleBonkRespecCommand(char*)
     return true;
 }
 
+bool ChatHandler::HandleBonkPresetCommand(char* args)
+{
+    uint32 slot;
+    if (!ExtractUInt32(&args, slot))
+        return false;
+
+    m_session->GetPlayer()->GetBonkPlayer()->ShopPreset(uint8(std::min(slot, 255u)));
+    return true;
+}
+
 bool ChatHandler::HandleBonkToggleCommand(char* args)
 {
     uint32 id;
@@ -489,18 +499,21 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
             m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
         return true;
     }
-    if (tab == "enchant open" || tab == "enchant keep" || tab == "enchant discard" || tab.compare(0, 13, "enchant roll ") == 0)
+    if (tab == "enchant open" || tab == "enchant discard" || tab.compare(0, 13, "enchant pick ") == 0 || tab.compare(0, 13, "enchant roll ") == 0)
     {
         Player* player = m_session->GetPlayer();
+        BonkRun* run = player->GetBonkPlayer()->GetRun();
         std::string error;
-        if (tab == "enchant open")
-            sBonkEnchants.Open(player);
+        if (!run)
+            error = "The enchanter only works during a run.";
+        else if (tab == "enchant open")
+            run->OpenEnchanter();
         else if (tab == "enchant discard")
-            sBonkEnchants.Discard(player);
-        else if (tab == "enchant keep")
-            sBonkEnchants.Keep(player, error);
+            run->DiscardEnchantOffers();
+        else if (tab.compare(0, 13, "enchant pick ") == 0)
+            run->PickEnchant(uint8(atoi(tab.c_str() + 13)), error);
         else
-            sBonkEnchants.Roll(player, uint8(atoi(tab.c_str() + 13)), error);
+            run->RollEnchant(uint8(atoi(tab.c_str() + 13)), error);
         if (!error.empty())
             player->GetBonkPlayer()->Notify(error);
         return true;
@@ -979,6 +992,20 @@ bool ChatHandler::HandleBonkLeyPickCommand(char* args)
     SendSysMessage(error.c_str());
     SetSentErrorMessage(true);
     return false;
+}
+
+bool ChatHandler::HandleBonkInspectCommand(char* /*args*/)
+{
+    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
+    BonkRun* run = bonk->GetRun();
+    if (!run)
+    {
+        SendSysMessage("You can inspect your talents during a run.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    bonk->SendMasteryShop(true, true);
+    return true;
 }
 
 bool ChatHandler::HandleBonkVendorCommand(char* args)

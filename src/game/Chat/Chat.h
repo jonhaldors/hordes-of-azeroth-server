@@ -214,6 +214,7 @@ class ChatHandler
         bool HandleBonkUnlearnCommand(char* args);
         bool HandleBonkToggleCommand(char* args);
         bool HandleBonkRespecCommand(char* args);
+        bool HandleBonkPresetCommand(char* args);
         bool HandleBonkShardsCommand(char* args);
         bool HandleBonkSkipCommand(char* args);
         bool HandleBonkGodCommand(char* args);
@@ -244,6 +245,7 @@ class ChatHandler
         bool HandleBonkPowerupCommand(char* args);
         bool HandleBonkDropLooksCommand(char* args);
         bool HandleBonkLeyPickCommand(char* args);
+        bool HandleBonkInspectCommand(char* args);
         bool HandleBonkVendorCommand(char* args);
         bool HandleBonkKeywordCommand(char* args);
         bool HandleBonkScalingCommand(char* args);

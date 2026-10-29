@@ -85,9 +85,12 @@ namespace
     float const BONK_MILESTONE_VETERAN_CHANCE = 5.0f;
     float const BONK_VETERAN_HEALTH        = 2.5f;
     float const BONK_MAX_MOB_HEALTH        = 2000000000.0f;
+    float const BONK_GEAR_POWER_REFERENCE  = 100.0f;
     float const BONK_ARMOR_BASE            = 100.0f;
     float const BONK_ARMOR_SLOPE           = 4.0f / 3.0f;
     float const BONK_ARMOR_MAX_REDUCTION   = 0.6f;
+    float const BONK_ARMOR_CAP_POINT       = BONK_ARMOR_MAX_REDUCTION * BONK_ARMOR_BASE / (1.0f - BONK_ARMOR_MAX_REDUCTION * BONK_ARMOR_SLOPE);
+    float const BONK_ARMOR_OVERFLOW_HEALTH = 0.5f;
     float const BONK_VETERAN_DAMAGE        = 1.25f;
     float const BONK_VETERAN_REWARD        = 3.5f;
     float const BONK_VETERAN_SIZE          = 1.2f;
@@ -1075,6 +1078,7 @@ BonkRun::BonkRun(Player* player, BonkTier const& tier, BonkRunChoice const& choi
     m_skips = m_bonuses.skips;
     m_revives = m_bonuses.revives;
     m_coins = m_bonuses.startCoins;
+    m_valorEarned = m_coins;
     m_floorBestAtStart = player->GetBonkPlayer()->GetClassFloor();
 }
 
@@ -1515,6 +1519,7 @@ void BonkRun::SendFullState() const
     SendState();
     SendRunXp();
     SendCards();
+    SendLeyBlessings();
     if (!m_offer.empty())
         SendOffer();
     m_objectives.Resend(m_player);
@@ -2270,11 +2275,12 @@ void BonkRun::LogMinute()
     float const maxHealth = std::max(1.0f, float(m_player->GetMaxHealth()));
     sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
         "Bonk minute: %s at run minute %u (stage %u, %s, %s, class %u): level %u, %u kills (+%u), took %u damage (%.0f%% of max health), "
-        "healed %u (%.0f%%), lowest health %u%%, %u enemies alive, block \"%s\"; client objects peak %u, %s; packets %u/s (%u KB/s); gold earned %u",
+        "healed %u (%.0f%%), lowest health %u%%, %u enemies alive, block \"%s\"; client objects peak %u, %s; packets %u/s (%u KB/s); gold earned %u; valor earned %u, on chests %u, in shops %u, on enchants %u, left %u, chests bought %u; %s",
         m_player->GetName(), m_nextLogMinute, m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), m_player->GetLevel() + m_overcapLevel,
         m_kills, m_kills - m_minuteKills, m_minuteDamage, m_minuteDamage * 100.0f / maxHealth, m_minuteHealed, m_minuteHealed * 100.0f / maxHealth,
         m_minuteLowestHealth, uint32(m_mobs.size()), GetWave().name.c_str(), m_minuteClientObjectsPeak, DescribeClientObjects().c_str(),
-        m_minutePackets / std::max(1u, m_minutePacketSeconds), m_minutePacketBytes / 1024 / std::max(1u, m_minutePacketSeconds), m_goldEarned);
+        m_minutePackets / std::max(1u, m_minutePacketSeconds), m_minutePacketBytes / 1024 / std::max(1u, m_minutePacketSeconds), m_goldEarned,
+        m_valorEarned, m_valorOnChests, m_valorInShops, m_valorOnEnchants, m_coins, m_chestsBought, DescribeDefense().c_str());
     m_minutePackets = 0;
     m_minutePacketBytes = 0;
     m_minutePacketSeconds = 0;
@@ -2395,10 +2401,23 @@ void BonkRun::LogDeath()
             recent += hit.second;
     sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
         "Bonk death: %s at run minute %.2f (stage %u, %s, %s, class %u), level %u, %u kills: last hit by %s for %u; "
-        "%u damage in the last 10 s from %u hits (%.0f%% of max health); %u enemies alive, block \"%s\"",
+        "%u damage in the last 10 s from %u hits (%.0f%% of max health); %u enemies alive, block \"%s\"; %s",
         m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()),
         m_player->GetLevel() + m_overcapLevel, m_kills, m_lastStriker.empty() ? "?" : m_lastStriker.c_str(), m_lastStrikeDamage, recent,
-        uint32(m_recentHits.size()), recent * 100.0f / std::max(1.0f, float(m_player->GetMaxHealth())), uint32(m_mobs.size()), GetWave().name.c_str());
+        uint32(m_recentHits.size()), recent * 100.0f / std::max(1.0f, float(m_player->GetMaxHealth())), uint32(m_mobs.size()), GetWave().name.c_str(), DescribeDefense().c_str());
+}
+
+std::string BonkRun::DescribeDefense() const
+{
+    float const maxHealth = std::max(1.0f, float(m_player->GetMaxHealth()));
+    float const armor = std::max(0.0f, GetStat(BONK_PASSIVE_ARMOR));
+    float const reduction = GetArmorReduction();
+    float const damageScale = GetStageDamageMultiplier();
+    float const gruntHit = GetScalingNow().hitShare * damageScale * GetHeroBaseHealth() * (1.0f - reduction);
+    char text[256];
+    snprintf(text, sizeof(text), "defense: max health %.0f, armor %.0f (%.1f%% reduction, +%.1f%% health), enemy damage x%.2f, grunt hit %.1f%% of max health",
+        maxHealth, armor, reduction * 100.0f, GetArmorOverflowHealth(), damageScale, gruntHit * 100.0f / maxHealth);
+    return text;
 }
 
 void BonkRun::LogLoadout() const
@@ -2412,18 +2431,20 @@ void BonkRun::LogLoadout() const
 void BonkRun::LogBuild() const
 {
     sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
-        "Bonk build: %s at run minute %.2f (stage %u, %s, %s, class %u): level %u; %s",
+        "Bonk build: %s at run minute %.2f (stage %u, %s, %s, class %u): level %u; %s; power %.0f%%, gear power %.0f%% (x%.2f)",
         m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()),
-        m_player->GetLevel() + m_overcapLevel, DescribeBuildTotals().c_str());
+        m_player->GetLevel() + m_overcapLevel, DescribeBuildTotals().c_str(), GetRunPower() + GetGlyphPower() + GetTalentDamagePercent(),
+        GetGearTotal(BONK_PASSIVE_POWER), GetGearDamageScale());
 }
 
 void BonkRun::LogRunEnd(bool wentHome, std::string const& build) const
 {
     char const* outcome = m_victory ? "victory" : wentHome ? "home" : m_player->IsAlive() ? "stopped" : "died";
     sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
-        "Bonk end: %s at run minute %.2f (stage %u, %s, %s, class %u): %s, level %u, %u kills, gold earned %u, tickets earned %u, scrap earned %u; %s",
+        "Bonk end: %s at run minute %.2f (stage %u, %s, %s, class %u): %s, level %u, %u kills, gold earned %u, tickets earned %u, scrap earned %u; %s; valor earned %u, on chests %u, in shops %u, on enchants %u, chests bought %u",
         m_player->GetName(), GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), outcome,
-        m_player->GetLevel() + m_overcapLevel, m_kills, m_goldEarned, m_shardsEarned, m_scrapEarned, build.c_str());
+        m_player->GetLevel() + m_overcapLevel, m_kills, m_goldEarned, m_shardsEarned, m_scrapEarned, build.c_str(),
+        m_valorEarned, m_valorOnChests, m_valorInShops, m_valorOnEnchants, m_chestsBought);
 }
 
 void BonkRun::LogBossFight(Creature const* mob, BonkSpawnKind kind, BossArrival const& arrival)
@@ -3630,7 +3651,9 @@ float BonkRun::GetStageDamageMultiplier() const
 
 void BonkRun::UpdateGear()
 {
-    BonkGearTotals const gear = m_sandboxBench ? sBonkMgr.EvaluateItems(m_sandboxBenchItems) : sBonkMgr.EvaluateGear(m_player);
+    BonkGearTotals gear = m_sandboxBench ? sBonkMgr.EvaluateItems(m_sandboxBenchItems) : sBonkMgr.EvaluateGear(m_player);
+    if (!m_sandboxBench)
+        AddEnchantStats(gear.passives);
     bool const passivesChanged = !std::equal(std::begin(gear.passives), std::end(gear.passives), std::begin(m_gear.passives));
     m_gear = gear;
 
@@ -3652,10 +3675,9 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
     m_hurt = true;
     m_lastHurtMs = m_totalMs;
 
-    if (float const armor = std::max(0.0f, GetStat(BONK_PASSIVE_ARMOR)))
+    if (float const reduction = GetArmorReduction())
     {
         uint32 const before = damage;
-        float const reduction = std::min(BONK_ARMOR_MAX_REDUCTION, armor / (armor * BONK_ARMOR_SLOPE + BONK_ARMOR_BASE));
         damage = std::max(1u, uint32(damage * (1.0f - reduction)));
         m_armorUnreported += before - damage;
     }
@@ -4082,6 +4104,23 @@ BonkRun* BonkRun::FromAttack(SpellCaster const* attacker, Unit const* victim)
     return player->GetBonkPlayer()->GetRun();
 }
 
+float BonkRun::GetHealthScale(Unit const* victim)
+{
+    BonkMobAI const* ai = victim && victim->IsCreature() ? dynamic_cast<BonkMobAI const*>(victim->AI()) : nullptr;
+    return ai ? 1.0f / ai->GetHealthOverflow() : 1.0f;
+}
+
+uint64 BonkRun::GetTrueAmount(Unit const* victim, uint32 amount)
+{
+    BonkMobAI const* ai = victim && victim->IsCreature() ? dynamic_cast<BonkMobAI const*>(victim->AI()) : nullptr;
+    return ai ? ai->GetTrueHealth(amount) : amount;
+}
+
+uint32 BonkRun::ToDamage(double damage)
+{
+    return damage <= 0.0 ? 0 : uint32(std::min(damage, double(MaxHitDamage)));
+}
+
 uint32 BonkRun::GetMissileDelay(SpellCaster const* caster, Unit const* target, float speed)
 {
     if (speed <= 0.0f || !caster || !FromAttack(caster, target))
@@ -4143,13 +4182,13 @@ float BonkRun::GetMinionScale(Unit const* attacker) const
 
 float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, float minionScale, float extraPower) const
 {
-    float percent = (GetPassiveTotal(BONK_PASSIVE_POWER) + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower +
+    float percent = (GetRunPower() + GetBuffPower() + GetCardPower(victim) + GetGlyphPower() + extraPower +
         GetCastChargePower(spell, victim));
     float const mark = GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
         GetPaladinDamageMultiplier(victim);
     if (!spell)
-        return std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(false, victim) * minionScale;
+        return std::max(0.0f, 1.0f + percent / 100.0f) * GetGearDamageScale() * mark * GetCapstoneDamageMultiplier(false, victim) * minionScale;
 
     uint32 const school = spell->GetSpellSchoolMask();
     auto root = m_spellRoots.find(spell->Id);
@@ -4186,7 +4225,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
                     percent += bonus.second;
     }
 
-    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f) * mark * GetCapstoneDamageMultiplier(true, victim) * minionScale *
+    float multiplier = std::max(0.0f, 1.0f + percent / 100.0f) * GetGearDamageScale() * mark * GetCapstoneDamageMultiplier(true, victim) * minionScale *
         GetGlyphDamageMultiplier(spell);
 
     if (victim)
@@ -4309,7 +4348,7 @@ void BonkRun::SmiteAroundRevive()
     for (Creature* mob : smitten)
     {
         mob->SendPlaySpellVisualKit(BONK_KIT_REVIVE_SMITE);
-        DealSpellHit(nova, mob, mob->GetMaxHealth() * BONK_REVIVE_OVERKILL);
+        DealSpellHit(nova, mob, GetTrueAmount(mob, mob->GetMaxHealth()) * BONK_REVIVE_OVERKILL);
     }
 }
 
@@ -4588,6 +4627,12 @@ bool BonkRun::SpawnChestNearby()
     return false;
 }
 
+void BonkRun::GainValor(uint32 amount)
+{
+    m_coins += amount;
+    m_valorEarned += amount;
+}
+
 uint32 BonkRun::GetChestCost() const
 {
     return uint32(m_tier.chestCost * (1.0f + m_tier.chestCostGrowth * m_chestsBought) * (1.0f + m_tier.chestCostMinuteGrowth * GetRunMinutes()) + 0.5f);
@@ -4657,7 +4702,7 @@ GameObject* BonkRun::PlacePowerup(BonkPowerup const& powerup, float x, float y, 
     m_powerups.push_back(go->GetObjectGuid());
     if (lasting)
         m_powerupObjectives[go->GetObjectGuid()] = m_objectives.Add(m_player, BONK_OBJECTIVE_CHEST, x, y, z, go->GetGOInfo()->name, 0,
-            BONK_MAGNET_PIN_ICON, "Pulls every experience orb to you.");
+            BONK_MAGNET_PIN_ICON, "Pulls every experience orb and currency to you.");
     return go;
 }
 
@@ -4704,6 +4749,7 @@ void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
     Map* map = m_player->GetMap();
     float heroX, heroY, heroZ;
     GetHeroPositionNow(m_player, heroX, heroY, heroZ);
+    std::vector<std::pair<BonkPowerup const*, std::string>> picked;
     for (auto itr = m_powerups.begin(); itr != m_powerups.end();)
     {
         GameObject* go = map->GetGameObject(*itr);
@@ -4727,11 +4773,14 @@ void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
         go->Delete();
         itr = m_powerups.erase(itr);
         if (powerup != sBonkMgr.GetPowerups().end())
-        {
-            bool const thing = powerup->effect == BONK_POWERUP_MAGNET || powerup->effect == BONK_POWERUP_VALOR;
-            m_player->GetBonkPlayer()->Notify("You picked up " + std::string(thing ? "a " : "") + name + "!");
-            UsePowerup(*powerup);
-        }
+            picked.emplace_back(&*powerup, name);
+    }
+
+    for (auto const& pick : picked)
+    {
+        bool const thing = pick.first->effect == BONK_POWERUP_MAGNET || pick.first->effect == BONK_POWERUP_VALOR;
+        m_player->GetBonkPlayer()->Notify("You picked up " + std::string(thing ? "a " : "") + pick.second + "!");
+        UsePowerup(*pick.first);
     }
 
     if (!spawn || !m_map.powerupIntervalSeconds)
@@ -4751,7 +4800,7 @@ void BonkRun::UsePowerup(BonkPowerup const& powerup)
     switch (powerup.effect)
     {
         case BONK_POWERUP_MAGNET:
-            PullAllOrbs();
+            PullAllCurrency();
             break;
         case BONK_POWERUP_HOLY_NOVA:
         {
@@ -4773,7 +4822,7 @@ void BonkRun::UsePowerup(BonkPowerup const& powerup)
                 ApplyKeyword(mob, BONK_KEYWORD_FROZEN, 1);
             break;
         case BONK_POWERUP_VALOR:
-            m_coins += std::max(1u, uint32(GetChestCost() * powerup.value + 0.5f));
+            GainValor(std::max(1u, uint32(GetChestCost() * powerup.value + 0.5f)));
             m_player->GetBonkPlayer()->SendAddon("valor");
             SendState();
             break;
@@ -4811,6 +4860,7 @@ void BonkRun::DespawnObjects()
             portal->Delete();
     }
     DespawnVault();
+    DespawnEnchanter();
     DespawnPillar();
     ClearDropLooks();
     m_chests.clear();
@@ -4893,6 +4943,7 @@ void BonkRun::UseChest(GameObject* chest)
         else
         {
             m_coins -= cost;
+            m_valorOnChests += cost;
             ++m_chestsBought;
         }
         sBonkQuests.OnProgress(m_player, BONK_QUEST_CHESTS_BOUGHT, 0, 1);
@@ -4999,6 +5050,9 @@ void BonkRun::OpenPortal(Creature* boss)
         float const side = m_player->GetAngle(portal) + M_PI_F / 2.0f;
         PlaceVault(portal->GetPositionX() + BONK_VAULT_SIDE * std::cos(side), portal->GetPositionY() + BONK_VAULT_SIDE * std::sin(side),
             portal->GetPositionZ());
+        if ((IsMythic() || m_tier.key == "heroic") && (!last || m_tier.endless))
+            PlaceEnchanter(portal->GetPositionX() - BONK_VAULT_SIDE * std::cos(side), portal->GetPositionY() - BONK_VAULT_SIDE * std::sin(side),
+                portal->GetPositionZ(), m_player->GetAngle(portal) + M_PI_F);
     }
 
     if (!last)
@@ -5154,6 +5208,16 @@ float BonkRun::GetMagnetRange() const
     return std::min(BONK_MAX_MAGNET_RANGE, BONK_ORB_MAGNET_RANGE * (1.0f + std::max(0.0f, GetPassiveTotal(BONK_PASSIVE_PICKUP)) / 100.0f));
 }
 
+float BonkRun::GetRunPower() const
+{
+    return GetPassiveTotal(BONK_PASSIVE_POWER) - GetGearTotal(BONK_PASSIVE_POWER);
+}
+
+float BonkRun::GetGearDamageScale() const
+{
+    return 1.0f + std::max(0.0f, GetGearTotal(BONK_PASSIVE_POWER)) / (100.0f + BONK_GEAR_POWER_REFERENCE);
+}
+
 float BonkRun::GetGearTotal(BonkPassiveEffect effect) const
 {
     float const total = m_gear.passives[effect];
@@ -5198,6 +5262,17 @@ float CurveStat(float raw, float ceiling)
 float CurveHaste(float raw)
 {
     return CurveStat(raw, BONK_MAX_HASTE);
+}
+
+float BonkRun::GetArmorReduction() const
+{
+    float const armor = std::max(0.0f, GetStat(BONK_PASSIVE_ARMOR));
+    return std::min(BONK_ARMOR_MAX_REDUCTION, armor / (armor * BONK_ARMOR_SLOPE + BONK_ARMOR_BASE));
+}
+
+float BonkRun::GetArmorOverflowHealth() const
+{
+    return std::max(0.0f, GetStat(BONK_PASSIVE_ARMOR) - BONK_ARMOR_CAP_POINT) * BONK_ARMOR_OVERFLOW_HEALTH;
 }
 
 float BonkRun::GetStat(BonkPassiveEffect effect) const
@@ -9059,7 +9134,7 @@ void BonkRun::PetStrike(OwnedWeapon& owned, Creature* pet, Creature* prey, BonkP
         return;
 
     float const frenzy = IsPetFrenzied() ? GetFrenzyDamage() : 1.0f;
-    int32 const damage = std::max(1, int32(GetPetBiteDamage(owned, *family) * ability.damage * frenzy * GetWarlockPetStrikeScale(owned, prey)));
+    int32 const damage = std::max(1, int32(std::min(MaxHitDamage, GetPetBiteDamage(owned, *family) * ability.damage * frenzy * GetWarlockPetStrikeScale(owned, prey))));
     pet->SetFacingToObject(prey);
     uint32 const abilitySpell = GetWarlockAbilitySpell(owned, ability.spellId);
     SpellEntry const* abilityInfo = sSpellMgr.GetSpellEntry(abilitySpell);
@@ -9968,7 +10043,7 @@ void BonkRun::ApplyPassives()
         m_player->CastCustomSpell(m_player, BONK_SPELL_MOVE_SPEED, speed, {}, {}, true);
 
     m_player->RemoveAurasDueToSpell(BONK_SPELL_MAX_HEALTH);
-    if (int32 const health = int32(GetPassiveTotal(BONK_PASSIVE_MAX_HEALTH)))
+    if (int32 const health = int32(GetPassiveTotal(BONK_PASSIVE_MAX_HEALTH) + GetArmorOverflowHealth()))
         m_player->CastCustomSpell(m_player, BONK_SPELL_MAX_HEALTH, health, {}, {}, true);
 
     m_player->RemoveAurasDueToSpell(BONK_SPELL_DODGE);
@@ -10429,6 +10504,36 @@ void BonkRun::PullAllOrbs()
     }
 }
 
+void BonkRun::PullAllCurrency()
+{
+    PullAllOrbs();
+    CollectAllShards();
+    CollectAllValorPouches();
+}
+
+void BonkRun::CollectAllValorPouches()
+{
+    Map* map = m_player->GetMap();
+    std::vector<BonkPowerup const*> pouches;
+    for (auto itr = m_powerups.begin(); itr != m_powerups.end();)
+    {
+        GameObject* go = map->GetGameObject(*itr);
+        auto powerup = go ? std::find_if(sBonkMgr.GetPowerups().begin(), sBonkMgr.GetPowerups().end(),
+            [go](BonkPowerup const& p) { return p.entry == go->GetEntry(); }) : sBonkMgr.GetPowerups().end();
+        if (powerup == sBonkMgr.GetPowerups().end() || powerup->effect != BONK_POWERUP_VALOR || !go->isSpawned())
+        {
+            ++itr;
+            continue;
+        }
+        ForgetPowerupObjective(*itr);
+        go->Delete();
+        itr = m_powerups.erase(itr);
+        pouches.push_back(&*powerup);
+    }
+    for (BonkPowerup const* pouch : pouches)
+        UsePowerup(*pouch);
+}
+
 void BonkRun::CollectAllOrbs()
 {
     uint32 collected = 0;
@@ -10877,7 +10982,7 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
     float const reward = GetKindReward(kind) * (veteran ? BONK_VETERAN_REWARD : 1.0f) * GetAmbitionReward(kind);
     GiveGold(uint32(m_map.goldPerKill * reward + 0.5f));
     m_cardValorCarry += m_map.coinsPerKill * reward * (1.0f + GetCardTotal(BONK_CARD_VALOR, 0) / 100.0f);
-    m_coins += uint32(m_cardValorCarry);
+    GainValor(uint32(m_cardValorCarry));
     m_cardValorCarry -= float(uint32(m_cardValorCarry));
     if (HasCard(BONK_CARD_KILL_POWER))
         ++m_cardKills;
@@ -11793,7 +11898,8 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
     OwnedWeapon const* owned = FindOwned(offer.id);
     BonkWeapon const& current = owned ? owned->weapon : weapon;
     bool const damageCounts = !owned || RankDamageCounts(*owned);
-    float damage = GetRankDamage(owned, offer.rarity);
+    float const rankScale = GetRankDamageScale(offer.newLevel);
+    float damage = GetRankDamage(owned, offer.rarity) * rankScale;
     float amounts[MAX_BONK_SPELL_UPGRADE] = {};
     std::vector<BonkSpellUpgrade> order;
     uint8 const count = GetRankUpgradeCount(owned, offer.rarity);
@@ -11804,7 +11910,7 @@ std::string BonkRun::DescribeRankUp(Offer const& offer, BonkWeapon const& weapon
         if (step <= 0.0f)
         {
             if (damageCounts)
-                damage += BONK_RANK_SPARE_DAMAGE;
+                damage += BONK_RANK_SPARE_DAMAGE * rankScale;
             continue;
         }
         if (!amounts[upgrade])
@@ -12084,7 +12190,7 @@ bool BonkRun::Skip(std::string& error)
 
     --m_skips;
     uint32 const coins = std::max(1u, uint32(GetChestPrice() * BONK_SKIP_COINS));
-    m_coins += coins;
+    GainValor(coins);
     m_player->GetBonkPlayer()->Notify("You skipped this choice and got " + std::to_string(coins) + " Valor.");
     CloseOffer(uint32(m_offer.size()));
     SendState();

@@ -37,7 +37,7 @@ struct BonkRunStats
     std::map<uint32, Spell> bySpell;
     std::map<uint32, std::map<uint32, Spell>> dotBySpell;
     uint64 damageTaken = 0;
-    uint32 biggestHit = 0;
+    uint64 biggestHit = 0;
     uint32 kindKills[MAX_BONK_SPAWN_KIND] = {};
     std::map<ObjectGuid, uint32> killingSpells;
     std::map<ObjectGuid, uint32> killingDots;

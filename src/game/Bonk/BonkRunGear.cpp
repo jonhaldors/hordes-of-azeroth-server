@@ -652,7 +652,7 @@ void BonkRun::AutoSalvageGear(uint32 entry)
 {
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry);
     uint32 const valor = GetGearSalvage(entry);
-    m_coins += valor;
+    GainValor(valor);
     m_player->GetBonkPlayer()->Notify("You salvaged " + std::string(proto ? proto->Name1 : "the gear") + " for " + std::to_string(valor) +
         " Valor. You already wear better.");
     SendState();
@@ -743,7 +743,7 @@ bool BonkRun::ChooseGear(GearChoice choice, uint8 slot, std::string& error)
         else
         {
             uint32 const valor = GetGearSalvage(entry);
-            m_coins += valor;
+            GainValor(valor);
             bonk->Notify((why.empty() ? "You salvaged " + name : why + ", so you salvaged it") + " for " + std::to_string(valor) + " Valor.");
             SendState();
         }

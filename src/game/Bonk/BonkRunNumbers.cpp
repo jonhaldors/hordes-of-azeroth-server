@@ -16,6 +16,7 @@ namespace
     float const BONK_PET_SWING_SPREAD = 0.1f;
     uint32 const BONK_PET_NO_SWING_MS = 60000;
     uint32 const BONK_PET_MIN_ATTACK_MS = 300;
+    uint32 const BONK_RANK_FULL_DAMAGE_RANKS = 20;
 
     bool IsStackStrengthSpell(BonkWeapon const& weapon)
     {
@@ -263,14 +264,15 @@ void BonkRun::AddRankGains(OwnedWeapon& owned, Offer const& offer) const
 {
     bool const damageCounts = RankDamageCounts(owned);
     uint8 const count = GetRankUpgradeCount(&owned, offer.rarity);
-    owned.damageBonus += GetRankDamage(&owned, offer.rarity);
+    float const scale = GetRankDamageScale(offer.newLevel);
+    owned.damageBonus += GetRankDamage(&owned, offer.rarity) * scale;
     for (uint8 i = 0; i < count; ++i)
     {
         float const step = owned.weapon.GetUpgradeStep(offer.upgrades[i]);
         if (step > 0.0f)
             owned.upgrades[offer.upgrades[i]] += step;
         else if (damageCounts)
-            owned.damageBonus += BONK_RANK_SPARE_DAMAGE;
+            owned.damageBonus += BONK_RANK_SPARE_DAMAGE * scale;
     }
 }
 
@@ -284,6 +286,11 @@ bool BonkRun::RankDamageCounts(OwnedWeapon const& owned) const
     GetSpellUpgrades(&owned, upgrades);
     WeaponStrength strength;
     return GetWeaponStrength(owned.weapon, owned.damageBonus, upgrades, strength);
+}
+
+float BonkRun::GetRankDamageScale(uint32 rank)
+{
+    return rank > BONK_RANK_FULL_DAMAGE_RANKS ? float(BONK_RANK_FULL_DAMAGE_RANKS) / float(rank) : 1.0f;
 }
 
 float BonkRun::GetRankDamage(OwnedWeapon const* owned, BonkRarity rarity) const

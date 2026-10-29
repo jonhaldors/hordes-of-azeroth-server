@@ -263,7 +263,7 @@ void WorldSession::HandleCharCreateOpcode(WorldPackets::Character::CharCreate co
             sendResponse(CHAR_NAME_RESERVED);
             return;
         }
-        BonkPlayer::WipeAccount(GetAccountId());
+        BonkPlayer::WipeAccount(GetAccountId(), GetUsername());
         sendResponse(CHAR_CREATE_SUCCESS);
         return;
     }

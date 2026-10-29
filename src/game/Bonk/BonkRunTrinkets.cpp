@@ -117,7 +117,7 @@ void BonkRun::RollTrinketCharges(OwnedWeapon& owned)
     }
 }
 
-void BonkRun::OnTrinketHit(Unit* victim, uint32 damage, SpellEntry const* spell)
+void BonkRun::OnTrinketHit(Unit* victim, double damage, SpellEntry const* spell)
 {
     OwnedWeapon* owned = spell ? const_cast<OwnedWeapon*>(FindOwnedBySpell(spell->Id)) : nullptr;
     if (!damage || !owned || !owned->trinketCharges || !victim)

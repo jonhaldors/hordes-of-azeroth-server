@@ -1658,7 +1658,6 @@ BonkGearTotals BonkMgr::EvaluateGear(Player const* player) const
     BonkGearTotals totals = EvaluateItems(worn);
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         BonkFound::AddWornStats(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), totals.passives);
-    sBonkEnchants.AddStats(player, totals.passives);
     return totals;
 }
 

@@ -95,7 +95,7 @@ class BonkPlayer
 
         static bool IsWipeName(std::string const& name);
         static bool IsPlayableClass(uint8 classId);
-        static void WipeAccount(uint32 accountId);
+        static void WipeAccount(uint32 accountId, std::string const& username);
 
         static bool IsIronmanName(std::string const& name);
         static void RequestIronman(uint32 accountId);
@@ -162,6 +162,7 @@ class BonkPlayer
         bool ResetMastery(std::string& message);
         void FlushMasteryNotice();
         bool RefundMastery(uint32 nodeId, std::string& message);
+        bool LoadMasteryPreset(uint8 slot, std::string& message);
         BonkMasteryBonuses GetMasteryBonuses() const;
         std::map<uint32, uint8> const& GetMasteryRanks() const { return m_masteryRanks; }
         void SendMasteryState() const;
@@ -176,6 +177,7 @@ class BonkPlayer
         void ShopLearn(uint32 id);
         void ShopUnlearn(uint32 id);
         void ShopToggle(uint32 id);
+        void ShopPreset(uint8 slot);
         void ShopRespec();
 
         void SetFiringWeapon(bool firing) { m_firingWeapon = firing; }
@@ -279,6 +281,12 @@ class BonkPlayer
         void SendTierList() const;
         void SendGearInfo() const;
         void SendStats() const;
+        void SendMasteryShop(bool open, bool inspect) const;
+        std::map<uint32, uint8> ReadMasteryPreset(uint8 slot) const;
+        void LoadMasteryPresets();
+        void WriteMasteryPreset(uint8 slot, std::map<uint32, uint8> const& ranks);
+        std::string DescribeMasteryPresets() const;
+        void SendMasteryPresetRanks() const;
         void SendStatTotals(float const* totals, bool inRun) const;
         void OpenArena(Creature const* npc) const;
 
@@ -312,7 +320,7 @@ class BonkPlayer
         };
 
         void WriteHeroScreenStats() const;
-        static void WriteHeroScreenFile(std::string const& lua);
+        static void WriteHeroScreenFile(std::string const& username, std::string const& stats);
 
         void LoadPurchases();
         void LoadMastery();
@@ -389,6 +397,8 @@ class BonkPlayer
         uint32 m_titleId = 0;
         bool m_accountHasRun = false;
         std::map<uint32, uint8> m_masteryRanks;
+        std::map<uint8, std::map<uint32, uint8>> m_masteryPresets;
+        uint8 m_activeMasteryPreset = 1;
         uint32 m_starterChoice = 0;
         BonkShop m_shop{};
         ObjectGuid m_shopNpc;
