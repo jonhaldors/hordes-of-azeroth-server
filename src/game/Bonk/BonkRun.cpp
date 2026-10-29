@@ -4,6 +4,7 @@
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
 #include "BonkRunStats.h"
+#include "BonkStrings.h"
 #include "CellImpl.h"
 #include "Chat.h"
 #include "Creature.h"
@@ -1087,6 +1088,11 @@ BonkRun::BonkRun(Player* player, BonkTier const& tier, BonkRunChoice const& choi
     m_floorBestAtStart = player->GetBonkPlayer()->GetClassFloor();
 }
 
+std::string BonkRun::GetString(BonkString id, std::vector<std::string> const& args) const
+{
+    return m_player->GetBonkPlayer()->GetString(id, args);
+}
+
 bool BonkRun::Begin(std::string& error)
 {
     BonkStats::Reset(m_player->GetObjectGuid());
@@ -1094,7 +1100,7 @@ bool BonkRun::Begin(std::string& error)
     BonkMap const* first = ChooseNextMap();
     if (!first)
     {
-        error = "No maps are set up for " + m_tier.name + ".";
+        error = GetString(BONK_STRING_NO_MAPS_ARE_SET_UP, { m_tier.name });
         return false;
     }
     m_map = *first;
@@ -1344,7 +1350,7 @@ bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
 
     if (!m_player->TeleportTo(map.mapId, x, y, z, o))
     {
-        error = "You couldn't travel to " + map.name + ".";
+        error = GetString(BONK_STRING_YOU_COULDNT_TRAVEL_TO, { map.name });
         return false;
     }
 
@@ -1377,7 +1383,7 @@ void BonkRun::Update(uint32 diff)
             m_enterTimer += diff;
             if (m_enterTimer >= BONK_ENTER_TIMEOUT_MS)
             {
-                m_player->GetBonkPlayer()->Notify("You couldn't travel to " + m_map.name + ".");
+                m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_COULDNT_TRAVEL_TO, { m_map.name });
                 Exit();
             }
             break;
@@ -1579,12 +1585,10 @@ void BonkRun::StartStage()
     SendFullState();
     uint32 const minutes = m_map.durationSeconds / 60;
     uint32 const seconds = m_map.durationSeconds % 60;
-    std::string bossIn;
-    if (minutes)
-        bossIn = std::to_string(minutes) + (minutes == 1 ? " minute" : " minutes");
-    if (seconds || !minutes)
-        bossIn += (minutes ? " and " : "") + std::to_string(seconds) + (seconds == 1 ? " second" : " seconds");
-    m_player->GetBonkPlayer()->Notify((IsMythic() ? "Mythic floor " : "Floor ") + std::to_string(m_stage) + " begins in " + m_map.name + ". The boss arrives in " + bossIn + ".");
+    std::string const minuteText = GetString(minutes == 1 ? BONK_STRING_DURATION_MINUTE : BONK_STRING_DURATION_MINUTES, { std::to_string(minutes) });
+    std::string const secondText = GetString(seconds == 1 ? BONK_STRING_DURATION_SECOND : BONK_STRING_DURATION_SECONDS, { std::to_string(seconds) });
+    std::string const bossIn = !minutes ? secondText : !seconds ? minuteText : GetString(BONK_STRING_DURATION_MINUTES_AND_SECONDS, { minuteText, secondText });
+    m_player->GetBonkPlayer()->Notify(IsMythic() ? BONK_STRING_MYTHIC_FLOOR_BEGINS : BONK_STRING_FLOOR_BEGINS, { std::to_string(m_stage), m_map.name, bossIn });
 }
 
 void BonkRun::SendFullState() const
@@ -1814,7 +1818,7 @@ void BonkRun::UpdateBoundary(uint32 diff)
     }
 
     m_player->NearTeleportTo(m_safeX, m_safeY, m_safeZ, m_player->GetOrientation());
-    m_player->GetBonkPlayer()->Notify("You can't leave " + m_map.name + ".");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_CANT_LEAVE, { m_map.name });
 }
 
 void BonkRun::UpdateNatives(uint32 diff)
@@ -2025,7 +2029,7 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
                         name = mob->GetName();
             }
             if (!name.empty())
-                bonk->Notify(name + " has arrived!");
+                bonk->Notify(BONK_STRING_ARRIVED, { name });
             break;
         }
         case BONK_EVENT_ELITES:
@@ -2036,7 +2040,7 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
                 if (BonkMapCreature const* creature = PickCreature(BONK_SPAWN_ELITE))
                     spawned |= SpawnMob(*creature) != nullptr;
             if (spawned)
-                bonk->Notify("Elites are closing in!");
+                bonk->Notify(BONK_STRING_ELITES_ARE_CLOSING_IN);
             break;
         }
         case BONK_EVENT_SWARM:
@@ -2048,14 +2052,14 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
                 if (BonkMapCreature const* creature = PickTrash())
                     SpawnMob(*creature);
             if (count)
-                bonk->Notify("A swarm is coming!");
+                bonk->Notify(BONK_STRING_SWARM_IS_COMING);
             break;
         }
         case BONK_EVENT_RING:
         case BONK_EVENT_RUSH:
         {
             if (SpawnFormation(event))
-                bonk->Notify(event.type == BONK_EVENT_RING ? "You are surrounded!" : "Enemies are charging in!");
+                bonk->Notify(event.type == BONK_EVENT_RING ? BONK_STRING_YOU_ARE_SURROUNDED : BONK_STRING_ENEMIES_ARE_CHARGING_IN);
             break;
         }
         case BONK_EVENT_CHESTS:
@@ -2064,7 +2068,7 @@ void BonkRun::RunEvent(BonkMapEvent const& event)
             for (uint32 i = 0; i < event.count; ++i)
                 placed += SpawnChestNearby() ? 1 : 0;
             if (placed)
-                bonk->Notify(placed == 1 ? "A chest appeared nearby." : "Chests appeared nearby.");
+                bonk->Notify(placed == 1 ? BONK_STRING_CHEST_APPEARED_NEARBY : BONK_STRING_CHESTS_APPEARED_NEARBY);
             break;
         }
         default:
@@ -2145,7 +2149,7 @@ void BonkRun::UpdateSpawns(uint32 diff)
         if (Creature* mob = SpawnMob(*boss))
         {
             m_bossSpawned = true;
-            m_player->GetBonkPlayer()->Notify(std::string(mob->GetName()) + " has arrived!");
+            m_player->GetBonkPlayer()->Notify(BONK_STRING_ARRIVED, { std::string(mob->GetName()) });
             MaybeSpawnPillar();
         }
     }
@@ -2321,7 +2325,7 @@ void BonkRun::EnterWave(size_t index)
                 name = mob->GetName();
     }
     if (!name.empty())
-        bonk->Notify(name + " has arrived!");
+        bonk->Notify(BONK_STRING_ARRIVED, { name });
 
     bool elites = false;
     uint32 const eliteCount = uint32(wave.elites * GetEliteScale() + 0.5f);
@@ -2330,9 +2334,9 @@ void BonkRun::EnterWave(size_t index)
             elites |= SpawnMob(*creature) != nullptr;
 
     if (wave.beat == BONK_BEAT_WALL)
-        bonk->Notify(wave.name + "!");
+        bonk->Notify(BONK_STRING_EXCLAIM, { wave.name });
     else if (elites)
-        bonk->Notify("Elites are closing in!");
+        bonk->Notify(BONK_STRING_ELITES_ARE_CLOSING_IN);
     if (wave.beat == BONK_BEAT_WALL || wave.beat == BONK_BEAT_MINIBOSS)
         bonk->SendAddon("beat~" + wave.name + "~" + std::to_string(wave.beat) + "~0");
 }
@@ -2565,7 +2569,7 @@ void BonkRun::UpdateOvertime(uint32 diff)
     if (!spawned)
         return;
     if (!m_overtimeWaves)
-        m_player->GetBonkPlayer()->Notify("Overtime! Enemies keep coming until the boss falls.");
+        m_player->GetBonkPlayer()->Notify(BONK_STRING_OVERTIME_ENEMIES_KEEP_COMING_UNTIL);
     ++m_overtimeWaves;
 }
 
@@ -4403,12 +4407,13 @@ void BonkRun::Revive(bool soulstone, BonkGlyph const* glyph, bool stillAlive)
     SmiteAroundRevive();
 
     if (glyph)
-        m_player->GetBonkPlayer()->Notify("Glyph of Divine Shield saved you! " + DescribeDivineShieldRecharge(*glyph));
+        m_player->GetBonkPlayer()->Notify(BONK_STRING_GLYPH_OF_DIVINE_SHIELD_SAVED, { DescribeDivineShieldRecharge(*glyph) });
     else if (soulstone)
-        m_player->GetBonkPlayer()->Notify(m_soulstones ? "Your Soulstone saved you! " + std::to_string(m_soulstones) + (m_soulstones == 1 ? " charge left." : " charges left.") :
-            "Your Soulstone saved you!");
+        m_player->GetBonkPlayer()->Notify(!m_soulstones ? BONK_STRING_SOULSTONE_SAVED_YOU : m_soulstones == 1 ? BONK_STRING_SOULSTONE_SAVED_YOU_CHARGE_LEFT :
+            BONK_STRING_SOULSTONE_SAVED_YOU_CHARGES_LEFT, { std::to_string(m_soulstones) });
     else
-        m_player->GetBonkPlayer()->Notify(m_revives ? "You got back up! " + std::to_string(m_revives) + (m_revives == 1 ? " revive left." : " revives left.") : "You got back up!");
+        m_player->GetBonkPlayer()->Notify(!m_revives ? BONK_STRING_YOU_GOT_BACK_UP : m_revives == 1 ? BONK_STRING_YOU_GOT_BACK_UP_REVIVE_LEFT :
+            BONK_STRING_YOU_GOT_BACK_UP_REVIVES_LEFT, { std::to_string(m_revives) });
     SendState();
 }
 
@@ -4804,18 +4809,18 @@ bool BonkRun::PlacePowerupNow(uint32 entry, std::string& error)
     auto const powerup = std::find_if(powerups.begin(), powerups.end(), [entry](BonkPowerup const& p) { return p.entry == entry; });
     if (powerup == powerups.end())
     {
-        error = "That power-up is not in the database.";
+        error = GetString(BONK_STRING_THAT_POWER_UP_IS_NOT);
         return false;
     }
     float x, y, z;
     if (!FindSpawnPositionAt(m_player->GetOrientation(), BONK_POWERUP_COMMAND_DISTANCE, x, y, z) || !m_player->IsWithinLOS(x, y, z))
     {
-        error = "No open ground 10 yards in front of you.";
+        error = GetString(BONK_STRING_NO_OPEN_GROUND_10_YARDS);
         return false;
     }
     if (!PlacePowerup(*powerup, x, y, z, BONK_POWERUP_LIFETIME_SEC))
     {
-        error = "The power-up could not be placed.";
+        error = GetString(BONK_STRING_POWER_UP_COULD_NOT_BE);
         return false;
     }
     return true;
@@ -4862,7 +4867,7 @@ void BonkRun::UpdatePowerups(uint32 diff, bool spawn)
     for (auto const& pick : picked)
     {
         bool const thing = pick.first->effect == BONK_POWERUP_MAGNET || pick.first->effect == BONK_POWERUP_VALOR;
-        m_player->GetBonkPlayer()->Notify("You picked up " + std::string(thing ? "a " : "") + pick.second + "!");
+        m_player->GetBonkPlayer()->Notify(thing ? BONK_STRING_YOU_PICKED_UP_A : BONK_STRING_YOU_PICKED_UP, { pick.second });
         UsePowerup(*pick.first);
     }
 
@@ -5018,11 +5023,11 @@ void BonkRun::UseChest(GameObject* chest)
         uint32 const cost = GetChestPrice();
         if (m_coins < cost)
         {
-            bonk->Notify("This chest costs " + std::to_string(cost) + " Valor. You have " + std::to_string(m_coins) + ".");
+            bonk->Notify(BONK_STRING_THIS_CHEST_COSTS_VALOR_YOU, { std::to_string(cost), std::to_string(m_coins) });
             return;
         }
         if (RollFreeChest())
-            bonk->Notify("Your Arcanite Skeleton Key opened this chest for free!");
+            bonk->Notify(BONK_STRING_YOUR_ARCANITE_SKELETON_KEY_OPENED);
         else
         {
             m_coins -= cost;
@@ -5057,7 +5062,6 @@ void BonkRun::RewardMythicFloor()
     if (!firstClear)
         return;
 
-    std::string const floor = "Mythic floor " + std::to_string(m_stage);
     uint32 const tickets = GetFloorFirstClearTickets(m_stage);
     if (tickets)
     {
@@ -5065,13 +5069,13 @@ void BonkRun::RewardMythicFloor()
         m_shardsEarned += tickets;
     }
     if (IsMythicMilestoneFloor(m_stage))
-        bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "! Legendary gear drops more often from now on.");
+        bonk->Notify(BONK_STRING_FIRST_CLEAR_MYTHIC_FLOOR_MILESTONE, { std::to_string(m_stage), FormatBonkShards(tickets) });
     else if (tickets)
-        bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "!");
+        bonk->Notify(BONK_STRING_FIRST_CLEAR_MYTHIC_FLOOR, { std::to_string(m_stage), FormatBonkShards(tickets) });
 
     if (m_stage % BONK_TRAINING_FLOORS_PER_RANK == 0 && bonk->IsTierCleared("heroic") &&
         m_stage / BONK_TRAINING_FLOORS_PER_RANK <= BONK_TRAINING_MYTHIC_RANKS)
-        bonk->Notify("Account Training can now go to rank " + std::to_string(bonk->GetTrainingRankCap() + 1) + ".");
+        bonk->Notify(BONK_STRING_ACCOUNT_TRAINING_CAN_NOW_GO, { std::to_string(bonk->GetTrainingRankCap() + 1) });
 }
 
 float BonkRun::FloorRewardScale(BonkTier const& tier, uint32 stage)
@@ -5141,14 +5145,13 @@ void BonkRun::OpenPortal(Creature* boss)
     }
 
     if (!last)
-        bonk->Notify(IsMythic() ? "You cleared Mythic floor " + std::to_string(m_stage) + "! Take the portal to the next floor, or return to the Inn." :
-            "You cleared floor " + std::to_string(m_stage) + "! Take the portal to the next floor, or return to the Inn.");
+        bonk->Notify(IsMythic() ? BONK_STRING_CLEARED_MYTHIC_FLOOR_TAKE_PORTAL : BONK_STRING_CLEARED_FLOOR_TAKE_PORTAL, { std::to_string(m_stage) });
     else if (!m_tier.endless)
-        bonk->Notify("Victory! You cleared " + m_tier.name + ". Take the portal home with your loot.");
+        bonk->Notify(BONK_STRING_VICTORY_YOU_CLEARED_TAKE_PORTAL, { m_tier.name });
     else if (m_stage == m_tier.stages)
-        bonk->Notify("Victory! You cleared " + m_tier.name + ". Take the portal home, or carry on into Endless mode.");
+        bonk->Notify(BONK_STRING_VICTORY_YOU_CLEARED_TAKE_PORTAL_HOME, { m_tier.name });
     else
-        bonk->Notify("You cleared Endless floor " + std::to_string(m_stage) + "! Take the portal home, or go deeper.");
+        bonk->Notify(BONK_STRING_YOU_CLEARED_ENDLESS_FLOOR_TAKE, { std::to_string(m_stage) });
     SendState();
 }
 
@@ -5202,7 +5205,7 @@ void BonkRun::EnterNextStage()
     BonkPlayer* bonk = m_player->GetBonkPlayer();
     if (!m_offer.empty())
     {
-        bonk->Notify("Make your choice first.");
+        bonk->Notify(BONK_STRING_MAKE_YOUR_CHOICE_FIRST);
         return;
     }
 
@@ -5211,7 +5214,7 @@ void BonkRun::EnterNextStage()
         next = ChooseNextMap();
     if (!next)
     {
-        bonk->Notify("The portal has nowhere to take you right now.");
+        bonk->Notify(BONK_STRING_PORTAL_HAS_NOWHERE_TO_TAKE);
         return;
     }
 
@@ -5238,7 +5241,7 @@ void BonkRun::EnterNextStage()
     std::string error;
     if (!TeleportToStage(*next, error))
     {
-        bonk->Notify(error + " Try the portal again.");
+        bonk->Notify(BONK_STRING_TRY_PORTAL_AGAIN, { error });
         BonkMap const* other = ChooseNextMap();
         m_nextMapId = other ? other->id : 0;
         return;
@@ -5255,12 +5258,12 @@ bool BonkRun::SkipTime(uint32 seconds, std::string& error)
 {
     if (m_state != STATE_RUNNING)
     {
-        error = "Only a running floor can be skipped.";
+        error = GetString(BONK_STRING_ONLY_RUNNING_FLOOR_SKIPPED);
         return false;
     }
     if (m_bossSpawned)
     {
-        error = "The boss is already here.";
+        error = GetString(BONK_STRING_BOSS_IS_ALREADY_HERE);
         return false;
     }
 
@@ -5268,7 +5271,7 @@ bool BonkRun::SkipTime(uint32 seconds, std::string& error)
     uint32 const target = seconds ? std::min(m_elapsedMs + seconds * IN_MILLISECONDS, bossMs) : bossMs;
     if (target <= m_elapsedMs)
     {
-        error = "The boss is already due.";
+        error = GetString(BONK_STRING_BOSS_IS_ALREADY_DUE);
         return false;
     }
 
@@ -10226,7 +10229,7 @@ bool BonkRun::AutoPickCatchUp(std::string& error)
 {
     if (!m_catchUpLevels)
     {
-        error = "There are no catch-up level-ups left.";
+        error = GetString(BONK_STRING_NO_CATCH_UP_LEVEL_UPS_LEFT);
         return false;
     }
     m_autoPickCatchUp = true;
@@ -10235,7 +10238,7 @@ bool BonkRun::AutoPickCatchUp(std::string& error)
     if (!HasOwnedOffer())
     {
         m_autoPickCatchUp = false;
-        error = "This selection only shows new cards. Pick one yourself.";
+        error = GetString(BONK_STRING_SELECTION_ONLY_NEW_CARDS);
         return false;
     }
     return Pick(uint32(ChooseAutoPick() + 1), error);
@@ -10258,8 +10261,7 @@ void BonkRun::GiveCheckpointCatchUp()
     m_catchUpLevels = m_player->GetLevel() + m_overcapLevel - before;
     for (uint32 floor = 1; floor < m_startFloor && CanGainGlyphPick(); ++floor)
         QueueGlyphPick();
-    m_player->GetBonkPlayer()->Notify("You start on floor " + std::to_string(m_startFloor) + " at level " + std::to_string(m_player->GetLevel() + m_overcapLevel) +
-        ". Pick your build, then the floor begins. Skipped floors give only their glyph choices.");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_START_ON_FLOOR_AT_LEVEL, { std::to_string(m_startFloor), std::to_string(m_player->GetLevel() + m_overcapLevel) });
 }
 
 void BonkRun::GiveStartLevels()
@@ -10745,7 +10747,7 @@ void BonkRun::DropShards(Creature const* mob, BonkSpawnKind kind)
     drop.marker = PlaceMarker(go, BONK_SPELL_TICKET_POOL, BONK_DROP_POOL_SCALE);
     drop.sparkle = PlaceMarker(go, BONK_SPELL_FEET_SPARKLE, 1.0f);
     m_shardDrops.push_back(drop);
-    m_player->GetBonkPlayer()->Notify(count == 1 ? "A Darkmoon Ticket dropped!" : FormatBonkShards(count) + " dropped!");
+    m_player->GetBonkPlayer()->Notify(count == 1 ? BONK_STRING_DARKMOON_TICKET_DROPPED : BONK_STRING_TICKETS_DROPPED, { FormatBonkShards(count) });
 }
 
 void BonkRun::UpdateShards(uint32 diff)
@@ -10819,7 +10821,7 @@ void BonkRun::DropGlyph(Creature const* mob)
     drop.marker = PlaceMarker(go, BONK_SPELL_GLYPH_POOL, BONK_DROP_POOL_SCALE);
     drop.sparkle = PlaceMarker(go, BONK_SPELL_FEET_SPARKLE, 1.0f);
     m_glyphDrops.push_back(drop);
-    m_player->GetBonkPlayer()->Notify("A Glyph dropped! Pick it up to choose a Glyph.");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_GLYPH_DROPPED_PICK_IT_UP);
 }
 
 void BonkRun::CollectAllGlyphs()
@@ -10980,7 +10982,7 @@ void BonkRun::GiveShards(uint32 count)
     sBonkQuests.OnShards(m_player, count);
     m_shardsEarned += count;
     bonk->SendAddon("shard~" + std::to_string(count) + "~" + std::to_string(bonk->GetShards()));
-    bonk->Notify("You collected " + FormatBonkShards(count) + "!");
+    bonk->Notify(BONK_STRING_YOU_COLLECTED, { FormatBonkShards(count) });
     SendState();
 }
 
@@ -11262,7 +11264,7 @@ void BonkRun::UseAscension(OwnedWeapon const& owned)
         return;
     std::string const name = ascension->name;
     RemoveCard(*ascension);
-    m_player->GetBonkPlayer()->Notify(name + " reveals the evolution of " + owned.weapon.name + " and is used up.");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_ASCENSION_REVEALS_EVOLUTION, { name, owned.weapon.name });
 }
 
 void BonkRun::ShowAllEvolutions(std::vector<Offer>& cards) const
@@ -11470,21 +11472,21 @@ void BonkRun::EvolveWeapon(OwnedWeapon& owned, BonkWeapon const& evolved)
         WarmShotSources();
     if (evolved.IsBlink() || evolved.IsArcaneMissiles())
         m_player->GetBonkPlayer()->SendDash();
-    m_player->GetBonkPlayer()->Notify(from + " evolved into " + evolved.name + "!");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_EVOLVED_INTO, { from, evolved.name });
 }
 
 bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
 {
     if (m_state != STATE_RUNNING && m_state != STATE_PORTAL)
     {
-        error = "You are not in a running floor.";
+        error = GetString(BONK_STRING_YOU_ARE_NOT_IN_RUNNING);
         return false;
     }
 
     BonkWeapon const* evolved = sBonkMgr.GetWeapon(weaponId);
     if (!evolved)
     {
-        error = "There is no spell " + std::to_string(weaponId) + ".";
+        error = GetString(BONK_STRING_THERE_IS_NO_SPELL, { std::to_string(weaponId) });
         return false;
     }
     bool const held = std::any_of(m_weapons.begin(), m_weapons.end(), [weaponId](OwnedWeapon const& owned)
@@ -11495,7 +11497,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
     {
         if (m_weapons.size() >= GetSpellSlots())
         {
-            error = "No free spell slot for " + evolved->name + ".";
+            error = GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR, { evolved->name });
             return false;
         }
         AddWeapon(*evolved);
@@ -11507,7 +11509,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
         std::string choices;
         for (BonkWeapon const* evolution : sBonkMgr.GetEvolutions(weaponId))
             choices += (choices.empty() ? "" : ", ") + evolution->name + " (" + std::to_string(evolution->id) + ")";
-        error = evolved->name + " is not an evolution." + (choices.empty() ? std::string(" It has none.") : " Its evolutions: " + choices + ".");
+        error = choices.empty() ? GetString(BONK_STRING_NOT_AN_EVOLUTION_NONE, { evolved->name }) : GetString(BONK_STRING_NOT_AN_EVOLUTION, { evolved->name, choices });
         return false;
     }
 
@@ -11525,7 +11527,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
         BonkWeapon const* base = sBonkMgr.GetWeapon(evolved->evolvesFrom);
         if (!base || m_weapons.size() >= GetSpellSlots())
         {
-            error = "No free spell slot for " + (base ? base->name : std::string("its base spell")) + ".";
+            error = base ? GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR, { base->name }) : GetString(BONK_STRING_NO_FREE_SPELL_SLOT_FOR_BASE);
             return false;
         }
         AddWeapon(*base);
@@ -11533,7 +11535,7 @@ bool BonkRun::ForceEvolve(uint32 weaponId, std::string& error)
     }
     if (!owned || owned->weapon.id == evolved->id)
     {
-        error = "You already have " + evolved->name + ".";
+        error = GetString(BONK_STRING_YOU_ALREADY_HAVE, { evolved->name });
         return false;
     }
 
@@ -11550,7 +11552,7 @@ bool BonkRun::GivePassive(uint32 passiveId, std::string& error)
     BonkPassive const* passive = sBonkMgr.GetPassive(passiveId);
     if (!passive)
     {
-        error = "There is no passive " + std::to_string(passiveId) + ".";
+        error = GetString(BONK_STRING_THERE_IS_NO_PASSIVE, { std::to_string(passiveId) });
         return false;
     }
 
@@ -11559,19 +11561,19 @@ bool BonkRun::GivePassive(uint32 passiveId, std::string& error)
     size_t const ownedPassives = std::count_if(m_passiveRanks.begin(), m_passiveRanks.end(), [](auto const& itr) { return itr.second > 0; });
     if (passive->IsMaxed(current))
     {
-        error = passive->name + " is already at its highest rank.";
+        error = GetString(BONK_STRING_ALREADY_HIGHEST_RANK, { passive->name });
         return false;
     }
     if (!current && ownedPassives >= GetPassiveSlots())
     {
-        error = "No free passive slot for " + passive->name + ".";
+        error = GetString(BONK_STRING_NO_FREE_PASSIVE_SLOT_FOR, { passive->name });
         return false;
     }
 
     m_passiveRanks[passiveId] = uint8(current + 1);
     ApplyPassives();
     SendLoadout();
-    m_player->GetBonkPlayer()->Notify(passive->name + " is now rank " + std::to_string(current + 1) + ".");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_NOW_RANK, { passive->name, std::to_string(current + 1) });
     return true;
 }
 
@@ -11893,8 +11895,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
         uint32 const gold = m_map.goldPerKill * 25;
         uint32 const paid = uint32(gold * GetGoldMultiplier());
         GiveGold(gold);
-        m_player->GetBonkPlayer()->Notify(paid ? "There's nothing left to learn, so you get " + FormatBonkMoney(paid) + " instead." :
-            std::string("There's nothing left to learn."));
+        m_player->GetBonkPlayer()->Notify(paid ? BONK_STRING_NOTHING_LEFT_TO_LEARN_GOLD : BONK_STRING_NOTHING_LEFT_TO_LEARN, { FormatBonkMoney(paid) });
         return false;
     }
 
@@ -12123,14 +12124,14 @@ bool BonkRun::Pick(uint32 choice, std::string& error)
 {
     if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
     {
-        error = "There is nothing to choose right now.";
+        error = GetString(BONK_STRING_THERE_IS_NOTHING_TO_CHOOSE);
         m_player->GetBonkPlayer()->SendAddon("picked");
         return false;
     }
 
     if (choice < 1 || choice > m_offer.size())
     {
-        error = "Choose a number from 1 to " + std::to_string(m_offer.size()) + ".";
+        error = GetString(BONK_STRING_CHOOSE_NUMBER_FROM_1_TO, { std::to_string(m_offer.size()) });
         SendOffer();
         return false;
     }
@@ -12203,14 +12204,14 @@ bool BonkRun::Reroll(std::string& error)
 {
     if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
     {
-        error = "There is nothing to reroll right now.";
+        error = GetString(BONK_STRING_THERE_IS_NOTHING_TO_REROLL);
         m_player->GetBonkPlayer()->SendAddon("picked");
         return false;
     }
 
     if (!m_rerolls)
     {
-        error = "No rerolls left.";
+        error = GetString(BONK_STRING_NO_REROLLS_LEFT);
         SendOffer();
         return false;
     }
@@ -12233,21 +12234,21 @@ bool BonkRun::Banish(uint32 choice, std::string& error)
 {
     if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
     {
-        error = "There is nothing to banish right now.";
+        error = GetString(BONK_STRING_THERE_IS_NOTHING_TO_BANISH);
         m_player->GetBonkPlayer()->SendAddon("picked");
         return false;
     }
 
     if (!m_banishes || choice < 1 || choice > m_offer.size())
     {
-        error = m_banishes ? "Choose a number from 1 to " + std::to_string(m_offer.size()) + "." : "No banishes left.";
+        error = m_banishes ? GetString(BONK_STRING_CHOOSE_NUMBER_FROM_1_TO, { std::to_string(m_offer.size()) }) : GetString(BONK_STRING_NO_BANISHES_LEFT);
         SendOffer();
         return false;
     }
 
     Offer const offer = m_offer[choice - 1];
     m_banished.insert(GetBanishKey(offer));
-    m_player->GetBonkPlayer()->Notify("You banished " + DescribeOffer(offer, nullptr) + " for the rest of this run.");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_BANISHED_FOR_REST_OF, { DescribeOffer(offer, nullptr) });
     --m_banishes;
 
     std::vector<Offer> kept;
@@ -12266,14 +12267,14 @@ bool BonkRun::Skip(std::string& error)
 {
     if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
     {
-        error = "There is nothing to skip right now.";
+        error = GetString(BONK_STRING_THERE_IS_NOTHING_TO_SKIP);
         m_player->GetBonkPlayer()->SendAddon("picked");
         return false;
     }
 
     if (!m_skips)
     {
-        error = "No skips left.";
+        error = GetString(BONK_STRING_NO_SKIPS_LEFT);
         SendOffer();
         return false;
     }
@@ -12281,7 +12282,7 @@ bool BonkRun::Skip(std::string& error)
     --m_skips;
     uint32 const coins = std::max(1u, uint32(GetChestPrice() * BONK_SKIP_COINS));
     GainValor(coins);
-    m_player->GetBonkPlayer()->Notify("You skipped this choice and got " + std::to_string(coins) + " Valor.");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_SKIPPED_THIS_CHOICE_AND, { std::to_string(coins) });
     CloseOffer(uint32(m_offer.size()));
     SendState();
     return true;
@@ -12291,19 +12292,19 @@ bool BonkRun::Lock(uint32 choice, std::string& error)
 {
     if ((m_state != STATE_RUNNING && m_state != STATE_PORTAL) || m_offer.empty())
     {
-        error = "There is nothing to lock right now.";
+        error = GetString(BONK_STRING_THERE_IS_NOTHING_TO_LOCK);
         return false;
     }
 
     if (m_offerSource != OFFER_CHEST)
     {
-        error = "Only chest choices can be locked.";
+        error = GetString(BONK_STRING_ONLY_CHEST_CHOICES_CAN_BE);
         return false;
     }
 
     if (choice < 1 || choice > m_offer.size())
     {
-        error = "Choose a number from 1 to " + std::to_string(m_offer.size()) + ".";
+        error = GetString(BONK_STRING_CHOOSE_NUMBER_FROM_1_TO, { std::to_string(m_offer.size()) });
         return false;
     }
 

@@ -125,11 +125,11 @@ namespace
         CharacterDatabase.DirectPExecute("DELETE FROM `bonk_account_bank` WHERE `item_guid` = %u OR `bag` = %u", item.itemGuid, item.itemGuid);
     }
 
-    std::string RequirementText(std::string const& name, uint8 ranks, uint8 maxRank)
+    std::string RequirementText(BonkPlayer const* bonk, std::string const& name, uint8 ranks, uint8 maxRank)
     {
         if (maxRank <= 1)
-            return "Requires " + name + ".";
-        return "Requires " + std::to_string(ranks) + (ranks == 1 ? " rank in " : " ranks in ") + name + ".";
+            return bonk->GetString(BONK_STRING_REQUIRES, { name });
+        return bonk->GetString(ranks == 1 ? BONK_STRING_REQUIRES_RANKS_IN_ONE : BONK_STRING_REQUIRES_RANKS_IN, { std::to_string(ranks), name });
     }
 }
 
@@ -390,8 +390,7 @@ void BonkPlayer::ReconcileMastery()
         return;
     std::string ignored;
     if (ResetMastery(ignored))
-        m_masteryNotice = "Mastery levels were recalculated, so your talents were reset. You have " + std::to_string(earned) +
-            (earned == 1 ? " talent point" : " talent points") + " to spend again.";
+        m_masteryNotice = GetString(earned == 1 ? BONK_STRING_TALENTS_RECALCULATED_ONE : BONK_STRING_TALENTS_RECALCULATED, { std::to_string(earned) });
 }
 
 void BonkPlayer::TakeTalentResetNotice()
@@ -401,7 +400,7 @@ void BonkPlayer::TakeTalentResetNotice()
     if (!result || !result->Fetch()[0].GetUInt8())
         return;
     CharacterDatabase.PExecute("UPDATE `bonk_account` SET `talent_reset` = 0 WHERE `account` = %u", accountId);
-    m_masteryNotice = "Your talents were reset for the new trees. All points have been refunded.";
+    m_masteryNotice = GetString(BONK_STRING_TALENTS_RESET_NEW_TREES);
 }
 
 void BonkPlayer::FlushMasteryNotice()
@@ -493,7 +492,7 @@ void BonkPlayer::RecordClassFloor(uint32 floor)
         GetProgressAccount(), uint32(m_player->GetClass()), floor);
     if (GetFloorTalentPoints() > pointsBefore)
     {
-        Notify("You earned a talent point for clearing Mythic floor " + std::to_string(floor) + "!");
+        Notify(BONK_STRING_YOU_EARNED_TALENT_POINT_FOR, { std::to_string(floor) });
         SendMasteryState();
     }
 }
@@ -594,12 +593,12 @@ bool BonkPlayer::SetTitle(uint32 titleId, std::string& error)
 {
     if (titleId && !sBonkQuests.HasTitle(GetProgressAccount(), titleId))
     {
-        error = "You haven't earned that title.";
+        error = GetString(BONK_STRING_YOU_HAVENT_EARNED_THAT_TITLE);
         return false;
     }
     if (GetRun())
     {
-        error = "You can't change your title during a run.";
+        error = GetString(BONK_STRING_YOU_CANT_CHANGE_YOUR_TITLE);
         return false;
     }
 
@@ -625,13 +624,12 @@ void BonkPlayer::AddMasteryXp(uint32 xp)
     uint32 const after = GetMasteryLevel();
     if (after > before)
         sBonkQuests.OnProgress(m_player, BONK_QUEST_MASTERY_LEVEL, m_player->GetClass(), after, true);
-    std::string const name = GetClassName() + " Mastery";
+    std::string const name = GetString(BONK_STRING_CLASS_MASTERY, { GetClassName() });
     if (after > before)
-        Notify("Your " + name + " reached level " + std::to_string(after) + "! You have " + std::to_string(after - before) +
-            (after - before == 1 ? " new talent point" : " new talent points") + " to spend at the Talent Trainer.");
+        Notify(after - before == 1 ? BONK_STRING_MASTERY_LEVEL_UP_ONE : BONK_STRING_MASTERY_LEVEL_UP,
+            { name, std::to_string(after), std::to_string(after - before) });
     else if (after < BONK_MASTERY_MAX_LEVEL)
-        Notify("You gained " + std::to_string(xp) + " " + name + " experience (" + std::to_string(BonkMastery::GetXpIntoLevel(m_masteryXp)) + "/" +
-            std::to_string(BonkMastery::GetXpForLevel(after + 1)) + ").");
+        Notify(BONK_STRING_YOU_GAINED_EXPERIENCE, { std::to_string(xp), name, std::to_string(BonkMastery::GetXpIntoLevel(m_masteryXp)), std::to_string(BonkMastery::GetXpForLevel(after + 1)) });
     SendMasteryState();
 }
 
@@ -643,61 +641,62 @@ bool BonkPlayer::LearnMastery(uint32 nodeId, std::string& message)
 
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     uint8 const rank = GetMasteryRank(nodeId);
     if (rank >= node->maxRank)
     {
-        message = node->name + " is already at its highest rank.";
+        message = GetString(BONK_STRING_ALREADY_HIGHEST_RANK, { node->name });
         return false;
     }
 
     if (sBonkMastery.IsFreeNode(*node))
     {
-        message = node->name + " is always yours.";
+        message = GetString(BONK_STRING_ALWAYS_YOURS, { node->name });
         return false;
     }
 
     uint32 const treePoints = sBonkMastery.GetRowGate(*node);
     if (GetMasterySpentInTree(node->tree) < treePoints)
     {
-        message = "Requires " + std::to_string(treePoints) + " points in this tree.";
+        message = GetString(BONK_STRING_REQUIRES_POINTS_IN_THIS_TREE, { std::to_string(treePoints) });
         return false;
     }
 
     if (!HasLearnedParent(*node, 0))
     {
-        message = "Learn a talent that leads to " + node->name + " first.";
+        message = GetString(BONK_STRING_LEARN_TALENT_THAT_LEADS_TO, { node->name });
         return false;
     }
 
     BonkMasteryNode const* required = sBonkMastery.GetNode(node->requiredId);
     if (required && GetMasteryRank(required->id) < node->requiredRank)
     {
-        message = RequirementText(required->name, node->requiredRank, required->maxRank);
+        message = RequirementText(this, required->name, node->requiredRank, required->maxRank);
         return false;
     }
 
     if (BonkMasteryNode const* rival = FindLearnedRival(*node))
     {
         message = node->effect == BONK_MASTERY_CAPSTONE && rival->effect == BONK_MASTERY_CAPSTONE ?
-            "You can only have one capstone. Unlearn " + rival->name + " first." :
-            node->name + " can't be learned with " + rival->name + ". Unlearn it first.";
+            GetString(BONK_STRING_ONLY_ONE_CAPSTONE, { rival->name }) :
+            GetString(BONK_STRING_CANT_BE_LEARNED_WITH, { node->name, rival->name });
         return false;
     }
 
     if (GetMasterySpent() >= GetMasteryPoints())
     {
-        message = "You have no talent points left. Level up your Mastery to earn more.";
+        message = GetString(BONK_STRING_NO_TALENT_POINTS_LEFT);
         return false;
     }
 
     m_masteryRanks[nodeId] = rank + 1;
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_mastery_node` (`account`, `node`, `rank`) VALUES (%u, %u, %u)",
         GetProgressAccount(), nodeId, uint32(rank + 1));
-    message = "You learned " + node->name + (node->maxRank > 1 ? " (rank " + std::to_string(rank + 1) + ")." : ".");
+    message = node->maxRank > 1 ? GetString(BONK_STRING_YOU_LEARNED_RANK, { node->name, std::to_string(rank + 1) }) :
+        GetString(BONK_STRING_YOU_LEARNED, { node->name });
     SendMasteryState();
     return true;
 }
@@ -721,12 +720,12 @@ bool BonkPlayer::ResetMastery(std::string& message)
 {
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
     if (m_masteryRanks.empty())
     {
-        message = "You have not spent any talent points.";
+        message = GetString(BONK_STRING_NO_TALENT_POINTS_SPENT);
         return false;
     }
 
@@ -738,7 +737,7 @@ bool BonkPlayer::ResetMastery(std::string& message)
 
     uint32 const refunded = GetMasterySpent();
     m_masteryRanks.clear();
-    message = "You got back " + std::to_string(refunded) + (refunded == 1 ? " talent point." : " talent points.");
+    message = GetString(refunded == 1 ? BONK_STRING_GOT_BACK_TALENT_POINT : BONK_STRING_GOT_BACK_TALENT_POINTS, { std::to_string(refunded) });
     SendMasteryState();
     return true;
 }
@@ -800,14 +799,14 @@ bool BonkPlayer::LoadMasteryPreset(uint8 slot, std::string& message)
         return false;
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     uint8 const active = m_activeMasteryPreset;
     if (slot == active)
     {
-        message = "Preset " + std::to_string(slot) + " is already active.";
+        message = GetString(BONK_STRING_PRESET_ALREADY_ACTIVE, { std::to_string(slot) });
         return false;
     }
 
@@ -830,9 +829,13 @@ bool BonkPlayer::LoadMasteryPreset(uint8 slot, std::string& message)
         GetProgressAccount(), uint32(m_player->GetClass()), uint32(slot));
 
     uint32 const missing = wanted - std::min(wanted, GetMasterySpent());
-    message = "Preset " + std::to_string(slot) + " is now active." + (preset.empty() ? " Spend your talent points to build it." : "");
-    if (missing)
-        message += " " + std::to_string(missing) + (missing == 1 ? " talent point" : " talent points") + " could not be placed.";
+    if (preset.empty())
+        message = GetString(BONK_STRING_PRESET_NOW_ACTIVE_EMPTY, { std::to_string(slot) });
+    else if (missing)
+        message = GetString(missing == 1 ? BONK_STRING_PRESET_NOW_ACTIVE_POINT_NOT_PLACED : BONK_STRING_PRESET_NOW_ACTIVE_POINTS_NOT_PLACED,
+            { std::to_string(slot), std::to_string(missing) });
+    else
+        message = GetString(BONK_STRING_PRESET_NOW_ACTIVE, { std::to_string(slot) });
     return true;
 }
 
@@ -882,14 +885,14 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
 
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     uint8 const rank = GetMasteryRank(nodeId);
     if (!rank)
     {
-        message = "You have not learned " + node->name + ".";
+        message = GetString(BONK_STRING_YOU_HAVE_NOT_LEARNED, { node->name });
         return false;
     }
 
@@ -901,13 +904,13 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
 
         if (other->requiredId == nodeId && rank - 1 < other->requiredRank)
         {
-            message = "Refund " + other->name + " first, because it requires this one.";
+            message = GetString(BONK_STRING_REFUND_FIRST_BECAUSE_IT_REQUIRES, { other->name });
             return false;
         }
 
         if (rank == 1 && std::find(other->parents.begin(), other->parents.end(), nodeId) != other->parents.end() && !HasLearnedParent(*other, nodeId))
         {
-            message = "Refund " + other->name + " first, because it leads from this one.";
+            message = GetString(BONK_STRING_REFUND_FIRST_BECAUSE_IT_LEADS, { other->name });
             return false;
         }
 
@@ -915,7 +918,7 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
         {
             if (GetMasterySpentAbove(other->tree, other->row) - 1 < sBonkMastery.GetRowGate(*other))
             {
-                message = "Refund " + other->name + " first, because it needs these points spent in this tree.";
+                message = GetString(BONK_STRING_REFUND_FIRST_BECAUSE_IT_NEEDS, { other->name });
                 return false;
             }
         }
@@ -933,7 +936,8 @@ bool BonkPlayer::RefundMastery(uint32 nodeId, std::string& message)
         CharacterDatabase.PExecute("DELETE FROM `bonk_account_mastery_node` WHERE `account` = %u AND `node` = %u",
             GetProgressAccount(), nodeId);
     }
-    message = "You refunded " + (node->maxRank > 1 ? "rank " + std::to_string(rank) + " of " : std::string()) + node->name + " and got 1 talent point back.";
+    message = node->maxRank > 1 ? GetString(BONK_STRING_REFUNDED_RANK_TALENT_POINT, { std::to_string(rank), node->name }) :
+        GetString(BONK_STRING_REFUNDED_TALENT_POINT, { node->name });
     SendMasteryState();
     return true;
 }
@@ -1359,13 +1363,13 @@ bool BonkPlayer::Spend(uint32 copper, std::string& message)
 {
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     if (m_player->GetMoney() < copper)
     {
-        message = "You need " + FormatBonkMoney(copper) + ".";
+        message = GetString(BONK_STRING_YOU_NEED, { FormatBonkMoney(copper) });
         return false;
     }
 
@@ -1378,13 +1382,13 @@ bool BonkPlayer::SpendShards(uint32 count, std::string& message)
 {
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     if (m_shards < count)
     {
-        message = "You need " + FormatBonkShards(count) + ". You have " + std::to_string(m_shards) + ".";
+        message = GetString(BONK_STRING_YOU_NEED_YOU_HAVE, { FormatBonkShards(count), std::to_string(m_shards) });
         return false;
     }
 
@@ -1421,13 +1425,13 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
     uint8 const rank = GetUpgradeRank(upgradeId);
     if (rank >= upgrade->maxRank)
     {
-        message = upgrade->name + " is already at its highest rank.";
+        message = GetString(BONK_STRING_ALREADY_HIGHEST_RANK, { upgrade->name });
         return false;
     }
 
     if (BonkQuest const* quest = GetLockingQuest(m_player, BONK_REWARD_UPGRADE, upgradeId))
     {
-        message = "Finish the quest \"" + quest->name + "\" to unlock " + upgrade->name + ".";
+        message = GetString(BONK_STRING_FINISH_QUEST_TO_UNLOCK, { quest->name, upgrade->name });
         return false;
     }
 
@@ -1440,7 +1444,7 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
     BonkUpgrade const* required = sBonkMgr.GetUpgrade(upgrade->layout.requiredId);
     if (required && GetUpgradeRank(required->id) < upgrade->layout.requiredRank)
     {
-        message = RequirementText(required->name, upgrade->layout.requiredRank, required->maxRank);
+        message = RequirementText(this, required->name, upgrade->layout.requiredRank, required->maxRank);
         return false;
     }
 
@@ -1450,7 +1454,7 @@ bool BonkPlayer::BuyUpgrade(uint32 upgradeId, std::string& message)
     m_upgradeRanks[upgradeId] = rank + 1;
     CharacterDatabase.PExecute("REPLACE INTO `bonk_account_upgrade` (`account`, `upgrade`, `rank`) VALUES (%u, %u, %u)",
         GetProgressAccount(), upgradeId, uint32(rank + 1));
-    message = upgrade->name + " is now rank " + std::to_string(rank + 1) + ".";
+    message = GetString(BONK_STRING_NOW_RANK, { upgrade->name, std::to_string(rank + 1) });
     return true;
 }
 
@@ -1463,20 +1467,20 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     uint8 const rank = GetTalentRank(talentId);
     if (rank >= talent->maxRank)
     {
-        message = talent->name + " is already learned.";
+        message = GetString(BONK_STRING_ALREADY_LEARNED, { talent->name });
         return false;
     }
 
     if (BonkQuest const* quest = GetLockingQuest(m_player, BONK_REWARD_TALENT, talentId))
     {
-        message = "Finish the quest \"" + quest->name + "\" to unlock " + talent->name + ".";
+        message = GetString(BONK_STRING_FINISH_QUEST_TO_UNLOCK, { quest->name, talent->name });
         return false;
     }
 
     BonkTalent const* required = sBonkMgr.GetTalent(talent->layout.requiredId);
     if (required && GetTalentRank(required->id) < talent->layout.requiredRank)
     {
-        message = RequirementText(required->name, talent->layout.requiredRank, required->maxRank);
+        message = RequirementText(this, required->name, talent->layout.requiredRank, required->maxRank);
         return false;
     }
 
@@ -1484,7 +1488,7 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     uint32 const above = GetFortuneSpentAbove(talent->layout.row);
     if (above < gate)
     {
-        message = "Spend " + FormatBonkShards(gate) + " on the rows above to unlock " + talent->name + ". You have spent " + std::to_string(above) + ".";
+        message = GetString(BONK_STRING_SPEND_ON_ROWS_ABOVE_TO, { FormatBonkShards(gate), talent->name, std::to_string(above) });
         return false;
     }
 
@@ -1494,8 +1498,7 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
         uint32 const done = sBonkQuests.GetCompletedCount(GetProgressAccount());
         if (done < needed)
         {
-            message = "You must complete " + std::to_string(needed) + " quests to buy rank " + std::to_string(rank + 1) + " of " + talent->name +
-                ". You have completed " + std::to_string(done) + ".";
+            message = GetString(BONK_STRING_YOU_MUST_COMPLETE_QUESTS_TO, { std::to_string(needed), std::to_string(rank + 1), talent->name, std::to_string(done) });
             return false;
         }
     }
@@ -1507,7 +1510,8 @@ bool BonkPlayer::BuyTalent(uint32 talentId, std::string& message)
     if (talent->IsToggle())
         m_enabledTalents.insert(talentId);
     SaveTalent(talentId);
-    message = talent->IsToggle() ? "You learned " + talent->name + " and switched it on." : talent->name + " is now rank " + std::to_string(rank + 1) + ".";
+    message = talent->IsToggle() ? GetString(BONK_STRING_LEARNED_AND_SWITCHED_ON, { talent->name }) :
+        GetString(BONK_STRING_NOW_RANK, { talent->name, std::to_string(rank + 1) });
     return true;
 }
 
@@ -1515,13 +1519,13 @@ bool BonkPlayer::ResetUpgrades(std::string& message)
 {
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     if (m_upgradeRanks.empty())
     {
-        message = "You have not bought any upgrades.";
+        message = GetString(BONK_STRING_NO_UPGRADES_BOUGHT);
         return false;
     }
 
@@ -1535,7 +1539,7 @@ bool BonkPlayer::ResetUpgrades(std::string& message)
     CharacterDatabase.PExecute("DELETE FROM `bonk_account_upgrade` WHERE `account` = %u", GetProgressAccount());
     m_player->ModifyMoney(int32(refunded));
     SaveGold();
-    message = "You refunded all your upgrades and got " + FormatBonkMoney(refunded) + " back.";
+    message = GetString(BONK_STRING_YOU_REFUNDED_ALL_YOUR_UPGRADES, { FormatBonkMoney(refunded) });
     return true;
 }
 
@@ -1543,12 +1547,12 @@ bool BonkPlayer::ResetTalents(std::string& message)
 {
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
     if (m_talentRanks.empty())
     {
-        message = "You have not bought any fortunes.";
+        message = GetString(BONK_STRING_NO_FORTUNES_BOUGHT);
         return false;
     }
 
@@ -1562,7 +1566,7 @@ bool BonkPlayer::ResetTalents(std::string& message)
     m_enabledTalents.clear();
     CharacterDatabase.PExecute("DELETE FROM `bonk_account_talent` WHERE `account` = %u", GetProgressAccount());
     AddShards(refunded);
-    message = "You refunded all your fortunes and got " + FormatBonkShards(refunded) + " back.";
+    message = GetString(BONK_STRING_YOU_REFUNDED_ALL_YOUR_FORTUNES, { FormatBonkShards(refunded) });
     return true;
 }
 
@@ -1574,14 +1578,14 @@ bool BonkPlayer::RefundUpgrade(uint32 upgradeId, std::string& message)
 
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     uint8 const rank = GetUpgradeRank(upgradeId);
     if (!rank)
     {
-        message = "You have not bought " + upgrade->name + ".";
+        message = GetString(BONK_STRING_YOU_HAVE_NOT_BOUGHT, { upgrade->name });
         return false;
     }
 
@@ -1589,7 +1593,7 @@ bool BonkPlayer::RefundUpgrade(uint32 upgradeId, std::string& message)
         if (BonkUpgrade const* other = sBonkMgr.GetUpgrade(itr.first))
             if (itr.second && other->layout.requiredId == upgradeId && rank - 1 < other->layout.requiredRank)
             {
-                message = "Refund " + other->name + " first, because it requires this one.";
+                message = GetString(BONK_STRING_REFUND_FIRST_BECAUSE_IT_REQUIRES, { other->name });
                 return false;
             }
 
@@ -1613,8 +1617,8 @@ bool BonkPlayer::RefundUpgrade(uint32 upgradeId, std::string& message)
     }
     m_player->ModifyMoney(int32(refunded));
     SaveGold();
-    message = "You refunded " + (upgrade->maxRank > 1 ? "rank " + std::to_string(rank) + " of " : std::string()) + upgrade->name + " and got " +
-        FormatBonkMoney(refunded) + " back.";
+    message = upgrade->maxRank > 1 ? GetString(BONK_STRING_REFUNDED_RANK_GOT_BACK, { std::to_string(rank), upgrade->name, FormatBonkMoney(refunded) }) :
+        GetString(BONK_STRING_REFUNDED_GOT_BACK, { upgrade->name, FormatBonkMoney(refunded) });
     return true;
 }
 
@@ -1651,14 +1655,14 @@ bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
 
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
     uint8 const rank = GetTalentRank(talentId);
     if (!rank)
     {
-        message = "You have not bought " + talent->name + ".";
+        message = GetString(BONK_STRING_YOU_HAVE_NOT_BOUGHT, { talent->name });
         return false;
     }
 
@@ -1666,7 +1670,7 @@ bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
         if (BonkTalent const* other = sBonkMgr.GetTalent(itr.first))
             if (itr.second && other->layout.requiredId == talentId && rank - 1 < other->layout.requiredRank)
             {
-                message = "Refund " + other->name + " first, because it requires this one.";
+                message = GetString(BONK_STRING_REFUND_FIRST_BECAUSE_IT_REQUIRES, { other->name });
                 return false;
             }
 
@@ -1675,7 +1679,7 @@ bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
             if (itr.second && other->layout.row > talent->layout.row &&
                 GetFortuneSpentAbove(other->layout.row, talentId) < GetFortuneRowGate(other->layout.row))
             {
-                message = "Refund " + other->name + " first, because it needs the tickets you spent here.";
+                message = GetString(BONK_STRING_REFUND_FIRST_BECAUSE_IT_NEEDS_TICKETS, { other->name });
                 return false;
             }
 
@@ -1693,8 +1697,8 @@ bool BonkPlayer::RefundTalent(uint32 talentId, std::string& message)
             GetProgressAccount(), talentId);
     }
     AddShards(refunded);
-    message = "You refunded " + (talent->maxRank > 1 ? "rank " + std::to_string(rank) + " of " : std::string()) + talent->name + " and got " +
-        FormatBonkShards(refunded) + " back.";
+    message = talent->maxRank > 1 ? GetString(BONK_STRING_REFUNDED_RANK_GOT_BACK, { std::to_string(rank), talent->name, FormatBonkShards(refunded) }) :
+        GetString(BONK_STRING_REFUNDED_GOT_BACK, { talent->name, FormatBonkShards(refunded) });
     return true;
 }
 
@@ -1706,7 +1710,7 @@ bool BonkPlayer::ToggleTalent(uint32 talentId, std::string& message)
 
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
 
@@ -1716,7 +1720,7 @@ bool BonkPlayer::ToggleTalent(uint32 talentId, std::string& message)
     else
         m_enabledTalents.erase(talentId);
     SaveTalent(talentId);
-    message = talent->name + (enable ? " is now on." : " is now off.");
+    message = GetString(enable ? BONK_STRING_IS_NOW_ON : BONK_STRING_IS_NOW_OFF, { talent->name });
     return true;
 }
 
@@ -1766,19 +1770,19 @@ bool BonkPlayer::BuyBanSlot(BonkQuestReward type, std::string& message)
 {
     if (m_run)
     {
-        message = "You can't do that during a run.";
+        message = GetString(BONK_STRING_CANT_DO_THAT_DURING_RUN);
         return false;
     }
     if (!IsAtDeck())
     {
-        message = "Visit the Darkmoon Deck at the Inn to buy ban slots.";
+        message = GetString(BONK_STRING_VISIT_DARKMOON_DECK_AT_INN);
         return false;
     }
     BonkTalentEffect const effect = type == BONK_REWARD_CARD ? BONK_TALENT_CARD_BANS : BONK_TALENT_GLYPH_BANS;
     for (auto const& itr : sBonkMgr.GetTalents())
         if (itr.second.effect == effect)
             return BuyTalent(itr.first, message);
-    message = "Sayge has no ban slots for sale.";
+    message = GetString(BONK_STRING_SAYGE_HAS_NO_BAN_SLOTS);
     return false;
 }
 
@@ -1795,7 +1799,7 @@ void BonkPlayer::ShopLearn(uint32 id)
 {
     if (!IsAtShop())
     {
-        Notify("You are too far away from " + (m_shopNpcName.empty() ? std::string("the shop") : m_shopNpcName) + ".");
+        Notify(m_shopNpcName.empty() ? BONK_STRING_TOO_FAR_FROM_SHOP : BONK_STRING_TOO_FAR_FROM, { m_shopNpcName });
         SendAddon("shopclose");
         return;
     }
@@ -1817,7 +1821,7 @@ void BonkPlayer::ShopUnlearn(uint32 id)
 {
     if (!IsAtShop())
     {
-        Notify("You are too far away from " + (m_shopNpcName.empty() ? std::string("the shop") : m_shopNpcName) + ".");
+        Notify(m_shopNpcName.empty() ? BONK_STRING_TOO_FAR_FROM_SHOP : BONK_STRING_TOO_FAR_FROM, { m_shopNpcName });
         SendAddon("shopclose");
         return;
     }
@@ -1839,7 +1843,7 @@ void BonkPlayer::ShopToggle(uint32 id)
 {
     if (!IsAtShop() || m_shop != BONK_SHOP_TALENTS)
     {
-        Notify("You are too far away from " + (m_shopNpcName.empty() ? std::string("the shop") : m_shopNpcName) + ".");
+        Notify(m_shopNpcName.empty() ? BONK_STRING_TOO_FAR_FROM_SHOP : BONK_STRING_TOO_FAR_FROM, { m_shopNpcName });
         SendAddon("shopclose");
         return;
     }
@@ -1855,7 +1859,7 @@ void BonkPlayer::ShopPreset(uint8 slot)
 {
     if (!IsAtShop() || m_shop != BONK_SHOP_MASTERY)
     {
-        Notify("You are too far away from " + (m_shopNpcName.empty() ? std::string("the shop") : m_shopNpcName) + ".");
+        Notify(m_shopNpcName.empty() ? BONK_STRING_TOO_FAR_FROM_SHOP : BONK_STRING_TOO_FAR_FROM, { m_shopNpcName });
         SendAddon("shopclose");
         return;
     }
@@ -1872,7 +1876,7 @@ void BonkPlayer::ShopRespec()
 {
     if (!IsAtShop())
     {
-        Notify("You are too far away from " + (m_shopNpcName.empty() ? std::string("the shop") : m_shopNpcName) + ".");
+        Notify(m_shopNpcName.empty() ? BONK_STRING_TOO_FAR_FROM_SHOP : BONK_STRING_TOO_FAR_FROM, { m_shopNpcName });
         SendAddon("shopclose");
         return;
     }
@@ -2161,9 +2165,9 @@ std::string BonkPlayer::GetTrainingCapHint() const
 {
     uint8 const cap = GetTrainingRankCap();
     if (!IsTierCleared("heroic"))
-        return "Clear Heroic to unlock ranks " + std::to_string(cap + 1) + " to " + std::to_string(cap + BONK_TRAINING_HEROIC_RANKS) + ".";
+        return GetString(BONK_STRING_CLEAR_HEROIC_TO_UNLOCK_RANKS, { std::to_string(cap + 1), std::to_string(cap + BONK_TRAINING_HEROIC_RANKS) });
     uint32 const floor = (cap - BONK_TRAINING_OPEN_RANKS - BONK_TRAINING_HEROIC_RANKS + 1) * BONK_TRAINING_FLOORS_PER_RANK;
-    return "Clear Mythic floor " + std::to_string(floor) + " to unlock rank " + std::to_string(cap + 1) + ".";
+    return GetString(BONK_STRING_CLEAR_MYTHIC_FLOOR_TO_UNLOCK_RANK, { std::to_string(floor), std::to_string(cap + 1) });
 }
 
 uint8 BonkPlayer::GetDetermination() const
@@ -2444,19 +2448,19 @@ bool BonkPlayer::RerollFoundGear(uint32 guidLow, uint8 lineIndex, std::string& e
 {
     if (!m_player->FindNearestCreature(BONK_TIER_VENDOR, BONK_GEAR_VENDOR_RANGE))
     {
-        error = "Talk to the Mythic Quartermaster to reroll gear.";
+        error = GetString(BONK_STRING_TALK_TO_QUARTERMASTER_TO_REROLL);
         return false;
     }
     Item* item = FindUpgradableGear(guidLow);
     BonkFoundGear found;
     if (!item || !sBonkFound.Get(guidLow, found) || lineIndex >= found.lines.size())
     {
-        error = "Only bonus stats on gear you found in Mythic runs can be rerolled.";
+        error = GetString(BONK_STRING_ONLY_FOUND_BONUS_STATS_REROLL);
         return false;
     }
     if (found.rerollLine != BONK_FOUND_NO_LINE && found.rerollLine != lineIndex)
     {
-        error = "You may only reroll one stat per item.";
+        error = GetString(BONK_STRING_ONE_STAT_REROLL_PER_ITEM);
         return false;
     }
     if (!Spend(BonkFound::GetRerollCost(found.rerolls), error))
@@ -2490,7 +2494,7 @@ bool BonkPlayer::PickFoundReroll(uint32 guidLow, uint8 choice, std::string& erro
     SendFoundUpgrades();
     if (!valid)
     {
-        error = "Reroll the stat again to get new choices.";
+        error = GetString(BONK_STRING_REROLL_STAT_AGAIN);
         return false;
     }
     if (choice > 0)
@@ -2532,26 +2536,26 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
 {
     if (!m_player->FindNearestCreature(BONK_TIER_VENDOR, BONK_GEAR_VENDOR_RANGE))
     {
-        error = "Talk to the Mythic Quartermaster to upgrade gear.";
+        error = GetString(BONK_STRING_TALK_TO_QUARTERMASTER_TO_UPGRADE);
         return false;
     }
     Item* item = FindUpgradableGear(guidLow);
     BonkFoundGear found;
     if (!item || !sBonkFound.Get(guidLow, found))
     {
-        error = "Only gear you found in Mythic runs can be upgraded.";
+        error = GetString(BONK_STRING_ONLY_FOUND_GEAR_UPGRADE);
         return false;
     }
     uint32 const tier = BonkFound::GetItemTier(item);
     uint32 const cost = BonkFound::GetUpgradeCost(tier);
     if (tier >= GetUpgradeCeiling())
     {
-        error = "Clear Mythic floor " + std::to_string(tier + 1) + " to raise this to " + BonkFound::DescribeTier(tier + 1) + ".";
+        error = GetString(BONK_STRING_CLEAR_MYTHIC_FLOOR_TO_RAISE, { std::to_string(tier + 1), BonkFound::DescribeTier(tier + 1) });
         return false;
     }
     if (m_scrap < cost)
     {
-        error = "You need " + std::to_string(cost) + " Scrap. You have " + std::to_string(m_scrap) + ".";
+        error = GetString(BONK_STRING_YOU_NEED_SCRAP_YOU_HAVE, { std::to_string(cost), std::to_string(m_scrap) });
         return false;
     }
 
@@ -2564,13 +2568,13 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
         uint32 const entry = BonkMgr::GetGearAtTier(item->GetEntry(), found.tier);
         if (!entry)
         {
-            error = name + " can't be upgraded.";
+            error = GetString(BONK_STRING_ITEM_CANT_BE_UPGRADED, { name });
             return false;
         }
         item = ReplaceGearEntry(item, entry);
         if (!item)
         {
-            error = "You have no room to upgrade " + name + ".";
+            error = GetString(BONK_STRING_NO_ROOM_TO_UPGRADE, { name });
             return false;
         }
         m_player->SendNewItem(item, 1, true, false);
@@ -2581,7 +2585,7 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
     m_scrap -= cost;
     CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `scrap`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `scrap` = VALUES(`scrap`)",
         GetProgressAccount(), m_scrap);
-    Notify(name + " is now " + BonkFound::DescribeTier(found.tier) + ".");
+    Notify(BONK_STRING_ITEM_IS_NOW, { name, BonkFound::DescribeTier(found.tier) });
     SendQuartermaster();
     SendFoundUpgrades();
     SendFoundItems();
@@ -2703,8 +2707,10 @@ void BonkPlayer::ExchangeTierPieces()
         }
         ++exchanged;
     }
-    Notify(exchanged ? "Refitted " + std::to_string(exchanged) + (exchanged == 1 ? " set piece" : " set pieces") + " for your class." :
-        "You have no set pieces from other classes in your bags, or not enough gold.");
+    if (!exchanged)
+        Notify(BONK_STRING_NO_SET_PIECES_TO_REFIT);
+    else
+        Notify(exchanged == 1 ? BONK_STRING_REFITTED_SET_PIECE : BONK_STRING_REFITTED_SET_PIECES, { std::to_string(exchanged) });
 }
 
 void BonkPlayer::SendGearTabs(Creature const* vendor) const
@@ -2758,19 +2764,19 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkRunChoic
 {
     if (m_run)
     {
-        error = "You are already in a run. Use .bonk stop to leave it.";
+        error = GetString(BONK_STRING_YOU_ARE_ALREADY_IN_RUN);
         return false;
     }
 
     if (!IsTierUnlocked(tier))
     {
-        error = tier.name + " is locked. " + GetUnlockHint(tier) + ".";
+        error = GetString(BONK_STRING_TIER_LOCKED, { tier.name, GetUnlockHint(tier) });
         return false;
     }
 
     if (choice.dungeon && !IsTierCleared(tier))
     {
-        error = "Clear " + tier.name + " first to unlock its challenges.";
+        error = GetString(BONK_STRING_CLEAR_FIRST_TO_UNLOCK_ITS, { tier.name });
         return false;
     }
 
@@ -2779,27 +2785,26 @@ bool BonkPlayer::StartRun(BonkTier const& tier, std::string& error, BonkRunChoic
         std::vector<uint32> const checkpoints = GetCheckpoints(tier);
         if (choice.dungeon || std::find(checkpoints.begin(), checkpoints.end(), choice.startFloor) == checkpoints.end())
         {
-            error = "You can't start on floor " + std::to_string(choice.startFloor) + " yet. Checkpoints open " +
-                std::to_string(BONK_CHECKPOINT_GAP) + " floors below your best Mythic floor for this class.";
+            error = GetString(BONK_STRING_CANT_START_ON_FLOOR_YET, { std::to_string(choice.startFloor), std::to_string(BONK_CHECKPOINT_GAP) });
             return false;
         }
     }
 
     if (m_player->IsInCombat())
     {
-        error = "You can't start a run while in combat.";
+        error = GetString(BONK_STRING_CANT_START_RUN_IN_COMBAT);
         return false;
     }
 
     if (m_player->IsTaxiFlying())
     {
-        error = "You can't start a run while flying.";
+        error = GetString(BONK_STRING_CANT_START_RUN_WHILE_FLYING);
         return false;
     }
 
     if (!IsPlayableClass(m_player->GetClass()) || !sBonkMgr.HasStarterSpell(m_player->GetClassMask()))
     {
-        error = "The " + GetClassName() + " is being reworked and can't start a run yet.";
+        error = GetString(BONK_STRING_CLASS_REWORKED_NO_RUN, { GetClassName() });
         return false;
     }
 
@@ -2884,7 +2889,7 @@ void BonkPlayer::RecordStage(uint32 tierId, uint32 stage)
 
     for (BonkTier const* tier : locked)
         if (IsTierUnlocked(*tier))
-            Notify(GetString(BONK_STRING_TIER_UNLOCKED, { tier->name }));
+            Notify(BONK_STRING_TIER_UNLOCKED, { tier->name });
 
     if (m_determination)
         SendDetermination();
@@ -2975,7 +2980,7 @@ void BonkPlayer::ResetReworkedTrinkets()
     CharacterDatabase.PExecute("DELETE FROM `bonk_trinket_reset` WHERE `guid` = %u", guid);
     for (uint8 slot : { EQUIPMENT_SLOT_TRINKET1, EQUIPMENT_SLOT_TRINKET2 })
         m_player->AutoUnequipItemFromSlot(slot);
-    Notify("Trinkets have new effects, so yours were moved to your bags. Hover them to see what they do now.");
+    Notify(BONK_STRING_TRINKETS_MOVED_TO_BAGS);
 }
 
 void BonkPlayer::Notify(std::string const& text) const
@@ -3402,7 +3407,7 @@ void BonkPlayer::UpdateReviveOutsideRun(uint32 diff)
     m_player->ResurrectPlayer(1.0f);
     m_player->SpawnCorpseBones();
     TeleportToCamp();
-    Notify("You were brought back to the Inn.");
+    Notify(BONK_STRING_YOU_WERE_BROUGHT_BACK_TO);
 }
 
 void BonkPlayer::SitAtCamp()
@@ -3434,7 +3439,7 @@ void BonkPlayer::UpdateCampMailNotice(uint32 diff)
         return;
     }
     m_campMailNoticeMs = 0;
-    Notify("You got mail!");
+    Notify(BONK_STRING_YOU_GOT_MAIL);
 }
 
 bool BonkPlayer::HasUnreadMail() const

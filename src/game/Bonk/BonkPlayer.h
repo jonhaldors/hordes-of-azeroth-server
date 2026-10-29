@@ -267,6 +267,8 @@ class BonkPlayer
         void Notify(std::string const& text) const;
         void ResetReworkedTrinkets();
         void NotifyFind(std::string const& text) const;
+        void Notify(BonkString id, std::vector<std::string> const& args = {}) const { Notify(GetString(id, args)); }
+        void NotifyFind(BonkString id, std::vector<std::string> const& args = {}) const { NotifyFind(GetString(id, args)); }
         void SendGlyphInfo() const;
         struct BanSource
         {

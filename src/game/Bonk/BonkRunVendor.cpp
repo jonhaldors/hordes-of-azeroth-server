@@ -2,6 +2,7 @@
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
+#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "Log.h"
@@ -84,7 +85,7 @@ void BonkRun::UpdateVendor(uint32 diff)
             return;
         }
         if (vendor)
-            m_player->GetBonkPlayer()->Notify(std::string(BONK_VENDOR_NAME) + " packs up and moves on.");
+            m_player->GetBonkPlayer()->Notify(BONK_STRING_VENDOR_LEAVES, { std::string(BONK_VENDOR_NAME) });
         DespawnVendor();
         return;
     }
@@ -138,7 +139,7 @@ bool BonkRun::SpawnVendor()
     m_vendorObjective = m_objectives.Add(m_player, BONK_OBJECTIVE_VENDOR, spot.x, spot.y, spot.z, BONK_VENDOR_LABEL, BONK_VENDOR_SECONDS,
         BONK_VENDOR_ICON, BONK_VENDOR_DESCRIPTION);
     StockVendor(false);
-    m_player->GetBonkPlayer()->Notify(std::string(BONK_VENDOR_NAME) + " the goblin merchant has set up shop nearby for 1 minute!");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_VENDOR_ARRIVES, { std::string(BONK_VENDOR_NAME) });
     return true;
 }
 
@@ -268,7 +269,7 @@ void BonkRun::OpenVendor(Creature* vendor)
         return;
     if (!m_offer.empty() || !m_leyOffer.empty())
     {
-        m_player->GetBonkPlayer()->Notify("Make your choice first.");
+        m_player->GetBonkPlayer()->Notify(BONK_STRING_MAKE_YOUR_CHOICE_FIRST);
         return;
     }
 
@@ -295,25 +296,25 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = std::string(BONK_VENDOR_NAME) + "'s shop isn't open.";
+        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { std::string(BONK_VENDOR_NAME) });
         return false;
     }
     if (index < 1 || index > m_vendorStock.size())
     {
-        error = "Choose a number from 1 to " + std::to_string(m_vendorStock.size()) + ".";
+        error = GetString(BONK_STRING_CHOOSE_NUMBER_FROM_1_TO, { std::to_string(m_vendorStock.size()) });
         return false;
     }
 
     VendorSlot& slot = m_vendorStock[index - 1];
     if (slot.state != VENDOR_FOR_SALE)
     {
-        error = slot.state == VENDOR_SOLD ? "You already bought that." : "That no longer fits your build.";
+        error = slot.state == VENDOR_SOLD ? GetString(BONK_STRING_ALREADY_BOUGHT_THAT) : GetString(BONK_STRING_NO_LONGER_FITS_YOUR_BUILD);
         SendVendor();
         return false;
     }
     if (m_coins < slot.price)
     {
-        error = "That costs " + std::to_string(slot.price) + " Valor. You have " + std::to_string(m_coins) + ".";
+        error = GetString(BONK_STRING_THAT_COSTS_VALOR_YOU_HAVE, { std::to_string(slot.price), std::to_string(m_coins) });
         SendVendor();
         return false;
     }
@@ -345,7 +346,7 @@ bool BonkRun::BuyFromVendor(uint32 index, std::string& error)
         CheckVendorStock();
     }
 
-    m_player->GetBonkPlayer()->Notify("You bought " + name + ".");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_BOUGHT, { name });
     SendState();
     SendVendor();
     return true;
@@ -377,12 +378,12 @@ bool BonkRun::LockVendorSlot(uint32 index, std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = std::string(BONK_VENDOR_NAME) + "'s shop isn't open.";
+        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { std::string(BONK_VENDOR_NAME) });
         return false;
     }
     if (index < 1 || index > m_vendorStock.size() || m_vendorStock[index - 1].state != VENDOR_FOR_SALE)
     {
-        error = "Choose something still for sale.";
+        error = GetString(BONK_STRING_CHOOSE_SOMETHING_STILL_FOR_SALE);
         return false;
     }
 
@@ -395,21 +396,20 @@ bool BonkRun::RerollVendor(std::string& error)
 {
     if (!m_vendorOpen)
     {
-        error = std::string(BONK_VENDOR_NAME) + "'s shop isn't open.";
+        error = GetString(BONK_STRING_VENDOR_SHOP_NOT_OPEN, { std::string(BONK_VENDOR_NAME) });
         return false;
     }
     if (GetVendorRestocksLeft() == 0)
     {
-        error = GetUtility(BONK_UTILITY_VENDOR_REROLLS) > 0.0f
-            ? std::string(BONK_VENDOR_NAME) + " has no more wares to restock this visit."
-            : std::string(BONK_VENDOR_NAME) + " doesn't restock. Sayge's Restock upgrade lets him restock during a visit.";
+        error = GetString(GetUtility(BONK_UTILITY_VENDOR_REROLLS) > 0.0f ? BONK_STRING_VENDOR_NO_MORE_WARES : BONK_STRING_VENDOR_DOESNT_RESTOCK,
+            { std::string(BONK_VENDOR_NAME) });
         SendVendor();
         return false;
     }
     uint32 const cost = GetVendorRerollCost();
     if (m_coins < cost)
     {
-        error = "A reroll costs " + std::to_string(cost) + " Valor. You have " + std::to_string(m_coins) + ".";
+        error = GetString(BONK_STRING_REROLL_COSTS_VALOR_YOU_HAVE, { std::to_string(cost), std::to_string(m_coins) });
         SendVendor();
         return false;
     }
@@ -427,17 +427,17 @@ bool BonkRun::SpawnVendorNow(std::string& error)
 {
     if (m_state != STATE_RUNNING)
     {
-        error = "Only a running floor can have a merchant.";
+        error = GetString(BONK_STRING_ONLY_RUNNING_FLOOR_MERCHANT);
         return false;
     }
     if (!m_vendorGuid.IsEmpty())
     {
-        error = "The merchant is already here.";
+        error = GetString(BONK_STRING_MERCHANT_IS_ALREADY_HERE);
         return false;
     }
     if (!SpawnVendor())
     {
-        error = "No spawn point 100-250 yards away yet; try again in a few seconds.";
+        error = GetString(BONK_STRING_NO_MERCHANT_SPAWN_POINT);
         return false;
     }
     return true;

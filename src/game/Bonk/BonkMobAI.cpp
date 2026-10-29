@@ -1,6 +1,7 @@
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkRun.h"
+#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "DBCStores.h"
@@ -609,7 +610,7 @@ void BonkMobAI::RollAffixes(uint32 count)
             std::string list;
             for (size_t i = 0; i < names.size(); ++i)
                 list += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
-            owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " is " + list + "!");
+            owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_AFFIXES, { std::string(m_creature->GetName()), list });
         }
 }
 
@@ -1482,7 +1483,7 @@ void BonkMobAI::UpdateAffixes(uint32 diff, Player* owner)
     {
         m_enraged = true;
         m_creature->AddAura(BONK_SPELL_RAGING);
-        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " is enraged!");
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_ENRAGED, { std::string(m_creature->GetName()) });
     }
 }
 
@@ -2195,7 +2196,7 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
     {
         ++m_phase;
         run->SpawnPhaseAdds(m_creature, boss ? BONK_PHASE_ADDS + 2 * step : BONK_PHASE_MINI_ADDS + step, boss ? step : 0);
-        bonk->Notify(name + " calls for aid!");
+        bonk->Notify(BONK_STRING_ENEMY_CALLS_FOR_AID, { name });
         if (boss)
             RaiseWards(run, step);
 
@@ -2203,14 +2204,14 @@ void BonkMobAI::UpdatePhases(uint32 diff, Player* owner)
         {
             int32 const absorb = std::max(1, int32(m_creature->GetMaxHealth() * BONK_PHASE_SHIELD));
             m_creature->CastCustomSpell(m_creature, BONK_SPELL_SHIELD, absorb, {}, {}, true);
-            bonk->Notify(name + " raises a shield! Break through it.");
+            bonk->Notify(BONK_STRING_ENEMY_RAISES_SHIELD, { name });
         }
 
         if (boss && m_phase == phases)
         {
             m_phaseEnraged = true;
             m_creature->AddAura(BONK_SPELL_RAGING);
-            bonk->Notify(name + " is enraged!");
+            bonk->Notify(BONK_STRING_ENEMY_ENRAGED, { name });
             if (step >= 1)
             {
                 m_voidZones = true;
@@ -2321,7 +2322,7 @@ void BonkMobAI::RaiseWards(BonkRun* run, uint32 step)
     {
         m_wardsAnnounced = true;
         if (Player* owner = GetOwner())
-            owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " raises healing wards. Destroy them before they heal it.");
+            owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_RAISES_HEALING_WARDS, { std::string(m_creature->GetName()) });
     }
 }
 
@@ -2365,7 +2366,7 @@ void BonkMobAI::StartLanes(Player* owner)
     if (!m_lanesAnnounced)
     {
         m_lanesAnnounced = true;
-        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " makes the ground erupt in lanes. Step into the lane that stays clear.");
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_GROUND_ERUPTS, { std::string(m_creature->GetName()) });
     }
 }
 
@@ -2427,7 +2428,7 @@ void BonkMobAI::StartBossBlink(Player* owner)
     m_creature->SetFacingToObject(owner);
     m_creature->SendPlaySpellVisualKit(BONK_KIT_BLINK_LEAVE);
     Hold(BONK_BLINK_WINDUP_MS);
-    owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " blinks to you when you stay out of reach.");
+    owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_BLINKS_TO_YOU, { std::string(m_creature->GetName()) });
 }
 
 void BonkMobAI::FinishBossBlink(Player* owner, BonkRun* run)
@@ -2483,7 +2484,7 @@ void BonkMobAI::UpdateHeroMarks(uint32 diff, Player* owner, BonkRun* run)
     if (!m_markAnnounced)
     {
         m_markAnnounced = true;
-        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " marks you. The mark bursts where you stand when it fades.");
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_MARKS_YOU, { std::string(m_creature->GetName()) });
     }
 }
 
@@ -2507,7 +2508,7 @@ void BonkMobAI::UpdateFarBlast(uint32 diff, Player* owner, BonkRun* run)
     if (!m_farAnnounced)
     {
         m_farAnnounced = true;
-        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " bombards you while you keep your distance.");
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_BOMBARDS_YOU, { std::string(m_creature->GetName()) });
     }
 }
 
@@ -2531,7 +2532,7 @@ void BonkMobAI::UpdateLeash(uint32 diff, Player* owner)
     if (!m_leashAnnounced)
     {
         m_leashAnnounced = true;
-        owner->GetBonkPlayer()->Notify(std::string(m_creature->GetName()) + " recovers while you stay away.");
+        owner->GetBonkPlayer()->Notify(BONK_STRING_ENEMY_RECOVERS, { std::string(m_creature->GetName()) });
     }
 }
 

@@ -2,6 +2,7 @@
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
+#include "BonkStrings.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "Map.h"
@@ -101,7 +102,10 @@ void BonkRun::TriggerHidden()
             SpawnMobAt(add, x, y, z);
     }
 
-    m_player->GetBonkPlayer()->Notify(hidden->foundText.empty() ? "You found " + hidden->name + "!" : hidden->foundText);
+    if (hidden->foundText.empty())
+        m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_FOUND, { hidden->name });
+    else
+        m_player->GetBonkPlayer()->Notify(hidden->foundText);
 }
 
 void BonkRun::OnHiddenKilled(Creature const* mob)
@@ -112,7 +116,7 @@ void BonkRun::OnHiddenKilled(Creature const* mob)
     m_hidden.boss.Clear();
     sBonkQuests.OnProgress(m_player, BONK_QUEST_DISCOVER, hidden->id, 1);
     SpawnChest(true, mob->GetPositionX(), mob->GetPositionY(), mob->GetPositionZ(), hidden->chestChoices);
-    m_player->GetBonkPlayer()->Notify("You defeated " + hidden->name + ", and a chest appears!");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_YOU_DEFEATED_AND_CHEST_APPEARS, { hidden->name });
 }
 
 void BonkRun::ClearHidden()

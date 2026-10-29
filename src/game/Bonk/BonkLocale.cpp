@@ -30,8 +30,7 @@ namespace
 
     bool ReadLocale(std::string const& name, char const* table, uint32 id, LocaleConstant& locale)
     {
-        locale = GetLocaleByName(name);
-        if (locale != LOCALE_enUS)
+        if (BonkLocale::ParseLocale(name, locale) && locale != LOCALE_enUS)
             return true;
 
         sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `%s`: row %u has locale '%s', which is English or unknown, skipped.", table, id, name.c_str());

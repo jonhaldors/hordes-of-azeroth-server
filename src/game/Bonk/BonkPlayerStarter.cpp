@@ -2,6 +2,7 @@
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkQuests.h"
+#include "BonkStrings.h"
 #include "Database/DatabaseEnv.h"
 #include "Player.h"
 #include "WorldSession.h"
@@ -15,17 +16,18 @@ namespace
         return (weapon.starterClassMask & classMask) != 0;
     }
 
-    std::string DescribeStarterUnlock(BonkMasteryNode const& node)
+    std::string DescribeStarterUnlock(BonkPlayer const* bonk, BonkMasteryNode const& node)
     {
-        BonkMasteryTree const* tree = sBonkMastery.GetTree(node.tree);
-        return "Learn " + node.name + (tree ? " in the " + tree->name + " talents" : std::string()) + " to unlock it.";
+        if (BonkMasteryTree const* tree = sBonkMastery.GetTree(node.tree))
+            return bonk->GetString(BONK_STRING_LEARN_IN_TALENTS_TO_UNLOCK, { node.name, tree->name });
+        return bonk->GetString(BONK_STRING_LEARN_TO_UNLOCK, { node.name });
     }
 
-    std::string DescribeSpellUnlock(uint32 weaponId)
+    std::string DescribeSpellUnlock(BonkPlayer const* bonk, uint32 weaponId)
     {
         if (BonkQuest const* quest = sBonkQuests.GetUnlockingQuest(BONK_REWARD_WEAPON, weaponId))
-            return "Finish the quest " + quest->name + " first.";
-        return "Unlock it first.";
+            return bonk->GetString(BONK_STRING_FINISH_QUEST_FIRST, { quest->name });
+        return bonk->GetString(BONK_STRING_UNLOCK_IT_FIRST);
     }
 }
 
@@ -57,12 +59,12 @@ std::vector<BonkPlayer::StarterOption> BonkPlayer::GetStarterOptions() const
                 if (!GetMasteryRank(node->id))
                 {
                     option.unlocked = false;
-                    option.hint = DescribeStarterUnlock(*node);
+                    option.hint = DescribeStarterUnlock(this, *node);
                 }
         if (option.unlocked && sBonkQuests.IsLocked(account, BONK_REWARD_WEAPON, weapon.id))
         {
             option.unlocked = false;
-            option.hint = DescribeSpellUnlock(weapon.id);
+            option.hint = DescribeSpellUnlock(this, weapon.id);
         }
         options.push_back(option);
     }
@@ -104,7 +106,7 @@ bool BonkPlayer::ChooseStarter(uint32 weaponId, std::string& error)
         SendStarters();
         return true;
     }
-    error = "That spell can't be your starter spell.";
+    error = GetString(BONK_STRING_NOT_A_STARTER_SPELL);
     return false;
 }
 

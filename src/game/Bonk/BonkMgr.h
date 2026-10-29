@@ -967,6 +967,7 @@ struct BonkBoltLook
 
 std::string FormatBonkMoney(uint32 copper);
 std::string FormatBonkShards(uint32 count);
+std::string FormatBonkNumber(float value);
 
 enum BonkShop : uint8
 {

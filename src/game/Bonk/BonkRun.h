@@ -22,6 +22,7 @@ class Creature;
 class GameObject;
 class Item;
 class Player;
+enum BonkString : uint32;
 
 enum BonkMiniEventType : uint8
 {
@@ -129,6 +130,7 @@ class BonkRun
         bool IsInvasion() const { return m_invaderId != 0; }
 
         bool Begin(std::string& error);
+        std::string GetString(BonkString id, std::vector<std::string> const& args = {}) const;
         void Update(uint32 diff);
         void Abort();
         void Surrender();
@@ -1409,11 +1411,11 @@ class BonkRun
             bool boss = false;
             int32 leftMs = 0;
             int32 glowMs = 0;
-            std::string countdown;
+            bool countdown = false;
         };
         std::vector<PendingSummon> m_pendingSummons;
         void QueueSummon(BonkMapCreature const* creature, float x, float y, float z, uint32 affixes, ObjectGuid const& altar, bool boss,
-            std::string const& countdown);
+            bool countdown);
         void UpdatePendingSummons(uint32 diff);
         bool IsAltarWaking(ObjectGuid const& altar) const;
         uint32 m_shrinesToPlace = 0;

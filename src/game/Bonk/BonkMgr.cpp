@@ -1329,6 +1329,13 @@ std::string FormatBonkShards(uint32 count)
     return std::to_string(count) + (count == 1 ? " Darkmoon Ticket" : " Darkmoon Tickets");
 }
 
+std::string FormatBonkNumber(float value)
+{
+    char text[32];
+    std::snprintf(text, sizeof(text), "%g", value);
+    return text;
+}
+
 char const* GetBonkRarityName(BonkRarity rarity)
 {
     switch (rarity)

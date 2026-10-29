@@ -1,6 +1,7 @@
 #include "BonkRun.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
+#include "BonkStrings.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "GameObject.h"
@@ -270,7 +271,7 @@ void BonkRun::UpdateLeyLine(size_t index, uint32 diff)
         bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~100");
         bonk->SendAddon(std::string("capture~") + SHRINE_LABELS[BONK_SHRINE_LEY_LINE] + "~-1");
         m_captureShown = false;
-        bonk->Notify("You captured the Ley Line!");
+        bonk->Notify(BONK_STRING_YOU_CAPTURED_LEY_LINE);
         RemoveShrine(index);
         ++m_pendingLeyOffers;
         return;
@@ -393,12 +394,12 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
 {
     if (m_leyOffer.empty())
     {
-        error = "There is no Ley Line blessing to choose right now.";
+        error = GetString(BONK_STRING_THERE_IS_NO_LEY_LINE);
         return false;
     }
     if (!index || index > m_leyOffer.size())
     {
-        error = "Choose a number from 1 to " + std::to_string(m_leyOffer.size()) + ".";
+        error = GetString(BONK_STRING_CHOOSE_NUMBER_FROM_1_TO, { std::to_string(m_leyOffer.size()) });
         return false;
     }
 
@@ -411,7 +412,7 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
         if (BonkCard const* card = sBonkMgr.GetCard(buff.cardId))
         {
             AddCard(*card);
-            bonk->Notify("The Ley Line grants you " + card->name + "!");
+            bonk->Notify(BONK_STRING_LEY_LINE_GRANTS_YOU, { card->name });
         }
     }
     else
@@ -419,7 +420,7 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
         m_shrineBonuses[buff.effect] += buff.value;
         ApplyPassives();
         if (LeyStat const* stat = GetLeyStat(buff.effect))
-            bonk->Notify("The Ley Line grants you " + FormatLeyValue(*stat, buff.value) + "!");
+            bonk->Notify(BONK_STRING_LEY_LINE_GRANTS_YOU, { FormatLeyValue(*stat, buff.value) });
         SendLeyBlessings();
     }
     ResumeUnlessChoiceOpen();
@@ -461,8 +462,7 @@ void BonkRun::UseShrine(GameObject* go)
             {
                 ++m_greedStacks;
                 SendGreed();
-                bonk->Notify("You now earn " + std::to_string(GetGreedRewardPercent()) + "% more gold and Darkmoon Tickets, but face " +
-                    std::to_string(uint32(GetGreedCrowdPercent() + 0.5f)) + "% more enemies.");
+                bonk->Notify(BONK_STRING_YOU_NOW_EARN_MORE_GOLD, { std::to_string(GetGreedRewardPercent()), std::to_string(uint32(GetGreedCrowdPercent() + 0.5f)) });
                 RemoveShrine(i);
                 break;
             }
@@ -486,7 +486,7 @@ void BonkRun::UseShrine(GameObject* go)
                         y = shrine.spot.y;
                         z = shrine.spot.z;
                     }
-                    QueueSummon(creature, x, y, z, BONK_ALTAR_AFFIXES, shrine.model, false, n ? "" : "The altar's guardians arrive");
+                    QueueSummon(creature, x, y, z, BONK_ALTAR_AFFIXES, shrine.model, false, n == 0);
                 }
                 break;
             }
@@ -497,14 +497,14 @@ void BonkRun::UseShrine(GameObject* go)
                 shrine.active = true;
                 shrine.leftMs = GetMoonwellSeconds() * IN_MILLISECONDS;
                 shrine.tickMs = IN_MILLISECONDS;
-                bonk->Notify("The Moonwell's waters stir! Stand in them to heal.");
+                bonk->Notify(BONK_STRING_MOONWELLS_WATERS_STIR_STAND_IN);
                 break;
             }
             case BONK_SHRINE_STONE:
             {
                 if (m_bossSpawned)
                 {
-                    bonk->Notify("The boss is already here.");
+                    bonk->Notify(BONK_STRING_BOSS_IS_ALREADY_HERE);
                     break;
                 }
                 BonkMapCreature const* creature = PickCreature(BONK_SPAWN_BOSS);
@@ -520,7 +520,7 @@ void BonkRun::UseShrine(GameObject* go)
                     y = shrine.spot.y;
                     z = shrine.spot.z;
                 }
-                QueueSummon(creature, x, y, z, 0, ObjectGuid(), true, "Something answers the summons. It arrives");
+                QueueSummon(creature, x, y, z, 0, ObjectGuid(), true, true);
                 RemoveShrine(i);
                 break;
             }
@@ -532,7 +532,7 @@ void BonkRun::UseShrine(GameObject* go)
 }
 
 void BonkRun::QueueSummon(BonkMapCreature const* creature, float x, float y, float z, uint32 affixes, ObjectGuid const& altar, bool boss,
-    std::string const& countdown)
+    bool countdown)
 {
     PendingSummon summon;
     summon.creature = creature;
@@ -564,8 +564,9 @@ void BonkRun::UpdatePendingSummons(uint32 diff)
             itr->glowMs = BONK_SUMMON_GLOW_MS;
             PlayKitAt(ObjectGuid(), itr->x, itr->y, itr->z, BONK_KIT_SUMMON_CIRCLE, true);
             int32 const seconds = (itr->leftMs + IN_MILLISECONDS - 1) / IN_MILLISECONDS;
-            if (!itr->countdown.empty())
-                bonk->Notify(itr->countdown + " in " + std::to_string(seconds) + (seconds == 1 ? " second." : " seconds."));
+            if (itr->countdown)
+                bonk->Notify(itr->boss ? BONK_STRING_SUMMONS_ANSWERED_ARRIVES_IN : BONK_STRING_ALTAR_GUARDIANS_ARRIVE_IN,
+                    { GetString(seconds == 1 ? BONK_STRING_DURATION_SECOND : BONK_STRING_DURATION_SECONDS, { std::to_string(seconds) }) });
         }
         itr->leftMs -= int32(diff);
         if (itr->leftMs > 0)
@@ -594,7 +595,7 @@ void BonkRun::UpdatePendingSummons(uint32 diff)
         }
         mob->CastSpell(mob, BONK_SPELL_SUMMON_SMOKE, true);
         if (summon.boss)
-            bonk->Notify(std::string(mob->GetName()) + " answers the summons!");
+            bonk->Notify(BONK_STRING_SUMMONED_ANSWERS, { std::string(mob->GetName()) });
         if (summon.altar.IsEmpty())
             continue;
         for (Shrine& shrine : m_shrines)
@@ -602,7 +603,7 @@ void BonkRun::UpdatePendingSummons(uint32 diff)
             {
                 shrine.pack.push_back(mob->GetObjectGuid());
                 if (!IsAltarWaking(summon.altar) && shrine.pack.size() == 1)
-                    bonk->Notify("The altar's guardians awaken!");
+                    bonk->Notify(BONK_STRING_ALTARS_GUARDIANS_AWAKEN);
             }
     }
 }
@@ -620,7 +621,7 @@ void BonkRun::UpdateAltar(size_t index)
                 return;
 
     SpawnChest(true, shrine.spot.x, shrine.spot.y, shrine.spot.z, BONK_ALTAR_CHEST_CHOICES);
-    m_player->GetBonkPlayer()->Notify("The Challenge Altar yields its treasure!");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_CHALLENGE_ALTAR_YIELDS_ITS_TREASURE);
     RemoveShrine(index);
 }
 
@@ -636,7 +637,7 @@ void BonkRun::UpdateMoonwell(size_t index, uint32 diff)
     if (shrine.leftMs <= diff)
     {
         bonk->SendAddon("moonwell~0~0~" + std::to_string(GetMoonwellSeconds()));
-        bonk->Notify("The Moonwell runs dry.");
+        bonk->Notify(BONK_STRING_MOONWELL_RUNS_DRY);
         RemoveShrine(index);
         return;
     }
@@ -722,22 +723,22 @@ bool BonkRun::PlaceShrineNow(BonkShrineType type, std::string& error)
 {
     if (m_state != STATE_RUNNING)
     {
-        error = "Only a running floor can have a shrine.";
+        error = GetString(BONK_STRING_ONLY_RUNNING_FLOOR_SHRINE);
         return false;
     }
     if ((type == BONK_SHRINE_MOONWELL && m_moonwellPlaced) || (type == BONK_SHRINE_STONE && m_stonePlaced))
     {
-        error = std::string("This floor has already had its ") + SHRINE_LABELS[type] + ".";
+        error = GetString(BONK_STRING_FLOOR_ALREADY_HAD_SHRINE, { SHRINE_LABELS[type] });
         return false;
     }
     if (type == BONK_SHRINE_LEY_LINE && m_leyLinesPlaced >= BONK_MAX_LEY_LINES)
     {
-        error = "This floor has already had " + std::to_string(BONK_MAX_LEY_LINES) + " Ley Lines.";
+        error = GetString(BONK_STRING_FLOOR_ALREADY_HAD_LEY_LINES, { std::to_string(BONK_MAX_LEY_LINES) });
         return false;
     }
     if (!PlaceShrine(type))
     {
-        error = "No spawn point 60-400 yards away yet; try again in a few seconds.";
+        error = GetString(BONK_STRING_NO_SHRINE_SPAWN_POINT);
         return false;
     }
     return true;

@@ -1,4 +1,5 @@
 #include "BonkQuests.h"
+#include "BonkLocale.h"
 #include "BonkMastery.h"
 #include "BonkPlayer.h"
 #include "Creature.h"
@@ -219,23 +220,24 @@ bool BonkQuests::IsDisabled(uint32 account, BonkQuestReward type, uint32 id) con
     return itr != m_disabled.end() && itr->second.count(UnlockKey(type, id)) != 0;
 }
 
-bool BonkQuests::SetDisabled(uint32 account, BonkQuestReward type, uint32 id, bool disabled, uint32 slots, std::string& error)
+bool BonkQuests::SetDisabled(uint32 account, BonkQuestReward type, uint32 id, bool disabled, uint32 slots, std::string& error,
+    LocaleConstant locale)
 {
     if (disabled && !IsTogglable(type))
     {
-        error = "Only Darkmoon Cards and Glyphs can be banned.";
+        error = sBonkLocale.GetString(BONK_STRING_ONLY_CARDS_AND_GLYPHS_BANNED, locale, {});
         return false;
     }
     if (disabled && IsLocked(account, type, id))
     {
-        error = "You can only ban Darkmoon Cards and Glyphs you have unlocked.";
+        error = sBonkLocale.GetString(BONK_STRING_BAN_ONLY_UNLOCKED, locale, {});
         return false;
     }
     if (disabled && CountDisabled(account, type) >= slots)
     {
-        char const* kind = type == BONK_REWARD_CARD ? "Darkmoon Card" : "Glyph";
-        error = slots ? "All your " + std::string(kind) + " ban slots are in use. Allow a banned one first, or earn another slot." :
-            "You have no " + std::string(kind) + " ban slots yet.";
+        bool const card = type == BONK_REWARD_CARD;
+        error = sBonkLocale.GetString(slots ? (card ? BONK_STRING_CARD_BAN_SLOTS_IN_USE : BONK_STRING_GLYPH_BAN_SLOTS_IN_USE) :
+            (card ? BONK_STRING_NO_CARD_BAN_SLOTS : BONK_STRING_NO_GLYPH_BAN_SLOTS), locale, {});
         return false;
     }
     {
@@ -674,7 +676,7 @@ void BonkQuests::Complete(Player* player, BonkQuest const& quest)
     if (bonk->IsAddonReady())
         bonk->SendAddon("questdone~" + std::to_string(quest.id) + "~" + quest.name + "~" + reward + "~" + icon);
     else
-        bonk->Notify("Quest complete: " + quest.name + "! " + reward);
+        bonk->Notify(BONK_STRING_QUEST_COMPLETE, { quest.name, reward });
 
     OnProgress(player, BONK_QUEST_QUESTS_DONE, 0, CountCompleted(account), true);
 }

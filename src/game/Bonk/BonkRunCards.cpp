@@ -4,6 +4,7 @@
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
 #include "BonkQuests.h"
+#include "BonkStrings.h"
 #include "Creature.h"
 #include "Item.h"
 #include "Player.h"
@@ -230,7 +231,7 @@ void BonkRun::GiveStartCard()
         return;
     BonkCard const& card = *pool[urand(0, uint32(pool.size()) - 1)];
     AddCard(card);
-    m_player->GetBonkPlayer()->Notify("Lucky Draw gave you " + card.name + "!");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_LUCKY_DRAW_GAVE_YOU, { card.name });
 }
 
 bool BonkRun::IsCardCapped(BonkCard const& card) const
@@ -336,7 +337,7 @@ bool BonkRun::OfferCards(size_t offerSize, std::vector<Offer> const* avoid, std:
         uint32 const gold = m_map.goldPerKill * 25;
         uint32 const paid = uint32(gold * GetGoldMultiplier());
         GiveGold(gold);
-        m_player->GetBonkPlayer()->Notify(paid ? "The deck is empty, so you get " + FormatBonkMoney(paid) + " instead." : std::string("The deck is empty."));
+        m_player->GetBonkPlayer()->Notify(paid ? BONK_STRING_DECK_EMPTY_GOLD : BONK_STRING_DECK_EMPTY, { FormatBonkMoney(paid) });
         return false;
     }
 
@@ -437,11 +438,11 @@ bool BonkRun::GiveCard(uint32 cardId, std::string& error)
     BonkCard const* card = sBonkMgr.GetCard(cardId);
     if (!card)
     {
-        error = "There is no card " + std::to_string(cardId) + ".";
+        error = GetString(BONK_STRING_THERE_IS_NO_CARD, { std::to_string(cardId) });
         return false;
     }
     AddCard(*card);
-    m_player->GetBonkPlayer()->Notify(card->name + "!");
+    m_player->GetBonkPlayer()->Notify(BONK_STRING_EXCLAIM, { card->name });
     return true;
 }
 
@@ -485,10 +486,8 @@ void BonkRun::UpdateCards(uint32 diff)
         {
             m_cardSurgeUntilMs = m_totalMs + uint32(charm->values[1]);
             StartCardCooldown(BONK_CARD_POWER_SURGE, charm->cooldownMs);
-            char surge[64];
-            snprintf(surge, sizeof(surge), " gives you %g%% more Power for %g seconds!", GetCardTotal(BONK_CARD_POWER_SURGE, 0),
-                charm->values[1] / 1000.0f);
-            m_player->GetBonkPlayer()->Notify(charm->name + surge);
+            m_player->GetBonkPlayer()->Notify(BONK_STRING_POWER_SURGE, { charm->name, FormatBonkNumber(GetCardTotal(BONK_CARD_POWER_SURGE, 0)),
+                FormatBonkNumber(charm->values[1] / 1000.0f) });
         }
 
     if (m_cardHasteUntilMs && m_totalMs >= m_cardHasteUntilMs)
