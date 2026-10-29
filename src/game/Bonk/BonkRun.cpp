@@ -9,6 +9,7 @@
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "DBCStores.h"
+#include "GridMap.h"
 #include "DynamicObject.h"
 #include "GameObject.h"
 #include "GridNotifiers.h"
@@ -240,6 +241,10 @@ namespace
     float const BONK_START_EDGE         = 60.0f;
     float const BONK_START_EDGE_ENCLOSED = 25.0f;
     float const BONK_START_SPREAD       = 80.0f;
+    uint32 const BONK_ZONE_START_TRIES  = 24;
+    float const BONK_ZONE_START_MARGIN  = 6.0f;
+    float const BONK_ZONE_START_FLAT    = 12.0f;
+    float const BONK_ZONE_START_CLEAR   = 1.5f;
     float const BONK_CROWD_WAIT_RANGE   = 30.0f;
     float const BONK_CROWD_TOUCH_SLACK  = 1.0f;
     float const BONK_CROWD_MAX_BODY     = 3.0f;
@@ -1179,11 +1184,63 @@ void BonkRun::LearnStarts(std::vector<BonkSpot> const& spots)
     }
 }
 
+namespace
+{
+    bool IsOpenGround(TerrainInfo const* terrain, uint32 zoneId, float x, float y, float z)
+    {
+        if (terrain->GetZoneId(x, y, z) != zoneId || terrain->IsInWater(x, y, z + 1.0f) || !terrain->IsOutdoors(x, y, z + 1.0f))
+            return false;
+        float const top = terrain->GetHeightStatic(x, y, z + 50.0f, true, 60.0f);
+        return top <= z + BONK_ZONE_START_CLEAR;
+    }
+
+    bool FindZoneStart(BonkMap const& map, float& x, float& y, float& z)
+    {
+        if (!map.zoneId || map.type != BONK_MAP_OPEN)
+            return false;
+        TerrainInfo const* terrain = sTerrainMgr.LoadTerrain(map.mapId);
+        for (uint32 attempt = 0; attempt < BONK_ZONE_START_TRIES; ++attempt)
+        {
+            float px = frand(BONK_ZONE_START_MARGIN, 100.0f - BONK_ZONE_START_MARGIN);
+            float py = frand(BONK_ZONE_START_MARGIN, 100.0f - BONK_ZONE_START_MARGIN);
+            if (!Zone2MapCoordinates(px, py, map.zoneId))
+                return false;
+            float const pz = terrain->GetHeightStatic(px, py, MAX_HEIGHT, false);
+            if (pz <= INVALID_HEIGHT || !IsOpenGround(terrain, map.zoneId, px, py, pz))
+                continue;
+            bool flat = true;
+            for (uint32 i = 0; i < 8 && flat; ++i)
+            {
+                float const angle = i * M_PI_F / 4.0f;
+                float const rx = px + BONK_START_EDGE * std::cos(angle);
+                float const ry = py + BONK_START_EDGE * std::sin(angle);
+                float const rz = terrain->GetHeightStatic(rx, ry, pz + 40.0f, false, 80.0f);
+                flat = rz > INVALID_HEIGHT && std::fabs(rz - pz) <= BONK_ZONE_START_FLAT &&
+                    terrain->GetZoneId(rx, ry, rz) == map.zoneId && !terrain->IsInWater(rx, ry, rz + 1.0f);
+            }
+            if (!flat)
+                continue;
+            x = px;
+            y = py;
+            z = pz;
+            return true;
+        }
+        return false;
+    }
+}
+
 bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
 {
     float x = map.x, y = map.y, z = map.z, o = map.o;
     std::vector<BonkMapStart> const starts = sBonkMgr.GetMapStarts(map.id);
-    if (starts.size() >= BONK_START_MIN_LEARNED)
+    if (FindZoneStart(map, x, y, z))
+    {
+        z += 0.5f;
+        o = std::atan2(map.y - y, map.x - x);
+        if (o < 0.0f)
+            o += 2.0f * M_PI_F;
+    }
+    else if (starts.size() >= BONK_START_MIN_LEARNED)
     {
         std::vector<BonkMapStart const*> away;
         if (m_player->GetMapId() == map.mapId)
