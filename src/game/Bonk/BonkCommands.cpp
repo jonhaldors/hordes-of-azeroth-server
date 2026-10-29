@@ -458,6 +458,18 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
         m_session->GetPlayer()->GetBonkPlayer()->SetQuartermasterUpgrade(tab == "upgrade on");
         return true;
     }
+    if (tab.compare(0, 8, "upgrade ") == 0)
+    {
+        std::string error;
+        if (!m_session->GetPlayer()->GetBonkPlayer()->UpgradeFoundGear(uint32(atoi(tab.c_str() + 8)), error))
+            m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
+        return true;
+    }
+    if (tab == "found")
+    {
+        m_session->GetPlayer()->GetBonkPlayer()->SendFoundItems();
+        return true;
+    }
 
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)

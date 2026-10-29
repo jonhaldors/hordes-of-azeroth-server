@@ -22,6 +22,7 @@ set (game_SRCS
     Bonk/BonkCodex.cpp
     Bonk/BonkCommands.cpp
     Bonk/BonkCrowd.cpp
+    Bonk/BonkFoundGear.cpp
     Bonk/BonkKeywords.cpp
     Bonk/BonkMastery.cpp
     Bonk/BonkMgr.cpp

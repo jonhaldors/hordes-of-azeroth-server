@@ -86,6 +86,7 @@
 #include "RealmZone.h"
 #include "IO/Multithreading/CreateThread.h"
 #include "Bonk/BonkMgr.h"
+#include "Bonk/BonkFoundGear.h"
 #include "Bonk/BonkVersion.h"
 
 #include <chrono>
@@ -1840,6 +1841,7 @@ void World::SetInitialWorldSettings()
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Vanilla Bonk tables");
     sBonkMgr.Load();
+    sBonkFound.Load();
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading AH bot");
     sAuctionHouseBotMgr.Load();

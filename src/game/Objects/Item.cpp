@@ -28,6 +28,7 @@
 #include "Database/DatabaseEnv.h"
 #include "ItemEnchantmentMgr.h"
 #include "GuildMgr.h"
+#include "Bonk/BonkFoundGear.h"
 
 void AddItemsSetItem(Player* player, Item* item)
 {
@@ -491,6 +492,7 @@ void Item::DeleteAllFromDB()
 
     SqlStatement stmt = CharacterDatabase.CreateStatement(delInst, "DELETE FROM `item_instance` WHERE `guid` = ?");
     stmt.PExecute(GetGUIDLow());
+    sBonkFound.Forget(GetGUIDLow());
 
     if (HasFlag(ITEM_FIELD_FLAGS, ITEM_DYNFLAG_WRAPPED))
     {
@@ -516,6 +518,7 @@ void Item::DeleteAllFromDB(uint32 guidLow)
         sGuildMgr.DeletePetition(petition);
 
     CharacterDatabase.PExecute("DELETE FROM `character_gifts` WHERE `item_guid` = '%u'", guidLow);
+    sBonkFound.Forget(guidLow);
 }
 
 void Item::LoadLootFromDB(Field* fields)
@@ -840,6 +843,7 @@ void Item::SetState(ItemUpdateState state, Player* forplayer)
     {
         // pretend the item never existed
         RemoveFromUpdateQueueOf(forplayer);
+        sBonkFound.Forget(GetGUIDLow());
         delete this;
         return;
     }

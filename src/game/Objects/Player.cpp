@@ -18592,9 +18592,6 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
 
     SendNewItem(pItem, totalCount, true, false, false);
 
-    if (tierVendor)
-        m_bonkPlayer->OnTierPurchase(pItem);
-
     return crItem->maxcount != 0;
 }
 

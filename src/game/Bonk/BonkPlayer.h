@@ -71,12 +71,13 @@ class BonkPlayer
         std::vector<uint32> GetTierStock() const;
         uint32 GetScrap() const { return m_scrap; }
         void AddScrap(uint32 points);
-        bool CanUpgradeAtQuartermaster() const;
         void SetQuartermasterUpgrade(bool on);
-        void OnTierPurchase(Item* bought);
         void SendQuartermaster() const;
-        std::vector<Item*> GetOwnedLegendaries() const;
-        uint32 GetLegendaryUpgradeEntry(uint32 entry) const;
+        uint32 GetUpgradeCeiling() const;
+        std::vector<Item*> GetUpgradableGear() const;
+        void SendFoundUpgrades() const;
+        bool UpgradeFoundGear(uint32 guidLow, std::string& error);
+        void SendFoundItems() const;
         bool IsGearFound(uint32 keepEntry) const { return m_foundGear.count(keepEntry) != 0; }
         bool RecordGearFound(uint32 keepEntry);
         float GetGearPriceFactor(Creature const* vendor, uint32 itemEntry) const;
@@ -295,6 +296,7 @@ class BonkPlayer
         PacketCounts TakePacketCounts();
 
     private:
+        Item* ReplaceGearEntry(Item* item, uint32 entry);
         void ClearAuras();
 
         struct Record

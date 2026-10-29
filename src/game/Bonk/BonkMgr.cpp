@@ -1,4 +1,5 @@
 #include "BonkMgr.h"
+#include "BonkFoundGear.h"
 #include "BonkRun.h"
 #include "BonkMastery.h"
 #include "BonkQuests.h"
@@ -1653,7 +1654,10 @@ BonkGearTotals BonkMgr::EvaluateGear(Player const* player) const
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             worn.push_back(item->GetEntry());
-    return EvaluateItems(worn);
+    BonkGearTotals totals = EvaluateItems(worn);
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        BonkFound::AddWornStats(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), totals.passives);
+    return totals;
 }
 
 BonkGearTotals BonkMgr::EvaluateItems(std::vector<uint32> const& entries) const

@@ -2,6 +2,7 @@
 #define MANGOS_BONKRUN_H
 
 #include "BonkCrowd.h"
+#include "BonkFoundGear.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkObjectives.h"
@@ -251,6 +252,9 @@ class BonkRun
             uint32 tier = 0;
             uint32 bestOwnedTier = 0;
             bool owned = false;
+            uint32 scrap = 0;
+            std::string lines;
+            std::string extra;
         };
         bool IsOwnVault(GameObject const* vault) const;
         bool IsOwnPillar(GameObject const* pillar) const;
@@ -1065,10 +1069,17 @@ class BonkRun
         uint32 m_trinketPowerUntilMs = 0;
         uint32 m_trinketSpeedUntilMs = 0;
 
+        struct PendingGear
+        {
+            PendingGear(uint32 pendingEntry = 0) : entry(pendingEntry) {}
+            uint32 entry;
+            bool found = false;
+            BonkFoundGear gear;
+        };
         struct GearDrop
         {
             ObjectGuid guid;
-            uint32 entry = 0;
+            PendingGear piece;
             uint32 marker = 0;
             uint32 core = 0;
             uint32 swirl = 0;
@@ -1078,10 +1089,12 @@ class BonkRun
         bool PlaceTierPiece(Creature const* mob);
         bool DropLegendary(Creature const* mob);
         uint32 GetDropTier() const;
-        bool PlaceGearDrop(Creature const* mob, uint32 entry, uint8 quality);
+        bool PlaceGearDrop(Creature const* mob, PendingGear const& piece, uint8 quality);
+        std::string DescribeFoundDrop(BonkFoundGear const& found) const;
+        void AddEliteScrap();
         bool GetKeepInfo(uint32 entry, uint32& keepEntry, uint8& quality) const;
-        void MailKeptPiece(uint32 entry, std::string const& subject, std::string const& body);
-        uint32 GetScrapPoints(uint32 entry) const;
+        void MailKeptPiece(uint32 entry, std::string const& subject, std::string const& body, BonkFoundGear const* found);
+        uint32 GetScrapPoints(Item const* item) const;
         void GetOwnedTiers(uint32 entry, uint32& bestTier, bool& owned) const;
         uint8 RollGearQuality(BonkSpawnKind kind) const;
         void UpdateGearDrops(uint32 diff);
@@ -1094,8 +1107,8 @@ class BonkRun
         void SendGearOffer() const;
         void CloseGearOffer();
         uint32 GetGearSalvage(uint32 entry) const;
-        bool EquipRunGear(uint32 entry, uint8 slot, std::string& error);
-        Item* StoreRunGear(uint32 entry, std::string& error);
+        bool EquipRunGear(PendingGear const& piece, uint8 slot, std::string& error);
+        Item* StoreRunGear(PendingGear const& piece, std::string& error);
         bool OfferSandboxGear(uint32 entry, std::string& error);
         std::vector<uint8> GetGearSlotChoices(uint32 entry) const;
         void SnapshotBroughtGear();
@@ -1122,8 +1135,10 @@ class BonkRun
         ObjectGuid m_vaultGuid;
         std::vector<ObjectGuid> m_vault;
         std::vector<GearDrop> m_gearDrops;
-        std::vector<uint32> m_pendingGear;
+        std::vector<PendingGear> m_pendingGear;
         uint32 m_gearOfferEntry = 0;
+        PendingGear m_gearOffer;
+        uint32 m_eliteScrap = 0;
         uint32 m_gearTimer = 0;
         std::vector<ObjectGuid> m_runGear;
         std::map<uint8, ObjectGuid> m_broughtGear;
