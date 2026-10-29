@@ -222,6 +222,8 @@ class BonkRun
         static float GetStatCopyWeight(uint8 stat, uint32 copy);
         static float GetStatCopySum(uint8 stat, uint32 copies);
         static float GetStackedChance(float percent, uint32 copies);
+        static float GetChampionMaxReduction();
+        static float GetPassiveCap(BonkPassiveEffect effect) { return GetStatCap(effect); }
         float GetChampionDamageTaken(BonkSpawnKind kind) const;
         bool ForceEvolve(uint32 weaponId, std::string& error);
         bool GivePassive(uint32 passiveId, std::string& error);
