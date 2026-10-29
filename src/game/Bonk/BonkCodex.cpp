@@ -64,8 +64,6 @@ namespace
         auto cooldown = [&card, copies]() { return Number(card.cooldownMs * BonkRun::GetCopyWeight(copies) / 1000.0f) + " sec cooldown"; };
         switch (card.effect)
         {
-            case BONK_CARD_HEALTHSTONE:
-            case BONK_CARD_HIT_IMMUNE:
             case BONK_CARD_SWIFTNESS:
             case BONK_CARD_MAGNET:
                 return cooldown();
