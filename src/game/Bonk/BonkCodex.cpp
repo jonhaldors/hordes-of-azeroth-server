@@ -250,7 +250,7 @@ namespace
             .Line("Gear gives its listed stats plus set bonuses.")
             .Term("Mythic tiers", "Power, Max Health and Armor grow 12% per tier, compounding, so Tier 20 is about 8.6 times Tier 1. Other stats stay the same.")
             .Line("Trinket effects don't grow with tier; their stats do.")
-            .Term("Scrap", "each Mythic find you don't extract gives 2 Scrap, or 20 to 50 if it is above the Quartermaster's tier. Doubled past floor 20. 100 Scrap buys one item a tier above stock, or upgrades a legendary.");
+            .Term("Scrap", "each Mythic item you don't extract gives 2 Scrap, or 4 to 8 if it is above the Quartermaster's tier. Doubled past floor 20. 100 Scrap buys one item a tier above stock, or upgrades a legendary.");
     }
 
     void SendSurvivalRules(BonkPlayer* bonk)

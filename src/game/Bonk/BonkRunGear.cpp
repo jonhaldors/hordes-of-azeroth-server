@@ -111,7 +111,7 @@ namespace
     float const BONK_INVASION_UPGRADE_CHANCE = 50.0f;
     uint32 const BONK_ENDLESS_SCRAP_MULTIPLIER = 2;
     uint32 const BONK_SCRAP_PER_FIND = 2;
-    uint32 const BONK_SCRAP_BY_TIERS_AHEAD[] = { 0, 20, 35, 50 };
+    uint32 const BONK_SCRAP_BY_TIERS_AHEAD[] = { 0, 4, 6, 8 };
     size_t const BONK_SCRAP_STEPS = sizeof(BONK_SCRAP_BY_TIERS_AHEAD) / sizeof(BONK_SCRAP_BY_TIERS_AHEAD[0]);
     uint32 const BONK_GO_PILLAR            = 900070;
     uint32 const BONK_PILLAR_EVERY_OTHER_UNTIL = 10;
