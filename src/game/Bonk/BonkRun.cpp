@@ -11382,7 +11382,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
         offer.isWeapon = false;
         offer.id = itr.first;
         offer.newLevel = current + 1;
-        candidates.push_back({ offer, 2 });
+        candidates.push_back({ offer, itr.second.rare ? 1u : 2u });
     }
 
     std::vector<Candidate> repeats;
@@ -11433,10 +11433,16 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     if (source == OFFER_LEVEL && std::none_of(cards.begin(), cards.end(), [](Offer const& card) { return !card.isWeapon; }))
     {
         std::vector<Offer> passives;
+        std::vector<Offer> rarePassives;
         for (std::vector<Candidate> const* pool : { &candidates, &repeats })
             for (Candidate const& candidate : *pool)
                 if (!candidate.offer.isWeapon)
-                    passives.push_back(candidate.offer);
+                {
+                    BonkPassive const* info = sBonkMgr.GetPassive(candidate.offer.id);
+                    (info && info->rare ? rarePassives : passives).push_back(candidate.offer);
+                }
+        if (passives.empty())
+            passives = rarePassives;
         if (!passives.empty())
         {
             Offer const& passive = passives[urand(0, uint32(passives.size() - 1))];
@@ -11971,8 +11977,20 @@ std::string BonkRun::DescribeBuildTotals() const
     std::string glyphs;
     for (BonkGlyph const* glyph : m_glyphs)
         glyphs += (glyphs.empty() ? "" : ",") + std::to_string(glyph->id);
+    std::string stats;
+    for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
+    {
+        float value = GetPassiveTotal(BonkPassiveEffect(effect));
+        if (effect == BONK_PASSIVE_CRIT)
+            value += BONK_BASE_CRIT;
+        if (std::fabs(value) < 0.05f)
+            continue;
+        char entry[32];
+        snprintf(entry, sizeof(entry), "%u:%.1f", uint32(effect), value);
+        stats += (stats.empty() ? "" : ",") + std::string(entry);
+    }
     return "spells [" + spells + "]; passives [" + passives + "]; cards [" + cards + "]; glyphs [" + glyphs + "]; gear [" +
-        m_player->GetBonkPlayer()->DescribeGear() + "]";
+        m_player->GetBonkPlayer()->DescribeGear() + "]; stats [" + stats + "]";
 }
 
 void BonkRun::SendLoadout() const

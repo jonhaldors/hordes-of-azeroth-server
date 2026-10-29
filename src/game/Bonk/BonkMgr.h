@@ -883,6 +883,7 @@ struct BonkPassive
     BonkPassiveEffect effect = BONK_PASSIVE_POWER;
     float valuePerRank = 10.0f;
     uint8 maxRank = 5;
+    bool rare = false;
 
     bool IsMaxed(uint32 rank) const { return rank >= (maxRank ? uint32(maxRank) : uint32(UINT8_MAX)); }
     float RankWeight(uint32 rank) const;
