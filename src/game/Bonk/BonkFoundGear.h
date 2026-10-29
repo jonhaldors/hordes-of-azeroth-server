@@ -47,6 +47,7 @@ class BonkFoundStore
 namespace BonkFound
 {
     BonkFoundGear Roll(uint32 floorTier);
+    BonkFoundGear Make(uint32 tier, uint32 lineCount);
     float LineValue(BonkFoundLine const& line, uint32 tier);
     uint32 GetItemTier(Item const* item);
     uint32 GetUpgradeCost(uint32 tier);

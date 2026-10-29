@@ -465,6 +465,15 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
             m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
         return true;
     }
+    if (tab.compare(0, 10, "testfound ") == 0 && GetAccessLevel() >= SEC_GAMEMASTER)
+    {
+        uint32 tier = 1, lines = 0;
+        sscanf(tab.c_str() + 10, "%u %u", &tier, &lines);
+        std::string error;
+        if (!m_session->GetPlayer()->GetBonkPlayer()->GiveTestFoundGear(tier, lines, error))
+            m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
+        return true;
+    }
     if (tab == "found")
     {
         m_session->GetPlayer()->GetBonkPlayer()->SendFoundItems();

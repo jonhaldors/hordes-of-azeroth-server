@@ -78,6 +78,7 @@ class BonkPlayer
         void SendFoundUpgrades() const;
         bool UpgradeFoundGear(uint32 guidLow, std::string& error);
         void SendFoundItems() const;
+        bool GiveTestFoundGear(uint32 tier, uint32 lineCount, std::string& error);
         bool IsGearFound(uint32 keepEntry) const { return m_foundGear.count(keepEntry) != 0; }
         bool RecordGearFound(uint32 keepEntry);
         float GetGearPriceFactor(Creature const* vendor, uint32 itemEntry) const;

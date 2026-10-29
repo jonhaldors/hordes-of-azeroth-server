@@ -19,6 +19,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "SpellAuras.h"
+#include "Utilities/Random.h"
 #include "World.h"
 #include "WorldSession.h"
 
@@ -2283,6 +2284,27 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
     SendFoundUpgrades();
     SendFoundItems();
     SendStats();
+    return true;
+}
+
+bool BonkPlayer::GiveTestFoundGear(uint32 tier, uint32 lineCount, std::string& error)
+{
+    uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), std::min(BONK_TIER_GEAR_TIERS, std::max(1u, tier)), urand(0, BONK_TIER_GEAR_SLOTS - 1));
+    ItemPosCountVec dest;
+    if (!entry || m_player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, entry, 1) != EQUIP_ERR_OK)
+    {
+        error = "No room for a test piece.";
+        return false;
+    }
+    Item* item = m_player->StoreNewItem(dest, entry, true);
+    if (!item)
+    {
+        error = "The test piece couldn't be created.";
+        return false;
+    }
+    BonkFound::Remember(item, BonkFound::Make(tier, lineCount));
+    m_player->SendNewItem(item, 1, true, false);
+    SendFoundItems();
     return true;
 }
 

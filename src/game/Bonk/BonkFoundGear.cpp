@@ -178,6 +178,14 @@ BonkFoundGear BonkFound::Roll(uint32 floorTier)
     return found;
 }
 
+BonkFoundGear BonkFound::Make(uint32 tier, uint32 lineCount)
+{
+    BonkFoundGear found;
+    found.tier = std::max(1u, tier);
+    found.lines = RollLines(std::min<uint32>(lineCount, BONK_FOUND_MAX_LINES));
+    return found;
+}
+
 float BonkFound::LineValue(BonkFoundLine const& line, uint32 tier)
 {
     BonkFoundLineRange const* range = FindRange(line.effect);
