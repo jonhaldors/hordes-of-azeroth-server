@@ -246,6 +246,8 @@ namespace
     size_t const BONK_OFFER_SIZE   = 3;
     uint32 const BONK_RUN_XP_SEND_MS = 200;
     uint32 const BONK_PAUSE_AURA_MS  = 200;
+    int32 const BONK_OVERCAP_XP_START_LEVEL = 60;
+    float const BONK_OVERCAP_XP_DOUBLING_LEVELS = 60.0f;
     BonkRarity const BONK_LEVEL_MIN_RARITY = BONK_RARITY_UNCOMMON;
     BonkRarity const BONK_CHEST_MIN_RARITY = BONK_RARITY_RARE;
     float const BONK_SKIP_COINS = 0.25f;
@@ -3513,7 +3515,12 @@ float BonkRun::CompoundStageScale(uint32 stage, float growth, float lateGrowth, 
 float BonkRun::TierHealthScale(BonkTier const& tier, uint32 stage)
 {
     if (tier.stageCompound)
-        return tier.healthMultiplier * CompoundStageScale(stage, tier.stageHealthGrowth, tier.lateHealthGrowth, tier.floorKnee, tier.lastHealthGrowth, tier.floorKnee2);
+    {
+        float const kneeStep = tier.floorKnee && stage > tier.floorKnee ? tier.kneeHealthStep : 1.0f;
+        float const knee2Step = tier.floorKnee2 && stage > tier.floorKnee2 ? tier.knee2HealthStep : 1.0f;
+        return tier.healthMultiplier * kneeStep * knee2Step *
+            CompoundStageScale(stage, tier.stageHealthGrowth, tier.lateHealthGrowth, tier.floorKnee, tier.lastHealthGrowth, tier.floorKnee2);
+    }
     float const stages = float(stage - 1);
     return tier.healthMultiplier * (1.0f + tier.stageHealthGrowth * stages + tier.stageHealthAccel * stages * std::max(0.0f, stages - 1.0f));
 }
@@ -10685,7 +10692,8 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
     if (kind != BONK_SPAWN_BOSS)
     {
         uint32 const level = m_player->GetLevel() + m_overcapLevel;
-        float const killsForLevel = 4.0f + 1.5f * level + 0.05f * level * level;
+        float const overcapSlowdown = 1.0f + float(std::max(0, int32(level) - BONK_OVERCAP_XP_START_LEVEL)) / BONK_OVERCAP_XP_DOUBLING_LEVELS;
+        float const killsForLevel = (4.0f + 1.5f * level + 0.05f * level * level) * overcapSlowdown;
         float const growth = 1.0f + GetPassiveTotal(BONK_PASSIVE_GROWTH) / 100.0f;
 
         float experience = reward;
