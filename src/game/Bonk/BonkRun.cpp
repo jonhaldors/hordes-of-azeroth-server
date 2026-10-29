@@ -7100,7 +7100,10 @@ void BonkRun::ResetOnKill(uint32 spellId)
 {
     for (OwnedWeapon& owned : m_weapons)
         if (owned.weapon.spellId == spellId && owned.weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL))
+        {
             owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_DELAY_MS);
+            owned.killed = true;
+        }
 }
 
 bool BonkRun::HasBehavior(BonkWeaponBehavior behavior) const
