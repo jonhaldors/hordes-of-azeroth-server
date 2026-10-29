@@ -37,6 +37,7 @@
 #include "Config/Config.h"
 #include "Database/DatabaseEnv.h"
 #include "CliRunnable.h"
+#include "CrashDump.h"
 #include "remote/RemoteAccess/RASocket.h"
 #include "remote/soap/MaNGOSsoap.h"
 #include "Util.h"
@@ -202,6 +203,7 @@ int Master::Run()
 
     // Catch termination signals
     _HookSignals();
+    InstallCrashDumpWriter(sConfig.GetStringDefault("LogsDir", ""));
 
     // Launch WorldRunnable thread
     std::thread world_thread = IO::Multithreading::CreateThread("WorldRunnable", WorldRunnable());

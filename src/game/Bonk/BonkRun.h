@@ -99,6 +99,8 @@ struct BonkSupportSource
     std::string name;
 };
 
+uint8 const BONK_RUN_ITEM_FIND_SLOT = 255;
+
 class BonkRun
 {
     public:
@@ -1113,6 +1115,9 @@ class BonkRun
         std::vector<uint8> GetGearSlotChoices(uint32 entry) const;
         void SnapshotBroughtGear();
         void RestoreBroughtGear();
+        void ReturnBroughtGear();
+        void TrackRunGear(ObjectGuid const& guid);
+        void UntrackRunGear(ObjectGuid const& guid);
         void ResolveRunGear(bool extract);
         void PlaceVault(float x, float y, float baseZ);
         void DespawnVault();

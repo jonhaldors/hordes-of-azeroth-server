@@ -316,6 +316,7 @@ class BonkPlayer
         void ReconcileMastery();
         void LoadStarter();
         void GiveStarterBags();
+        void ClearInterruptedRunItems();
         void GiveBankBag(uint8 slot);
         void TeachWeaponSkills();
         std::string GetClassName() const;

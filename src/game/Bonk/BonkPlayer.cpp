@@ -182,6 +182,7 @@ void BonkPlayer::OnLogin()
     ResetCharacter();
     ClearAuras();
     m_campCheckPending = true;
+    ClearInterruptedRunItems();
     for (auto const& itr : sBonkMgr.GetGear())
         if (m_player->HasItemCount(itr.first, 1, true))
             m_player->DestroyItemCount(itr.first, 255, true, false, true);
@@ -219,6 +220,41 @@ void BonkPlayer::TeachWeaponSkills()
     for (uint32 spell : spells)
         if (!m_player->HasSpell(spell))
             m_player->LearnSpell(spell, false);
+}
+
+void BonkPlayer::ClearInterruptedRunItems()
+{
+    uint32 const owner = m_player->GetGUIDLow();
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT `item`, `slot` FROM `bonk_run_item` WHERE `owner` = %u", owner));
+    if (!result)
+        return;
+
+    std::map<uint8, ObjectGuid> brought;
+    do
+    {
+        Field* fields = result->Fetch();
+        ObjectGuid const guid(HIGHGUID_ITEM, fields[0].GetUInt32());
+        uint8 const slot = fields[1].GetUInt8();
+        if (slot != BONK_RUN_ITEM_FIND_SLOT)
+            brought[slot] = guid;
+        else if (Item* item = m_player->GetItemByGuid(guid))
+            m_player->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+    } while (result->NextRow());
+
+    SetEquippingGear(true);
+    for (auto const& itr : brought)
+    {
+        if (itr.first >= EQUIPMENT_SLOT_END || m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, itr.first))
+            continue;
+        Item* item = m_player->GetItemByGuid(itr.second);
+        uint16 dest;
+        if (item && !item->IsEquipped() && m_player->CanEquipItem(itr.first, dest, item, false) == EQUIP_ERR_OK)
+            m_player->SwapItem(item->GetPos(), dest);
+    }
+    SetEquippingGear(false);
+
+    CharacterDatabase.PExecute("DELETE FROM `bonk_run_item` WHERE `owner` = %u", owner);
+    m_player->SaveInventoryAndGoldToDB();
 }
 
 void BonkPlayer::GiveStarterBags()
