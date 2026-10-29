@@ -811,7 +811,7 @@ void BonkRun::ResolveRunGear(bool extract)
             else
             {
                 scrap += GetScrapPoints(item->GetEntry());
-                if (extract || quality <= ITEM_QUALITY_RARE)
+                if (!IsMythic() && (extract || quality <= ITEM_QUALITY_RARE))
                 {
                     gold += uint32(m_map.stageGold * GetGoldShare(quality));
                     ++sold;
@@ -1097,7 +1097,7 @@ std::vector<BonkRun::VaultFind> BonkRun::GetVaultFinds() const
         find.entry = item->GetEntry();
         find.quality = quality;
         find.worn = item->IsEquipped();
-        find.sellCopper = GetGearGold(quality);
+        find.sellCopper = IsMythic() ? 0 : GetGearGold(quality);
         find.inVault = IsInVault(guid);
         find.tier = BonkMgr::GetGearTier(keepEntry);
         GetOwnedTiers(keepEntry, find.bestOwnedTier, find.owned);
