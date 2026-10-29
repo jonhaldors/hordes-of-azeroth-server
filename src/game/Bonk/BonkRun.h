@@ -2423,6 +2423,7 @@ class BonkRun
         void OnDruidStruck(Creature* attacker);
         uint32 ApplyDruidDamageTaken(uint32 damage) const;
         uint32 GetDruidPetFamily(OwnedWeapon const& owned) const;
+        uint32 GetDruidSummonKit(OwnedWeapon const& owned) const;
         uint32 GetDruidFormDisplay(BonkDruidForm form) const;
         void UpdateDruidForm();
         void OnDruidPetStrike(OwnedWeapon const& owned, Creature* pet, Creature* prey);

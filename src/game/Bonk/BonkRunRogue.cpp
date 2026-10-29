@@ -55,6 +55,9 @@ namespace
     uint32 const BONK_KIT_THROW               = 1184;
     uint32 const BONK_THROW_ANIMATION_GAP_MS  = 400;
     uint32 const BONK_KIT_SHURIKEN_IMPACT     = 1946;
+    uint32 const BONK_KIT_SMOKE_BOMB_SOUND    = 7500;
+    uint32 const BONK_KIT_CALTROPS_SOUND      = 7501;
+    uint32 const BONK_KIT_CHEAP_SHOT_SOUND    = 7502;
     float const BONK_SHURIKEN_SPEED           = 20.0f;
 
     float const BONK_FLURRY_RADIUS            = 8.0f;
@@ -355,7 +358,10 @@ void BonkRun::OpenOnRogueTarget(Creature* target, bool forced)
     {
         int32 durationMs = BONK_CHEAP_SHOT_MS;
         if (LimitStun(target, durationMs))
+        {
             HoldMob(target, sSpellMgr.GetSpellEntry(BONK_SPELL_CHEAP_SHOT), SPELL_AURA_MOD_STUN, durationMs);
+            target->SendPlaySpellVisualKit(BONK_KIT_CHEAP_SHOT_SOUND);
+        }
     }
 }
 
@@ -686,6 +692,7 @@ bool BonkRun::GetRogueCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind
         kind.stacks = 1;
         kind.maxAlive = BONK_CALTROPS_ALIVE;
         kind.lookSpellId = BONK_SPELL_CALTROPS_LOOK;
+        kind.burstKit = BONK_KIT_CALTROPS_SOUND;
         return true;
     }
     if (owned.weapon.id == BONK_WEAPON_SMOKE_BOMB)
@@ -695,6 +702,7 @@ bool BonkRun::GetRogueCloudKind(OwnedWeapon const& owned, KeywordCloudKind& kind
         kind.stacks = 0;
         kind.maxAlive = 1;
         kind.lookSpellId = BONK_SPELL_SMOKE_BOMB_LOOK;
+        kind.burstKit = BONK_KIT_SMOKE_BOMB_SOUND;
         return true;
     }
     return false;
