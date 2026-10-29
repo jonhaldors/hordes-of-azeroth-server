@@ -29,7 +29,7 @@ namespace
     uint32 const BONK_SPELL_HEALTHSTONE    = 11732;
     float const BONK_SHADOW_BURST_HEAL     = 0.1f;
     float const BONK_CARD_COPY_DECAY       = 0.85f;
-    float const BONK_CARD_COPY_FLOOR       = 0.25f;
+    float const BONK_CARD_COPY_FLOOR       = 0.1f;
     float const BONK_CHAMPION_MAX_REDUCTION = 60.0f;
     BonkCardEffect const BONK_CAST_CHARGE_EFFECTS[] = { BONK_CARD_DEATH_RAY, BONK_CARD_FIRE_BURST, BONK_CARD_SHADOW_BURST, BONK_CARD_CHAIN };
 

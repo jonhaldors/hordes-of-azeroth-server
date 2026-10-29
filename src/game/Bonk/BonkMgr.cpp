@@ -23,7 +23,7 @@ INSTANTIATE_SINGLETON_1(BonkMgr);
 namespace
 {
     float const BONK_PASSIVE_RANK_DECAY = 0.85f;
-    float const BONK_PASSIVE_RANK_FLOOR = 0.2f;
+    float const BONK_PASSIVE_RANK_FLOOR = 0.1f;
 
     struct GearColumn
     {
@@ -1183,7 +1183,7 @@ void BonkMgr::LoadPassives()
     m_passives.clear();
 
     std::unique_ptr<QueryResult> result(WorldDatabase.Query(
-        "SELECT `id`, `name`, `icon`, `description`, `effect`, `value_per_rank`, `max_rank` FROM `bonk_passive`"));
+        "SELECT `id`, `name`, `icon`, `description`, `effect`, `value_per_rank`, `max_rank`, `rare` FROM `bonk_passive`"));
 
     if (!result)
     {
@@ -1203,6 +1203,7 @@ void BonkMgr::LoadPassives()
         uint8 const effect = fields[4].GetUInt8();
         passive.valuePerRank = fields[5].GetFloat();
         passive.maxRank = fields[6].GetUInt8();
+        passive.rare = fields[7].GetBool();
 
         if (effect >= MAX_BONK_PASSIVE_EFFECT)
         {

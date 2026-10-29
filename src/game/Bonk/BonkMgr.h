@@ -886,6 +886,7 @@ struct BonkPassive
     BonkPassiveEffect effect = BONK_PASSIVE_POWER;
     float valuePerRank = 10.0f;
     uint8 maxRank = 5;
+    bool rare = false;
 
     bool IsMaxed(uint32 rank) const { return rank >= (maxRank ? uint32(maxRank) : uint32(UINT8_MAX)); }
     float RankWeight(uint32 rank) const;
@@ -1019,6 +1020,7 @@ uint32 const BONK_TIER_VENDOR = 900150;
 uint32 const BONK_DECK_OBJECT = 900063;
 uint32 const BONK_TIER_EXCHANGE_FEE_PERCENT = 10;
 uint32 const BONK_STOCK_TIER_LAG = 2;
+uint32 const BONK_STOCK_TIER_MAX = 18;
 uint32 const BONK_SCRAP_PER_UPGRADE = 100;
 float const BONK_FOUND_PRICE_FACTOR = 0.5f;
 size_t const BONK_FOUND_LINE_LENGTH = 200;
