@@ -32,14 +32,14 @@ class BonkCrowd
             float turnRateLarge = 120.0f;
             float flowAngle = 50.0f;
             float shoveDistance = 0.5f;
-            float shoveSpeed = 8.0f;
+            float shoveSpeed = 2.5f;
             float shoveGapMs = 450.0f;
             float veteranShoveDistance = 0.3f;
             float haltMs = 250.0f;
             float haltGapMs = 1000.0f;
             float levelPushRadius = 10.0f;
             float levelPushDistance = 4.0f;
-            float levelPushSpeed = 16.0f;
+            float levelPushSpeed = 10.0f;
         };
 
         void Update(uint32 diff, Player* hero, std::vector<ObjectGuid> const& mobs, bool heroPerched, std::vector<Creature*>& stuck);
