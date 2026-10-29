@@ -54,6 +54,7 @@ namespace
     float const BONK_TREE_REJUVENATION_PACE   = 0.67f;
     uint32 const BONK_TREE_EXTRA_TREANTS      = 1;
     uint32 const BONK_KIT_SHAPESHIFT_SMOKE    = 3610;
+    uint32 const BONK_KIT_TREANT_SPROUT       = 7504;
     uint32 const BONK_KIT_NATURE_CAST         = 3291;
     uint32 const BONK_KIT_ARCANE_CAST         = 730;
     uint32 const BONK_DRUID_MOTION_GAP_MS     = 500;
@@ -893,6 +894,11 @@ uint32 BonkRun::GetDruidPetFamily(OwnedWeapon const& owned) const
     if (!(owned.weapon.classMask & (1 << (CLASS_DRUID - 1))))
         return 0;
     return IsAncientOfWar(owned) ? BONK_PET_FAMILY_ANCIENT : BONK_PET_FAMILY_TREANT;
+}
+
+uint32 BonkRun::GetDruidSummonKit(OwnedWeapon const& owned) const
+{
+    return GetDruidPetFamily(owned) ? BONK_KIT_TREANT_SPROUT : 0;
 }
 
 uint32 BonkRun::GetDruidFormDisplay(BonkDruidForm form) const

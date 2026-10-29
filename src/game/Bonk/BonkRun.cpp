@@ -247,6 +247,8 @@ namespace
     uint32 const BONK_RUN_XP_SEND_MS = 200;
     uint32 const BONK_PAUSE_AURA_MS  = 200;
     int32 const BONK_OVERCAP_XP_START_LEVEL = 60;
+    uint32 const BONK_SPELL_FROST_TRAP_AURA = 13810;
+    uint32 const BONK_KIT_FROST_TRAP_SOUND = 7503;
     float const BONK_OVERCAP_XP_DOUBLING_LEVELS = 60.0f;
     BonkRarity const BONK_LEVEL_MIN_RARITY = BONK_RARITY_UNCOMMON;
     BonkRarity const BONK_CHEST_MIN_RARITY = BONK_RARITY_RARE;
@@ -8367,6 +8369,8 @@ void BonkRun::SpringTrap(OwnedWeapon& owned, float x, float y, float z)
     optional<int32> basePoints[MAX_EFFECT_INDEX];
     GetBasePoints(owned, spellInfo, 1.0f, basePoints);
     CastAtGround(m_player, spellInfo, basePoints, x, y, z);
+    if (spellInfo->Id == BONK_SPELL_FROST_TRAP_AURA)
+        PlayKitAt(ObjectGuid(), x, y, z, BONK_KIT_FROST_TRAP_SOUND, true);
     SpringEntrapment(owned, x, y, radius);
     if (m_mastery.Special(BONK_SPECIAL_FREEZING_WINDS) > 0.0f && GetRootWeapon(weapon) == BONK_WEAPON_BLIZZARD)
     {
@@ -8689,6 +8693,8 @@ void BonkRun::UpdatePets(OwnedWeapon& owned)
             if (!weapon.HasFlag(BONK_WEAPON_FLAG_TOTEM))
                 pet->GetMotionMaster()->MoveFollow(m_player, 2.0f, angle);
             owned.pets.push_back(pet->GetObjectGuid());
+            if (uint32 const kit = GetDruidSummonKit(owned))
+                PlayKitAt(ObjectGuid(), x, y, z, kit, true);
         }
     }
     while (owned.pets.size() > wanted)
