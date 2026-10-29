@@ -208,6 +208,7 @@ void BonkRun::RemoveHeroLooks()
     for (size_t ring = 0; ring < size_t(BonkHeroRing::Count); ++ring)
         RemoveHeroRingAuras(BonkHeroRing(ring));
     m_player->RemoveAurasDueToSpell(BONK_OLD_BLOOD_AURA_LOOK);
+    ClearWeaponGlows();
 }
 
 uint32 BonkRun::GetSkyKey() const

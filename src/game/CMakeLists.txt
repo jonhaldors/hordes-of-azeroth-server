@@ -36,6 +36,7 @@ set (game_SRCS
     Bonk/BonkRunCards.cpp
     Bonk/BonkRunTrinkets.cpp
     Bonk/BonkRunEvents.cpp
+    Bonk/BonkRunFeel.cpp
     Bonk/BonkRunGear.cpp
     Bonk/BonkRunGlyphs.cpp
     Bonk/BonkRunHidden.cpp

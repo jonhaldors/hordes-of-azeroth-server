@@ -553,10 +553,14 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
             credits.emplace_back(spellProto ? spellProto->Id : 0, dealt);
 
         if (!owner)
+        {
             run->OnTalentDamage(victim, spellProto);
+            run->PlayMeleeHitFeel(victim, hitSpell);
+        }
         if (damage >= health && !victim->GetInvincibilityHpThreshold())
         {
             run->OnKillingBlow(victim);
+            run->PlayKillFeel(victim, damage, health);
             if (!owner && spellProto && !dotSpellId)
             {
                 run->ResetOnKill(spellProto->Id);
