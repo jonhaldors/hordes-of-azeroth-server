@@ -1,5 +1,6 @@
 #include "BonkPlayer.h"
 #include "Bag.h"
+#include "BonkEnchant.h"
 #include "BonkFoundGear.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
@@ -2702,6 +2703,7 @@ void BonkPlayer::SendGearInfo() const
 
     SendAddon("gearend");
     SendFoundItems();
+    sBonkEnchants.Send(m_player);
     SendStats();
 }
 

@@ -1,4 +1,5 @@
 #include "BonkCodex.h"
+#include "BonkEnchant.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -472,6 +473,22 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
         std::string error;
         if (!m_session->GetPlayer()->GetBonkPlayer()->GiveTestFoundGear(tier, lines, error))
             m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
+        return true;
+    }
+    if (tab == "enchant open" || tab == "enchant keep" || tab == "enchant discard" || tab.compare(0, 13, "enchant roll ") == 0)
+    {
+        Player* player = m_session->GetPlayer();
+        std::string error;
+        if (tab == "enchant open")
+            sBonkEnchants.Open(player);
+        else if (tab == "enchant discard")
+            sBonkEnchants.Discard(player);
+        else if (tab == "enchant keep")
+            sBonkEnchants.Keep(player, error);
+        else
+            sBonkEnchants.Roll(player, uint8(atoi(tab.c_str() + 13)), error);
+        if (!error.empty())
+            player->GetBonkPlayer()->Notify(error);
         return true;
     }
     if (tab == "found")
