@@ -326,6 +326,7 @@ class Creature : public Unit
         uint32 GetPlateId() const { return m_plateId; }
         void SetBonkEnemy(bool enabled) { m_bonkEnemy = enabled; }
         bool IsBonkEnemy() const { return m_bonkEnemy; }
+        ZoneScript* GetEncounterScript() const { return m_bonkEnemy ? nullptr : m_zoneScript; }
         void SetBonkFlyer(bool enabled) { m_bonkFlyer = enabled; }
         bool IsBonkFlyer() const { return m_bonkFlyer; }
         void SetBonkNormal(bool normal) { m_bonkNormal = normal; }

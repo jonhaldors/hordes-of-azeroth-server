@@ -309,8 +309,8 @@ void Creature::AddToWorld()
 
     if (!m_AI)
         AIM_Initialize();
-    if (!bWasInWorld && m_zoneScript)
-        m_zoneScript->OnCreatureCreate(this);
+    if (!bWasInWorld && GetEncounterScript())
+        GetEncounterScript()->OnCreatureCreate(this);
 }
 
 void Creature::RemoveFromWorld()
@@ -883,8 +883,8 @@ void Creature::Update(uint32 update_diff, uint32 diff)
                     AI()->JustRespawned();
                 }
 
-                if (m_zoneScript)
-                    m_zoneScript->OnCreatureRespawn(this);
+                if (GetEncounterScript())
+                    GetEncounterScript()->OnCreatureRespawn(this);
 
                 if (m_isCreatureLinkingTrigger)
                     GetMap()->GetCreatureLinkingHolder()->DoCreatureLinkingEvent(LINKING_EVENT_RESPAWN, this);
@@ -3691,8 +3691,8 @@ void Creature::OnLeaveCombat()
     if (m_AI)
         m_AI->EnterEvadeMode();
 
-    if (m_zoneScript)
-        m_zoneScript->OnCreatureEvade(this);
+    if (GetEncounterScript())
+        GetEncounterScript()->OnCreatureEvade(this);
 }
 
 void Creature::OnEnterCombat(Unit* pWho, bool notInCombat)
@@ -3715,8 +3715,8 @@ void Creature::OnEnterCombat(Unit* pWho, bool notInCombat)
         SetStandState(UNIT_STAND_STATE_STAND);
         m_pacifiedTimer = 0;
 
-        if (m_zoneScript)
-            m_zoneScript->OnCreatureEnterCombat(this);
+        if (GetEncounterScript())
+            GetEncounterScript()->OnCreatureEnterCombat(this);
 
         if (IsMounted())
             Unmount();

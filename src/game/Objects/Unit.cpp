@@ -1267,7 +1267,7 @@ void Unit::Kill(Unit* pVictim, SpellEntry const* spellProto, bool durabilityLoss
                 pOwnerCreature->AI()->SummonedCreatureJustDied(pCreatureVictim);
         }
 
-        if (ZoneScript* pScript = pCreatureVictim->GetZoneScript())
+        if (ZoneScript* pScript = pCreatureVictim->GetEncounterScript())
             pScript->OnCreatureDeath(pCreatureVictim);
 
         // Dungeon specific stuff, only applies to players killing creatures
