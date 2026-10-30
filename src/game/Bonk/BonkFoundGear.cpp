@@ -1,4 +1,6 @@
 #include "BonkFoundGear.h"
+#include "BonkLocale.h"
+#include "BonkStrings.h"
 #include "Database/DatabaseEnv.h"
 #include "Item.h"
 #include "Log.h"
@@ -290,9 +292,9 @@ std::string BonkFound::DescribeRanges(uint32 tier)
     return text;
 }
 
-std::string BonkFound::DescribeTier(uint32 tier)
+std::string BonkFound::DescribeTier(uint32 tier, LocaleConstant locale)
 {
-    return "Tier " + std::to_string(tier);
+    return sBonkLocale.GetString(BONK_STRING_FOUND_TIER, locale, { std::to_string(tier) });
 }
 
 void BonkFound::AddWornStats(Item const* item, float* passives)
