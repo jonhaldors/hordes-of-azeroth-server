@@ -261,7 +261,7 @@ namespace
     {
         RulesPage(bonk, "Gear and tiers")
             .Line("Gear gives its listed stats plus set bonuses.")
-            .Term("Mythic tiers", "Power, Max Health and Armor grow 12% per tier, compounding, so Tier 20 is about 8.6 times Tier 1. Other stats stay the same.")
+            .Term("Mythic tiers", "Power, Max Health and Armor grow 12% per tier up to Tier 20, about 8.6 times Tier 1. Past Tier 20, each tier adds 12% of the Tier 20 value. Other stats stay the same.")
             .Line("Trinket effects don't grow with tier; their stats do.")
             .Term("Scrap", "each item you don't extract from a Mythic run gives Scrap, more for higher tiers and bonus stats. Mythic elites drop a little too. The Mythic Quartermaster spends it to raise gear you found by 1 tier, up to Tier 10 or your best Mythic floor if higher. For gold, it rerolls one bonus stat per item.");
     }

@@ -12,6 +12,14 @@
 
 INSTANTIATE_SINGLETON_1(BonkFoundStore);
 
+float BonkGearTierScale(uint32 tier)
+{
+    uint32 const steps = std::max(1u, tier) - 1;
+    uint32 const compounded = std::min(steps, BONK_GEAR_COMPOUND_TIERS - 1);
+    uint32 const linear = steps - compounded;
+    return std::pow(BONK_GEAR_TIER_GROWTH, float(compounded)) * (1.0f + (BONK_GEAR_TIER_GROWTH - 1.0f) * float(linear));
+}
+
 namespace
 {
     float const BONK_FOUND_TWO_TIERS_UP_CHANCE = 3.0f;
@@ -56,11 +64,6 @@ namespace
     bool IsGrowingStat(uint8 effect)
     {
         return effect == BONK_PASSIVE_POWER || effect == BONK_PASSIVE_MAX_HEALTH || effect == BONK_PASSIVE_ARMOR;
-    }
-
-    float TierGrowth(uint32 tiers)
-    {
-        return std::pow(BONK_FOUND_TIER_GROWTH, float(tiers));
     }
 
     uint32 RollExtraTiers()
@@ -201,7 +204,7 @@ float BonkFound::LineValue(BonkFoundLine const& line, uint32 tier)
     if (!range)
         return 0.0f;
     float const value = range->low + (range->high - range->low) * line.roll;
-    float const grown = range->grows ? value * TierGrowth(std::max(1u, tier) - 1) : value;
+    float const grown = range->grows ? value * BonkGearTierScale(tier) : value;
     return std::round(grown * 10.0f) / 10.0f;
 }
 
@@ -290,7 +293,7 @@ void BonkFound::AddWornStats(Item const* item, float* passives)
     if (found.tier > entryTier && entryTier)
         if (BonkItemStat const* stat = sBonkMgr.GetItemStat(item->GetEntry()))
         {
-            float const extra = TierGrowth(found.tier - entryTier) - 1.0f;
+            float const extra = BonkGearTierScale(found.tier) / BonkGearTierScale(entryTier) - 1.0f;
             for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
                 if (IsGrowingStat(effect))
                     passives[effect] += stat->stats[effect] * extra;
@@ -317,7 +320,7 @@ std::string BonkFound::DescribeExtra(Item const* item, uint32 tier)
     BonkItemStat const* stat = item ? sBonkMgr.GetItemStat(item->GetEntry()) : nullptr;
     if (!stat || !entryTier || tier <= entryTier)
         return std::string();
-    float const extra = TierGrowth(tier - entryTier) - 1.0f;
+    float const extra = BonkGearTierScale(tier) / BonkGearTierScale(entryTier) - 1.0f;
     std::string text;
     for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
         if (IsGrowingStat(effect) && stat->stats[effect] != 0.0f)
