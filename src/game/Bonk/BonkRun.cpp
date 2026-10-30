@@ -63,6 +63,8 @@ namespace
     float const BONK_CHEST_MIN_SPACING     = 40.0f;
     uint32 const BONK_CHEST_PLACE_ATTEMPTS = 10;
     float const BONK_PORTAL_DISTANCE       = 6.0f;
+    float const BONK_PORTAL_MAX_DETOUR     = 1.5f;
+    float const BONK_PORTAL_DETOUR_SLACK   = 10.0f;
     float const BONK_POWERUP_MIN_DISTANCE  = 20.0f;
     float const BONK_POWERUP_MAX_DISTANCE  = 50.0f;
     float const BONK_POWERUP_PICKUP_RANGE  = 3.0f;
@@ -5154,19 +5156,31 @@ void BonkRun::OpenPortal(Creature* boss)
 
 void BonkRun::PlacePortal(float x, float y, float baseZ)
 {
-    auto walkable = [this](float& spotX, float& spotY, float& spotZ, float heightFrom)
+    float const heroX = m_player->GetPositionX(), heroY = m_player->GetPositionY();
+    float heroZ = m_player->GetMap()->GetHeight(heroX, heroY, m_player->GetPositionZ() + 2.0f, true, 2.0f * BONK_SPAWN_MAX_HEIGHT_DIFF);
+    if (heroZ <= INVALID_HEIGHT)
+        heroZ = m_player->GetPositionZ();
+
+    auto walkable = [&](float& spotX, float& spotY, float& spotZ, float heightFrom)
     {
         float const ground = m_player->GetMap()->GetHeight(spotX, spotY, heightFrom + 5.0f, true, 2.0f * BONK_SPAWN_MAX_HEIGHT_DIFF);
         if (ground <= INVALID_HEIGHT || !m_player->IsWithinLOS(spotX, spotY, ground))
             return false;
         PathFinder path(m_player);
-        path.calculate(Vector3(m_player->GetPositionX(), m_player->GetPositionY(), m_player->GetPositionZ()), Vector3(spotX, spotY, ground));
+        path.calculate(Vector3(heroX, heroY, heroZ), Vector3(spotX, spotY, ground));
         if (!(path.getPathType() & PATHFIND_NORMAL) || (path.getPathType() & PATHFIND_INCOMPLETE))
             return false;
         Vector3 const end = path.getActualEndPosition();
         float const dx = end.x - spotX;
         float const dy = end.y - spotY;
         if (dx * dx + dy * dy > 4.0f)
+            return false;
+        float walked = 0.0f;
+        PointsArray const& points = path.getPath();
+        for (size_t i = 1; i < points.size(); ++i)
+            walked += (points[i] - points[i - 1]).length();
+        float const straight = Vector3(end.x - heroX, end.y - heroY, end.z - heroZ).length();
+        if (walked > straight * BONK_PORTAL_MAX_DETOUR + BONK_PORTAL_DETOUR_SLACK)
             return false;
         spotX = end.x;
         spotY = end.y;
@@ -5179,15 +5193,15 @@ void BonkRun::PlacePortal(float x, float y, float baseZ)
     for (uint32 step = 0; !placed && step < 8; ++step)
     {
         float const angle = m_player->GetOrientation() + step * M_PI_F / 4.0f;
-        x = m_player->GetPositionX() + BONK_PORTAL_DISTANCE * std::cos(angle);
-        y = m_player->GetPositionY() + BONK_PORTAL_DISTANCE * std::sin(angle);
-        placed = walkable(x, y, z, m_player->GetPositionZ());
+        x = heroX + BONK_PORTAL_DISTANCE * std::cos(angle);
+        y = heroY + BONK_PORTAL_DISTANCE * std::sin(angle);
+        placed = walkable(x, y, z, heroZ);
     }
     if (!placed)
     {
-        x = m_player->GetPositionX();
-        y = m_player->GetPositionY();
-        z = m_player->GetPositionZ();
+        x = heroX;
+        y = heroY;
+        z = heroZ;
     }
 
     if (GameObject* portal = PlaceObject(BONK_GO_PORTAL, x, y, z, BONK_OBJECT_LIFETIME_SEC))

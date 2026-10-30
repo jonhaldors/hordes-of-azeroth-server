@@ -782,6 +782,15 @@ class BonkRun
             bool nearestOnly = false;
         };
         std::vector<GlyphBurst> m_glyphBursts;
+        struct GlacialShatter
+        {
+            ObjectGuid dead;
+            float x = 0.0f;
+            float y = 0.0f;
+            float damage = 0.0f;
+        };
+        std::vector<GlacialShatter> m_glacialShatters;
+        void ReleaseGlacialShatters();
 
         void SpawnPowerup(WorldObject const* at = nullptr);
         void UpdatePowerups(uint32 diff, bool spawn);
@@ -833,6 +842,7 @@ class BonkRun
         void ShowTrapSprung(OwnedWeapon const& owned, uint32 prop, float x, float y, float z);
         uint32 PlaceTrapProp(uint32 display, float x, float y, float z);
         void DealSpellHit(SpellEntry const* spellInfo, Unit* target, float damage, Unit* caster = nullptr, bool forceCrit = false);
+        void DealCarriedDamage(SpellEntry const* spellInfo, Unit* target, float damage);
         std::vector<Creature*> GetMobsInLine(OwnedWeapon const& owned, float range, float angle) const;
         bool Howl(OwnedWeapon& owned);
         float GetFrenzyDamage() const;
