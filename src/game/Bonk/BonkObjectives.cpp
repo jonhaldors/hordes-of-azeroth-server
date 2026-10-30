@@ -35,6 +35,11 @@ namespace
         return objective.follows.IsEmpty() && objective.kind != BONK_OBJECTIVE_CHEST;
     }
 
+    bool PingsWhileFollowed(BonkObjectiveKind kind)
+    {
+        return kind == BONK_OBJECTIVE_EVENT;
+    }
+
     std::string FormatCoordinate(float value)
     {
         char text[32];
@@ -96,7 +101,8 @@ uint32 BonkObjectives::Follow(Player* hero, BonkObjectiveKind kind, Creature con
 
     m_objectives.push_back(objective);
     Send(hero, objective);
-    Ping(hero, objective);
+    if (PingsWhileFollowed(kind))
+        Ping(hero, objective);
     return objective.id;
 }
 
@@ -143,6 +149,8 @@ std::vector<BonkObjective> BonkObjectives::Update(Player* hero, uint32 diff)
             target->GetPosition(objective.x, objective.y, objective.z);
             Send(hero, objective);
         }
+        if (!PingsWhileFollowed(objective.kind))
+            continue;
         if (objective.pingMs > diff)
             objective.pingMs -= diff;
         else

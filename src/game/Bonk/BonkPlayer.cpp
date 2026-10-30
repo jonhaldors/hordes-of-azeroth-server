@@ -3071,8 +3071,8 @@ namespace
         if (kind == "affix")
             return "Elites gain a " + Ordinal(tier.eliteAffixes + BonkRun::MilestoneAffixes(tier, floor)) + " affix.";
         if (kind == "veteran")
-            return Percent(BonkRun::MilestoneVeteranChance(tier, floor) - BonkRun::MilestoneVeteranChance(tier, floor - 1)) +
-                "% more enemies are Veterans.";
+            return "+" + Percent(BonkRun::MilestoneVeteranChance(tier, floor) - BonkRun::MilestoneVeteranChance(tier, floor - 1)) +
+                "% Veteran chance.";
         return "";
     }
 

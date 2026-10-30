@@ -153,46 +153,46 @@ namespace
     void SendStatRules(BonkPlayer* bonk)
     {
         RulesPage(bonk, "Stats")
-            .Term("Power", "+1% damage per point, for you and your summons. Power from gear multiplies with Power from everything else.")
+            .Term("Power", "+1% damage per point, for you and your summons. Power on gear gives +0.5% per point and multiplies with your other Power.")
             .Term("Max Health", "+1% maximum health per point.")
-            .Term("Critical strike chance", "" + Number(BONK_BASE_CRIT) + "% base. Spells crit for 150% damage; melee, ranged and pet attacks for 200%. Above 100%, a hit can crit again with the chance over 100%.")
-            .Term("Critical strike damage", "+1% to the crit bonus per point.")
-            .Term("Haste", "shortens spell cooldowns and makes damage over time tick faster. Each point is worth a little less, up to " + Number(BONK_MAX_HASTE) + "%. Gear gives at most " + Number(BONK_MAX_GEAR_HASTE) + "%. Short Haste bursts are added on top.")
-            .Term("Area", "makes AoE spells bigger. Each point is worth a little less, up to " + Number(BONK_MAX_AREA) + "%. Doesn't affect other spells, summons or procs.")
-            .Term("Count", "+1 bolt, shot, swing, pet or totem per point, up to " + Number(BONK_MAX_COUNT) + ". Other AoE spells ignore it and repeat only through Echo, at most once.")
-            .Term("Dodge", "chance to dodge enemy melee attacks, up to " + Number(BONK_MAX_DODGE) + "%. Bolts, spells and ground effects can't be dodged.")
-            .Term("Armor", "20 Armor reduces damage taken by 16%, 100 Armor by 43%, and 300 Armor by 60%, the most it can.")
-            .Term("Shield", "absorbs damage equal to a share of maximum health. Shield is restored after " + Seconds(BONK_SHIELD_REGEN_DELAY_MS) + " without taking damage. All shields together absorb at most 50% of maximum health.")
-            .Term("Leech", "each point gives your own hits a 1% chance to heal 1% of maximum health, paid out once a second, up to 0.03% of maximum health a second per point. Summon hits don't count.")
-            .Term("Recovery", "regain 1% of maximum health a second per point. Healing cuts reduce it.")
+            .Term("Critical strike chance", "" + Number(BONK_BASE_CRIT) + "% base. Spells crit for 150% damage, attacks for 200%. Above 100%, a hit can crit twice.")
+            .Term("Critical strike damage", "+1% critical strike damage per point.")
+            .Term("Haste", "shorter cooldowns and faster damage over time. Diminishing returns, up to " + Number(BONK_MAX_HASTE) + "%. Gear gives at most " + Number(BONK_MAX_GEAR_HASTE) + "%. Short Haste boosts go past the cap.")
+            .Term("Area", "bigger AoE spells. Diminishing returns, up to " + Number(BONK_MAX_AREA) + "%. Doesn't affect other spells or summons.")
+            .Term("Count", "+1 bolt, shot, swing, pet or totem per point, up to " + Number(BONK_MAX_COUNT) + ". Other AoE spells ignore it.")
+            .Term("Dodge", "chance to dodge enemy melee attacks, up to " + Number(BONK_MAX_DODGE) + "%. Evasion and Deterrence go past the cap.")
+            .Term("Armor", "20 Armor reduces damage taken by 16%, 100 Armor by 43%, and 300 Armor by 60%, the most it can. Each point above 300 gives +0.5% maximum health.")
+            .Term("Shield", "absorbs damage up to a share of maximum health. Refills after " + Seconds(BONK_SHIELD_REGEN_DELAY_MS) + " without taking damage. All shields together hold at most 50% of maximum health, 100% with Juggernaut.")
+            .Term("Leech", "your hits have a 1% chance per point to heal 1% of maximum health, up to 0.03% of maximum health per second per point. Summon hits don't count.")
+            .Term("Health regeneration", "heals 1% of maximum health per second per point. Healing cuts reduce it.")
             .Term("Luck", "rarer level-up, card, glyph and Ley Line choices. +0.1% elite chest chance and +0.1% evolution chance per point.")
             .Term("Pickup Range", "6 yards base, +1% per point, up to 30 yards. Darkmoon Tickets and glyphs always need 3 yards.")
             .Term("Movement Speed", "+1% per point, up to " + Number(BONK_MAX_MOVE_SPEED) + "%. Short speed boosts go past it.")
-            .Term("Greed", "more gold. Doesn't affect Valor or Darkmoon Tickets.")
-            .Term("Growth", "more experience.")
+            .Term("Gold", "more gold. Doesn't affect Valor or Darkmoon Tickets.")
+            .Term("Experience", "more experience.")
             .Term("Determination", "each run that ends in death before your first Normal clear gives +" + Number(BONK_DETERMINATION_PER_STACK) + " Power and " + Number(BONK_DETERMINATION_PER_STACK) + "% less damage taken, up to " + std::to_string(uint32(BONK_DETERMINATION_MAX_STACKS)) + " stacks.");
     }
 
     void SendStackingRules(BonkPlayer* bonk)
     {
         RulesPage(bonk, "Stacking")
-            .Line("Every stat adds into one total: gear, set bonuses, cards, glyphs, spell passives, talents, Training and Ley Lines. Gear Haste is capped first.")
-            .Line("Caps and diminishing returns apply to the total. Haste and Area curve; Dodge, Count and Movement Speed stop at their cap. Crit chance has no cap.")
-            .Line("Spell ranks, Hunter's Mark, Judged, keyword payoffs, class damage bonuses and capstones multiply with Power.")
-            .Line("Vulnerabilities and Sunder Armor multiply last, on the target.")
-            .Line("Each passive rank is worth 85% of the one before, never below 10% (Rested has no floor). Each extra card copy is worth 85% of the one before, never below 10%. Chance cards roll each copy separately.")
-            .Line("Two trinkets with the same effect both give their stats, but the effect counts once.");
+            .Line("Stats from gear, cards, glyphs, passives, talents, Training and Ley Lines add together. Caps apply to the total.")
+            .Line("Critical strike chance has no cap.")
+            .Line("Talent damage bonuses add to Power. Spell ranks, Hunter's Mark, Judged, keyword payoffs and capstones multiply with it.")
+            .Line("Vulnerabilities and Sunder Armor multiply with everything else.")
+            .Line("Each passive rank and each extra card copy is worth 85% of the one before, never below 10%. Count doesn't shrink, and Rested has no floor.")
+            .Line("Two trinkets with the same effect don't stack it.");
     }
 
     void SendSpellRules(BonkPlayer* bonk)
     {
         RulesPage(bonk, "Spells")
-            .Term("Cooldown", "base cooldown divided by 1 + Haste, including the spell's own Haste upgrades. Never below 0.2 sec. A spell with no target waits instead of starting its cooldown.")
+            .Term("Cooldown", "shortened by Haste, including the spell's own Haste upgrades. Never below 0.2 sec. A spell with no target in range waits instead of starting its cooldown.")
             .Term("Ranks", "Common +" + Number(BONK_RANK_DAMAGE[0]) + "% damage, Uncommon +" + Number(BONK_RANK_DAMAGE[1]) + "%, Rare +" + Number(BONK_RANK_DAMAGE[2]) + "% and 1 upgrade, Epic +" + Number(BONK_RANK_DAMAGE[3]) + "% and 2 upgrades. Spells without damage get upgrades instead. Past rank 20 the damage per rank shrinks: rank 40 adds half, rank 80 a quarter.")
             .Line("Hit Twice, Echo and Targets come only from Epic ranks.")
-            .Line("Evolutions can appear from rank 10 and keep your rank, damage and upgrades.")
-            .Line("Direct hits vary by 7% either way. Damage over time ticks don't.")
-            .Line("You start with 3 spell slots and 3 passive slots. Talents raise them to at most 5 spells and 6 passives.");
+            .Line("Evolutions can appear from rank 10, earlier with Premonition, and keep your rank, damage and upgrades.")
+            .Line("Spell hits vary by 7% either way, pet attacks by 10%. Damage over time doesn't vary.")
+            .Line("You start with 3 spell slots and 3 passive slots. Sayge sells more, up to 5 spells and 6 passives.");
     }
 
     void SendDotRules(BonkPlayer* bonk)
@@ -200,13 +200,13 @@ namespace
         BonkKeywordInfo const& burning = KeywordOrBlank(BONK_KEYWORD_BURNING);
         BonkKeywordInfo const& agony = KeywordOrBlank(BONK_KEYWORD_AGONY);
         RulesPage(bonk, "Damage over time")
-            .Term("Base health", "the health of a normal enemy at your level on Normal. It doesn't grow with difficulty, floors, elites or bosses.")
+            .Term("Base health", "the health of a normal enemy of the zone's level on Normal. It doesn't grow with difficulty, floors, elites or bosses.")
             .Line("Burning, Bleed, Poison, Decay and Moonfire: each stack deals " + Number(burning.valuePerStack * 100.0f) + "% of base health every tick for " + Seconds(burning.durationMs) + ", up to " + std::to_string(uint32(burning.maxStacks)) + " stacks.")
             .Term("Agony", "each stack deals " + Number(agony.valuePerStack * 100.0f) + "% of base health every tick for " + Seconds(agony.durationMs) + ", growing to 3 times as strong over 8 ticks. It doesn't spread on death.")
             .Line("A tick is 1 sec, faster with Haste.")
-            .Line("Damage over time can critically strike only with a talent that allows it, using your normal crit chance and half the crit bonus.")
+            .Line("Damage over time can critically strike only with a talent, for half the usual critical strike bonus.")
             .Line("Each new stack refreshes all stacks on that enemy.")
-            .Line("Power counts when stacks are added, not on every tick. Vulnerabilities count on every tick.")
+            .Line("Power counts when stacks are added or expire. Vulnerabilities count on every tick.")
             .Line("When an enemy with 2 or more stacks dies, half its stacks spread to the 2 nearest enemies within 8 yards.")
             .Line("Bosses take the same damage per stack; it's a smaller share of their health.")
             .Line("Ticks can trigger Leech. They don't trigger cards or trinkets.");
@@ -221,7 +221,7 @@ namespace
         BonkKeywordInfo const& dazed = KeywordOrBlank(BONK_KEYWORD_DAZED);
         RulesPage(bonk, "Keywords")
             .Term("Chill", "" + Number(chill.valuePerStack) + "% slow per stack, up to " + std::to_string(uint32(chill.maxStacks)) + ". At " + std::to_string(uint32(chill.maxStacks)) + " stacks the enemy is Frozen.")
-            .Term("Frozen", "normal enemies are rooted for " + Seconds(frozen.durationMs) + "; elites and bosses keep moving but count as Frozen. Your Frost spells always crit Frozen enemies, and crits on them deal an extra 50% damage.")
+            .Term("Frozen", "normal enemies are rooted for " + Seconds(frozen.durationMs) + "; elites and bosses keep moving but count as Frozen. Your Frost spells always crit Frozen enemies, and your critical strikes on them deal +50% critical strike damage.")
             .Term("Static", "at " + std::to_string(uint32(staticCharge.maxStacks)) + " stacks, lightning strikes the enemy and up to 3 enemies within 6 yards for " + Number(staticCharge.valuePerStack * 100.0f) + "% of base health, raised by Power. It can crit.")
             .Term("Hunter's Mark", "marked enemies take " + Number(mark.valuePerStack) + "% more damage from you and your summons, raised by the marking spell's ranks and Mark upgrades up to 30%. Talents add on top. On death it passes to the 2 nearest unmarked enemies within 10 yards.")
             .Term("Judged", "enemies hit by Judgement of the Crusader take 20% more damage from you for 6 sec.")
@@ -241,20 +241,20 @@ namespace
     void SendSummonRules(BonkPlayer* bonk)
     {
         RulesPage(bonk, "Summons and pets")
-            .Line("All summons get your Power, Crit, Crit Damage, Haste and Movement Speed. They never die and enemies ignore them.")
-            .Line("Summons don't get your Area and don't trigger your Leech, cards or trinkets.")
+            .Line("Summons get your Power, critical strike chance and damage, Haste and Movement Speed. They never die and enemies ignore them.")
+            .Line("Summons don't get your Area. Their hits don't trigger Leech, trinkets or on-hit cards, but their kills count.")
             .Line("Every summon hit applies its spell's keyword.")
-            .Line("Count adds pets, elementals, treants, totems and wolves, up to " + std::to_string(BONK_MAX_SUMMONS) + " summons in all.")
+            .Line("Count adds pets, elementals, treants, totems and wolves.")
             .Line("Summons that leave on their own, like snakes, beasts, Stampede, Spirit Pack wolves and warlock demons, last longer with Duration.");
     }
 
     void SendProcRules(BonkPlayer* bonk)
     {
         RulesPage(bonk, "Procs")
-            .Term("Trinkets", "5% chance when a spell is cast, at most once per cooldown. Damage trinkets deal a share of that spell's next hit and can crit. Their radius doesn't grow with Area.")
+            .Term("Trinkets", "5% chance when a spell is cast, at most once per cooldown. Damage trinkets deal a share of that spell's next hit, more with Count, and can crit. Area doesn't affect them.")
             .Line("Fire Burst, Shadow Burst, Chain Lightning and Death Ray roll when a spell is cast and fire on that spell's next hit.")
-            .Line("Procs never trigger other trinkets or cards. Trinket, Storm and Meteor hits can trigger Leech.")
-            .Line("Glyph damage (Storm, Meteor, Shadowmourne) is based on base health and the run's time, not difficulty. Storm always crits.");
+            .Line("Procs never trigger other trinkets or cards. Their hits can trigger Leech.")
+            .Line("Glyph damage (Storm, Meteor, Shadowmourne) grows with base health, the run's time and Power, not difficulty. Storm always crits.");
     }
 
     void SendGearRules(BonkPlayer* bonk)
@@ -263,7 +263,7 @@ namespace
             .Line("Gear gives its listed stats plus set bonuses.")
             .Term("Mythic tiers", "Power, Max Health and Armor grow 12% per tier, compounding, so Tier 20 is about 8.6 times Tier 1. Other stats stay the same.")
             .Line("Trinket effects don't grow with tier; their stats do.")
-            .Term("Scrap", "each Mythic item you don't extract gives Scrap, more for higher tiers and bonus lines. Mythic elites drop a little too. The Mythic Quartermaster spends it to raise gear you found by 1 tier, up to your best Mythic floor. A Tier 20 piece can be awakened for gold and keeps growing as Ancestral +1, +2 and on.");
+            .Term("Scrap", "each item you don't extract from a Mythic run gives Scrap, more for higher tiers and bonus lines. Mythic elites drop a little too. The Mythic Quartermaster spends it to raise gear you found by 1 tier, up to Tier 10 or your best Mythic floor if higher. A Tier 20 piece can be awakened for gold and keeps growing as Ancestral +1, +2 and on.");
     }
 
     void SendSurvivalRules(BonkPlayer* bonk)

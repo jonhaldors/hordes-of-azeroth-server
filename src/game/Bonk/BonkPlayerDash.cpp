@@ -18,6 +18,7 @@ namespace
     uint32 const BONK_DASH_INVULNERABLE_MS  = 250;
     uint32 const BONK_DASH_COOLDOWN_MS      = 10000;
     uint32 const BONK_DASH_MIN_COOLDOWN_MS  = 3000;
+    uint32 const BONK_BLINK_MIN_COOLDOWN_MS = 2000;
     uint32 const BONK_DASH_CHARGES          = 1;
     uint32 const BONK_DASH_MAX_AGE_MS       = 1000;
     uint32 const BONK_KIT_BLINK_LEAVE       = 267;
@@ -33,7 +34,8 @@ uint32 BonkPlayer::GetDashCooldownMs() const
 {
     int32 const cooldown = int32(BONK_DASH_COOLDOWN_MS) - int32(GetUpgradeUtility(BONK_UTILITY_DASH_COOLDOWN) * IN_MILLISECONDS);
     float const blinkRate = m_run ? m_run->GetDashRechargeRate() * m_run->GetGlyphDashRecharge() : 1.0f;
-    return uint32(std::max(int32(cooldown / blinkRate), int32(BONK_DASH_MIN_COOLDOWN_MS)));
+    uint32 const floor = m_run && m_run->IsBlinkDash() ? BONK_BLINK_MIN_COOLDOWN_MS : BONK_DASH_MIN_COOLDOWN_MS;
+    return uint32(std::max(int32(cooldown / blinkRate), int32(floor)));
 }
 
 uint32 BonkPlayer::GetDashMaxCharges() const
@@ -168,11 +170,12 @@ float BonkPlayer::GetMoveAngle() const
 void BonkPlayer::BlinkHero()
 {
     MovementInfo const& mi = m_player->m_movementInfo;
-    float x = m_player->GetPositionX(), y = m_player->GetPositionY(), z = m_player->GetPositionZ(), o;
+    float x = m_player->GetPositionX(), y = m_player->GetPositionY(), z = m_player->GetPositionZ(), o = m_player->GetOrientation();
     uint32 const age = std::min(WorldTimer::getMSTimeDiffToNow(mi.stime), BONK_DASH_MAX_AGE_MS);
     m_player->ExtrapolateMovement(mi, age, x, y, z, o);
 
-    float const angle = GetMoveAngle();
+    bool const airborne = (mi.moveFlags & (MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR)) != 0;
+    float const angle = airborne ? o : GetMoveAngle();
     float destX = x + GetDashDistance() * std::cos(angle);
     float destY = y + GetDashDistance() * std::sin(angle);
     float destZ = z;

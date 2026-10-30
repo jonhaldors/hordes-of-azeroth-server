@@ -15,6 +15,8 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Map.h"
+#include "MoveMap.h"
+#include "MoveMapSharedDefines.h"
 #include "MoveSpline.h"
 #include "NullCreatureAI.h"
 #include "ObjectMgr.h"
@@ -249,6 +251,9 @@ namespace
     float const BONK_ZONE_START_MARGIN  = 6.0f;
     float const BONK_ZONE_START_FLAT    = 12.0f;
     float const BONK_ZONE_START_CLEAR   = 1.5f;
+int const BONK_START_PATH_POLYS     = 2048;
+int const BONK_START_PATH_NODES     = 65535;
+float const BONK_START_POLY_REACH   = 10.0f;
     float const BONK_CROWD_WAIT_RANGE   = 30.0f;
     float const BONK_CROWD_TOUCH_SLACK  = 1.0f;
     float const BONK_CROWD_MAX_BODY     = 3.0f;
@@ -1161,11 +1166,16 @@ void BonkRun::ApplyInvader()
     m_map.levelOffset = invader->levelOffset;
 }
 
+namespace
+{
+    bool CanWalkFromAnchor(BonkMap const& map, TerrainInfo* terrain, float x, float y, float z);
+}
+
 void BonkRun::LearnStarts(std::vector<BonkSpot> const& spots)
 {
     if (spots.empty() || !m_player->IsInWorld())
         return;
-    TerrainInfo const* terrain = m_player->GetMap()->GetTerrain();
+    TerrainInfo* terrain = sTerrainMgr.LoadTerrain(m_map.mapId);
     float const edge = m_map.type == BONK_MAP_OPEN ? BONK_START_EDGE : BONK_START_EDGE_ENCLOSED;
     for (BonkSpot const& spot : spots)
     {
@@ -1181,7 +1191,7 @@ void BonkRun::LearnStarts(std::vector<BonkSpot> const& spots)
             if (z <= INVALID_HEIGHT || (m_map.zoneId && terrain->GetZoneId(x, y, z) != m_map.zoneId) || terrain->IsInWater(x, y, z + 1.0f))
                 inside = false;
         }
-        if (!inside)
+        if (!inside || (m_map.type == BONK_MAP_OPEN && !CanWalkFromAnchor(m_map, terrain, spot.x, spot.y, spot.z)))
             continue;
         BonkMapStart start;
         start.x = spot.x;
@@ -1201,11 +1211,69 @@ namespace
         return top <= z + BONK_ZONE_START_CLEAR;
     }
 
+    void LoadGridsBetween(TerrainInfo* terrain, float fromX, float fromY, float toX, float toY)
+    {
+        float const step = SIZE_OF_GRIDS / 2.0f;
+        for (float gx = std::min(fromX, toX) - step; gx <= std::max(fromX, toX) + step; gx += step)
+            for (float gy = std::min(fromY, toY) - step; gy <= std::max(fromY, toY) + step; gy += step)
+                terrain->GetHeightStatic(gx, gy, MAX_HEIGHT, false);
+    }
+
+    struct StartQuery
+    {
+        dtNavMesh const* mesh = nullptr;
+        dtNavMeshQuery* query = nullptr;
+    };
+
+    dtNavMeshQuery const* GetStartQuery(uint32 mapId)
+    {
+        dtNavMesh const* mesh = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMesh(mapId);
+        if (!mesh)
+            return nullptr;
+        thread_local std::map<uint32, StartQuery> queries;
+        StartQuery& entry = queries[mapId];
+        if (entry.mesh == mesh)
+            return entry.query;
+        if (!entry.query)
+            entry.query = dtAllocNavMeshQuery();
+        entry.mesh = nullptr;
+        if (!entry.query || dtStatusFailed(entry.query->init(mesh, BONK_START_PATH_NODES)))
+            return nullptr;
+        entry.mesh = mesh;
+        return entry.query;
+    }
+
+    bool CanWalkFromAnchor(BonkMap const& map, TerrainInfo* terrain, float x, float y, float z)
+    {
+        LoadGridsBetween(terrain, map.x, map.y, x, y);
+        dtNavMeshQuery const* query = GetStartQuery(map.mapId);
+        if (!query)
+            return true;
+
+        dtQueryFilter filter;
+        filter.setIncludeFlags(NAV_GROUND | NAV_WATER);
+        float const anchor[3] = { map.y, map.z, map.x };
+        float const spot[3] = { y, z, x };
+        float anchorNear[3] = { 0.0f, 0.0f, 0.0f };
+        float spotNear[3] = { 0.0f, 0.0f, 0.0f };
+        dtPolyRef const anchorRef = PathInfo::FindWalkPoly(query, anchor, filter, anchorNear, BONK_START_POLY_REACH);
+        if (!anchorRef)
+            return true;
+        dtPolyRef const spotRef = PathInfo::FindWalkPoly(query, spot, filter, spotNear, BONK_START_POLY_REACH);
+        if (!spotRef)
+            return false;
+
+        dtPolyRef path[BONK_START_PATH_POLYS];
+        int count = 0;
+        dtStatus const status = query->findPath(anchorRef, spotRef, anchorNear, spotNear, &filter, path, &count, BONK_START_PATH_POLYS);
+        return dtStatusSucceed(status) && count > 0 && path[count - 1] == spotRef;
+    }
+
     bool FindZoneStart(BonkMap const& map, float& x, float& y, float& z)
     {
         if (!map.zoneId || map.type != BONK_MAP_OPEN)
             return false;
-        TerrainInfo const* terrain = sTerrainMgr.LoadTerrain(map.mapId);
+        TerrainInfo* terrain = sTerrainMgr.LoadTerrain(map.mapId);
         for (uint32 attempt = 0; attempt < BONK_ZONE_START_TRIES; ++attempt)
         {
             float px = frand(BONK_ZONE_START_MARGIN, 100.0f - BONK_ZONE_START_MARGIN);
@@ -1225,7 +1293,7 @@ namespace
                 flat = rz > INVALID_HEIGHT && std::fabs(rz - pz) <= BONK_ZONE_START_FLAT &&
                     terrain->GetZoneId(rx, ry, rz) == map.zoneId && !terrain->IsInWater(rx, ry, rz + 1.0f);
             }
-            if (!flat)
+            if (!flat || !CanWalkFromAnchor(map, terrain, px, py, pz))
                 continue;
             x = px;
             y = py;
@@ -1234,12 +1302,23 @@ namespace
         }
         return false;
     }
+
+    std::vector<BonkMapStart const*> GetReachableStarts(BonkMap const& map, std::vector<BonkMapStart> const& starts)
+    {
+        std::vector<BonkMapStart const*> reachable;
+        TerrainInfo* terrain = sTerrainMgr.LoadTerrain(map.mapId);
+        for (BonkMapStart const& start : starts)
+            if (map.type != BONK_MAP_OPEN || CanWalkFromAnchor(map, terrain, start.x, start.y, start.z))
+                reachable.push_back(&start);
+        return reachable;
+    }
 }
 
 bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
 {
     float x = map.x, y = map.y, z = map.z, o = map.o;
     std::vector<BonkMapStart> const starts = sBonkMgr.GetMapStarts(map.id);
+    std::vector<BonkMapStart const*> const reachable = GetReachableStarts(map, starts);
     if (FindZoneStart(map, x, y, z))
     {
         z += 0.5f;
@@ -1247,14 +1326,14 @@ bool BonkRun::TeleportToStage(BonkMap const& map, std::string& error)
         if (o < 0.0f)
             o += 2.0f * M_PI_F;
     }
-    else if (starts.size() >= BONK_START_MIN_LEARNED)
+    else if (reachable.size() >= BONK_START_MIN_LEARNED)
     {
         std::vector<BonkMapStart const*> away;
         if (m_player->GetMapId() == map.mapId)
-            for (BonkMapStart const& start : starts)
-                if (m_player->GetDistance2d(start.x, start.y) > BONK_START_SPREAD)
-                    away.push_back(&start);
-        BonkMapStart const& start = away.empty() ? starts[urand(0, uint32(starts.size()) - 1)] : *away[urand(0, uint32(away.size()) - 1)];
+            for (BonkMapStart const* start : reachable)
+                if (m_player->GetDistance2d(start->x, start->y) > BONK_START_SPREAD)
+                    away.push_back(start);
+        BonkMapStart const& start = away.empty() ? *reachable[urand(0, uint32(reachable.size()) - 1)] : *away[urand(0, uint32(away.size()) - 1)];
         x = start.x;
         y = start.y;
         z = start.z + 0.5f;
@@ -6790,6 +6869,8 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
     {
         if (owned.timer == int32(GetWeaponCooldown(owned)))
             OnTalentCastDone(owned);
+        if (owned.killed && weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL))
+            owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_DELAY_MS);
         return;
     }
     owned.firedByClass = false;
@@ -7278,7 +7359,10 @@ void BonkRun::ResetOnKill(uint32 spellId)
 {
     for (OwnedWeapon& owned : m_weapons)
         if (owned.weapon.spellId == spellId && owned.weapon.HasFlag(BONK_WEAPON_FLAG_RESET_ON_KILL))
+        {
             owned.timer = std::min<int32>(owned.timer, BONK_CLEARCAST_DELAY_MS);
+            owned.killed = true;
+        }
 }
 
 bool BonkRun::HasBehavior(BonkWeaponBehavior behavior) const
@@ -10169,7 +10253,7 @@ void BonkRun::GiveCheckpointCatchUp()
     for (uint32 floor = 1; floor < m_startFloor && CanGainGlyphPick(); ++floor)
         QueueGlyphPick();
     m_player->GetBonkPlayer()->Notify("You start on floor " + std::to_string(m_startFloor) + " at level " + std::to_string(m_player->GetLevel() + m_overcapLevel) +
-        ". Pick your build, then the floor begins. Skipped floors give no rewards.");
+        ". Pick your build, then the floor begins. Skipped floors give only their glyph choices.");
 }
 
 void BonkRun::GiveStartLevels()

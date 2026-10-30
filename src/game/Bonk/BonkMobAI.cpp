@@ -222,7 +222,7 @@ namespace
         hit.windId = 0;
         return hit;
     }
-    float const BONK_POOL_DAMAGE        = 0.4f;
+    float const BONK_POOL_DAMAGE        = 1.0f;
 
     float const BONK_BOLT_RADIUS        = 3.0f;
     uint32 const BONK_BOLT_MIN_WARN_MS  = 1500;
@@ -286,7 +286,7 @@ namespace
     float const BONK_VOID_RADIUS        = 6.0f;
     uint32 const BONK_VOID_WARN_MS      = 1500;
     uint32 const BONK_VOID_DURATION_MS  = 8000;
-    float const BONK_VOID_DAMAGE        = 0.4f;
+    float const BONK_VOID_DAMAGE        = 1.0f;
     float const BONK_MARK_RANGE         = 60.0f;
     uint32 const BONK_MARK_FILL_MS      = 4000;
     uint32 const BONK_SPELL_WARD_BEAM   = 755;
