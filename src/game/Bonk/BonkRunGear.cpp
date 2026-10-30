@@ -442,6 +442,13 @@ bool BonkRun::PlaceGearDrop(Creature const* mob, PendingGear const& piece, uint8
         return false;
     }
     ShowFromFar(go);
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(mob->AI());
+    BonkSpawnKind const kind = ai ? ai->GetKind() : BONK_SPAWN_NORMAL;
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+        "Bonk drop: %s gets item %u from a %s at run minute %.2f (stage %u, %s, %s, class %u): quality %u, tier %u, %u bonus stats",
+        m_player->GetName(), piece.entry, kind == BONK_SPAWN_BOSS ? "boss" : kind == BONK_SPAWN_MINIBOSS ? "mini-boss" : kind == BONK_SPAWN_ELITE ? "elite" : "normal",
+        GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()), uint32(quality),
+        piece.found ? piece.gear.tier : 0u, piece.found ? uint32(piece.gear.lines.size()) : 0u);
     GearDrop drop;
     drop.guid = go->GetObjectGuid();
     drop.piece = piece;

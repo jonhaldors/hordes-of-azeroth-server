@@ -29,6 +29,22 @@ void BonkRun::GetPieceStats(uint8 slot, float* stats) const
     BonkFound::AddWornStats(item, stats);
 }
 
+std::string BonkRun::DescribeEnchants() const
+{
+    std::string text;
+    float pieceStats[MAX_BONK_PASSIVE_EFFECT];
+    for (auto const& itr : m_enchants)
+        if (itr.second.IsSet())
+        {
+            GetPieceStats(itr.first, pieceStats);
+            char entry[48];
+            snprintf(entry, sizeof(entry), "%u:%u:%u:%.1f", uint32(itr.first), uint32(itr.second.effect), uint32(itr.second.grade),
+                BonkEnchanting::GetValue(itr.second, pieceStats));
+            text += (text.empty() ? "" : ",") + std::string(entry);
+        }
+    return text;
+}
+
 void BonkRun::AddEnchantStats(float* passives) const
 {
     float pieceStats[MAX_BONK_PASSIVE_EFFECT];

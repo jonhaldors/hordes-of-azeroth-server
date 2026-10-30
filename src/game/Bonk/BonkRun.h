@@ -1617,6 +1617,7 @@ class BonkRun
         ObjectGuid m_enchanterGuid;
         uint32 GetEnchantPrice() const;
         void GetPieceStats(uint8 slot, float* stats) const;
+        std::string DescribeEnchants() const;
         void AddEnchantStats(float* passives) const;
         void DespawnEnchanter();
         bool IsNearEnchanter() const;
