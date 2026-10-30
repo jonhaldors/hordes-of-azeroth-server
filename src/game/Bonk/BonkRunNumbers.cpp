@@ -631,15 +631,16 @@ std::string BonkRun::DescribeFormRanges(OwnedWeapon const& owned, OwnedWeapon co
         if (IsHeartOfTheWild() && BonkDruidForm(form) != GetAttackForm())
             continue;
         FormTooltip const shown = GetFormTooltip(BonkDruidForm(form));
-        size_t const start = text.find(shown.label);
+        std::string const label = std::string(shown.label) + ":";
+        size_t const start = text.find(label);
         if (start == std::string::npos)
             continue;
         size_t const end = text.find(BONK_LINE_BREAK, start);
         std::string const needle = std::string("for ") + shown.school + " damage";
         size_t const at = text.find(needle, start);
-        if (at == std::string::npos || (end != std::string::npos && at > end))
-            continue;
-        text.replace(at, needle.size(), "for " + MarkRange(hit * shown.share, GetShownSpread(owned), better) + " " + shown.school + " damage");
+        if (at != std::string::npos && (end == std::string::npos || at < end))
+            text.replace(at, needle.size(), "for " + MarkRange(hit * shown.share, GetShownSpread(owned), better) + " " + shown.school + " damage");
+        text.replace(start, label.size(), std::string(shown.label) + " (" + TrimNumber(shown.range * GetWeaponArea(owned)) + " yd range):");
     }
     return text;
 }

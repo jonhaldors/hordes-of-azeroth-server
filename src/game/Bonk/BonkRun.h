@@ -981,6 +981,7 @@ class BonkRun
             char const* label;
             char const* school;
             float share;
+            float range;
         };
         FormTooltip GetFormTooltip(BonkDruidForm form) const;
         std::string DescribeSpellHeader(OwnedWeapon const& owned, uint32 intervalMs, bool& better) const;
