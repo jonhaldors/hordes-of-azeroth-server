@@ -1156,6 +1156,8 @@ class BonkRun
         bool IsPillarFloor() const;
         void CountFloorMiniBoss();
         void MaybeSpawnPillar();
+        void MaybeSpawnPillarAt(float x, float y, float baseZ);
+        bool RaisePillarAt(float x, float y, float z);
         void DespawnPillar();
         ObjectGuid m_pillarGuid;
         uint32 m_pillarObjective = 0;

@@ -1292,7 +1292,7 @@ void BonkRun::SendVault() const
 
 bool BonkRun::IsOwnPillar(GameObject const* pillar) const
 {
-    return m_state == STATE_RUNNING && !m_pillarGuid.IsEmpty() && pillar->GetObjectGuid() == m_pillarGuid;
+    return (m_state == STATE_RUNNING || m_state == STATE_PORTAL) && !m_pillarGuid.IsEmpty() && pillar->GetObjectGuid() == m_pillarGuid;
 }
 
 void BonkRun::OpenPillar()
@@ -1304,7 +1304,7 @@ void BonkRun::OpenPillar()
 bool BonkRun::CheckPillarReach(std::string& error) const
 {
     GameObject const* pillar = m_pillarGuid.IsEmpty() ? nullptr : m_player->GetMap()->GetGameObject(m_pillarGuid);
-    if (!pillar || m_state != STATE_RUNNING)
+    if (!pillar || (m_state != STATE_RUNNING && m_state != STATE_PORTAL))
     {
         error = "There is no Extraction Pillar here.";
         return false;
@@ -1375,18 +1375,37 @@ void BonkRun::MaybeSpawnPillar()
     if (!m_spawnPoints.Take(m_player, BONK_PILLAR_MIN_DISTANCE, BONK_PILLAR_MAX_DISTANCE, spot) &&
         !m_spawnPoints.Take(m_player, BONK_PILLAR_NEAR_MIN, BONK_PILLAR_MIN_DISTANCE, spot))
         return;
-    GameObject* pillar = PlaceObject(BONK_GO_PILLAR, spot.x, spot.y, spot.z, BONK_LOOT_LIFETIME_SEC);
-    if (!pillar)
-    {
+    if (!RaisePillarAt(spot.x, spot.y, spot.z))
         m_spawnPoints.Release(spot.x, spot.y);
+}
+
+void BonkRun::MaybeSpawnPillarAt(float x, float y, float baseZ)
+{
+    if (m_pillarRaised || !IsPillarFloor())
         return;
+
+    float z = m_player->GetMap()->GetHeight(x, y, baseZ + 5.0f, true, 10.0f);
+    if (z <= INVALID_HEIGHT || !m_player->IsWithinLOS(x, y, z + 1.0f))
+    {
+        x = m_player->GetPositionX();
+        y = m_player->GetPositionY();
+        z = m_player->GetPositionZ();
     }
+    RaisePillarAt(x, y, z);
+}
+
+bool BonkRun::RaisePillarAt(float x, float y, float z)
+{
+    GameObject* pillar = PlaceObject(BONK_GO_PILLAR, x, y, z, BONK_LOOT_LIFETIME_SEC);
+    if (!pillar)
+        return false;
     ShowFromFar(pillar);
     m_pillarRaised = true;
     m_pillarGuid = pillar->GetObjectGuid();
-    m_pillarObjective = m_objectives.Add(m_player, BONK_OBJECTIVE_EXTRACT, spot.x, spot.y, spot.z, BONK_PILLAR_LABEL, 0, BONK_PILLAR_ICON,
+    m_pillarObjective = m_objectives.Add(m_player, BONK_OBJECTIVE_EXTRACT, x, y, z, BONK_PILLAR_LABEL, 0, BONK_PILLAR_ICON,
         BONK_PILLAR_DESCRIPTION);
     m_player->GetBonkPlayer()->Notify("An Extraction Pillar has risen nearby. Use it to send 1 find home right now.");
+    return true;
 }
 
 void BonkRun::DespawnPillar()

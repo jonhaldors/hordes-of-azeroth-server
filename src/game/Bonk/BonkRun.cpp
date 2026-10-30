@@ -5132,6 +5132,8 @@ void BonkRun::OpenPortal(Creature* boss)
         if ((IsMythic() || m_tier.key == "heroic") && (!last || m_tier.endless))
             PlaceEnchanter(portal->GetPositionX() - BONK_VAULT_SIDE * std::cos(side), portal->GetPositionY() - BONK_VAULT_SIDE * std::sin(side),
                 portal->GetPositionZ(), m_player->GetAngle(portal) + M_PI_F);
+        MaybeSpawnPillarAt(portal->GetPositionX() + 2.0f * BONK_VAULT_SIDE * std::cos(side),
+            portal->GetPositionY() + 2.0f * BONK_VAULT_SIDE * std::sin(side), portal->GetPositionZ());
     }
 
     if (!last)
