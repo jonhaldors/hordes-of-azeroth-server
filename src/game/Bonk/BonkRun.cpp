@@ -11853,8 +11853,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
             continue;
         if (!OfferGainsAnything(owned, offer))
             continue;
-        if (!m_banished.count(GetBanishKey(offer)))
-            candidates.push_back({ offer, 3 });
+        candidates.push_back({ offer, 3, m_banished.count(GetBanishKey(offer)) > 0 });
     }
 
     uint32 const classMask = m_player->GetClassMask();
@@ -11892,8 +11891,10 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
             continue;
         Offer offer;
         offer.isWeapon = false;
+        bool blank = false;
         offer.id = itr.first;
         offer.newLevel = current + 1;
+    bool blankDrawn = false;
         candidates.push_back({ offer, itr.second.rare ? 1u : 2u });
     }
 
@@ -11921,7 +11922,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
 
     for (std::vector<Candidate>* pool : { &candidates, &repeats })
     {
-        while (cards.size() < offerSize && !pool->empty())
+        while (cards.size() + blanks < offerSize && !pool->empty())
         {
             uint32 totalWeight = 0;
             for (auto const& candidate : *pool)
@@ -11935,7 +11936,10 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
                     roll -= itr->weight;
                     continue;
                 }
-                cards.push_back(itr->offer);
+                if (itr->blank)
+                    ++blanks;
+                else
+                    cards.push_back(itr->offer);
                 pool->erase(itr);
                 break;
             }
@@ -12012,6 +12016,7 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     bool const ascensionShown = ascended && std::any_of(cards.begin(), cards.end(), [ascended](Offer const& card)
     {
         return card.isWeapon && card.step == BONK_STEP_EVOLVE && card.id == ascended->weapon.id;
+    size_t blanks = 0;
     });
     if (ascensionShown)
         UseAscension(*ascended);
@@ -12026,14 +12031,15 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
         uint32 const gold = m_map.goldPerKill * 25;
         uint32 const paid = uint32(gold * GetGoldMultiplier());
         GiveGold(gold);
-        m_player->GetBonkPlayer()->Notify(paid ? "There's nothing left to learn, so you get " + FormatBonkMoney(paid) + " instead." :
-            std::string("There's nothing left to learn."));
+        std::string const nothing = blankDrawn ? "Nothing came up this time" : "There's nothing left to learn";
+        m_player->GetBonkPlayer()->Notify(paid ? nothing + ", so you get " + FormatBonkMoney(paid) + " instead." : nothing + ".");
         return false;
     }
 
     m_offerSource = source;
     SetPaused(true);
     if (IsAutoPicking() && HasOwnedOffer())
+    blankDrawn = blanks > 0;
     {
         std::string error;
         Pick(uint32(ChooseAutoPick() + 1), error);
