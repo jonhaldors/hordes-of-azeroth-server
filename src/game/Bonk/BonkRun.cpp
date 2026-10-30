@@ -152,6 +152,9 @@ namespace
     float const BONK_LANE_EDGE_WEIGHT      = 0.4f;
     float const BONK_FORWARD_WEIGHT        = 1.6f;
     float const BONK_BEHIND_WEIGHT         = 0.6f;
+    float const BONK_GAP_RANGE             = 25.0f;
+    float const BONK_RING_RANGE            = 15.0f;
+    uint32 const BONK_RING_SAMPLE_MS       = 1000;
     uint32 const BONK_SPAWN_SINGLE_CHANCE  = 35;
     uint32 const BONK_SPAWN_PAIR_CHANCE    = 30;
     uint32 const BONK_SPAWN_GROUP_MIN      = 3;
@@ -1496,6 +1499,7 @@ void BonkRun::StartStage()
     m_packSpots.clear();
     m_sectorBlockedUntil.assign(BONK_SPAWN_SECTORS, 0);
     m_lanes[0] = m_lanes[1] = -1;
+    m_ringTimer = m_ringSamples = m_ringBlocked = m_ringClosed = 0;
     m_laneTimer = 0;
     m_perched = false;
     m_perchTimer = 0;
@@ -2156,6 +2160,7 @@ void BonkRun::UpdateSpawns(uint32 diff)
     UpdateBossVoices();
     UpdateOvertime(diff);
     UpdateLanes(diff);
+    UpdateRingSample(diff);
     UpdatePerch(diff);
 
     if (!m_bossSpawned && elapsedSeconds >= m_map.durationSeconds)
@@ -2390,6 +2395,7 @@ void BonkRun::LogMinute()
     m_minutePacketBytes = 0;
     m_minutePacketSeconds = 0;
     LogBuild();
+    LogRing();
     ++m_nextLogMinute;
     m_minuteClientObjectsPeak = 0;
     m_minuteDamage = 0;
@@ -3191,8 +3197,95 @@ std::vector<float> BonkRun::CountSectorCrowd() const
     return crowd;
 }
 
+BonkRun::SpawnOpenness BonkRun::GetSpawnOpenness() const
+{
+    if (m_tier.key == "normal")
+        return { -0.5f, true, 1 };
+    if (m_tier.key == "heroic")
+        return { 0.0f, true, 0 };
+    return { 1.0f, false, 0 };
+}
+
+std::vector<uint32> BonkRun::CountNearSectors(float range) const
+{
+    std::vector<uint32> nearby(BONK_SPAWN_SECTORS, 0);
+    Map* map = m_player->GetMap();
+    for (ObjectGuid const& guid : m_mobs)
+        if (Creature const* mob = map->GetCreature(guid))
+            if (mob->IsAlive() && mob->IsWithinDistInMap(m_player, range))
+                ++nearby[GetSectorOf(mob->GetPositionX(), mob->GetPositionY())];
+    return nearby;
+}
+
+std::vector<bool> BonkRun::GetGuardedSectors() const
+{
+    std::vector<bool> guarded(BONK_SPAWN_SECTORS, false);
+    SpawnOpenness const openness = GetSpawnOpenness();
+    if (!openness.guardGap)
+        return guarded;
+
+    std::vector<uint32> const nearby = CountNearSectors(BONK_GAP_RANGE);
+    auto const occupied = std::find_if(nearby.begin(), nearby.end(), [](uint32 count) { return count > 0; });
+    if (occupied == nearby.end())
+        return guarded;
+
+    uint32 centre = uint32(std::min_element(nearby.begin(), nearby.end()) - nearby.begin());
+    uint32 const first = uint32(occupied - nearby.begin());
+    uint32 bestStart = 0, bestLength = 0, runStart = 0, runLength = 0;
+    for (uint32 step = 1; step <= BONK_SPAWN_SECTORS; ++step)
+    {
+        uint32 const sector = (first + step) % BONK_SPAWN_SECTORS;
+        if (nearby[sector])
+        {
+            runLength = 0;
+            continue;
+        }
+        if (!runLength)
+            runStart = sector;
+        if (++runLength > bestLength)
+        {
+            bestLength = runLength;
+            bestStart = runStart;
+        }
+    }
+    if (bestLength)
+        centre = (bestStart + (bestLength - 1) / 2) % BONK_SPAWN_SECTORS;
+
+    for (int32 offset = -int32(openness.guardHalfWidth); offset <= int32(openness.guardHalfWidth); ++offset)
+        guarded[(int32(centre) + offset + int32(BONK_SPAWN_SECTORS)) % int32(BONK_SPAWN_SECTORS)] = true;
+    return guarded;
+}
+
+void BonkRun::UpdateRingSample(uint32 diff)
+{
+    m_ringTimer += diff;
+    if (m_ringTimer < BONK_RING_SAMPLE_MS)
+        return;
+    m_ringTimer = 0;
+    std::vector<uint32> const nearby = CountNearSectors(BONK_RING_RANGE);
+    uint32 const blocked = uint32(std::count_if(nearby.begin(), nearby.end(), [](uint32 count) { return count > 0; }));
+    ++m_ringSamples;
+    m_ringBlocked += blocked;
+    if (blocked + 1 >= BONK_SPAWN_SECTORS)
+        ++m_ringClosed;
+}
+
+void BonkRun::LogRing()
+{
+    if (m_ringSamples)
+        sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+            "Bonk ring: %s at run minute %u (%s, %s): %.1f of %u directions blocked within %.0f yd, closed %u%% of the time",
+            m_player->GetName(), m_nextLogMinute, m_map.key.c_str(), m_tier.key.c_str(), float(m_ringBlocked) / float(m_ringSamples),
+            BONK_SPAWN_SECTORS, BONK_RING_RANGE, m_ringClosed * 100 / m_ringSamples);
+    m_ringSamples = 0;
+    m_ringBlocked = 0;
+    m_ringClosed = 0;
+}
+
 int32 BonkRun::PickSector(std::vector<float> const& crowd, bool frontOnly) const
 {
+    std::vector<bool> const guarded = GetGuardedSectors();
+    float const fill = GetSpawnOpenness().fill;
     float heading;
     bool const moving = GetHeading(heading);
     float const forward = moving ? heading : m_player->GetOrientation();
@@ -3204,7 +3297,7 @@ int32 BonkRun::PickSector(std::vector<float> const& crowd, bool frontOnly) const
     float total = 0.0f;
     for (uint32 sector = 0; sector < BONK_SPAWN_SECTORS; ++sector)
     {
-        if (IsLane(sector) || m_sectorBlockedUntil[sector] > m_elapsedMs)
+        if (IsLane(sector) || guarded[sector] || m_sectorBlockedUntil[sector] > m_elapsedMs)
             continue;
         float const offset = AngleBetween(GetSectorAngle(sector), forward);
         if (frontOnly && offset > M_PI_F / 2.0f)
@@ -3216,7 +3309,7 @@ int32 BonkRun::PickSector(std::vector<float> const& crowd, bool frontOnly) const
             bias = BONK_BEHIND_WEIGHT;
         if (IsLaneEdge(sector))
             bias *= BONK_LANE_EDGE_WEIGHT;
-        weights[sector] = bias / (1.0f + crowd[sector]);
+        weights[sector] = bias * std::pow(1.0f + crowd[sector], -fill);
         total += weights[sector];
     }
     if (total <= 0.0f)
@@ -5361,7 +5454,7 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     if (effect == BONK_PASSIVE_HASTE)
         total += GetEnrageHaste() + GetDruidHaste();
     if (effect == BONK_PASSIVE_MOVE_SPEED)
-        total += GetTalentMoveSpeed();
+        total += GetTalentMoveSpeed() + BONK_BASE_MOVE_SPEED;
     total += m_stress.bonuses[effect];
     total += m_cardStats[effect];
     total += m_shrineBonuses[effect];

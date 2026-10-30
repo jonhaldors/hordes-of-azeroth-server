@@ -642,6 +642,17 @@ class BonkRun
         float GetSectorAngle(uint32 sector) const;
         uint32 GetSectorOf(float x, float y) const;
         std::vector<float> CountSectorCrowd() const;
+        struct SpawnOpenness
+        {
+            float fill;
+            bool guardGap;
+            uint32 guardHalfWidth;
+        };
+        SpawnOpenness GetSpawnOpenness() const;
+        std::vector<uint32> CountNearSectors(float range) const;
+        std::vector<bool> GetGuardedSectors() const;
+        void UpdateRingSample(uint32 diff);
+        void LogRing();
         int32 PickSector(std::vector<float> const& crowd, bool frontOnly) const;
         bool FindSectorPosition(uint32 sector, float minDistance, float maxDistance, float& x, float& y, float& z) const;
         void SpawnTrashPacks(uint32 count);
@@ -1530,6 +1541,10 @@ class BonkRun
         mutable std::vector<uint32> m_sectorBlockedUntil;
         int32 m_lanes[2] = { -1, -1 };
         uint32 m_laneTimer = 0;
+        uint32 m_ringTimer = 0;
+        uint32 m_ringSamples = 0;
+        uint32 m_ringBlocked = 0;
+        uint32 m_ringClosed = 0;
         bool m_perched = false;
         uint32 m_perchTimer = 0;
         uint32 m_perchChecks = 0;
