@@ -113,7 +113,7 @@ namespace
     uint32 const BONK_CHARGE_RETRY_MS   = 500;
     float const BONK_CHARGE_SPEED       = 30.0f;
     float const BONK_CHARGE_DAMAGE      = 2.0f;
-    float const BONK_CHARGE_CONTACT     = 1.75f;
+    float const BONK_CHARGE_CONTACT     = 1.5f;
     float const BONK_CHARGE_KNOCKBACK_SPEED = 8.0f;
     float const BONK_CHARGE_KNOCKBACK_LIFT  = 4.0f;
     uint32 const BONK_SPELL_CHARGE_HIT  = 24257;
