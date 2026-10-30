@@ -572,7 +572,10 @@ class BonkRun
         void ShowAttackLook(BonkEnemyHit const& hit, BonkTelegraphShape shape, float x, float y, float z, float orientation, float size);
         Creature* SummonHazard(float x, float y, float z);
         void StrikeHero(BonkEnemyHit const& hit, uint32 spellId, Unit* source);
-        void NoteStruck(std::string const& striker);
+        void NoteStruck(std::string const& striker, ObjectGuid strikerGuid);
+        void SpeakBossLine(Creature const* boss, BonkBossLine line) const;
+        void UpdateBossVoices();
+        void SendBossMusic(bool playing) const;
         void DespawnPools();
         void RunEvent(BonkMapEvent const& event);
         void OpenPortal(Creature* boss);
@@ -1296,6 +1299,7 @@ class BonkRun
         {
             uint32 ms = 0;
             uint32 damageTaken = 0;
+            bool spokeFightLine = false;
         };
         std::map<ObjectGuid, BossArrival> m_bossArrivals;
         uint32 m_damageTaken = 0;
@@ -1344,6 +1348,7 @@ class BonkRun
         uint32 CountClientObjects() const;
         std::string DescribeClientObjects() const;
         std::string m_lastStriker;
+        ObjectGuid m_lastStrikerGuid;
         uint32 m_lastStrikeDamage = 0;
         std::vector<std::pair<uint32, uint32>> m_recentHits;
         bool m_masteryAwarded = false;

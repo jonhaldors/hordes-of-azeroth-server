@@ -5,6 +5,7 @@
 #include "Policies/Singleton.h"
 #include "SharedDefines.h"
 
+#include <array>
 #include <map>
 #include <mutex>
 #include <set>
@@ -876,6 +877,7 @@ float const BONK_MAX_COUNT          = 5.0f;
 float const BONK_MAX_AREA           = 60.0f;
 float const BONK_MIN_CURVED_GAIN    = 1.0f;
 float const BONK_MAX_MOVE_SPEED     = 50.0f;
+float const BONK_BASE_MOVE_SPEED    = 10.0f;
 float const BONK_MAX_HASTE          = 75.0f;
 float CurveStat(float raw, float ceiling);
 float CurveHaste(float raw);
@@ -1281,6 +1283,15 @@ struct BonkHidden
     std::string foundText;
 };
 
+enum BonkBossLine : uint8
+{
+    BONK_BOSS_LINE_ARRIVE = 0,
+    BONK_BOSS_LINE_FIGHT  = 1,
+    BONK_BOSS_LINE_KILL   = 2,
+    BONK_BOSS_LINE_DEATH  = 3,
+    MAX_BONK_BOSS_LINE
+};
+
 enum BonkGlyphEffect : uint8
 {
     BONK_GLYPH_NONE           = 0,
@@ -1397,6 +1408,7 @@ class BonkMgr
         std::map<uint32, BonkGlyph> const& GetGlyphs() const { return m_glyphs; }
         std::vector<BonkHidden> const& GetHiddenEncounters() const { return m_hiddenEncounters; }
         BonkGlyph const* GetGlyph(uint32 id) const;
+        uint32 PickBossLineSound(uint32 entry, BonkBossLine line) const;
 
         uint32 GetItemCard(uint32 itemEntry) const;
 
@@ -1454,6 +1466,7 @@ class BonkMgr
         void LoadItemCards();
         void LoadGlyphs();
         void LoadHiddenEncounters();
+        void LoadBossLines();
         void LoadGear();
         void LoadShopTrees();
         void LoadUpgrades();
@@ -1481,6 +1494,7 @@ class BonkMgr
         std::map<uint32, uint32> m_itemCards;
         std::map<uint32, BonkGlyph> m_glyphs;
         std::vector<BonkHidden> m_hiddenEncounters;
+        std::map<uint32, std::array<std::vector<uint32>, MAX_BONK_BOSS_LINE>> m_bossLines;
         std::map<uint32, BonkGear> m_gear;
         std::map<uint32, uint32> m_gearByKeep;
         std::map<uint32, BonkShopTree> m_shopTrees;

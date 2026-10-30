@@ -15,6 +15,7 @@
 #include "Player.h"
 #include "Policies/SingletonImp.h"
 #include "SpellMgr.h"
+#include "Utilities/Random.h"
 
 #include <algorithm>
 #include <cctype>
@@ -275,6 +276,7 @@ void BonkMgr::Load()
     LoadItemCards();
     LoadGlyphs();
     LoadHiddenEncounters();
+    LoadBossLines();
     LoadGear();
     LoadShopTrees();
     LoadUpgrades();
@@ -1972,6 +1974,45 @@ void BonkMgr::LoadHiddenEncounters()
     } while (result->NextRow());
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk hidden encounters", uint32(m_hiddenEncounters.size()));
+}
+
+void BonkMgr::LoadBossLines()
+{
+    m_bossLines.clear();
+
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `line`, `sound_id` FROM `bonk_boss_line`"));
+    if (!result)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 Bonk boss lines");
+        return;
+    }
+
+    uint32 count = 0;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 const entry = fields[0].GetUInt32();
+        uint8 const line = fields[1].GetUInt8();
+        uint32 const soundId = fields[2].GetUInt32();
+        if (line >= MAX_BONK_BOSS_LINE || !sObjectMgr.GetSoundEntry(soundId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `bonk_boss_line`: creature %u has line %u with sound %u that does not exist, skipped.", entry, line, soundId);
+            continue;
+        }
+        m_bossLines[entry][line].push_back(soundId);
+        ++count;
+    } while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u Bonk boss lines", count);
+}
+
+uint32 BonkMgr::PickBossLineSound(uint32 entry, BonkBossLine line) const
+{
+    auto const itr = m_bossLines.find(entry);
+    if (itr == m_bossLines.end() || itr->second[line].empty())
+        return 0;
+    std::vector<uint32> const& sounds = itr->second[line];
+    return sounds[urand(0, uint32(sounds.size()) - 1)];
 }
 
 BonkGlyph const* BonkMgr::GetGlyph(uint32 id) const
