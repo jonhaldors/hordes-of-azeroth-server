@@ -44,6 +44,7 @@ namespace
     uint32 const BONK_STATE_INTERVAL_MS    = 1000;
     uint32 const BONK_BOUNDARY_INTERVAL_MS = 500;
     uint32 const BONK_FIRST_WAVE_MS        = 1500;
+    float const BONK_BOSS_FIGHT_LINE_HEALTH_PCT = 50.0f;
     uint32 const BONK_ENEMY_FACTION        = 14;
     uint32 const BONK_SUMMON_LIMIT         = 1000;
     uint32 const BONK_OBJECT_LIFETIME_SEC  = 3600;
@@ -1640,6 +1641,7 @@ void BonkRun::UpdateRunning(uint32 diff)
 {
     if (!m_player->IsAlive())
     {
+        SpeakBossLine(m_player->GetMap()->GetCreature(m_lastStrikerGuid), BONK_BOSS_LINE_KILL);
         if (m_sandbox)
         {
             ++m_sandboxDeaths;
@@ -2142,12 +2144,16 @@ void BonkRun::UpdateSpawns(uint32 diff)
     {
         Creature* boss = m_player->GetMap()->GetCreature(m_bossGuid);
         if (!boss || (boss->IsAlive() && boss->HasCreatureState(CSTATE_DESPAWNING)))
+        {
             m_bossSpawned = false;
+            SendBossMusic(false);
+        }
     }
 
     UpdateWaves();
     if (m_state != STATE_RUNNING)
         return;
+    UpdateBossVoices();
     UpdateOvertime(diff);
     UpdateLanes(diff);
     UpdatePerch(diff);
@@ -4596,12 +4602,16 @@ Creature* BonkRun::SpawnMobAt(BonkMapCreature const& creature, float x, float y,
     if (creature.kind == BONK_SPAWN_BOSS || creature.kind == BONK_SPAWN_MINIBOSS)
     {
         m_bossArrivals[mob->GetObjectGuid()] = { m_totalMs, m_damageTaken };
+        SpeakBossLine(mob, BONK_BOSS_LINE_ARRIVE);
         bool const boss = creature.kind == BONK_SPAWN_BOSS;
         m_objectives.Follow(m_player, boss ? BONK_OBJECTIVE_BOSS : BONK_OBJECTIVE_MINIBOSS, mob, mob->GetName(), 0,
             boss ? BONK_BOSS_PIN_ICON : BONK_MINIBOSS_PIN_ICON, boss ? "Boss" : "Mini-boss");
     }
     if (creature.kind == BONK_SPAWN_BOSS)
+    {
         m_bossGuid = mob->GetObjectGuid();
+        SendBossMusic(true);
+    }
     return mob;
 }
 
@@ -8284,7 +8294,7 @@ void BonkRun::StrikeHero(BonkEnemyHit const& hit, uint32 spellId, Unit* source)
         return;
 
     uint32 const raw = std::max(1u, uint32(hit.damage * hit.scale));
-    NoteStruck(hit.striker);
+    NoteStruck(hit.striker, hit.caster);
     SpellNonMeleeDamage strike(source, m_player, spellInfo->Id, SpellSchools(spellInfo->School));
     strike.damage = MitigateDamage(raw);
     strike.absorb = raw - strike.damage;
@@ -8438,7 +8448,7 @@ void BonkRun::OnHeroDamaged()
 void BonkRun::OnHeroStruck(Creature* attacker)
 {
     m_lastStruckMs = m_totalMs;
-    NoteStruck(DescribeStriker(attacker));
+    NoteStruck(DescribeStriker(attacker), attacker->GetObjectGuid());
     OnShamanStruck(attacker);
     OnPriestStruck(attacker);
     OnPaladinStruck(attacker);
@@ -8455,9 +8465,10 @@ std::string BonkRun::DescribeStriker(Creature const* attacker)
     return std::string(attacker->GetName()) + " (" + what + ")";
 }
 
-void BonkRun::NoteStruck(std::string const& striker)
+void BonkRun::NoteStruck(std::string const& striker, ObjectGuid strikerGuid)
 {
     m_lastStriker = striker;
+    m_lastStrikerGuid = strikerGuid;
     if (m_state != STATE_RUNNING || IsPeriodicHit())
         return;
     m_struck = true;
@@ -11064,7 +11075,12 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
 
     ForgetEnemyAttacks(mob);
     if (kind == BONK_SPAWN_BOSS || kind == BONK_SPAWN_MINIBOSS)
+    {
         m_objectives.RemoveFollowing(m_player, mob->GetObjectGuid());
+        SpeakBossLine(mob, BONK_BOSS_LINE_DEATH);
+    }
+    if (mob->GetObjectGuid() == m_bossGuid)
+        SendBossMusic(false);
 
     bool const eventGroup = m_miniEventActive &&
         std::find(m_miniEvent.targets.begin(), m_miniEvent.targets.end(), mob->GetObjectGuid()) != m_miniEvent.targets.end();
@@ -11166,6 +11182,37 @@ void BonkRun::OnMobKilled(Creature* mob, BonkSpawnKind kind, Unit* killer)
             DropGlyph(mob);
         OpenPortal(mob);
     }
+}
+
+void BonkRun::SpeakBossLine(Creature const* boss, BonkBossLine line) const
+{
+    if (!boss)
+        return;
+    BonkMobAI const* ai = dynamic_cast<BonkMobAI const*>(boss->AI());
+    if (!ai || (ai->GetKind() != BONK_SPAWN_BOSS && ai->GetKind() != BONK_SPAWN_MINIBOSS))
+        return;
+    if (uint32 const soundId = sBonkMgr.PickBossLineSound(boss->GetEntry(), line))
+        boss->PlayDirectSound(soundId, m_player);
+}
+
+void BonkRun::UpdateBossVoices()
+{
+    Map* map = m_player->GetMap();
+    for (auto& arrival : m_bossArrivals)
+    {
+        if (arrival.second.spokeFightLine)
+            continue;
+        Creature* boss = map->GetCreature(arrival.first);
+        if (!boss || !boss->IsAlive() || boss->GetHealthPercent() > BONK_BOSS_FIGHT_LINE_HEALTH_PCT)
+            continue;
+        arrival.second.spokeFightLine = true;
+        SpeakBossLine(boss, BONK_BOSS_LINE_FIGHT);
+    }
+}
+
+void BonkRun::SendBossMusic(bool playing) const
+{
+    m_player->GetBonkPlayer()->SendAddon(playing ? "music~boss" : "music~stop");
 }
 
 BonkRun::OwnedWeapon* BonkRun::FindOwned(uint32 weaponId)
