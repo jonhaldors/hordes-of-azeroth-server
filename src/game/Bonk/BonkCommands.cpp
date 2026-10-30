@@ -490,6 +490,17 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
             m_session->GetPlayer()->GetBonkPlayer()->Notify(error);
         return true;
     }
+    if (tab.compare(0, 11, "rerollpick ") == 0 || tab.compare(0, 7, "reroll ") == 0)
+    {
+        bool const pick = tab.compare(0, 11, "rerollpick ") == 0;
+        uint32 guidLow = 0, index = 0;
+        sscanf(tab.c_str() + (pick ? 11 : 7), "%u %u", &guidLow, &index);
+        BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
+        std::string error;
+        if (!(pick ? bonk->PickFoundReroll(guidLow, uint8(index), error) : bonk->RerollFoundGear(guidLow, uint8(index), error)))
+            bonk->Notify(error);
+        return true;
+    }
     if (tab.compare(0, 10, "testfound ") == 0 && GetAccessLevel() >= SEC_GAMEMASTER)
     {
         uint32 tier = 1, lines = 0;

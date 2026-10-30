@@ -285,9 +285,9 @@ std::string BonkRun::DescribeFoundDrop(BonkFoundGear const& found) const
 {
     std::string text = BonkFound::DescribeTier(found.tier);
     if (found.lines.size() == 1)
-        text += ", 1 bonus line";
+        text += ", 1 bonus stat";
     else if (found.lines.size() > 1)
-        text += ", " + std::to_string(found.lines.size()) + " bonus lines";
+        text += ", " + std::to_string(found.lines.size()) + " bonus stats";
     return text;
 }
 

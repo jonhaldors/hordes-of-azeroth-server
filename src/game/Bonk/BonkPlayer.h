@@ -77,6 +77,8 @@ class BonkPlayer
         std::vector<Item*> GetUpgradableGear() const;
         void SendFoundUpgrades() const;
         bool UpgradeFoundGear(uint32 guidLow, std::string& error);
+        bool RerollFoundGear(uint32 guidLow, uint8 lineIndex, std::string& error);
+        bool PickFoundReroll(uint32 guidLow, uint8 choice, std::string& error);
         void SendFoundItems() const;
         bool GiveTestFoundGear(uint32 tier, uint32 lineCount, std::string& error);
         bool IsGearFound(uint32 keepEntry) const { return m_foundGear.count(keepEntry) != 0; }
@@ -308,6 +310,8 @@ class BonkPlayer
 
     private:
         Item* ReplaceGearEntry(Item* item, uint32 entry);
+        Item* FindUpgradableGear(uint32 guidLow) const;
+        void DiscardFoundReroll();
         void ClearAuras();
 
         struct Record
@@ -391,6 +395,9 @@ class BonkPlayer
         uint8 m_determination = 0;
         uint32 m_scrap = 0;
         bool m_quartermasterUpgrade = false;
+        uint32 m_rerollItem = 0;
+        uint8 m_rerollLine = 0;
+        std::vector<std::pair<uint8, float>> m_rerollOffers;
         std::set<uint32> m_foundGear;
         uint32 m_masteryXp = 0;
         uint32 m_classFloor = 0;

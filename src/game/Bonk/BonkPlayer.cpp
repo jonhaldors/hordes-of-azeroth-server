@@ -2365,6 +2365,7 @@ void BonkPlayer::AddScrap(uint32 points)
 void BonkPlayer::SetQuartermasterUpgrade(bool on)
 {
     m_quartermasterUpgrade = on;
+    DiscardFoundReroll();
     SendQuartermaster();
     SendFoundUpgrades();
 }
@@ -2407,13 +2408,95 @@ void BonkPlayer::SendFoundUpgrades() const
         BonkFoundGear found;
         sBonkFound.Get(item->GetGUIDLow(), found);
         uint32 const tier = BonkFound::GetItemTier(item);
-        bool const awakening = BonkFound::IsAwakening(tier);
-        uint32 const cost = awakening ? BONK_FOUND_AWAKEN_COPPER : BonkFound::GetUpgradeCost(tier);
+        uint32 const cost = BonkFound::GetUpgradeCost(tier);
+        std::vector<BonkFoundLine> offers;
+        if (item->GetGUIDLow() == m_rerollItem)
+            for (auto const& offer : m_rerollOffers)
+                offers.push_back({ offer.first, offer.second });
         SendAddon("qmup~" + std::to_string(item->GetGUIDLow()) + "~" + std::to_string(item->GetEntry()) + "~" + std::to_string(tier) + "~" +
             std::to_string(cost) + "~" + (tier < ceiling ? "1" : "0") + "~" + (item->IsEquipped() ? "1" : "0") + "~" +
-            BonkFound::DescribeLines(found, tier) + "~" + BonkFound::DescribeExtra(item, tier) + "~" + (awakening ? "gold" : "scrap"));
+            BonkFound::DescribeLines(found, tier) + "~" + BonkFound::DescribeExtra(item, tier) + "~" +
+            std::to_string(BonkFound::GetRerollCost(found.rerolls)) + "~" + std::to_string(found.rerollLine) + "~" +
+            (offers.empty() ? "~" : std::to_string(m_rerollLine) + "~" + BonkFound::DescribeOffers(offers, tier)) + "~" +
+            BonkFound::DescribeRanges(tier));
     }
     SendAddon("qmupend~" + std::to_string(m_scrap) + "~" + std::to_string(ceiling));
+}
+
+Item* BonkPlayer::FindUpgradableGear(uint32 guidLow) const
+{
+    for (Item* item : GetUpgradableGear())
+        if (item->GetGUIDLow() == guidLow)
+            return item;
+    return nullptr;
+}
+
+void BonkPlayer::DiscardFoundReroll()
+{
+    m_rerollItem = 0;
+    m_rerollLine = 0;
+    m_rerollOffers.clear();
+}
+
+bool BonkPlayer::RerollFoundGear(uint32 guidLow, uint8 lineIndex, std::string& error)
+{
+    if (!m_player->FindNearestCreature(BONK_TIER_VENDOR, BONK_GEAR_VENDOR_RANGE))
+    {
+        error = "Talk to the Mythic Quartermaster to reroll gear.";
+        return false;
+    }
+    Item* item = FindUpgradableGear(guidLow);
+    BonkFoundGear found;
+    if (!item || !sBonkFound.Get(guidLow, found) || lineIndex >= found.lines.size())
+    {
+        error = "Only bonus stats on gear you found in Mythic runs can be rerolled.";
+        return false;
+    }
+    if (found.rerollLine != BONK_FOUND_NO_LINE && found.rerollLine != lineIndex)
+    {
+        error = "You may only reroll one stat per item.";
+        return false;
+    }
+    if (!Spend(BonkFound::GetRerollCost(found.rerolls), error))
+        return false;
+
+    ++found.rerolls;
+    found.rerollLine = lineIndex;
+    BonkFound::Remember(item, found);
+    m_rerollItem = guidLow;
+    m_rerollLine = lineIndex;
+    m_rerollOffers.clear();
+    for (BonkFoundLine const& offer : BonkFound::RollRerollOffers(found, lineIndex))
+        m_rerollOffers.emplace_back(offer.effect, offer.roll);
+    SendFoundUpgrades();
+    return true;
+}
+
+bool BonkPlayer::PickFoundReroll(uint32 guidLow, uint8 choice, std::string& error)
+{
+    Item* item = FindUpgradableGear(guidLow);
+    BonkFoundGear found;
+    bool const valid = guidLow == m_rerollItem && item && sBonkFound.Get(guidLow, found) && m_rerollLine < found.lines.size() &&
+        choice <= m_rerollOffers.size();
+    if (valid && choice > 0)
+    {
+        found.lines[m_rerollLine].effect = m_rerollOffers[choice - 1].first;
+        found.lines[m_rerollLine].roll = m_rerollOffers[choice - 1].second;
+        BonkFound::Remember(item, found);
+    }
+    DiscardFoundReroll();
+    SendFoundUpgrades();
+    if (!valid)
+    {
+        error = "Reroll the stat again to get new choices.";
+        return false;
+    }
+    if (choice > 0)
+    {
+        SendFoundItems();
+        SendStats();
+    }
+    return true;
 }
 
 Item* BonkPlayer::ReplaceGearEntry(Item* item, uint32 entry)
@@ -2450,35 +2533,29 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
         error = "Talk to the Mythic Quartermaster to upgrade gear.";
         return false;
     }
-    std::vector<Item*> const gear = GetUpgradableGear();
-    auto itr = std::find_if(gear.begin(), gear.end(), [guidLow](Item* item) { return item->GetGUIDLow() == guidLow; });
+    Item* item = FindUpgradableGear(guidLow);
     BonkFoundGear found;
-    if (itr == gear.end() || !sBonkFound.Get(guidLow, found))
+    if (!item || !sBonkFound.Get(guidLow, found))
     {
         error = "Only gear you found in Mythic runs can be upgraded.";
         return false;
     }
-    Item* item = *itr;
     uint32 const tier = BonkFound::GetItemTier(item);
-    bool const awakening = BonkFound::IsAwakening(tier);
-    uint32 const cost = awakening ? BONK_FOUND_AWAKEN_COPPER : BonkFound::GetUpgradeCost(tier);
+    uint32 const cost = BonkFound::GetUpgradeCost(tier);
     if (tier >= GetUpgradeCeiling())
     {
         error = "Clear Mythic floor " + std::to_string(tier + 1) + " to raise this to " + BonkFound::DescribeTier(tier + 1) + ".";
         return false;
     }
-    if (awakening && m_player->GetMoney() < cost)
-    {
-        error = "Awakening costs " + FormatBonkMoney(cost) + ".";
-        return false;
-    }
-    if (!awakening && m_scrap < cost)
+    if (m_scrap < cost)
     {
         error = "You need " + std::to_string(cost) + " Scrap. You have " + std::to_string(m_scrap) + ".";
         return false;
     }
 
     std::string const name = item->GetProto()->Name1;
+    if (guidLow == m_rerollItem)
+        DiscardFoundReroll();
     found.tier = tier + 1;
     if (found.tier <= BONK_TIER_GEAR_TIERS)
     {
@@ -2495,22 +2572,14 @@ bool BonkPlayer::UpgradeFoundGear(uint32 guidLow, std::string& error)
             return false;
         }
         m_player->SendNewItem(item, 1, true, false);
+        SendAddon("qmupselect~" + std::to_string(guidLow) + "~" + std::to_string(item->GetGUIDLow()));
     }
     BonkFound::Remember(item, found);
 
-    if (awakening)
-    {
-        m_player->ModifyMoney(-int32(cost));
-        Notify(name + " awakens! It is now Ancestral +1 and can keep growing.");
-    }
-    else
-    {
-        m_scrap -= cost;
-        CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `scrap`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `scrap` = VALUES(`scrap`)",
-            GetProgressAccount(), m_scrap);
-        Notify(name + " is now " + (found.tier > BONK_TIER_GEAR_TIERS ? "Ancestral +" + std::to_string(found.tier - BONK_TIER_GEAR_TIERS) :
-            "Tier " + std::to_string(found.tier)) + ".");
-    }
+    m_scrap -= cost;
+    CharacterDatabase.PExecute("INSERT INTO `bonk_account` (`account`, `scrap`) VALUES (%u, %u) ON DUPLICATE KEY UPDATE `scrap` = VALUES(`scrap`)",
+        GetProgressAccount(), m_scrap);
+    Notify(name + " is now " + BonkFound::DescribeTier(found.tier) + ".");
     SendQuartermaster();
     SendFoundUpgrades();
     SendFoundItems();

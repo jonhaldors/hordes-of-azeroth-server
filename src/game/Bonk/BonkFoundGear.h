@@ -14,8 +14,8 @@ class Item;
 class Player;
 
 uint8 const BONK_FOUND_MAX_LINES = 2;
+uint8 const BONK_FOUND_NO_LINE = 255;
 float const BONK_FOUND_TIER_GROWTH = 1.12f;
-uint32 const BONK_FOUND_AWAKEN_COPPER = 5000000;
 
 struct BonkFoundLine
 {
@@ -27,6 +27,8 @@ struct BonkFoundGear
 {
     uint32 tier = 0;
     std::vector<BonkFoundLine> lines;
+    uint32 rerolls = 0;
+    uint8 rerollLine = BONK_FOUND_NO_LINE;
 };
 
 class BonkFoundStore
@@ -52,7 +54,10 @@ namespace BonkFound
     float LineValue(BonkFoundLine const& line, uint32 tier);
     uint32 GetItemTier(Item const* item);
     uint32 GetUpgradeCost(uint32 tier);
-    bool IsAwakening(uint32 tier);
+    uint32 GetRerollCost(uint32 rerolls);
+    std::vector<BonkFoundLine> RollRerollOffers(BonkFoundGear const& found, uint8 lineIndex);
+    std::string DescribeOffers(std::vector<BonkFoundLine> const& offers, uint32 tier);
+    std::string DescribeRanges(uint32 tier);
     std::string DescribeTier(uint32 tier);
     void AddWornStats(Item const* item, float* passives);
     std::string DescribeLines(BonkFoundGear const& found, uint32 tier);
