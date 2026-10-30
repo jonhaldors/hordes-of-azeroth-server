@@ -22,6 +22,8 @@ class Creature;
 class GameObject;
 class Item;
 class Player;
+enum BonkString : uint32;
+enum BonkTextField : uint8;
 
 enum BonkMiniEventType : uint8
 {
@@ -129,6 +131,9 @@ class BonkRun
         bool IsInvasion() const { return m_invaderId != 0; }
 
         bool Begin(std::string& error);
+        std::string GetString(BonkString id, std::vector<std::string> const& args = {}) const;
+        std::string Localize(BonkTextField field, uint32 id, std::string const& english) const;
+        LocaleConstant GetLocale() const;
         void Update(uint32 diff);
         void Abort();
         void Surrender();
@@ -949,12 +954,10 @@ class BonkRun
         std::string DescribeRankUp(Offer const& offer, BonkWeapon const& weapon) const;
         struct WeaponStrength
         {
-            std::string lead;
-            std::string tail;
-            std::string label;
+            BonkString sentence{};
+            BonkString label{};
             float value = 0.0f;
             BonkSpellUpgrade folded = BONK_SPELL_UPGRADE_NONE;
-            std::string Describe() const;
         };
         bool GetWeaponStrength(BonkWeapon const& weapon, float damageBonus, float const* upgrades, WeaponStrength& strength) const;
         void AddRankGains(OwnedWeapon& owned, Offer const& offer) const;
@@ -1087,7 +1090,7 @@ class BonkRun
         void SendCardCooldown(BonkCardEffect effect) const;
         void SendCardCooldowns() const;
         std::string DescribeCardNow(BonkCard const& card) const;
-        static std::string DescribeHeldCard(BonkCard const& card, uint32 copies);
+        static std::string DescribeHeldCard(BonkCard const& card, uint32 copies, LocaleConstant locale);
         void SendCardStatus(bool force) const;
         mutable std::map<uint32, std::string> m_cardNowSent;
         uint32 m_cardCooldownTotals[MAX_BONK_CARD_EFFECT] = {};
@@ -1147,7 +1150,7 @@ class BonkRun
         std::string DescribeFoundDrop(BonkFoundGear const& found) const;
         void AddEliteScrap();
         bool GetKeepInfo(uint32 entry, uint32& keepEntry, uint8& quality) const;
-        void MailKeptPiece(uint32 entry, std::string const& subject, std::string const& body, BonkFoundGear const* found);
+        void MailKeptPiece(uint32 entry, std::string const& body, BonkFoundGear const* found);
         uint32 GetScrapPoints(Item const* item) const;
         void GetOwnedTiers(uint32 entry, uint32& bestTier, bool& owned) const;
         uint8 RollGearQuality(BonkSpawnKind kind) const;
@@ -1409,11 +1412,11 @@ class BonkRun
             bool boss = false;
             int32 leftMs = 0;
             int32 glowMs = 0;
-            std::string countdown;
+            bool countdown = false;
         };
         std::vector<PendingSummon> m_pendingSummons;
         void QueueSummon(BonkMapCreature const* creature, float x, float y, float z, uint32 affixes, ObjectGuid const& altar, bool boss,
-            std::string const& countdown);
+            bool countdown);
         void UpdatePendingSummons(uint32 diff);
         bool IsAltarWaking(ObjectGuid const& altar) const;
         uint32 m_shrinesToPlace = 0;

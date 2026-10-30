@@ -24,6 +24,11 @@ namespace
 {
     float const BONK_MOBINFO_SEARCH_RANGE = 50.0f;
 
+    std::string GetString(WorldSession* session, BonkString id, std::vector<std::string> const& args = {})
+    {
+        return session->GetPlayer()->GetBonkPlayer()->GetString(id, args);
+    }
+
     Creature* FindNearestEnemy(Player* player)
     {
         std::list<Creature*> creatures;
@@ -97,7 +102,7 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
     Player* player = m_session->GetPlayer();
     if (!player->IsAlive())
     {
-        SendSysMessage("You can't start a run while dead.");
+        SendSysMessage(GetString(m_session, BONK_STRING_CANT_START_RUN_WHILE_DEAD).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -106,7 +111,7 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
     BonkTier const* tier = key ? sBonkMgr.FindTier(key) : nullptr;
     if (!tier)
     {
-        SendSysMessage("Choose a difficulty:");
+        SendSysMessage(GetString(m_session, BONK_STRING_CHOOSE_DIFFICULTY_HEADER).c_str());
         player->GetBonkPlayer()->SendTierList();
         SetSentErrorMessage(true);
         return false;
@@ -128,7 +133,8 @@ bool ChatHandler::HandleBonkStartCommand(char* args)
             choice.startMap = map;
         else
         {
-            PSendSysMessage("%s has no zone or dungeon called %s.", tier->name.c_str(), option.c_str());
+            SendSysMessage(GetString(m_session, BONK_STRING_NO_ZONE_OR_DUNGEON_CALLED,
+                { m_session->GetPlayer()->GetBonkPlayer()->Localize(BONK_FIELD_TIER_NAME, tier->id, tier->name), option }).c_str());
             SetSentErrorMessage(true);
             return false;
         }
@@ -149,7 +155,7 @@ bool ChatHandler::HandleBonkStopCommand(char*)
     BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     if (!bonk->GetRun())
     {
-        SendSysMessage("You are not in a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_NOT_IN_A_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -163,7 +169,7 @@ bool ChatHandler::HandleBonkPickCommand(char* args)
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (args && std::string(args) == "auto")
     {
-        std::string error = "You are not in a run.";
+        std::string error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
         if (!run || !run->AutoPickCatchUp(error))
         {
             SendSysMessage(error.c_str());
@@ -177,7 +183,7 @@ bool ChatHandler::HandleBonkPickCommand(char* args)
     if (!ExtractUInt32(&args, choice))
         return false;
 
-    std::string error = "You are not in a run.";
+    std::string error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
     if (!run || !run->Pick(choice, error))
     {
         SendSysMessage(error.c_str());
@@ -190,7 +196,7 @@ bool ChatHandler::HandleBonkPickCommand(char* args)
 bool ChatHandler::HandleBonkRerollCommand(char*)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
-    std::string error = "You are not in a run.";
+    std::string error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
     if (!run || !run->Reroll(error))
     {
         SendSysMessage(error.c_str());
@@ -207,7 +213,7 @@ bool ChatHandler::HandleBonkBanishCommand(char* args)
         return false;
 
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
-    std::string error = "You are not in a run.";
+    std::string error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
     if (!run || !run->Banish(choice, error))
     {
         SendSysMessage(error.c_str());
@@ -220,7 +226,7 @@ bool ChatHandler::HandleBonkBanishCommand(char* args)
 bool ChatHandler::HandleBonkPassCommand(char*)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
-    std::string error = "You are not in a run.";
+    std::string error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
     if (!run || !run->Skip(error))
     {
         SendSysMessage(error.c_str());
@@ -237,7 +243,7 @@ bool ChatHandler::HandleBonkLockCommand(char* args)
         return false;
 
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
-    std::string error = "You are not in a run.";
+    std::string error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
     if (!run || !run->Lock(choice, error))
     {
         SendSysMessage(error.c_str());
@@ -396,7 +402,7 @@ bool ChatHandler::HandleBonkBanSlotCommand(char* args)
     BonkQuestReward const type = kind && !strcmp(kind, "c") ? BONK_REWARD_CARD : kind && !strcmp(kind, "g") ? BONK_REWARD_GLYPH : MAX_BONK_REWARD;
     if (type == MAX_BONK_REWARD)
     {
-        SendSysMessage("Use .bonk banslot c|g.");
+        SendSysMessage(GetString(m_session, BONK_STRING_BANSLOT_USAGE).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -428,7 +434,7 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
         state = ExtractLiteralArg(&args);
     if (!state || (strcmp(state, "on") && strcmp(state, "off")))
     {
-        SendSysMessage("Use .bonk pool c|g <id> on|off.");
+        SendSysMessage(GetString(m_session, BONK_STRING_POOL_USAGE).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -436,13 +442,13 @@ bool ChatHandler::HandleBonkPoolCommand(char* args)
     Player* player = m_session->GetPlayer();
     if (player->GetBonkPlayer()->GetRun())
     {
-        SendSysMessage("You can't change what runs offer during a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_CANT_CHANGE_POOL_DURING_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
     std::string error;
     if (!sBonkQuests.SetDisabled(player->GetBonkPlayer()->GetProgressAccount(), type, id, !strcmp(state, "off"),
-        player->GetBonkPlayer()->GetBanSlots(type), error))
+        player->GetBonkPlayer()->GetBanSlots(type), error, player->GetBonkPlayer()->GetLocale()))
         player->GetBonkPlayer()->Notify(error);
     BonkCodex::Send(player, "", player->GetBonkPlayer()->IsAtDeck());
     return true;
@@ -454,7 +460,7 @@ bool ChatHandler::HandleBonkGlyphCommand(char* args)
     uint32 choice = 0;
     if (!run || !ExtractUInt32(&args, choice))
     {
-        SendSysMessage(run ? "Use .bonk glyph <number>." : "You are not in a run.");
+        SendSysMessage(GetString(m_session, run ? BONK_STRING_GLYPH_USAGE : BONK_STRING_NOT_IN_A_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -538,7 +544,7 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
         BonkRun* run = player->GetBonkPlayer()->GetRun();
         std::string error;
         if (!run)
-            error = "The enchanter only works during a run.";
+            error = GetString(m_session, BONK_STRING_ENCHANTER_ONLY_DURING_RUN);
         else if (tab == "enchant open")
             run->OpenEnchanter();
         else if (tab == "enchant discard")
@@ -560,7 +566,7 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
     {
-        SendSysMessage("You are not in a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_NOT_IN_A_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -569,7 +575,7 @@ bool ChatHandler::HandleBonkGearCommand(char* args)
     bool const equipInSlot = choice.compare(0, 6, "equip ") == 0;
     if (choice != "equip" && choice != "loot" && choice != "salvage" && !equipInSlot)
     {
-        SendSysMessage("Use .bonk gear equip, .bonk gear equip <slot>, .bonk gear loot or .bonk gear salvage.");
+        SendSysMessage(GetString(m_session, BONK_STRING_GEAR_USAGE).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -592,7 +598,7 @@ bool ChatHandler::HandleBonkCardCommand(char* args)
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
     {
-        SendSysMessage("You are not in a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_NOT_IN_A_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -616,7 +622,7 @@ bool ChatHandler::HandleBonkEvolveCommand(char* args)
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
     {
-        SendSysMessage("You are not in a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_NOT_IN_A_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -640,7 +646,7 @@ bool ChatHandler::HandleBonkPassiveCommand(char* args)
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     if (!run)
     {
-        SendSysMessage("You are not in a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_NOT_IN_A_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -692,7 +698,7 @@ bool ChatHandler::HandleBonkQuestsCommand(char*)
         return true;
     }
 
-    SendSysMessage("Quests:");
+    SendSysMessage(GetString(m_session, BONK_STRING_QUESTS_HEADER).c_str());
     for (std::string const& line : sBonkQuests.DescribeAll(player))
         PSendSysMessage("  %s", line.c_str());
     return true;
@@ -703,7 +709,7 @@ bool ChatHandler::HandleBonkCodexCommand(char*)
     Player* player = m_session->GetPlayer();
     if (!player->GetBonkPlayer()->IsAddonReady())
     {
-        SendSysMessage("The spellbook needs the Hordes of Azeroth addon.");
+        SendSysMessage(GetString(m_session, BONK_STRING_SPELLBOOK_NEEDS_ADDON).c_str());
         return true;
     }
     BonkCodex::Send(player, "");
@@ -779,7 +785,7 @@ bool ChatHandler::HandleBonkStringsExportCommand(char* args)
 
 bool ChatHandler::HandleBonkMapsCommand(char*)
 {
-    SendSysMessage("Difficulties:");
+    SendSysMessage(GetString(m_session, BONK_STRING_DIFFICULTIES_HEADER).c_str());
     m_session->GetPlayer()->GetBonkPlayer()->SendTierList();
     return true;
 }
@@ -790,13 +796,13 @@ bool ChatHandler::HandleBonkCampCommand(char*)
     BonkPlayer* bonk = player->GetBonkPlayer();
     if (bonk->GetRun())
     {
-        SendSysMessage("Leave the run first with .bonk stop.");
+        SendSysMessage(GetString(m_session, BONK_STRING_LEAVE_RUN_FIRST).c_str());
         SetSentErrorMessage(true);
         return false;
     }
     if (player->IsInCombat() || player->IsTaxiFlying())
     {
-        SendSysMessage("You can't go back to the Inn right now.");
+        SendSysMessage(GetString(m_session, BONK_STRING_CANT_GO_BACK_TO_INN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -831,7 +837,7 @@ bool ChatHandler::HandleBonkReloadCommand(char*)
 {
     if (m_session && m_session->GetPlayer()->GetBonkPlayer()->GetRun())
     {
-        SendSysMessage("Leave the run first with .bonk stop.");
+        SendSysMessage(GetString(m_session, BONK_STRING_LEAVE_RUN_FIRST).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -1061,9 +1067,9 @@ bool ChatHandler::HandleBonkLeyPickCommand(char* args)
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
     std::string error;
     if (!run)
-        error = "You are not in a run.";
+        error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
     else if (!ExtractUInt32(&args, index))
-        error = "Usage: .bonk leypick <number>";
+        error = GetString(m_session, BONK_STRING_LEYPICK_USAGE);
     else if (run->PickLeyBuff(index, error))
         return true;
     SendSysMessage(error.c_str());
@@ -1077,7 +1083,7 @@ bool ChatHandler::HandleBonkInspectCommand(char* /*args*/)
     BonkRun* run = bonk->GetRun();
     if (!run)
     {
-        SendSysMessage("You can inspect your talents during a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_INSPECT_TALENTS_DURING_RUN).c_str());
         SetSentErrorMessage(true);
         return false;
     }
@@ -1092,13 +1098,13 @@ bool ChatHandler::HandleBonkVendorCommand(char* args)
     std::string error;
     uint32 index = 0;
     if (!action)
-        error = "Usage: .bonk vendor buy|lock <number>, .bonk vendor reroll|close";
+        error = GetString(m_session, BONK_STRING_VENDOR_USAGE);
     else if (!run)
-        error = "You are not in a run.";
+        error = GetString(m_session, BONK_STRING_NOT_IN_A_RUN);
     else if (!strcmp(action, "buy") || !strcmp(action, "lock"))
     {
         if (!ExtractUInt32(&args, index))
-            error = std::string("Usage: .bonk vendor ") + action + " <number>";
+            error = GetString(m_session, BONK_STRING_VENDOR_ACTION_USAGE, { action });
         else if (!strcmp(action, "buy") ? run->BuyFromVendor(index, error) : run->LockVendorSlot(index, error))
             return true;
     }
@@ -1115,15 +1121,15 @@ bool ChatHandler::HandleBonkVendorCommand(char* args)
     else if (!strcmp(action, "spawn") && GetAccessLevel() >= SEC_GAMEMASTER)
     {
         if (run->IsSandbox())
-            error = "The sandbox has no merchant.";
+            error = GetString(m_session, BONK_STRING_SANDBOX_HAS_NO_MERCHANT);
         else if (run->SpawnVendorNow(error))
         {
-            SendSysMessage("The merchant is on his way.");
+            SendSysMessage(GetString(m_session, BONK_STRING_MERCHANT_ON_HIS_WAY).c_str());
             return true;
         }
     }
     else
-        error = "Usage: .bonk vendor buy|lock <number>, .bonk vendor reroll|close";
+        error = GetString(m_session, BONK_STRING_VENDOR_USAGE);
 
     SendSysMessage(error.c_str());
     SetSentErrorMessage(true);
@@ -1342,6 +1348,6 @@ bool ChatHandler::HandleBonkMobInfoCommand(char*)
         for (std::string const& line : run->DescribeMob(mob))
             SendSysMessage(line.c_str());
     else
-        SendSysMessage("You are not in a run.");
+        SendSysMessage(GetString(m_session, BONK_STRING_NOT_IN_A_RUN).c_str());
     return true;
 }
