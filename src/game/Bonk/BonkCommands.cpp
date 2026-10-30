@@ -164,6 +164,20 @@ bool ChatHandler::HandleBonkStopCommand(char*)
     return true;
 }
 
+bool ChatHandler::HandleBonkHomeCommand(char*)
+{
+    BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();
+    if (!run)
+    {
+        SendSysMessage(GetString(m_session, BONK_STRING_NOT_IN_A_RUN).c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    run->GoHome();
+    return true;
+}
+
 bool ChatHandler::HandleBonkPickCommand(char* args)
 {
     BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun();

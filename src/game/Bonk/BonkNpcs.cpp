@@ -316,6 +316,12 @@ bool GOGossipSelect_go_bonk_portal(Player* player, GameObject* go, uint32 , uint
         return true;
     }
 
+    if (action == PORTAL_ACTION_HOME && player->GetBonkPlayer()->IsAddonReady())
+    {
+        player->CLOSE_GOSSIP_MENU();
+        player->GetBonkPlayer()->SendAddon(std::string("portalhome~") + (run->IsVaultEmptyWithFinds() ? "1" : "0"));
+        return true;
+    }
     if (action == PORTAL_ACTION_HOME && run->IsVaultEmptyWithFinds())
     {
         player->PlayerTalkClass->ClearMenus();
