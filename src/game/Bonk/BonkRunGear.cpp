@@ -886,7 +886,7 @@ void BonkRun::ResolveRunGear(bool extract)
         uint8 quality = ITEM_QUALITY_UNCOMMON;
         if (GetKeepInfo(item->GetEntry(), keepEntry, quality) || sBonkMgr.GetGear(item->GetEntry()))
         {
-            bool const goesHome = extract && keepEntry && IsInVault(guid);
+            bool const goesHome = keepEntry && IsInVault(guid);
             if (goesHome)
             {
                 KeptPiece piece;
