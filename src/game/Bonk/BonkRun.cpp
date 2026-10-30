@@ -12363,7 +12363,7 @@ std::string BonkRun::DescribeBuildTotals() const
             cards += (cards.empty() ? "" : ",") + std::to_string(owned.card->id) + ":" + std::to_string(owned.copies);
     std::string glyphs;
     for (BonkGlyph const* glyph : m_glyphs)
-        glyphs += (glyphs.empty() ? "" : ",") + std::to_string(glyph->id);
+        glyphs += (glyphs.empty() ? "" : ",") + DescribeGlyphTotals(*glyph);
     std::string stats;
     for (uint8 effect = 0; effect < MAX_BONK_PASSIVE_EFFECT; ++effect)
     {

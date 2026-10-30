@@ -737,6 +737,7 @@ class BonkRun
         bool IsSkeleton(ObjectGuid const& guid) const;
         bool IsWarlockMinion(ObjectGuid const& guid) const;
         std::string DescribeGlyphStats() const;
+        std::string DescribeGlyphTotals(BonkGlyph const& glyph) const;
         struct RisenSkeleton
         {
             ObjectGuid guid;

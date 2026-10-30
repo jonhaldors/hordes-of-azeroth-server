@@ -577,6 +577,18 @@ std::string BonkRun::DescribeGlyphStats() const
     return text;
 }
 
+std::string BonkRun::DescribeGlyphTotals(BonkGlyph const& glyph) const
+{
+    std::string text = std::to_string(glyph.id);
+    for (GlyphDamageSpell const& source : BONK_GLYPH_DAMAGE_SPELLS)
+        if (source.effect == glyph.effect)
+        {
+            BonkRunStats::Spell const totals = BonkStats::GetSpellStats(m_player->GetObjectGuid(), source.spellId);
+            text += ":" + std::to_string(totals.damage) + ":" + std::to_string(totals.kills);
+        }
+    return text;
+}
+
 void BonkRun::UpdateShadowmourne()
 {
     BonkGlyph const* mourne = GetGlyph(BONK_GLYPH_SHADOWMOURNE);
