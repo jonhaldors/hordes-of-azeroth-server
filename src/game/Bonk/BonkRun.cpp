@@ -1456,6 +1456,10 @@ void BonkRun::Update(uint32 diff)
 
 void BonkRun::StartStage()
 {
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC,
+        "Bonk floor: %s starts stage %u at run minute %.2f (stage %u, %s, %s, class %u): level %u, %u kills, took %u damage so far",
+        m_player->GetName(), m_stage, GetRunMinutes(), m_stage, m_map.key.c_str(), m_tier.key.c_str(), uint32(m_player->GetClass()),
+        m_player->GetLevel() + m_overcapLevel, m_kills, m_damageTaken);
     m_state = STATE_RUNNING;
     m_elapsedMs = 0;
     m_nextEvent = 0;
@@ -12566,7 +12570,8 @@ std::string BonkRun::DescribeBuildTotals() const
         stats += (stats.empty() ? "" : ",") + std::string(entry);
     }
     return "spells [" + spells + "]; passives [" + passives + "]; cards [" + cards + "]; glyphs [" + glyphs + "]; gear [" +
-        m_player->GetBonkPlayer()->DescribeGear() + "]; stats [" + stats + "]";
+        m_player->GetBonkPlayer()->DescribeGear() + "]; stats [" + stats + "]; found [" + m_player->GetBonkPlayer()->DescribeFoundGear() +
+        "]; enchants [" + DescribeEnchants() + "]";
 }
 
 void BonkRun::SendLoadout() const

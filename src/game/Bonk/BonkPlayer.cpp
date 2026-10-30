@@ -446,7 +446,24 @@ std::string BonkPlayer::DescribeLoadout() const
     return "mastery level " + std::to_string(GetMasteryLevel()) + ", talent points " + std::to_string(GetMasterySpent()) + " of " +
         std::to_string(GetMasteryPoints()) + ", best floor " + std::to_string(m_classFloor) + ", determination " + std::to_string(GetDetermination()) +
         "; talents [" + describeRanks(m_masteryRanks) + "]; upgrades [" + describeRanks(m_upgradeRanks) + "]; fortunes [" +
-        describeRanks(m_talentRanks) + "]; gear [" + DescribeGear() + "]";
+        describeRanks(m_talentRanks) + "]; gear [" + DescribeGear() + "]; found [" + DescribeFoundGear() + "]; gold " +
+        std::to_string(m_player->GetMoney()) + ", scrap " + std::to_string(m_scrap) + ", tickets " + std::to_string(m_shards);
+}
+
+std::string BonkPlayer::DescribeFoundGear() const
+{
+    std::string found;
+    for (uint32 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        uint32 const tier = item ? BonkFound::GetItemTier(item) : 0;
+        if (!tier)
+            continue;
+        BonkFoundGear gear;
+        sBonkFound.Get(item->GetGUIDLow(), gear);
+        found += (found.empty() ? "" : ",") + std::to_string(slot) + ":" + std::to_string(tier) + ":" + std::to_string(gear.lines.size());
+    }
+    return found;
 }
 
 std::string BonkPlayer::DescribeGear() const
