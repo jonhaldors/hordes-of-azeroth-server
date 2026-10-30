@@ -70,7 +70,7 @@ namespace
     }
 }
 
-bool ChatHandler::HandleBonkPerfDipCommand(char* /*args*/)
+bool ChatHandler::HandleBonkPerfDipCommand(char*)
 {
     if (BonkRun* run = m_session->GetPlayer()->GetBonkPlayer()->GetRun())
         run->LogPerfDip();
@@ -1111,7 +1111,7 @@ bool ChatHandler::HandleBonkLeyPickCommand(char* args)
     return false;
 }
 
-bool ChatHandler::HandleBonkInspectCommand(char* /*args*/)
+bool ChatHandler::HandleBonkInspectCommand(char*)
 {
     BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
     BonkRun* run = bonk->GetRun();
