@@ -24,6 +24,8 @@ class Player;
 enum BonkShop : uint8;
 enum BonkQuestReward : uint8;
 enum BonkUpgradeUtility : uint8;
+enum BonkString : uint32;
+enum BonkTextField : uint8;
 struct BonkMap;
 struct BonkMasteryBonuses;
 struct BonkMasteryNode;
@@ -255,6 +257,10 @@ class BonkPlayer
 
         void SetAddonReady() { m_addonReady = true; m_zoneArtSent = false; }
         bool IsAddonReady() const { return m_addonReady; }
+        void SetLocale(LocaleConstant locale) { m_locale = locale; }
+        LocaleConstant GetLocale() const { return m_locale; }
+        std::string GetString(BonkString id, std::vector<std::string> const& args = {}) const;
+        std::string Localize(BonkTextField field, uint32 id, std::string const& english) const;
 
         void SendAddon(std::string const& line) const;
         void Notify(std::string const& text) const;
@@ -351,6 +357,7 @@ class BonkPlayer
         std::unique_ptr<BonkRun> m_run;
         BonkTelegraphs m_previewTelegraphs;
         bool m_addonReady = false;
+        LocaleConstant m_locale = LOCALE_enUS;
         mutable bool m_zoneArtSent = false;
         void SendZoneArt() const;
         bool m_firingWeapon = false;
