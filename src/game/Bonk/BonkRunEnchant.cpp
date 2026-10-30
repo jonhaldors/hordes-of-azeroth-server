@@ -18,17 +18,26 @@ uint32 BonkRun::GetEnchantPrice() const
     return std::max(1u, uint32(GetChestPrice() * BONK_ENCHANT_PRICE * (1.0f + BONK_ENCHANT_PRICE_GROWTH * m_enchantRolls) + 0.5f));
 }
 
-uint32 BonkRun::GetEnchantTier(uint8 slot) const
+void BonkRun::GetPieceStats(uint8 slot, float* stats) const
 {
+    std::fill(stats, stats + MAX_BONK_PASSIVE_EFFECT, 0.0f);
     Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-    return std::max(1u, item ? BonkFound::GetItemTier(item) : 0u);
+    if (!item)
+        return;
+    if (BonkItemStat const* stat = sBonkMgr.GetItemStat(item->GetEntry()))
+        std::copy(std::begin(stat->stats), std::end(stat->stats), stats);
+    BonkFound::AddWornStats(item, stats);
 }
 
 void BonkRun::AddEnchantStats(float* passives) const
 {
+    float pieceStats[MAX_BONK_PASSIVE_EFFECT];
     for (auto const& itr : m_enchants)
         if (itr.second.IsSet())
-            passives[itr.second.effect] += BonkEnchanting::GetValue(itr.second, GetEnchantTier(itr.first));
+        {
+            GetPieceStats(itr.first, pieceStats);
+            passives[itr.second.effect] += BonkEnchanting::GetValue(itr.second, pieceStats);
+        }
 }
 
 bool BonkRun::IsNearEnchanter() const
@@ -96,8 +105,10 @@ bool BonkRun::RollEnchant(uint8 slot, std::string& error)
     m_valorOnEnchants += price;
     ++m_enchantRolls;
     m_enchantOfferSlot = slot;
+    float pieceStats[MAX_BONK_PASSIVE_EFFECT];
+    GetPieceStats(slot, pieceStats);
     for (uint8 index = 0; index < BonkEnchanting::OFFER_COUNT; ++index)
-        m_enchantOffers.push_back(BonkEnchanting::Roll());
+        m_enchantOffers.push_back(BonkEnchanting::Roll(pieceStats));
     SendState();
     SendEnchants();
     return true;
@@ -132,16 +143,19 @@ void BonkRun::SendEnchants() const
         return;
     bonk->SendAddon("enchantclear");
     bonk->SendAddon("enchantinfo~" + std::to_string(GetEnchantPrice()) + "~" + std::to_string(m_coins));
+    float pieceStats[MAX_BONK_PASSIVE_EFFECT];
     uint8 const* slots = BonkEnchanting::GetSlots();
     for (uint8 index = 0; index < BonkEnchanting::GetSlotCount(); ++index)
     {
         uint8 const slot = slots[index];
         auto itr = m_enchants.find(slot);
         BonkEnchant const enchant = itr != m_enchants.end() ? itr->second : BonkEnchant();
-        bonk->SendAddon("enchantslot~" + std::to_string(slot) + "~" + BonkEnchanting::Describe(enchant, GetEnchantTier(slot)));
+        GetPieceStats(slot, pieceStats);
+        bonk->SendAddon("enchantslot~" + std::to_string(slot) + "~" + BonkEnchanting::Describe(enchant, pieceStats));
     }
+    GetPieceStats(m_enchantOfferSlot, pieceStats);
     for (uint8 index = 0; index < m_enchantOffers.size(); ++index)
         bonk->SendAddon("enchantoffer~" + std::to_string(m_enchantOfferSlot) + "~" + std::to_string(index) + "~" +
-            BonkEnchanting::Describe(m_enchantOffers[index], GetEnchantTier(m_enchantOfferSlot)));
+            BonkEnchanting::Describe(m_enchantOffers[index], pieceStats));
     bonk->SendAddon("enchantend");
 }

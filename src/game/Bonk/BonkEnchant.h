@@ -23,10 +23,10 @@ namespace BonkEnchanting
     uint8 const* GetSlots();
     uint8 GetSlotCount();
     bool IsEnchantSlot(uint8 slot);
-    BonkEnchant Roll();
-    float GetValue(BonkEnchant const& enchant, uint32 tier);
+    BonkEnchant Roll(float const* pieceStats);
+    float GetValue(BonkEnchant const& enchant, float const* pieceStats);
     char const* GetGradeName(uint8 grade);
-    std::string Describe(BonkEnchant const& enchant, uint32 tier);
+    std::string Describe(BonkEnchant const& enchant, float const* pieceStats);
 }
 
 #endif
