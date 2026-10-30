@@ -724,6 +724,26 @@ bool ChatHandler::HandleBonkHelloCommand(char* args)
     }
     bonk->SetAddonReady();
     SendAddonData(player);
+    bonk->SendUpdateNotices();
+    return true;
+}
+
+bool ChatHandler::HandleBonkNoticeCommand(char* args)
+{
+    char* which = ExtractArg(&args);
+    if (!which || std::string(which) != "gear")
+        return false;
+    m_session->GetPlayer()->GetBonkPlayer()->SeeGearNotice();
+    return true;
+}
+
+bool ChatHandler::HandleBonkOldLegendariesCommand(char* args)
+{
+    char* choice = ExtractArg(&args);
+    std::string const answer = choice ? choice : "";
+    if (answer != "keep" && answer != "delete")
+        return false;
+    m_session->GetPlayer()->GetBonkPlayer()->ResolveOldLegendaries(answer == "delete");
     return true;
 }
 

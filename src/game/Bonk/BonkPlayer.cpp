@@ -310,13 +310,16 @@ void BonkPlayer::LoadPurchases()
     m_determination = 0;
     m_scrap = 0;
     m_quartermasterUpgrade = false;
-    result = CharacterDatabase.PQuery("SELECT `shards`, `determination`, `scrap` FROM `bonk_account` WHERE `account` = %u", accountId);
+    result = CharacterDatabase.PQuery("SELECT `shards`, `determination`, `scrap`, `gear_notice` FROM `bonk_account` WHERE `account` = %u", accountId);
     if (result)
     {
         m_shards = result->Fetch()[0].GetUInt32();
         m_determination = result->Fetch()[1].GetUInt8();
         m_scrap = result->Fetch()[2].GetUInt32();
+        m_gearNoticePending = result->Fetch()[3].GetUInt8() != 0;
     }
+    result = CharacterDatabase.PQuery("SELECT 1 FROM `bonk_character_notice` WHERE `guid` = %u AND `old_legendaries` = 1", m_player->GetGUIDLow());
+    m_legendaryPromptPending = result != nullptr;
 
     m_foundGear.clear();
     result = CharacterDatabase.PQuery("SELECT `item` FROM `bonk_account_found` WHERE `account` = %u", accountId);
@@ -2639,6 +2642,88 @@ void BonkPlayer::SendFoundItems() const
             for (uint32 slot = 0; slot < container->GetBagSize(); ++slot)
                 send(container->GetItemByPos(uint8(slot)), std::to_string(bag - BANK_SLOT_BAG_START + 5) + ":" + std::to_string(slot + 1));
     SendAddon("foundend");
+}
+
+void BonkPlayer::SendUpdateNotices()
+{
+    if (m_gearNoticePending)
+        SendAddon("notice~gear");
+    if (!m_legendaryPromptPending)
+        return;
+    std::vector<Item*> const legendaries = GetOwnedLegendaries();
+    if (legendaries.empty())
+    {
+        ClearLegendaryPrompt();
+        return;
+    }
+    uint32 refund = 0;
+    for (Item const* item : legendaries)
+        refund += BonkFound::GetScrapValue(item);
+    SendAddon("oldlegendaries~" + std::to_string(legendaries.size()) + "~" + std::to_string(refund));
+}
+
+void BonkPlayer::SeeGearNotice()
+{
+    if (!m_gearNoticePending)
+        return;
+    m_gearNoticePending = false;
+    CharacterDatabase.PExecute("UPDATE `bonk_account` SET `gear_notice` = 0 WHERE `account` = %u", GetProgressAccount());
+}
+
+void BonkPlayer::ClearLegendaryPrompt()
+{
+    m_legendaryPromptPending = false;
+    CharacterDatabase.PExecute("UPDATE `bonk_character_notice` SET `old_legendaries` = 0 WHERE `guid` = %u", m_player->GetGUIDLow());
+}
+
+std::vector<Item*> BonkPlayer::GetOwnedLegendaries() const
+{
+    std::vector<Item*> legendaries;
+    auto consider = [&](Item* item)
+    {
+        uint32 kind, tier;
+        if (item && BonkMgr::ReadLegendaryEntry(item->GetEntry(), kind, tier))
+            legendaries.push_back(item);
+    };
+    auto considerBag = [&](uint8 bagSlot)
+    {
+        if (Bag* container = dynamic_cast<Bag*>(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, bagSlot)))
+            for (uint32 slot = 0; slot < container->GetBagSize(); ++slot)
+                consider(container->GetItemByPos(uint8(slot)));
+    };
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        consider(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        consider(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        considerBag(bag);
+    for (uint8 slot = BANK_SLOT_ITEM_START; slot < BANK_SLOT_ITEM_END; ++slot)
+        consider(m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 bag = BANK_SLOT_BAG_START; bag < BANK_SLOT_BAG_END; ++bag)
+        considerBag(bag);
+    return legendaries;
+}
+
+bool BonkPlayer::ResolveOldLegendaries(bool remove)
+{
+    if (!m_legendaryPromptPending || GetRun())
+        return false;
+    if (remove)
+    {
+        uint32 refund = 0;
+        std::vector<std::pair<uint8, uint8>> places;
+        for (Item const* item : GetOwnedLegendaries())
+        {
+            refund += BonkFound::GetScrapValue(item);
+            places.emplace_back(item->GetBagSlot(), item->GetSlot());
+        }
+        for (auto const& place : places)
+            m_player->DestroyItem(place.first, place.second, true);
+        AddScrap(refund);
+        Notify("Your old legendaries are gone. You received " + std::to_string(refund) + " Scrap.");
+    }
+    ClearLegendaryPrompt();
+    return true;
 }
 
 std::vector<Item*> BonkPlayer::GetForeignTierPieces() const

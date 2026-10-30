@@ -114,9 +114,6 @@ namespace
     float const BONK_GEAR_LEGENDARY_PER_FLOOR = 0.05f;
     float const BONK_GEAR_LEGENDARY_MAX_CHANCE = 2.0f;
     float const BONK_INVASION_UPGRADE_CHANCE = 50.0f;
-    uint32 const BONK_SCRAP_PER_PLAIN_FIND = 1;
-    uint32 const BONK_SCRAP_PER_FIND = 2;
-    uint32 const BONK_SCRAP_TIERS_PER_POINT = 2;
     uint32 const BONK_SCRAP_ELITE_BASE = 1;
     uint32 const BONK_SCRAP_ELITE_FLOORS_PER_POINT = 4;
     uint32 const BONK_GO_PILLAR            = 900070;
@@ -375,13 +372,7 @@ uint32 BonkRun::GetScrapPoints(Item const* item) const
 {
     if (!IsMythic() || m_sandbox || !item)
         return 0;
-    uint32 const tier = BonkFound::GetItemTier(item);
-    if (!tier)
-        return BONK_SCRAP_PER_PLAIN_FIND;
-    BonkFoundGear found;
-    sBonkFound.Get(item->GetGUIDLow(), found);
-    uint32 const points = BONK_SCRAP_PER_FIND + tier / BONK_SCRAP_TIERS_PER_POINT;
-    return points + points * uint32(found.lines.size()) / 2;
+    return BonkFound::GetScrapValue(item);
 }
 
 void BonkRun::GetOwnedTiers(uint32 entry, uint32& bestTier, bool& owned) const

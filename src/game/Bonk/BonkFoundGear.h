@@ -55,6 +55,7 @@ namespace BonkFound
     BonkFoundGear Make(uint32 tier, uint32 lineCount);
     float LineValue(BonkFoundLine const& line, uint32 tier);
     uint32 GetItemTier(Item const* item);
+    uint32 GetScrapValue(Item const* item);
     uint32 GetUpgradeCost(uint32 tier);
     uint32 GetRerollCost(uint32 rerolls);
     std::vector<BonkFoundLine> RollRerollOffers(BonkFoundGear const& found, uint8 lineIndex);

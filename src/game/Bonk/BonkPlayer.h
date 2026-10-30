@@ -290,6 +290,9 @@ class BonkPlayer
         uint32 GetDashCooldownMs() const;
         void SendTierList() const;
         void SendGearInfo() const;
+        void SendUpdateNotices();
+        void SeeGearNotice();
+        bool ResolveOldLegendaries(bool remove);
         void SendStats() const;
         void SendMasteryShop(bool open, bool inspect) const;
         std::map<uint32, uint8> ReadMasteryPreset(uint8 slot) const;
@@ -359,6 +362,10 @@ class BonkPlayer
         std::unique_ptr<BonkRun> m_run;
         BonkTelegraphs m_previewTelegraphs;
         bool m_addonReady = false;
+        bool m_gearNoticePending = false;
+        bool m_legendaryPromptPending = false;
+        std::vector<Item*> GetOwnedLegendaries() const;
+        void ClearLegendaryPrompt();
         LocaleConstant m_locale = LOCALE_enUS;
         mutable bool m_zoneArtSent = false;
         void SendZoneArt() const;
