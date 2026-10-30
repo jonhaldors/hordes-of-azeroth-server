@@ -224,6 +224,11 @@ float BonkRun::BossLegendaryChance(BonkTier const& tier, uint32 stage)
     return std::min(BONK_GEAR_LEGENDARY_MAX_CHANCE, BONK_GEAR_LEGENDARY_CHANCE + BONK_GEAR_LEGENDARY_PER_FLOOR * float(stage - BONK_LEGENDARY_FIRST_FLOOR));
 }
 
+float BonkRun::BossEpicChance(BonkTier const& tier, uint32 stage)
+{
+    return tier.key == "mythic" ? EpicChance(stage, BONK_SPAWN_BOSS) : 0.0f;
+}
+
 uint32 BonkRun::GetDropTier() const
 {
     return std::max(1u, m_stage);
