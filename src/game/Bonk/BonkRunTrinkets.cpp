@@ -1,45 +1,75 @@
 #include "BonkRun.h"
 #include "BonkMgr.h"
+#include "BonkPlayer.h"
+#include "BonkTelegraph.h"
 #include "Creature.h"
 #include "Item.h"
+#include "Map.h"
 #include "Player.h"
 #include "SpellMgr.h"
 #include "Utilities/Random.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
-    float const BONK_TRINKET_CHANCE = 5.0f;
+    uint32 const BONK_TRINKET_TICK_MS = 250;
 
-    uint32 const BONK_KIT_TRINKET_LIGHTNING = 283;
-    uint32 const BONK_KIT_TRINKET_FIRE      = 728;
-    uint32 const BONK_KIT_TRINKET_FROST     = 160;
+    float const BONK_SKULL_DAMAGE       = 30.0f;
+    float const BONK_SKULL_DAMAGE_TAKEN = 30.0f;
+    float const BONK_GOGGLES_MAX_DAMAGE = 50.0f;
+
+    uint32 const BONK_LAND_MINE_DROP_MS     = 6000;
+    uint32 const BONK_LAND_MINE_CHECK_MS    = 100;
+    int32 const BONK_LAND_MINE_ARM_MS       = 500;
+    int32 const BONK_LAND_MINE_LIFE_MS      = 30000;
+    size_t const BONK_LAND_MINE_MAX         = 5;
+    float const BONK_LAND_MINE_TRIGGER      = 2.0f;
+    float const BONK_LAND_MINE_RADIUS       = 6.0f;
+    float const BONK_LAND_MINE_HEALTH_SHARE = 0.6f;
+    uint32 const BONK_LAND_MINE_DISPLAY     = 6271;
+    uint32 const BONK_SPELL_LAND_MINE       = 4043;
+    uint32 const BONK_KIT_LAND_MINE         = 728;
+
+    float const BONK_STOPWATCH_MAX_DODGE  = 5.0f;
+    float const BONK_STOPWATCH_GAIN       = 1.0f;
+    float const BONK_STOPWATCH_LOSS       = 2.0f;
+
+    float const BONK_ROCKET_BOOTS_RANGE    = 50.0f;
+    float const BONK_ROCKET_BOOTS_BACKFIRE = 5.0f;
+    uint32 const BONK_KIT_ROCKET_BACKFIRE  = 728;
+
+    float const BONK_DEMONIC_RUNE_POWER      = 25.0f;
+    float const BONK_DEMONIC_RUNE_DRAIN      = 1.0f;
+    float const BONK_DEMONIC_RUNE_FLOOR      = 30.0f;
+
+    float const BONK_RUMSEY_RUM_GAIN    = 0.5f;
+    float const BONK_RUMSEY_RUM_MAX     = 10.0f;
+
+    uint32 const BONK_POCKET_GOLD_STEP  = 5000;
+    float const BONK_POCKET_GOLD_MAX    = 8.0f;
+    float const BONK_POCKET_GOLD_SLOW   = 5.0f;
 
     BonkTrinket const BONK_TRINKETS[MAX_BONK_TRINKET_EFFECT] =
     {
-        { "Stormcaller's Fetish", "inv_jewelry_talisman_12", 16614, 0.8f, 20.0f, 4, 0,
-          "Your spells have a 5% chance to strike up to 4 enemies near you with lightning for 80% of the spell's damage." },
-        { "Smoldering Ember", "inv_misc_orb_03", 6305, 1.0f, 10.0f, 0, 0,
-          "Your spells have a 5% chance to burst into flames around you, hitting enemies within 10 yards for 100% of the spell's damage." },
-        { "Shard of Hastened Time", "inv_jewelry_talisman_11", 0, 20.0f, 0.0f, 0, 6000,
-          "Your spells have a 5% chance to grant 20% Haste for 6 sec." },
-        { "Bulwark Sigil", "inv_misc_rune_06", 0, 8.0f, 0.0f, 0, 0,
-          "Your spells have a 5% chance to shield you for 8% of your maximum health." },
-        { "Bloodvine Charm", "inv_jewelry_talisman_01", 0, 3.0f, 0.0f, 0, 0,
-          "Your spells have a 5% chance to heal you for 3% of your maximum health." },
-        { "Frostbound Idol", "inv_misc_ahnqirajtrinket_03", 22519, 0.7f, 8.0f, 0, 0,
-          "Your spells have a 5% chance to freeze the air around the target, hitting enemies within 8 yards for 70% of the spell's damage." },
-        { "Grinning Skull of Wrath", "inv_misc_bone_elfskull_01", 0, 20.0f, 0.0f, 0, 6000,
-          "Your spells have a 5% chance to grant 20% Power for 6 sec." },
-        { "Windrunner's Compass", "inv_jewelry_talisman_13", 0, 30.0f, 0.0f, 0, 4000,
-          "Your spells have a 5% chance to make you run 30% faster for 4 sec." },
+        { "Gnomish Battle Goggles", "inv_helmet_47",
+          "Your spells deal up to 50% more damage the lower your health is." },
+        { "Goblin Land Mine", "inv_misc_bomb_05",
+          "Every 6 sec, drop a land mine at your feet. The first enemy to touch it sets it off, hitting enemies within 6 yards for 60% of a normal enemy's health." },
+        { "Nifty Stopwatch", "inv_misc_pocketwatch_01",
+          "Moving raises your dodge chance by 1% per sec, up to 5%. Standing still lowers it again." },
+        { "Goblin Rocket Boots", "inv_gizmo_rocketboot_01",
+          "Your Dash goes 50% farther, but has a 5% chance to backfire and launch you in a random direction." },
+        { "Demonic Rune", "inv_misc_rune_04",
+          "+25% Power. You lose 1% of your health every second, down to 30%." },
+        { "Rumsey Rum", "inv_drink_03",
+          "Gain 1% critical strike chance every 2 sec, up to 10%. Being hit halves it." },
+        { "Grinning Skull of Wrath", "inv_misc_bone_elfskull_01",
+          "Your spells deal 30% more damage, but you take 30% more damage." },
+        { "Goblin Pocket Gold", "inv_misc_coin_03",
+          "+1% Power for every 50 silver you pick up this run, up to 8%. You move 5% slower." },
     };
-
-    bool StrikesOnHit(BonkTrinketEffect effect)
-    {
-        return effect == BONK_TRINKET_STORM || effect == BONK_TRINKET_EMBER || effect == BONK_TRINKET_FROST;
-    }
 }
 
 BonkTrinket const& BonkMgr::GetTrinket(BonkTrinketEffect effect)
@@ -47,146 +77,250 @@ BonkTrinket const& BonkMgr::GetTrinket(BonkTrinketEffect effect)
     return BONK_TRINKETS[effect < MAX_BONK_TRINKET_EFFECT ? effect : 0];
 }
 
-uint32 BonkRun::GetWornTrinkets() const
+void BonkRun::UpdateWornTrinkets()
 {
     uint32 worn = 0;
-    for (uint8 slot : { EQUIPMENT_SLOT_TRINKET1, EQUIPMENT_SLOT_TRINKET2 })
+    BonkTrinketEffect effect;
+    if (m_sandboxBench)
     {
-        BonkTrinketEffect effect;
-        if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            if (BonkMgr::ReadTrinketEffect(item->GetEntry(), effect))
+        for (uint32 entry : m_sandboxBenchItems)
+            if (BonkMgr::ReadTrinketEffect(entry, effect))
                 worn |= 1u << effect;
     }
-    return worn;
-}
-
-void BonkRun::ExpireTrinketSpeed()
-{
-    if (!m_trinketSpeedUntilMs || m_totalMs < m_trinketSpeedUntilMs)
+    else
+        for (uint8 slot : { EQUIPMENT_SLOT_TRINKET1, EQUIPMENT_SLOT_TRINKET2 })
+            if (Item const* item = m_player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                if (BonkMgr::ReadTrinketEffect(item->GetEntry(), effect))
+                    worn |= 1u << effect;
+    if (worn == m_wornTrinkets)
         return;
-    m_trinketSpeedUntilMs = 0;
+    m_wornTrinkets = worn;
+    if (!WearsTrinket(BONK_TRINKET_STOPWATCH))
+        m_stopwatchDodge = 0.0f;
+    if (!WearsTrinket(BONK_TRINKET_RUMSEY_RUM))
+        m_rumseyCrit = 0.0f;
+    if (!WearsTrinket(BONK_TRINKET_LAND_MINE))
+        DespawnLandMines();
     ApplyPassives();
 }
 
-void BonkRun::RollTrinketCharges(OwnedWeapon& owned)
+void BonkRun::UpdateTrinkets(uint32 diff)
 {
-    if (owned.weapon.IsPassiveTrigger() || int32(m_totalMs - owned.trinketRollAtMs) < 0)
+    UpdateLandMines(diff);
+    m_trinketTickMs += diff;
+    if (m_trinketTickMs < BONK_TRINKET_TICK_MS)
         return;
-    owned.trinketRollAtMs = m_totalMs + GetWeaponCooldown(owned);
-    owned.trinketCharges = 0;
-    uint32 const worn = GetWornTrinkets();
-    for (uint8 index = 0; index < MAX_BONK_TRINKET_EFFECT; ++index)
-    {
-        BonkTrinketEffect const effect = BonkTrinketEffect(index);
-        if (!(worn & (1u << effect)) || !roll_chance_f(BONK_TRINKET_CHANCE))
-            continue;
-        if (StrikesOnHit(effect))
-        {
-            owned.trinketCharges |= 1u << effect;
-            continue;
-        }
-
-        BonkTrinket const& trinket = BonkMgr::GetTrinket(effect);
-        SupportScope scope(*this, { trinket.icon, trinket.name });
-        uint32 const maxHealth = m_player->GetMaxHealth();
-        switch (effect)
-        {
-            case BONK_TRINKET_HASTE:
-                m_trinketHasteUntilMs = m_totalMs + trinket.durationMs;
-                break;
-            case BONK_TRINKET_WRATH:
-                m_trinketPowerUntilMs = m_totalMs + trinket.durationMs;
-                break;
-            case BONK_TRINKET_WIND:
-            {
-                bool const starting = !m_trinketSpeedUntilMs;
-                m_trinketSpeedUntilMs = m_totalMs + trinket.durationMs;
-                if (starting)
-                    ApplyPassives();
-                break;
-            }
-            case BONK_TRINKET_BULWARK:
-                AddSpellShield(uint32(maxHealth * trinket.value / 100.0f));
-                break;
-            case BONK_TRINKET_BLOODVINE:
-                HealHero(ReduceHealing(uint32(maxHealth * trinket.value / 100.0f)));
-                break;
-            default:
-                break;
-        }
-    }
+    uint32 const elapsed = m_trinketTickMs;
+    m_trinketTickMs = 0;
+    if (!m_wornTrinkets || !m_player->IsAlive())
+        return;
+    UpdateStopwatch(elapsed);
+    UpdateRumseyRum(elapsed);
+    DrainDemonicRune(elapsed);
 }
 
-void BonkRun::OnTrinketHit(Unit* victim, double damage, SpellEntry const* spell)
+void BonkRun::UpdateStopwatch(uint32 elapsed)
 {
-    OwnedWeapon* owned = spell ? const_cast<OwnedWeapon*>(FindOwnedBySpell(spell->Id)) : nullptr;
-    if (!damage || !owned || !owned->trinketCharges || !victim)
+    if (!WearsTrinket(BONK_TRINKET_STOPWATCH))
         return;
-
-    float const multiplier = std::max(0.1f, GetDamageMultiplier(nullptr, victim, 1.0f, GetCastChargePower(spell, victim)));
-    float const castScale = owned->weapon.HasFlag(BONK_WEAPON_FLAG_AOE) ? 1.0f : 1.0f + float(GetSpellCount(*owned));
-    float const base = damage * castScale / multiplier;
-
-    for (uint8 index = 0; index < MAX_BONK_TRINKET_EFFECT; ++index)
-    {
-        BonkTrinketEffect const effect = BonkTrinketEffect(index);
-        uint32 const bit = 1u << effect;
-        if (!(owned->trinketCharges & bit))
-            continue;
-        owned->trinketCharges &= ~bit;
-
-        BonkTrinket const& trinket = BonkMgr::GetTrinket(effect);
-        float const strike = base * trinket.value;
-        if (effect == BONK_TRINKET_STORM)
-        {
-            std::vector<Creature*> mobs = GetMobsInRange(trinket.radius, m_player);
-            if (mobs.size() > trinket.targets)
-            {
-                for (uint32 i = 0; i < trinket.targets; ++i)
-                    std::swap(mobs[i], mobs[urand(i, uint32(mobs.size() - 1))]);
-                mobs.resize(trinket.targets);
-            }
-            StrikeWithTrinket(effect, mobs, strike, BONK_KIT_TRINKET_LIGHTNING);
-        }
-        else if (effect == BONK_TRINKET_EMBER)
-            StrikeWithTrinket(effect, GetMobsInRange(trinket.radius, m_player), strike, BONK_KIT_TRINKET_FIRE);
-        else if (effect == BONK_TRINKET_FROST)
-        {
-            std::vector<Creature*> mobs = GetMobsInRange(trinket.radius, victim);
-            if (victim->IsAlive() && victim->IsCreature() && std::find(mobs.begin(), mobs.end(), victim) == mobs.end())
-                mobs.push_back(static_cast<Creature*>(victim));
-            victim->SendPlaySpellVisualKit(BONK_KIT_TRINKET_FROST);
-            StrikeWithTrinket(effect, mobs, strike, 0);
-        }
-    }
+    float const seconds = float(elapsed) / IN_MILLISECONDS;
+    float const change = m_player->IsMoving() ? BONK_STOPWATCH_GAIN * seconds : -BONK_STOPWATCH_LOSS * seconds;
+    int32 const shownBefore = int32(m_stopwatchDodge + 0.5f);
+    m_stopwatchDodge = std::max(0.0f, std::min(BONK_STOPWATCH_MAX_DODGE, m_stopwatchDodge + change));
+    if (int32(m_stopwatchDodge + 0.5f) == shownBefore)
+        return;
+    ApplyPassives();
+    if (m_sandbox)
+        LogStopwatch();
 }
 
-void BonkRun::StrikeWithTrinket(BonkTrinketEffect effect, std::vector<Creature*> const& targets, float damage, uint32 kit)
+void BonkRun::LogStopwatch() const
 {
-    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BonkMgr::GetTrinket(effect).spellId);
-    if (!spellInfo || damage <= 0.0f)
+    char text[128];
+    snprintf(text, sizeof(text), "Nifty Stopwatch: %s, trinket dodge %.0f%%, total dodge %.1f%%, actual %.1f%%",
+        m_player->IsMoving() ? "moving" : "standing", m_stopwatchDodge, GetStat(BONK_PASSIVE_DODGE), m_player->GetUnitDodgeChance());
+    sLog.Player(m_player->GetSession(), LOG_LEVELUP, LOG_LVL_BASIC, "Bonk stopwatch: %s %s", m_player->GetName(), text);
+    m_player->GetBonkPlayer()->Notify(text);
+}
+
+void BonkRun::UpdateRumseyRum(uint32 elapsed)
+{
+    if (WearsTrinket(BONK_TRINKET_RUMSEY_RUM))
+        m_rumseyCrit = std::min(BONK_RUMSEY_RUM_MAX, m_rumseyCrit + BONK_RUMSEY_RUM_GAIN * elapsed / IN_MILLISECONDS);
+}
+
+void BonkRun::DrainDemonicRune(uint32 elapsed)
+{
+    if (!WearsTrinket(BONK_TRINKET_DEMONIC_RUNE))
         return;
+    uint32 const maxHealth = m_player->GetMaxHealth();
+    uint32 const floor = uint32(maxHealth * BONK_DEMONIC_RUNE_FLOOR / 100.0f);
+    uint32 const health = m_player->GetHealth();
+    if (health <= floor)
+        return;
+    uint32 const drain = std::max(1u, uint32(maxHealth * BONK_DEMONIC_RUNE_DRAIN / 100.0f * elapsed / IN_MILLISECONDS));
+    m_player->SetHealth(std::max(floor, health - std::min(health, drain)));
+}
+
+void BonkRun::OnTrinketHitTaken()
+{
+    m_rumseyCrit *= 0.5f;
+}
+
+void BonkRun::UpdateLandMines(uint32 diff)
+{
+    if (WearsTrinket(BONK_TRINKET_LAND_MINE) && m_player->IsAlive())
+    {
+        m_landMineDropMs += diff;
+        if (m_landMineDropMs >= BONK_LAND_MINE_DROP_MS)
+        {
+            m_landMineDropMs = 0;
+            DropLandMine();
+        }
+    }
+
+    m_landMineCheckMs += diff;
+    if (m_landMineCheckMs < BONK_LAND_MINE_CHECK_MS || m_landMines.empty())
+        return;
+    int32 const elapsed = int32(m_landMineCheckMs);
+    m_landMineCheckMs = 0;
+
+    Map* map = m_player->GetMap();
+    std::vector<LandMine> sprung;
+    for (auto itr = m_landMines.begin(); itr != m_landMines.end();)
+    {
+        itr->armMs -= elapsed;
+        itr->leftMs -= elapsed;
+        bool springs = false;
+        if (itr->armMs <= 0 && itr->leftMs > 0)
+            for (ObjectGuid const& guid : m_mobs)
+                if (Creature* mob = map->GetCreature(guid))
+                    if (mob->IsAlive() && mob->GetDistance2d(itr->x, itr->y) <= BONK_LAND_MINE_TRIGGER)
+                    {
+                        springs = true;
+                        break;
+                    }
+        if (!springs && itr->leftMs > 0)
+        {
+            ++itr;
+            continue;
+        }
+        SendBonkPropGone(m_player, itr->prop);
+        if (springs)
+            sprung.push_back(*itr);
+        itr = m_landMines.erase(itr);
+    }
+
+    for (LandMine const& mine : sprung)
+        DetonateLandMine(mine.x, mine.y, mine.z);
+}
+
+void BonkRun::DropLandMine()
+{
+    if (m_landMines.size() >= BONK_LAND_MINE_MAX)
+    {
+        SendBonkPropGone(m_player, m_landMines.front().prop);
+        m_landMines.erase(m_landMines.begin());
+    }
+    LandMine mine;
+    mine.x = m_player->GetPositionX();
+    mine.y = m_player->GetPositionY();
+    mine.z = m_player->GetPositionZ();
+    mine.armMs = BONK_LAND_MINE_ARM_MS;
+    mine.leftMs = BONK_LAND_MINE_LIFE_MS;
+    mine.prop = NextBonkAuraKey();
+    SendBonkProp(m_player, mine.prop, BONK_LAND_MINE_DISPLAY, mine.x, mine.y, mine.z, m_player->GetOrientation());
+    m_landMines.push_back(mine);
+}
+
+void BonkRun::DetonateLandMine(float x, float y, float z)
+{
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(BONK_SPELL_LAND_MINE);
+    if (!spellInfo || !m_player->IsAlive())
+        return;
+    PlayKitAt(ObjectGuid(), x, y, z, BONK_KIT_LAND_MINE, true);
+    BonkTrinket const& trinket = BonkMgr::GetTrinket(BONK_TRINKET_LAND_MINE);
+    SupportScope scope(*this, { trinket.icon, trinket.name });
+    float const damage = GetProcBaseHealth() * BONK_LAND_MINE_HEALTH_SHARE;
+    Map* map = m_player->GetMap();
+    std::vector<Creature*> targets;
+    for (ObjectGuid const& guid : m_mobs)
+        if (Creature* mob = map->GetCreature(guid))
+            if (mob->IsAlive() && mob->GetDistance2d(x, y) <= BONK_LAND_MINE_RADIUS)
+                targets.push_back(mob);
+    bool const wasProc = m_cardProc;
+    m_cardProc = true;
     for (Creature* mob : targets)
-    {
-        if (!mob->IsAlive())
-            continue;
-        if (kit)
-            mob->SendPlaySpellVisualKit(kit);
         DealSpellHit(spellInfo, mob, damage);
-    }
+    m_cardProc = wasProc;
 }
 
-float BonkRun::GetTrinketHaste() const
+void BonkRun::DespawnLandMines()
 {
-    return m_trinketHasteUntilMs > m_totalMs ? BonkMgr::GetTrinket(BONK_TRINKET_HASTE).value : 0.0f;
+    for (LandMine const& mine : m_landMines)
+        SendBonkPropGone(m_player, mine.prop);
+    m_landMines.clear();
+    m_landMineDropMs = 0;
+}
+
+float BonkRun::GetTrinketDamageMultiplier() const
+{
+    float multiplier = 1.0f;
+    if (WearsTrinket(BONK_TRINKET_SKULL))
+        multiplier *= 1.0f + BONK_SKULL_DAMAGE / 100.0f;
+    if (WearsTrinket(BONK_TRINKET_GOGGLES) && m_player->GetMaxHealth())
+        multiplier *= 1.0f + BONK_GOGGLES_MAX_DAMAGE / 100.0f * std::max(0.0f, 1.0f - m_player->GetHealthPercent() / 100.0f);
+    return multiplier;
+}
+
+float BonkRun::GetTrinketDamageTaken() const
+{
+    return WearsTrinket(BONK_TRINKET_SKULL) ? 1.0f + BONK_SKULL_DAMAGE_TAKEN / 100.0f : 1.0f;
 }
 
 float BonkRun::GetTrinketPower() const
 {
-    return m_trinketPowerUntilMs > m_totalMs ? BonkMgr::GetTrinket(BONK_TRINKET_WRATH).value : 0.0f;
+    float power = 0.0f;
+    if (WearsTrinket(BONK_TRINKET_DEMONIC_RUNE))
+        power += BONK_DEMONIC_RUNE_POWER;
+    if (WearsTrinket(BONK_TRINKET_POCKET_GOLD))
+        power += std::min(BONK_POCKET_GOLD_MAX, float(m_goldEarned / BONK_POCKET_GOLD_STEP));
+    return power;
 }
 
 float BonkRun::GetTrinketMoveSpeed() const
 {
-    return m_trinketSpeedUntilMs ? BonkMgr::GetTrinket(BONK_TRINKET_WIND).value : 0.0f;
+    return WearsTrinket(BONK_TRINKET_POCKET_GOLD) ? -BONK_POCKET_GOLD_SLOW : 0.0f;
+}
+
+float BonkRun::GetTrinketStat(BonkPassiveEffect effect) const
+{
+    switch (effect)
+    {
+        case BONK_PASSIVE_DODGE: return m_stopwatchDodge;
+        case BONK_PASSIVE_CRIT:  return m_rumseyCrit;
+        default:                 return 0.0f;
+    }
+}
+
+float BonkRun::GetTrinketDashScale() const
+{
+    return WearsTrinket(BONK_TRINKET_ROCKET_BOOTS) ? 1.0f + BONK_ROCKET_BOOTS_RANGE / 100.0f : 1.0f;
+}
+
+void BonkRun::ReportSandboxTrinkets()
+{
+    char text[320];
+    snprintf(text, sizeof(text), "trinkets moving %u worn %u hp %.0f dodge %.2f crit %.2f power %.1f speed %.1f damage x%.3f taken x%.2f dash x%.2f mines %u gold %u dodge total %.2f actual %.2f",
+        uint32(m_player->IsMoving()), m_wornTrinkets, m_player->GetHealthPercent(), m_stopwatchDodge, m_rumseyCrit, GetTrinketPower(), GetStat(BONK_PASSIVE_MOVE_SPEED),
+        GetTrinketDamageMultiplier(), GetTrinketDamageTaken(), GetTrinketDashScale(), uint32(m_landMines.size()), m_goldEarned, GetStat(BONK_PASSIVE_DODGE), m_player->GetUnitDodgeChance());
+    m_player->GetBonkPlayer()->Notify(text);
+}
+
+bool BonkRun::RollDashBackfire()
+{
+    if (!WearsTrinket(BONK_TRINKET_ROCKET_BOOTS) || !roll_chance_f(BONK_ROCKET_BOOTS_BACKFIRE))
+        return false;
+    m_player->SendPlaySpellVisualKit(BONK_KIT_ROCKET_BACKFIRE);
+    return true;
 }

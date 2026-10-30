@@ -1550,6 +1550,7 @@ void BonkRun::StartStage()
     ResetShrines();
     ResetVendor();
     DespawnTraps();
+    DespawnLandMines();
     DespawnPets();
     m_pendingKeywords.clear();
     m_pendingConsumes.clear();
@@ -1653,7 +1654,7 @@ void BonkRun::UpdateRunning(uint32 diff)
     UpdateCards(diff);
     UpdateGlyphs(diff);
     UpdateFeel(diff);
-    ExpireTrinketSpeed();
+    UpdateTrinkets(diff);
     UpdateShield(diff);
     UpdateNecrotic(diff);
     UpdatePools(diff);
@@ -3738,6 +3739,7 @@ void BonkRun::UpdateGear()
 
     if (passivesChanged)
         ApplyPassives();
+    UpdateWornTrinkets();
 
     SyncGearCards();
 }
@@ -3751,6 +3753,8 @@ uint32 BonkRun::MitigateDamage(uint32 damage)
         return 0;
 
     damage = ApplyDruidDamageTaken(ApplyPaladinDamageTaken(ApplyPriestDamageTaken(ApplyTalentDamageTaken(damage))));
+    damage = uint32(damage * GetTrinketDamageTaken());
+    OnTrinketHitTaken();
     m_hurt = true;
     m_lastHurtMs = m_totalMs;
 
@@ -4265,7 +4269,7 @@ float BonkRun::GetDamageMultiplier(SpellEntry const* spell, Unit const* victim, 
         GetCastChargePower(spell, victim));
     float const mark = GetKeywordDamageMultiplier(spell, victim) * GetMageDamageMultiplier(victim) *
         GetShamanDamageMultiplier(spell, victim) * GetPriestDamageMultiplier(victim) * GetRogueDamageMultiplier(victim) *
-        GetPaladinDamageMultiplier(victim);
+        GetPaladinDamageMultiplier(victim) * GetTrinketDamageMultiplier();
     if (!spell)
         return std::max(0.0f, 1.0f + percent / 100.0f) * GetGearDamageScale() * mark * GetCapstoneDamageMultiplier(false, victim) * minionScale;
 
@@ -5219,6 +5223,7 @@ void BonkRun::EnterNextStage()
     DespawnMobs();
     DespawnOrbs();
     DespawnTraps();
+    DespawnLandMines();
     DespawnPets();
     DespawnShotSources();
     DespawnPools();
@@ -5319,6 +5324,7 @@ float BonkRun::GetPassiveTotal(BonkPassiveEffect effect) const
     total += m_stress.bonuses[effect];
     total += m_cardStats[effect];
     total += m_shrineBonuses[effect];
+    total += GetTrinketStat(effect);
     return total;
 }
 
@@ -6862,7 +6868,6 @@ void BonkRun::FireWeapon(OwnedWeapon& owned)
         return;
     owned.killed = false;
     RollCastCharges(owned);
-    RollTrinketCharges(owned);
     TalentCastScope talentCast(*this, owned);
 
     owned.firedByClass = true;
@@ -10133,8 +10138,7 @@ void BonkRun::ApplyPassives()
         m_player->CastCustomSpell(m_player, BONK_SPELL_MAX_HEALTH, health, {}, {}, true);
 
     m_player->RemoveAurasDueToSpell(BONK_SPELL_DODGE);
-    if (int32 const dodge = int32(GetStat(BONK_PASSIVE_DODGE) + 0.5f))
-        m_player->CastCustomSpell(m_player, BONK_SPELL_DODGE, dodge, {}, {}, true);
+    m_player->UpdateDodgePercentage();
 
     SendStats();
 }
@@ -12891,6 +12895,7 @@ void BonkRun::CleanUp()
     m_heldShotSources.clear();
     m_telegraphs.Dismiss(m_player);
     DespawnTraps();
+    DespawnLandMines();
     DespawnPets();
     m_pendingKeywords.clear();
     m_pendingConsumes.clear();

@@ -46,6 +46,7 @@ class BonkPlayer
         void Update(uint32 diff);
 
         BonkRun* GetRun() const { return m_run.get(); }
+        float GetRunDodge() const;
         time_t GetSkyTime() const;
         void PreviewTelegraph(BonkTelegraphShape shape, float x, float y, float z, float orientation, float size, uint32 durationMs);
         bool StartRun(BonkTier const& tier, std::string& error);
@@ -264,6 +265,7 @@ class BonkPlayer
 
         void SendAddon(std::string const& line) const;
         void Notify(std::string const& text) const;
+        void ResetReworkedTrinkets();
         void NotifyFind(std::string const& text) const;
         void SendGlyphInfo() const;
         struct BanSource
@@ -428,7 +430,7 @@ class BonkPlayer
         void UpdateDash(uint32 diff);
         void SetDashBurst(bool on);
         void ThrowHero(float angle, float speed);
-        void BlinkHero();
+        void BlinkHero(bool backfire);
         void TrackDashRun();
         float GetMoveAngle() const;
         uint32 m_dashClockMs = 0;

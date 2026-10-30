@@ -199,6 +199,7 @@ void BonkPlayer::OnLogin()
         m_player->RemoveAmmo();
 
     GiveStarterBags();
+    ResetReworkedTrinkets();
     TeachWeaponSkills();
     m_player->GetCamera().UpdateVisibilityForOwner();
 }
@@ -2958,6 +2959,23 @@ std::string BonkPlayer::GetString(BonkString id, std::vector<std::string> const&
 std::string BonkPlayer::Localize(BonkTextField field, uint32 id, std::string const& english) const
 {
     return sBonkLocale.Localize(field, id, english, m_locale);
+}
+
+float BonkPlayer::GetRunDodge() const
+{
+    return m_run ? m_run->GetDodgeChance() : 0.0f;
+}
+
+void BonkPlayer::ResetReworkedTrinkets()
+{
+    uint32 const guid = m_player->GetGUIDLow();
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT 1 FROM `bonk_trinket_reset` WHERE `guid` = %u", guid));
+    if (!result)
+        return;
+    CharacterDatabase.PExecute("DELETE FROM `bonk_trinket_reset` WHERE `guid` = %u", guid);
+    for (uint8 slot : { EQUIPMENT_SLOT_TRINKET1, EQUIPMENT_SLOT_TRINKET2 })
+        m_player->AutoUnequipItemFromSlot(slot);
+    Notify("Trinkets have new effects, so yours were moved to your bags. Hover them to see what they do now.");
 }
 
 void BonkPlayer::Notify(std::string const& text) const

@@ -1112,6 +1112,7 @@ void BonkRun::RemoveSandboxSpells(uint32 baseId)
 {
     DespawnPets();
     DespawnTraps();
+    DespawnLandMines();
     DespawnWeaponOrbs();
     DespawnProjectiles();
     DespawnShotSources();
@@ -1562,6 +1563,8 @@ bool BonkRun::RunSandboxVerb(std::string const& verb, uint32 first, uint32 secon
         SetSandboxTraining(first);
     else if (verb == "vitals")
         ReportSandboxVitals();
+    else if (verb == "trinkets")
+        ReportSandboxTrinkets();
     else if (verb == "valor")
     {
         GainValor(first);

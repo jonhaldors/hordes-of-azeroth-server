@@ -239,7 +239,9 @@ class BonkRun
         void OnHeroHitBy(Creature* attacker, uint32 damage);
         void ModifyHeroHit(Unit* victim, uint32& damage);
         void OnHeroHit(Unit* victim, double damage, SpellEntry const* spell);
-        void OnTrinketHit(Unit* victim, double damage, SpellEntry const* spell);
+        float GetTrinketDashScale() const;
+        float GetDodgeChance() const { return std::max(0.0f, GetStat(BONK_PASSIVE_DODGE)); }
+        bool RollDashBackfire();
         bool GiveCard(uint32 cardId, std::string& error);
         static float GetCopyWeight(uint32 copy);
         static float GetCopySum(uint32 copies);
@@ -409,7 +411,6 @@ class BonkRun
             std::map<ObjectGuid, uint32> carriers;
             std::vector<ObjectGuid> pets;
             bool killed = false;
-            uint32 trinketRollAtMs = 0;
             uint32 castRollAtMs = 0;
             bool firedByClass = false;
             bool held = false;
@@ -417,7 +418,6 @@ class BonkRun
             uint32 castCharges = 0;
             uint32 castChargesSpent = 0;
             bool forcedCrit = false;
-            uint32 trinketCharges = 0;
             mutable uint32 shownIntervalMs = 0;
             mutable std::string shownDamage;
             mutable std::string shownTip;
@@ -1060,13 +1060,23 @@ class BonkRun
         float GetCastChargePower(SpellEntry const* spell, Unit const* victim) const;
         float GetBurstHaste() const;
         float GetDotCardScale() const;
-        uint32 GetWornTrinkets() const;
-        void RollTrinketCharges(OwnedWeapon& owned);
-        void ExpireTrinketSpeed();
-        void StrikeWithTrinket(BonkTrinketEffect effect, std::vector<Creature*> const& targets, float damage, uint32 kit);
-        float GetTrinketHaste() const;
+        bool WearsTrinket(BonkTrinketEffect effect) const { return (m_wornTrinkets & (1u << effect)) != 0; }
+        void UpdateWornTrinkets();
+        void UpdateTrinkets(uint32 diff);
+        void UpdateStopwatch(uint32 elapsed);
+        void LogStopwatch() const;
+        void UpdateRumseyRum(uint32 elapsed);
+        void DrainDemonicRune(uint32 elapsed);
+        void UpdateLandMines(uint32 diff);
+        void DropLandMine();
+        void DetonateLandMine(float x, float y, float z);
+        void DespawnLandMines();
+        void OnTrinketHitTaken();
+        float GetTrinketDamageMultiplier() const;
+        float GetTrinketDamageTaken() const;
         float GetTrinketPower() const;
         float GetTrinketMoveSpeed() const;
+        float GetTrinketStat(BonkPassiveEffect effect) const;
         bool IsCardImmune() const { return m_cardImmuneUntilMs > m_totalMs; }
         void OnCardHitTaken();
         void OnShieldBroken();
@@ -1097,9 +1107,20 @@ class BonkRun
         uint32 m_cardCritsSeen = 0;
         uint32 m_stillSinceMs = 0;
         bool m_cardProc = false;
-        uint32 m_trinketHasteUntilMs = 0;
-        uint32 m_trinketPowerUntilMs = 0;
-        uint32 m_trinketSpeedUntilMs = 0;
+        uint32 m_wornTrinkets = 0;
+        uint32 m_trinketTickMs = 0;
+        float m_stopwatchDodge = 0.0f;
+        float m_rumseyCrit = 0.0f;
+        struct LandMine
+        {
+            uint32 prop = 0;
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            int32 armMs = 0;
+            int32 leftMs = 0;
+        };
+        std::vector<LandMine> m_landMines;
+        uint32 m_landMineDropMs = 0;
+        uint32 m_landMineCheckMs = 0;
 
         struct PendingGear
         {
@@ -2951,6 +2972,7 @@ class BonkRun
         void SetSandboxTraining(uint32 rank);
         bool SetSandboxTier(uint32 tierId, uint32 stage, std::string& error);
         void ReportSandboxVitals();
+        void ReportSandboxTrinkets();
         void SetSandboxRank(uint32 baseId, uint32 rank, bool epicRoundRobin);
         void SetSandboxPassiveRank(uint32 passiveId, uint32 rank);
         void RemoveSandboxSpells(uint32 baseId);

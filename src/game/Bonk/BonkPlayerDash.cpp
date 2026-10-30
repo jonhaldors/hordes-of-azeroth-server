@@ -7,6 +7,7 @@
 #include "MovementPacketSender.h"
 #include "Player.h"
 #include "WorldSession.h"
+#include "Utilities/Random.h"
 
 #include <algorithm>
 #include <cmath>
@@ -27,7 +28,7 @@ namespace
 
 float BonkPlayer::GetDashDistance() const
 {
-    return BONK_DASH_DISTANCE + GetUpgradeUtility(BONK_UTILITY_DASH_RANGE);
+    return (BONK_DASH_DISTANCE + GetUpgradeUtility(BONK_UTILITY_DASH_RANGE)) * (m_run ? m_run->GetTrinketDashScale() : 1.0f);
 }
 
 uint32 BonkPlayer::GetDashCooldownMs() const
@@ -73,10 +74,13 @@ bool BonkPlayer::Dash()
     bool const blink = m_run && m_run->IsBlinkDash();
     if (m_run)
         m_run->OnDash();
+    bool const backfire = m_run && m_run->RollDashBackfire();
 
     m_dashRunTracked = false;
     if (blink)
-        BlinkHero();
+        BlinkHero(backfire);
+    else if (backfire)
+        ThrowHero(frand(0.0f, 2.0f * float(M_PI)), GetDashSpeed());
     else if (mi.moveFlags & (MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR))
     {
         float facing = m_player->GetOrientation();
@@ -167,7 +171,7 @@ float BonkPlayer::GetMoveAngle() const
     return facing + std::atan2(left, forward);
 }
 
-void BonkPlayer::BlinkHero()
+void BonkPlayer::BlinkHero(bool backfire)
 {
     MovementInfo const& mi = m_player->m_movementInfo;
     float x = m_player->GetPositionX(), y = m_player->GetPositionY(), z = m_player->GetPositionZ(), o = m_player->GetOrientation();
@@ -175,7 +179,7 @@ void BonkPlayer::BlinkHero()
     m_player->ExtrapolateMovement(mi, age, x, y, z, o);
 
     bool const airborne = (mi.moveFlags & (MOVEFLAG_JUMPING | MOVEFLAG_FALLINGFAR)) != 0;
-    float const angle = airborne ? o : GetMoveAngle();
+    float const angle = backfire ? frand(0.0f, 2.0f * float(M_PI)) : airborne ? o : GetMoveAngle();
     float destX = x + GetDashDistance() * std::cos(angle);
     float destY = y + GetDashDistance() * std::sin(angle);
     float destZ = z;

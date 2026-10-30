@@ -1045,14 +1045,14 @@ uint32 const BONK_LEGENDARY_KINDS = 8;
 
 enum BonkTrinketEffect : uint8
 {
-    BONK_TRINKET_STORM     = 0,
-    BONK_TRINKET_EMBER     = 1,
-    BONK_TRINKET_HASTE     = 2,
-    BONK_TRINKET_BULWARK   = 3,
-    BONK_TRINKET_BLOODVINE = 4,
-    BONK_TRINKET_FROST     = 5,
-    BONK_TRINKET_WRATH     = 6,
-    BONK_TRINKET_WIND      = 7,
+    BONK_TRINKET_GOGGLES      = 0,
+    BONK_TRINKET_LAND_MINE    = 1,
+    BONK_TRINKET_STOPWATCH    = 2,
+    BONK_TRINKET_ROCKET_BOOTS = 3,
+    BONK_TRINKET_DEMONIC_RUNE = 4,
+    BONK_TRINKET_RUMSEY_RUM   = 5,
+    BONK_TRINKET_SKULL        = 6,
+    BONK_TRINKET_POCKET_GOLD  = 7,
     MAX_BONK_TRINKET_EFFECT
 };
 
@@ -1060,11 +1060,6 @@ struct BonkTrinket
 {
     char const* name;
     char const* icon;
-    uint32 spellId;
-    float value;
-    float radius;
-    uint32 targets;
-    uint32 durationMs;
     char const* text;
 };
 uint8 const BONK_DETERMINATION_MAX_STACKS = 5;

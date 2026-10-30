@@ -20746,8 +20746,12 @@ InventoryResult Player::CanEquipUniqueItem(ItemPrototype const* itemProto, uint8
     if (itemProto->Flags & ITEM_FLAG_UNIQUE_EQUIPPED)
     {
         // there is an equip limit on this item
-        if (HasItemWithIdEquipped(itemProto->ItemId, 1, except_slot))
-            return EQUIP_ERR_ITEM_CANT_BE_EQUIPPED;
+        for (int slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item const* worn = slot != except_slot ? GetItemByPos(INVENTORY_SLOT_BAG_0, slot) : nullptr;
+            if (worn && strcmp(worn->GetProto()->Name1, itemProto->Name1) == 0)
+                return EQUIP_ERR_ITEM_CANT_BE_EQUIPPED;
+        }
     }
 
     return EQUIP_ERR_OK;

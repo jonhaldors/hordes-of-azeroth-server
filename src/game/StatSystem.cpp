@@ -23,6 +23,8 @@
 #include "Creature.h"
 #include "Pet.h"
 #include "Player.h"
+#include "Bonk/BonkPlayer.h"
+#include "Bonk/BonkRun.h"
 #include "SpellAuras.h"
 #include "World.h"
 #include "Platform/CompilerDefs.h"
@@ -606,6 +608,11 @@ void Player::UpdateParryPercentage()
 
 void Player::UpdateDodgePercentage()
 {
+    if (m_bonkPlayer)
+    {
+        SetStatFloatValue(PLAYER_DODGE_PERCENTAGE, m_bonkPlayer->GetRunDodge());
+        return;
+    }
     // Nostalrius : base dodge per class
     float value = 0.0f;
     switch (GetClass())

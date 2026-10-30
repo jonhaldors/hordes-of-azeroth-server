@@ -585,7 +585,6 @@ void BonkOnDamage(Unit* attacker, Unit* victim, uint32 damage, SpellEntry const*
         {
             double const trueDamage = double(BonkRun::GetTrueAmount(victim, damage));
             run->OnHeroHit(victim, trueDamage, spellProto);
-            run->OnTrinketHit(victim, trueDamage, spellProto);
         }
         if (!owner)
             run->CountThunderHit(spellProto);
