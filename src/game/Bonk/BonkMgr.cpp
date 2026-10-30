@@ -1,6 +1,7 @@
 #include "BonkMgr.h"
 #include "BonkEnchant.h"
 #include "BonkFoundGear.h"
+#include "BonkLocale.h"
 #include "BonkRun.h"
 #include "BonkMastery.h"
 #include "BonkQuests.h"
@@ -284,6 +285,7 @@ void BonkMgr::Load()
     sBonkQuests.Load();
     sBonkMastery.Load();
     LoadPetFamilies();
+    sBonkLocale.Load();
 
     for (uint32 entry : { BONK_GO_CHEST, BONK_GO_CHEST_FREE, BONK_GO_PORTAL, BONK_GO_SHARD, BONK_GO_VAULT })
         if (!sObjectMgr.GetGameObjectTemplate(entry))

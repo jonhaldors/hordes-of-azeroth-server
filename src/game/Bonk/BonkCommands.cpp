@@ -1,5 +1,6 @@
 #include "BonkCodex.h"
 #include "BonkEnchant.h"
+#include "BonkLocale.h"
 #include "BonkMgr.h"
 #include "BonkMobAI.h"
 #include "BonkPlayer.h"
@@ -40,6 +41,27 @@ namespace
     char const* YesNo(bool value)
     {
         return value ? "yes" : "no";
+    }
+
+    void SendAddonData(Player* player)
+    {
+        BonkPlayer* bonk = player->GetBonkPlayer();
+        bonk->SendAddon("hello~1");
+        if (BonkRun* run = bonk->GetRun())
+            run->SetMenuOpen(false);
+        bonk->SendTierList();
+        bonk->SendGearInfo();
+        BonkMobAI::SendAffixInfo(bonk);
+        BonkCodex::SendKeywordGlossary(bonk);
+        bonk->SendGlyphInfo();
+        bonk->SendMasteryState();
+        bonk->FlushMasteryNotice();
+        bonk->SendWallet();
+        bonk->SendDash();
+        bonk->SendDetermination();
+        sBonkQuests.SendLog(player, "");
+        if (BonkRun* run = bonk->GetRun())
+            run->SendFullState();
     }
 }
 
@@ -677,26 +699,70 @@ bool ChatHandler::HandleBonkCodexCommand(char*)
     return true;
 }
 
-bool ChatHandler::HandleBonkHelloCommand(char*)
+bool ChatHandler::HandleBonkHelloCommand(char* args)
 {
-    BonkPlayer* bonk = m_session->GetPlayer()->GetBonkPlayer();
+    Player* player = m_session->GetPlayer();
+    BonkPlayer* bonk = player->GetBonkPlayer();
+    if (char* name = ExtractArg(&args))
+    {
+        LocaleConstant locale;
+        if (BonkLocale::ParseLocale(name, locale))
+            bonk->SetLocale(locale);
+        else
+            SendSysMessage(bonk->GetString(BONK_STRING_LANGUAGE_UNKNOWN, { name, BonkLocale::ListLocales() }).c_str());
+    }
     bonk->SetAddonReady();
-    bonk->SendAddon("hello~1");
-    if (BonkRun* run = bonk->GetRun())
-        run->SetMenuOpen(false);
-    bonk->SendTierList();
-    bonk->SendGearInfo();
-    BonkMobAI::SendAffixInfo(bonk);
-    BonkCodex::SendKeywordGlossary(bonk);
-    bonk->SendGlyphInfo();
-    bonk->SendMasteryState();
-    bonk->FlushMasteryNotice();
-    bonk->SendWallet();
-    bonk->SendDash();
-    bonk->SendDetermination();
-    sBonkQuests.SendLog(m_session->GetPlayer(), "");
-    if (BonkRun* run = bonk->GetRun())
-        run->SendFullState();
+    SendAddonData(player);
+    return true;
+}
+
+bool ChatHandler::HandleBonkLangCommand(char* args)
+{
+    Player* player = m_session->GetPlayer();
+    BonkPlayer* bonk = player->GetBonkPlayer();
+    char* name = ExtractArg(&args);
+    if (!name)
+    {
+        SendSysMessage(bonk->GetString(BONK_STRING_LANGUAGE_USAGE, { localeNames[bonk->GetLocale()] }).c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    LocaleConstant locale;
+    if (!BonkLocale::ParseLocale(name, locale))
+    {
+        SendSysMessage(bonk->GetString(BONK_STRING_LANGUAGE_UNKNOWN, { name, BonkLocale::ListLocales() }).c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    bonk->SetLocale(locale);
+    SendSysMessage(bonk->GetString(BONK_STRING_LANGUAGE_SET, { localeNames[locale] }).c_str());
+    if (bonk->IsAddonReady())
+        SendAddonData(player);
+    return true;
+}
+
+bool ChatHandler::HandleBonkStringsExportCommand(char* args)
+{
+    char* name = ExtractArg(&args);
+    LocaleConstant locale = LOCALE_enUS;
+    if (!name || !BonkLocale::ParseLocale(name, locale) || locale == LOCALE_enUS)
+    {
+        SendSysMessage("Usage: .bonk strings export <locale>, for example .bonk strings export zhCN. Writes every Bonk string and its translation to the logs folder.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    std::string path;
+    if (!sBonkLocale.Export(locale, path))
+    {
+        PSendSysMessage("Could not write %s.", path.c_str());
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    PSendSysMessage("Wrote %s.", path.c_str());
     return true;
 }
 
