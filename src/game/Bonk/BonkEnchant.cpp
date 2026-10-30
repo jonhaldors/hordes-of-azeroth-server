@@ -19,15 +19,16 @@ namespace
         char const* name;
         uint32 weight;
         float multiplier;
+        float piecePercent;
     };
 
     BonkEnchantGrade const BONK_ENCHANT_GRADES[] =
     {
-        { "Minor",    40, 1.0f },
-        { "Lesser",   30, 1.5f },
-        { "Greater",  20, 2.2f },
-        { "Superior",  8, 3.2f },
-        { "Godly",     2, 5.0f },
+        { "Minor",    40, 1.0f, 10.0f },
+        { "Lesser",   30, 1.5f, 20.0f },
+        { "Greater",  20, 2.2f, 30.0f },
+        { "Superior",  8, 3.2f, 40.0f },
+        { "Godly",     2, 5.0f, 50.0f },
     };
     uint8 const BONK_ENCHANT_GRADE_COUNT = uint8(sizeof(BONK_ENCHANT_GRADES) / sizeof(BONK_ENCHANT_GRADES[0]));
 
@@ -35,7 +36,7 @@ namespace
     {
         BonkPassiveEffect effect;
         float base;
-        bool grows;
+        bool ofPiece;
     };
 
     BonkEnchantStat const BONK_ENCHANT_STATS[] =
@@ -88,22 +89,25 @@ bool BonkEnchanting::IsEnchantSlot(uint8 slot)
     return std::find(std::begin(BONK_ENCHANT_SLOTS), std::end(BONK_ENCHANT_SLOTS), slot) != std::end(BONK_ENCHANT_SLOTS);
 }
 
-BonkEnchant BonkEnchanting::Roll()
+BonkEnchant BonkEnchanting::Roll(float const* pieceStats)
 {
+    std::vector<BonkPassiveEffect> choices;
+    for (BonkEnchantStat const& stat : BONK_ENCHANT_STATS)
+        if (!stat.ofPiece || pieceStats[stat.effect] > 0.0f)
+            choices.push_back(stat.effect);
     BonkEnchant enchant;
-    enchant.effect = uint8(BONK_ENCHANT_STATS[urand(0, BONK_ENCHANT_STAT_COUNT - 1)].effect);
+    enchant.effect = uint8(choices[urand(0, uint32(choices.size() - 1))]);
     enchant.grade = RollGrade();
     return enchant;
 }
 
-float BonkEnchanting::GetValue(BonkEnchant const& enchant, uint32 tier)
+float BonkEnchanting::GetValue(BonkEnchant const& enchant, float const* pieceStats)
 {
     BonkEnchantStat const* stat = FindStat(enchant.effect);
     if (!stat || enchant.grade >= BONK_ENCHANT_GRADE_COUNT)
         return 0.0f;
-    float value = stat->base * BONK_ENCHANT_GRADES[enchant.grade].multiplier;
-    if (stat->grows)
-        value *= BonkGearTierScale(tier);
+    BonkEnchantGrade const& grade = BONK_ENCHANT_GRADES[enchant.grade];
+    float const value = stat->ofPiece ? std::max(0.0f, pieceStats[stat->effect]) * grade.piecePercent / 100.0f : stat->base * grade.multiplier;
     return std::round(value * 10.0f) / 10.0f;
 }
 
@@ -112,11 +116,13 @@ char const* BonkEnchanting::GetGradeName(uint8 grade)
     return grade < BONK_ENCHANT_GRADE_COUNT ? BONK_ENCHANT_GRADES[grade].name : "";
 }
 
-std::string BonkEnchanting::Describe(BonkEnchant const& enchant, uint32 tier)
+std::string BonkEnchanting::Describe(BonkEnchant const& enchant, float const* pieceStats)
 {
     if (!enchant.IsSet())
-        return std::to_string(BONK_ENCHANT_NONE) + "~0~0";
-    char value[32];
-    snprintf(value, sizeof(value), "%.1f", GetValue(enchant, tier));
+        return std::to_string(BONK_ENCHANT_NONE) + "~0~0~0";
+    BonkEnchantStat const* stat = FindStat(enchant.effect);
+    float const percent = stat && stat->ofPiece && enchant.grade < BONK_ENCHANT_GRADE_COUNT ? BONK_ENCHANT_GRADES[enchant.grade].piecePercent : 0.0f;
+    char value[64];
+    snprintf(value, sizeof(value), "%.1f~%.0f", GetValue(enchant, pieceStats), percent);
     return std::to_string(enchant.effect) + "~" + std::to_string(enchant.grade) + "~" + value;
 }

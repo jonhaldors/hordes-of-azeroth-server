@@ -1599,7 +1599,7 @@ class BonkRun
         uint32 m_enchantRolls = 0;
         ObjectGuid m_enchanterGuid;
         uint32 GetEnchantPrice() const;
-        uint32 GetEnchantTier(uint8 slot) const;
+        void GetPieceStats(uint8 slot, float* stats) const;
         void AddEnchantStats(float* passives) const;
         void DespawnEnchanter();
         bool IsNearEnchanter() const;
