@@ -104,11 +104,15 @@ namespace
     float const BONK_TIER_DROP_MINIBOSS    = 25.0f;
     float const BONK_TIER_DROP_MINIBOSS_AHEAD = 50.0f;
     float const BONK_GEAR_CHANCE_PER_AFFIX = 5.0f;
-    float const BONK_GEAR_STAGE_UPGRADE    = 25.0f;
-    float const BONK_GEAR_MYTHIC_FLOOR_UPGRADE = 10.0f;
-    float const BONK_GEAR_LEGENDARY_CHANCE = 1.0f;
-    float const BONK_GEAR_LEGENDARY_PER_FLOOR = 0.5f;
-    uint32 const BONK_GEAR_LEGENDARY_LAST_FLOOR = 20;
+    uint32 const BONK_EPIC_FIRST_FLOOR     = 10;
+    float const BONK_EPIC_BOSS_CHANCE      = 10.0f;
+    float const BONK_EPIC_PER_FLOOR        = 1.0f;
+    float const BONK_EPIC_MAX_CHANCE       = 25.0f;
+    float const BONK_EPIC_MINIBOSS_SHARE   = 0.3f;
+    uint32 const BONK_LEGENDARY_FIRST_FLOOR = 20;
+    float const BONK_GEAR_LEGENDARY_CHANCE = 0.5f;
+    float const BONK_GEAR_LEGENDARY_PER_FLOOR = 0.05f;
+    float const BONK_GEAR_LEGENDARY_MAX_CHANCE = 2.0f;
     float const BONK_INVASION_UPGRADE_CHANCE = 50.0f;
     uint32 const BONK_SCRAP_PER_PLAIN_FIND = 1;
     uint32 const BONK_SCRAP_PER_FIND = 2;
@@ -128,19 +132,33 @@ namespace
 
     struct GearOdds
     {
-        uint8 green;
-        uint8 blue;
-        uint8 epic;
+        uint8 lowQuality;
+        uint8 lowShare;
+        uint8 highQuality;
+        uint8 rareShare;
     };
-    GearOdds const BONK_GEAR_ODDS_EASY[3]   = { { 85, 15, 0 },  { 60, 40, 0 },  { 0, 70, 30 } };
-    GearOdds const BONK_GEAR_ODDS_MEDIUM[3] = { { 50, 45, 5 },  { 0, 70, 30 },  { 0, 30, 70 } };
-    GearOdds const BONK_GEAR_ODDS_HARD[3]   = { { 0, 70, 30 },  { 0, 30, 70 },  { 0, 10, 90 } };
+    GearOdds const BONK_GEAR_ODDS_NORMAL[3] = { { ITEM_QUALITY_POOR, 70, ITEM_QUALITY_NORMAL, 0 },
+                                                { ITEM_QUALITY_POOR, 40, ITEM_QUALITY_NORMAL, 0 },
+                                                { ITEM_QUALITY_NORMAL, 100, ITEM_QUALITY_NORMAL, 0 } };
+    GearOdds const BONK_GEAR_ODDS_HEROIC[3] = { { ITEM_QUALITY_NORMAL, 70, ITEM_QUALITY_UNCOMMON, 0 },
+                                                { ITEM_QUALITY_NORMAL, 30, ITEM_QUALITY_UNCOMMON, 0 },
+                                                { ITEM_QUALITY_UNCOMMON, 100, ITEM_QUALITY_UNCOMMON, 15 } };
+
+    float EpicChance(uint32 stage, BonkSpawnKind kind)
+    {
+        if (stage < BONK_EPIC_FIRST_FLOOR || (kind != BONK_SPAWN_BOSS && kind != BONK_SPAWN_MINIBOSS))
+            return 0.0f;
+        float const boss = std::min(BONK_EPIC_MAX_CHANCE, BONK_EPIC_BOSS_CHANCE + BONK_EPIC_PER_FLOOR * float(stage - BONK_EPIC_FIRST_FLOOR));
+        return kind == BONK_SPAWN_BOSS ? boss : boss * BONK_EPIC_MINIBOSS_SHARE;
+    }
 
 
     float GetSalvageShare(uint8 quality)
     {
         switch (quality)
         {
+            case ITEM_QUALITY_POOR:     return 0.1f;
+            case ITEM_QUALITY_NORMAL:   return 0.15f;
             case ITEM_QUALITY_UNCOMMON: return 0.25f;
             case ITEM_QUALITY_RARE:     return 0.5f;
             default:                    return 1.0f;
@@ -150,6 +168,8 @@ namespace
     {
         switch (quality)
         {
+            case ITEM_QUALITY_POOR:     return 0.04f;
+            case ITEM_QUALITY_NORMAL:   return 0.06f;
             case ITEM_QUALITY_UNCOMMON: return 0.1f;
             case ITEM_QUALITY_RARE:     return 0.25f;
             case ITEM_QUALITY_EPIC:     return 0.5f;
@@ -161,6 +181,7 @@ namespace
     {
         switch (quality)
         {
+            case ITEM_QUALITY_POOR:      return "Poor";
             case ITEM_QUALITY_UNCOMMON:  return "Uncommon";
             case ITEM_QUALITY_RARE:      return "Rare";
             case ITEM_QUALITY_EPIC:      return "Epic";
@@ -201,9 +222,9 @@ namespace
 
 float BonkRun::BossLegendaryChance(BonkTier const& tier, uint32 stage)
 {
-    if (tier.key != "mythic" || !stage)
+    if (tier.key != "mythic" || stage < BONK_LEGENDARY_FIRST_FLOOR)
         return 0.0f;
-    return BONK_GEAR_LEGENDARY_CHANCE + BONK_GEAR_LEGENDARY_PER_FLOOR * float(std::min(stage, BONK_GEAR_LEGENDARY_LAST_FLOOR) - 1);
+    return std::min(BONK_GEAR_LEGENDARY_MAX_CHANCE, BONK_GEAR_LEGENDARY_CHANCE + BONK_GEAR_LEGENDARY_PER_FLOOR * float(stage - BONK_LEGENDARY_FIRST_FLOOR));
 }
 
 uint32 BonkRun::GetDropTier() const
@@ -213,42 +234,43 @@ uint32 BonkRun::GetDropTier() const
 
 uint8 BonkRun::RollGearQuality(BonkSpawnKind kind) const
 {
-    GearOdds const* odds = BONK_GEAR_ODDS_EASY;
-    if (m_tier.key == "heroic")
-        odds = BONK_GEAR_ODDS_MEDIUM;
-    else if (m_tier.key == "mythic")
-        odds = BONK_GEAR_ODDS_HARD;
+    GearOdds const* odds = m_tier.key == "heroic" ? BONK_GEAR_ODDS_HEROIC : BONK_GEAR_ODDS_NORMAL;
     GearOdds const& row = odds[kind == BONK_SPAWN_BOSS ? 2 : kind == BONK_SPAWN_MINIBOSS ? 1 : 0];
-
-    uint32 const roll = urand(1, 100);
-    uint8 quality = roll <= row.green ? ITEM_QUALITY_UNCOMMON : roll <= uint32(row.green + row.blue) ? ITEM_QUALITY_RARE : ITEM_QUALITY_EPIC;
-    float const upgradePerStage = IsMythic() ? BONK_GEAR_MYTHIC_FLOOR_UPGRADE : BONK_GEAR_STAGE_UPGRADE;
-    if (quality < ITEM_QUALITY_EPIC && m_stage > 1 && roll_chance_f(upgradePerStage * (m_stage - 1)))
+    uint8 quality = urand(1, 100) <= row.lowShare ? row.lowQuality : row.highQuality;
+    if (row.rareShare && m_stage > 1 && roll_chance_f(row.rareShare))
+        quality = ITEM_QUALITY_RARE;
+    uint8 const cap = m_tier.key == "heroic" ? ITEM_QUALITY_RARE : ITEM_QUALITY_UNCOMMON;
+    if (IsChallenge() && quality < cap && (!IsInvasion() || roll_chance_f(BONK_INVASION_UPGRADE_CHANCE)))
         ++quality;
-    if (IsChallenge() && quality < ITEM_QUALITY_EPIC && (!IsInvasion() || roll_chance_f(BONK_INVASION_UPGRADE_CHANCE)))
-        ++quality;
-    if (kind == BONK_SPAWN_BOSS && roll_chance_f(BossLegendaryChance(m_tier, m_stage)))
-        quality = ITEM_QUALITY_LEGENDARY;
     return quality;
 }
 
 void BonkRun::DropTierPiece(Creature const* mob, BonkSpawnKind kind)
 {
-    if (!IsMythic() || m_sandbox || m_gearDrops.size() >= BONK_MAX_GEAR_DROPS)
+    if (m_sandbox || m_gearDrops.size() >= BONK_MAX_GEAR_DROPS)
         return;
+    if (kind == BONK_SPAWN_ELITE)
+    {
+        AddEliteScrap();
+        return;
+    }
     bool const ahead = m_stage >= m_player->GetBonkPlayer()->GetStockTier();
     float const miniBoss = ahead ? BONK_TIER_DROP_MINIBOSS_AHEAD : BONK_TIER_DROP_MINIBOSS;
     float const chance = kind == BONK_SPAWN_BOSS ? BONK_TIER_DROP_BOSS : kind == BONK_SPAWN_MINIBOSS ? miniBoss : 0.0f;
     if (!roll_chance_f(chance))
         return;
-    PlaceTierPiece(mob);
+    if (kind == BONK_SPAWN_BOSS && roll_chance_f(BossLegendaryChance(m_tier, m_stage)) && DropLegendary(mob))
+        return;
+    PlaceTierPiece(mob, roll_chance_f(EpicChance(m_stage, kind)));
 }
 
-bool BonkRun::PlaceTierPiece(Creature const* mob)
+bool BonkRun::PlaceTierPiece(Creature const* mob, bool epic)
 {
     PendingGear piece;
     piece.found = true;
     piece.gear = BonkFound::Roll(GetDropTier());
+    if (epic && piece.gear.lines.empty())
+        piece.gear = BonkFound::Make(piece.gear.tier, 1);
     uint32 const tier = std::min(BONK_TIER_GEAR_TIERS, piece.gear.tier);
     std::vector<uint32> choices;
     for (uint32 slot = 0; slot < BONK_TIER_GEAR_SLOTS; ++slot)
@@ -273,9 +295,10 @@ bool BonkRun::PlaceTierPiece(Creature const* mob)
     if (choices.empty())
         return false;
     piece.entry = choices[urand(0, uint32(choices.size() - 1))];
+    if (epic)
+        piece.entry = BonkMgr::GetEpicGearEntry(piece.entry);
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(piece.entry);
-    bool const special = piece.gear.tier > GetDropTier() + 1 || !piece.gear.lines.empty();
-    if (!proto || !PlaceGearDrop(mob, piece, special ? ITEM_QUALITY_LEGENDARY : ITEM_QUALITY_EPIC))
+    if (!proto || !PlaceGearDrop(mob, piece, proto->Quality))
         return false;
     m_player->GetBonkPlayer()->Notify(std::string(proto->Name1) + " (" + DescribeFoundDrop(piece.gear) + ") dropped!");
     return true;
@@ -510,7 +533,6 @@ bool BonkRun::PlaceDropLooksNow(std::string& error)
 void BonkRun::DropGear(Creature const* mob, BonkSpawnKind kind)
 {
     MaybeDropHearthstone(kind);
-    DropTierPiece(mob, kind);
     if (kind == BONK_SPAWN_NORMAL || m_gearDrops.size() >= BONK_MAX_GEAR_DROPS)
         return;
     if (kind == BONK_SPAWN_ELITE)
@@ -520,21 +542,16 @@ void BonkRun::DropGear(Creature const* mob, BonkSpawnKind kind)
         if (!roll_chance_f(chance))
             return;
     }
-
-    uint8 const rolled = RollGearQuality(kind);
-    if (rolled == ITEM_QUALITY_LEGENDARY && IsMythic() && DropLegendary(mob))
-        return;
-    if (rolled >= ITEM_QUALITY_EPIC && IsMythic())
+    if (IsMythic())
     {
-        if (kind == BONK_SPAWN_BOSS || kind == BONK_SPAWN_MINIBOSS)
-            PlaceTierPiece(mob);
-        else
-            AddEliteScrap();
+        DropTierPiece(mob, kind);
         return;
     }
+
+    uint8 const rolled = RollGearQuality(kind);
     uint32 const classMask = m_player->GetClassMask();
     std::vector<BonkGear const*> pool;
-    for (uint8 quality = rolled; quality >= ITEM_QUALITY_UNCOMMON && pool.empty(); --quality)
+    for (int32 quality = rolled; quality >= ITEM_QUALITY_POOR && pool.empty(); --quality)
         for (auto const& itr : sBonkMgr.GetGear())
             if (itr.second.quality == quality && (itr.second.allowableClass & classMask) && itr.second.DropsOn(m_tier.id))
                 pool.push_back(&itr.second);

@@ -14,10 +14,7 @@ INSTANTIATE_SINGLETON_1(BonkFoundStore);
 
 float BonkGearTierScale(uint32 tier)
 {
-    uint32 const steps = std::max(1u, tier) - 1;
-    uint32 const compounded = std::min(steps, BONK_GEAR_COMPOUND_TIERS - 1);
-    uint32 const linear = steps - compounded;
-    return std::pow(BONK_GEAR_TIER_GROWTH, float(compounded)) * (1.0f + (BONK_GEAR_TIER_GROWTH - 1.0f) * float(linear));
+    return 1.0f + BONK_GEAR_TIER_STEP * float(std::max(1u, tier) - 1);
 }
 
 namespace

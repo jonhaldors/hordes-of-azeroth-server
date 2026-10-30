@@ -15,8 +15,7 @@ class Player;
 
 uint8 const BONK_FOUND_MAX_LINES = 2;
 uint8 const BONK_FOUND_NO_LINE = 255;
-float const BONK_GEAR_TIER_GROWTH = 1.12f;
-uint32 const BONK_GEAR_COMPOUND_TIERS = 20;
+float const BONK_GEAR_TIER_STEP = 0.25f;
 
 float BonkGearTierScale(uint32 tier);
 

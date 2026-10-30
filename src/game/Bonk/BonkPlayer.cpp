@@ -2676,7 +2676,8 @@ void BonkPlayer::ExchangeTierPieces()
         uint8 classId;
         uint32 tier, slot;
         BonkMgr::ReadTierGearEntry(piece->GetEntry(), classId, tier, slot);
-        uint32 const entry = BonkMgr::GetTierGearEntry(m_player->GetClass(), tier, slot);
+        uint32 const blue = BonkMgr::GetTierGearEntry(m_player->GetClass(), tier, slot);
+        uint32 const entry = BonkMgr::IsEpicGear(piece->GetEntry()) ? BonkMgr::GetEpicGearEntry(blue) : blue;
         uint32 const fee = piece->GetProto()->BuyPrice * BONK_TIER_EXCHANGE_FEE_PERCENT / 100;
         if (!entry || m_player->GetMoney() < fee)
             break;
@@ -2997,15 +2998,25 @@ void BonkPlayer::NotifyFind(std::string const& text) const
 void BonkPlayer::SendGearInfo() const
 {
     uint32 const tierGearEnd = BONK_TIER_GEAR_FIRST + BONK_TIER_GEAR_CLASS_COUNT * BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
+    auto const isSetPiece = [tierGearEnd](uint32 entry)
+    {
+        uint32 const blue = BonkMgr::GetBlueGearEntry(entry);
+        return blue >= BONK_TIER_GEAR_FIRST && blue < tierGearEnd;
+    };
     for (auto const& itr : sBonkMgr.GetItemStats())
-        if (itr.first < BONK_TIER_GEAR_FIRST || itr.first >= tierGearEnd)
+        if (!isSetPiece(itr.first))
             SendAddon("gear~" + std::to_string(itr.first) + "~" + std::to_string(itr.second.setId) + "~" + FormatStatList(itr.second.stats));
 
     SendAddon("tiergear~" + std::to_string(BONK_TIER_GEAR_FIRST) + "~" + std::to_string(BONK_TIER_GEAR_TIERS) + "~" +
-        std::to_string(BONK_TIER_GEAR_SLOTS) + "~" + std::to_string(BONK_TIER_GEAR_CLASS_COUNT));
+        std::to_string(BONK_TIER_GEAR_SLOTS) + "~" + std::to_string(BONK_TIER_GEAR_CLASS_COUNT) + "~" + std::to_string(BONK_EPIC_GEAR_OFFSET));
     for (uint32 tier = 1; tier <= BONK_TIER_GEAR_TIERS; ++tier)
-        if (BonkItemStat const* stat = sBonkMgr.GetItemStat(BONK_TIER_GEAR_FIRST + (tier - 1) * BONK_TIER_GEAR_SLOTS))
+    {
+        uint32 const entry = BONK_TIER_GEAR_FIRST + (tier - 1) * BONK_TIER_GEAR_SLOTS;
+        if (BonkItemStat const* stat = sBonkMgr.GetItemStat(entry))
             SendAddon("tierstats~" + std::to_string(tier) + "~" + FormatStatList(stat->stats));
+        if (BonkItemStat const* epic = sBonkMgr.GetItemStat(BonkMgr::GetEpicGearEntry(entry)))
+            SendAddon("tierstats~" + std::to_string(tier) + "~" + FormatStatList(epic->stats) + "~epic");
+    }
     for (uint8 effect = 0; effect < MAX_BONK_TRINKET_EFFECT; ++effect)
         SendAddon("trinkettip~" + std::to_string(BONK_MYTHIC_GEAR_FIRST + (BONK_MYTHIC_GEAR_FIRST_TRINKET + effect) * BONK_TIER_GEAR_TIERS) + "~" +
             std::to_string(BONK_TIER_GEAR_TIERS) + "~" + BonkMgr::GetTrinket(BonkTrinketEffect(effect)).text);

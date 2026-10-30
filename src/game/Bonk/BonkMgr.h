@@ -1040,6 +1040,7 @@ uint32 const BONK_MYTHIC_GEAR_KINDS = 20;
 uint32 const BONK_MYTHIC_GEAR_FIRST_ACCESSORY = 9;
 uint32 const BONK_MYTHIC_GEAR_FIRST_TRINKET = 12;
 uint32 const BONK_LEGENDARY_TIER_FIRST = 905000;
+uint32 const BONK_EPIC_GEAR_OFFSET = 7000;
 uint32 const BONK_LEGACY_LEGENDARY_FIRST = 901420;
 uint32 const BONK_LEGENDARY_KINDS = 8;
 
@@ -1067,6 +1068,7 @@ uint32 const BONK_FLOORS_PER_TALENT_POINT = 2;
 uint32 const BONK_FLOOR_TALENT_POINTS_MAX = 10;
 uint32 const BONK_MYTHIC_MILESTONE_FLOORS = 5;
 float const BONK_FLOOR_GOLD_GROWTH = 0.1f;
+uint32 const BONK_FLOOR_REWARD_GROWTH_FLOORS = 10;
 uint32 const BONK_FLOOR_TICKETS_BASE = 3;
 uint32 const BONK_MILESTONE_TICKET_FACTOR = 2;
 
@@ -1411,6 +1413,9 @@ class BonkMgr
         static bool ReadLegendaryEntry(uint32 entry, uint32& kind, uint32& tier);
         static std::vector<uint32> GetLegendariesFor(uint32 classMask, uint32 tier);
         static uint32 GetGearTier(uint32 entry);
+        static bool IsEpicGear(uint32 entry);
+        static uint32 GetEpicGearEntry(uint32 blueEntry);
+        static uint32 GetBlueGearEntry(uint32 entry);
         static uint32 GetGearAtTier(uint32 entry, uint32 tier);
         static bool IsLegacyLegendary(uint32 entry);
         std::map<uint32, BonkGear> const& GetGear() const { return m_gear; }

@@ -5070,9 +5070,7 @@ void BonkRun::RewardMythicFloor()
         bonk->AddShards(tickets);
         m_shardsEarned += tickets;
     }
-    if (IsMythicMilestoneFloor(m_stage))
-        bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "! Legendary gear drops more often from now on.");
-    else if (tickets)
+    if (tickets)
         bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "!");
 
     if (m_stage % BONK_TRAINING_FLOORS_PER_RANK == 0 && bonk->IsTierCleared("heroic") &&
@@ -5082,7 +5080,7 @@ void BonkRun::RewardMythicFloor()
 
 float BonkRun::FloorRewardScale(BonkTier const& tier, uint32 stage)
 {
-    return tier.key == "mythic" ? 1.0f + BONK_FLOOR_GOLD_GROWTH * float(stage - 1) : 1.0f;
+    return tier.key == "mythic" ? 1.0f + BONK_FLOOR_GOLD_GROWTH * float(std::min(stage, BONK_FLOOR_REWARD_GROWTH_FLOORS) - 1) : 1.0f;
 }
 
 float BonkRun::GetFloorRewardScale() const
