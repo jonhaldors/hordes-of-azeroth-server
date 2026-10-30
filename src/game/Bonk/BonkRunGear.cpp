@@ -134,8 +134,8 @@ namespace
         uint8 highQuality;
         uint8 rareShare;
     };
-    GearOdds const BONK_GEAR_ODDS_NORMAL[3] = { { ITEM_QUALITY_POOR, 70, ITEM_QUALITY_NORMAL, 0 },
-                                                { ITEM_QUALITY_POOR, 40, ITEM_QUALITY_NORMAL, 0 },
+    GearOdds const BONK_GEAR_ODDS_NORMAL[3] = { { ITEM_QUALITY_NORMAL, 100, ITEM_QUALITY_NORMAL, 0 },
+                                                { ITEM_QUALITY_NORMAL, 100, ITEM_QUALITY_NORMAL, 0 },
                                                 { ITEM_QUALITY_NORMAL, 100, ITEM_QUALITY_NORMAL, 0 } };
     GearOdds const BONK_GEAR_ODDS_HEROIC[3] = { { ITEM_QUALITY_NORMAL, 70, ITEM_QUALITY_UNCOMMON, 0 },
                                                 { ITEM_QUALITY_NORMAL, 30, ITEM_QUALITY_UNCOMMON, 0 },
