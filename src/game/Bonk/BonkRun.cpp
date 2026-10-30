@@ -90,6 +90,8 @@ namespace
     float const BONK_MILESTONE_VETERAN_CHANCE = 5.0f;
     float const BONK_VETERAN_HEALTH        = 2.5f;
     float const BONK_MAX_MOB_HEALTH        = 2000000000.0f;
+    uint32 const BONK_MOB_HEALTH_TABLE_LEVELS = 10;
+    float const BONK_MOB_HEALTH_LEVEL_GROWTH  = 0.1f;
     float const BONK_GEAR_POWER_REFERENCE  = 100.0f;
     float const BONK_ARMOR_BASE            = 100.0f;
     float const BONK_ARMOR_SLOPE           = 4.0f / 3.0f;
@@ -3797,9 +3799,11 @@ uint32 BonkRun::GetMobLevel() const
 
 float BonkRun::GetMobHealth(uint32 level) const
 {
-    if (CreatureClassLevelStats const* stats = sObjectMgr.GetCreatureClassLevelStats(CLASS_WARRIOR, level))
-        return float(stats->health);
-    return 40.0f * level;
+    uint32 const tableLevel = std::min(level, BONK_MOB_HEALTH_TABLE_LEVELS);
+    CreatureClassLevelStats const* stats = sObjectMgr.GetCreatureClassLevelStats(CLASS_WARRIOR, tableLevel);
+    float const tableHealth = stats ? float(stats->health) : 40.0f * tableLevel;
+    uint32 const levelsPastTable = level - tableLevel;
+    return tableHealth * (1.0f + BONK_MOB_HEALTH_LEVEL_GROWTH * float(levelsPastTable));
 }
 
 float BonkRun::CompoundStageScale(uint32 stage, float growth, float lateGrowth, uint32 knee, float lastGrowth, uint32 knee2)
@@ -5186,9 +5190,7 @@ void BonkRun::RewardMythicFloor()
         bonk->AddShards(tickets);
         m_shardsEarned += tickets;
     }
-    if (IsMythicMilestoneFloor(m_stage))
-        bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "! Legendary gear drops more often from now on.");
-    else if (tickets)
+    if (tickets)
         bonk->Notify("You cleared " + floor + " for the first time and earned " + FormatBonkShards(tickets) + "!");
 
     if (m_stage % BONK_TRAINING_FLOORS_PER_RANK == 0 && bonk->IsTierCleared("heroic") &&
@@ -5198,7 +5200,7 @@ void BonkRun::RewardMythicFloor()
 
 float BonkRun::FloorRewardScale(BonkTier const& tier, uint32 stage)
 {
-    return tier.key == "mythic" ? 1.0f + BONK_FLOOR_GOLD_GROWTH * float(stage - 1) : 1.0f;
+    return tier.key == "mythic" ? 1.0f + BONK_FLOOR_GOLD_GROWTH * float(std::min(stage, BONK_FLOOR_REWARD_GROWTH_FLOORS) - 1) : 1.0f;
 }
 
 float BonkRun::GetFloorRewardScale() const

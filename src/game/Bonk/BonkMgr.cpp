@@ -2109,8 +2109,34 @@ uint32 BonkMgr::GetTierGearEntry(uint8 classId, uint32 tier, uint32 slot)
     return sObjectMgr.GetItemPrototype(entry) ? entry : 0;
 }
 
+namespace
+{
+    bool IsBlueGearRange(uint32 entry)
+    {
+        uint32 const setEnd = BONK_TIER_GEAR_FIRST + BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS * BONK_TIER_GEAR_CLASS_COUNT;
+        uint32 const mythicEnd = BONK_MYTHIC_GEAR_FIRST + BONK_MYTHIC_GEAR_KINDS * BONK_TIER_GEAR_TIERS;
+        return (entry >= BONK_TIER_GEAR_FIRST && entry < setEnd) || (entry >= BONK_MYTHIC_GEAR_FIRST && entry < mythicEnd);
+    }
+}
+
+bool BonkMgr::IsEpicGear(uint32 entry)
+{
+    return entry >= BONK_EPIC_GEAR_OFFSET && IsBlueGearRange(entry - BONK_EPIC_GEAR_OFFSET);
+}
+
+uint32 BonkMgr::GetEpicGearEntry(uint32 blueEntry)
+{
+    return IsBlueGearRange(blueEntry) ? blueEntry + BONK_EPIC_GEAR_OFFSET : 0;
+}
+
+uint32 BonkMgr::GetBlueGearEntry(uint32 entry)
+{
+    return IsEpicGear(entry) ? entry - BONK_EPIC_GEAR_OFFSET : entry;
+}
+
 bool BonkMgr::ReadTierGearEntry(uint32 entry, uint8& classId, uint32& tier, uint32& slot)
 {
+    entry = GetBlueGearEntry(entry);
     uint32 const perClass = BONK_TIER_GEAR_TIERS * BONK_TIER_GEAR_SLOTS;
     if (entry < BONK_TIER_GEAR_FIRST || entry >= BONK_TIER_GEAR_FIRST + perClass * BONK_TIER_GEAR_CLASS_COUNT)
         return false;
@@ -2131,6 +2157,7 @@ uint32 BonkMgr::GetMythicGearEntry(uint32 kind, uint32 tier)
 
 bool BonkMgr::ReadMythicGearEntry(uint32 entry, uint32& kind, uint32& tier)
 {
+    entry = GetBlueGearEntry(entry);
     if (entry < BONK_MYTHIC_GEAR_FIRST || entry >= BONK_MYTHIC_GEAR_FIRST + BONK_MYTHIC_GEAR_KINDS * BONK_TIER_GEAR_TIERS)
         return false;
     kind = (entry - BONK_MYTHIC_GEAR_FIRST) / BONK_TIER_GEAR_TIERS;
@@ -2210,10 +2237,17 @@ uint32 BonkMgr::GetGearAtTier(uint32 entry, uint32 tier)
 {
     uint8 classId;
     uint32 kind, oldTier, slot;
+    bool const epic = IsEpicGear(entry);
     if (ReadTierGearEntry(entry, classId, oldTier, slot))
-        return GetTierGearEntry(classId, tier, slot);
+    {
+        uint32 const blue = GetTierGearEntry(classId, tier, slot);
+        return epic ? GetEpicGearEntry(blue) : blue;
+    }
     if (ReadMythicGearEntry(entry, kind, oldTier))
-        return GetMythicGearEntry(kind, tier);
+    {
+        uint32 const blue = GetMythicGearEntry(kind, tier);
+        return epic ? GetEpicGearEntry(blue) : blue;
+    }
     if (ReadLegendaryEntry(entry, kind, oldTier))
         return GetLegendaryTierEntry(kind, tier);
     return 0;

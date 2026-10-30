@@ -15,7 +15,9 @@ class Player;
 
 uint8 const BONK_FOUND_MAX_LINES = 2;
 uint8 const BONK_FOUND_NO_LINE = 255;
-float const BONK_FOUND_TIER_GROWTH = 1.12f;
+float const BONK_GEAR_TIER_STEP = 0.25f;
+
+float BonkGearTierScale(uint32 tier);
 
 struct BonkFoundLine
 {
@@ -53,6 +55,7 @@ namespace BonkFound
     BonkFoundGear Make(uint32 tier, uint32 lineCount);
     float LineValue(BonkFoundLine const& line, uint32 tier);
     uint32 GetItemTier(Item const* item);
+    uint32 GetScrapValue(Item const* item);
     uint32 GetUpgradeCost(uint32 tier);
     uint32 GetRerollCost(uint32 rerolls);
     std::vector<BonkFoundLine> RollRerollOffers(BonkFoundGear const& found, uint8 lineIndex);

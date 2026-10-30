@@ -1,4 +1,5 @@
 #include "BonkEnchant.h"
+#include "BonkFoundGear.h"
 #include "BonkMgr.h"
 #include "Player.h"
 #include "Utilities/Random.h"
@@ -12,7 +13,6 @@ namespace
 {
     uint8 const BONK_ENCHANT_SLOTS[] = { EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS, EQUIPMENT_SLOT_CHEST, EQUIPMENT_SLOT_WAIST,
         EQUIPMENT_SLOT_LEGS, EQUIPMENT_SLOT_FEET, EQUIPMENT_SLOT_WRISTS, EQUIPMENT_SLOT_HANDS };
-    float const BONK_ENCHANT_TIER_GROWTH = 1.12f;
 
     struct BonkEnchantGrade
     {
@@ -103,7 +103,7 @@ float BonkEnchanting::GetValue(BonkEnchant const& enchant, uint32 tier)
         return 0.0f;
     float value = stat->base * BONK_ENCHANT_GRADES[enchant.grade].multiplier;
     if (stat->grows)
-        value *= std::pow(BONK_ENCHANT_TIER_GROWTH, float(std::max(1u, tier) - 1));
+        value *= BonkGearTierScale(tier);
     return std::round(value * 10.0f) / 10.0f;
 }
 
