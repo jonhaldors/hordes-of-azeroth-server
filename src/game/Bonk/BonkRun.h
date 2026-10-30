@@ -1461,6 +1461,7 @@ class BonkRun
         uint32 m_captureSendMs = 0;
         uint32 m_greedStacks = 0;
         float m_shrineBonuses[MAX_BONK_PASSIVE_EFFECT] = {};
+        uint32 m_shrinePicks[MAX_BONK_PASSIVE_EFFECT] = {};
         struct LeyBuff
         {
             BonkPassiveEffect effect = BONK_PASSIVE_POWER;

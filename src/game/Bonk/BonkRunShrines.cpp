@@ -313,7 +313,7 @@ void BonkRun::OfferLeyBuffs()
         LeyBuff buff;
         buff.effect = stat->effect;
         buff.rarity = roll < epic ? BONK_RARITY_EPIC : roll < rare ? BONK_RARITY_RARE : roll < uncommon ? BONK_RARITY_UNCOMMON : BONK_RARITY_COMMON;
-        buff.value = stat->value * LEY_RARITY_SCALE[buff.rarity];
+        buff.value = stat->value * LEY_RARITY_SCALE[buff.rarity] * GetCopyWeight(m_shrinePicks[stat->effect] + 1);
         m_leyOffer.push_back(buff);
     }
     if (m_leyOffer.empty())
@@ -417,6 +417,7 @@ bool BonkRun::PickLeyBuff(uint32 index, std::string& error)
     else
     {
         m_shrineBonuses[buff.effect] += buff.value;
+        ++m_shrinePicks[buff.effect];
         ApplyPassives();
         if (LeyStat const* stat = GetLeyStat(buff.effect))
             bonk->Notify("The Ley Line grants you " + FormatLeyValue(*stat, buff.value) + "!");
