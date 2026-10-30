@@ -437,6 +437,8 @@ class BonkRun
         };
         bool IsOwnedOffer(Offer const& offer) const;
         bool HasOwnedOffer() const;
+        bool CanBanish(Offer const& offer) const;
+        void ReplaceBanishedOffer(size_t slot);
 
         struct Orb
         {
@@ -960,6 +962,7 @@ class BonkRun
         std::string DescribeOffer(Offer const& offer, std::string* icon) const;
         std::string DescribeStep(Offer const& offer) const;
         std::string DescribeRankUp(Offer const& offer, BonkWeapon const& weapon) const;
+        std::string DescribeBareRankUp(Offer const& offer) const;
         struct WeaponStrength
         {
             std::string lead;
@@ -1016,6 +1019,7 @@ class BonkRun
         void PickUpgradesInTurn(OwnedWeapon const& owned, Offer& offer, size_t& nextUpgrade) const;
         bool HasteShortensCooldown(OwnedWeapon const& owned, float alreadyRolled, float step) const;
         bool OfferGainsAnything(OwnedWeapon const& owned, Offer const& offer) const;
+        bool IsRankMaxed(OwnedWeapon const& owned) const;
         float GetRawWeaponHaste(OwnedWeapon const& owned) const;
         Offer MakeRankOffer(OwnedWeapon const& owned, BonkRarity minimum) const;
         Offer MakeEvolveOffer(OwnedWeapon const& owned, uint32 evolveTo) const;
@@ -1024,6 +1028,11 @@ class BonkRun
         bool IsEvolutionBanished(uint32 evolvedId) const;
         uint32 PickEvolution(OwnedWeapon const& owned) const;
         bool CanEvolve(OwnedWeapon const& owned) const;
+        static bool IsMaxAtPickup(BonkWeapon const& weapon);
+        uint32 GetSpellRankTotal() const;
+        uint32 GetWindowEvolveRanks() const;
+        bool HasEvolveRank(OwnedWeapon const& owned) const;
+        uint32 GetRanksPastEvolveRank(OwnedWeapon const& owned) const;
         float GetLegendaryChance(OwnedWeapon const& owned) const;
         std::string DescribeEvolutionChance(OwnedWeapon const& owned, uint32& chance) const;
         bool HasEvolutionLeft() const;

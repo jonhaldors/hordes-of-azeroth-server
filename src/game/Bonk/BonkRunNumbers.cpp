@@ -282,10 +282,14 @@ bool BonkRun::RankDamageCounts(OwnedWeapon const& owned) const
         return true;
     if (IsTickingKeyword(owned.weapon.applies) && owned.weapon.applyStacks)
         return true;
+    float const BONK_STRENGTH_PROBE_BONUS = 100.0f;
     float upgrades[MAX_BONK_SPELL_UPGRADE] = {};
     GetSpellUpgrades(&owned, upgrades);
-    WeaponStrength strength;
-    return GetWeaponStrength(owned.weapon, owned.damageBonus, upgrades, strength);
+    WeaponStrength strength, stronger;
+    if (!GetWeaponStrength(owned.weapon, owned.damageBonus, upgrades, strength))
+        return false;
+    GetWeaponStrength(owned.weapon, owned.damageBonus + BONK_STRENGTH_PROBE_BONUS, upgrades, stronger);
+    return stronger.value - strength.value >= 0.05f;
 }
 
 float BonkRun::GetRankDamageScale(uint32 rank)
