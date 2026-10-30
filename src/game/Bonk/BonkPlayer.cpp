@@ -1,5 +1,6 @@
 #include "BonkPlayer.h"
 #include "Bag.h"
+#include "BonkLocale.h"
 #include "BonkMastery.h"
 #include "BonkMgr.h"
 #include "BonkQuests.h"
@@ -2413,7 +2414,7 @@ void BonkPlayer::RecordStage(uint32 tierId, uint32 stage)
 
     for (BonkTier const* tier : locked)
         if (IsTierUnlocked(*tier))
-            Notify("You unlocked " + tier->name + " difficulty!");
+            Notify(GetString(BONK_STRING_TIER_UNLOCKED, { tier->name }));
 
     if (m_determination)
         SendDetermination();
@@ -2474,9 +2475,20 @@ void BonkPlayer::SendGlyphInfo() const
     for (auto const& itr : sBonkMgr.GetGlyphs())
     {
         BonkGlyph const& glyph = itr.second;
-        SendAddon("glyphinfo~" + std::to_string(glyph.id) + "~" + glyph.name + "~" + glyph.icon + "~" + std::to_string(uint32(glyph.rarity)) + "~" +
-            glyph.description + "~" + glyph.drawback);
+        SendAddon("glyphinfo~" + std::to_string(glyph.id) + "~" + Localize(BONK_FIELD_GLYPH_NAME, glyph.id, glyph.name) + "~" + glyph.icon + "~" +
+            std::to_string(uint32(glyph.rarity)) + "~" + Localize(BONK_FIELD_GLYPH_DESCRIPTION, glyph.id, glyph.description) + "~" +
+            Localize(BONK_FIELD_GLYPH_DRAWBACK, glyph.id, glyph.drawback));
     }
+}
+
+std::string BonkPlayer::GetString(BonkString id, std::vector<std::string> const& args) const
+{
+    return sBonkLocale.GetString(id, m_locale, args);
+}
+
+std::string BonkPlayer::Localize(BonkTextField field, uint32 id, std::string const& english) const
+{
+    return sBonkLocale.Localize(field, id, english, m_locale);
 }
 
 void BonkPlayer::Notify(std::string const& text) const

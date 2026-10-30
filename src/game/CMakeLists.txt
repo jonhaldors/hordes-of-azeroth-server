@@ -23,6 +23,7 @@ set (game_SRCS
     Bonk/BonkCommands.cpp
     Bonk/BonkCrowd.cpp
     Bonk/BonkKeywords.cpp
+    Bonk/BonkLocale.cpp
     Bonk/BonkMastery.cpp
     Bonk/BonkMgr.cpp
     Bonk/BonkMobAI.cpp
@@ -61,6 +62,7 @@ set (game_SRCS
     Bonk/BonkSandbox.cpp
     Bonk/BonkVersion.cpp
     Bonk/BonkSpawnPoints.cpp
+    Bonk/BonkStrings.cpp
     Bonk/BonkTelegraph.cpp
     Camera.cpp
     Conditions.cpp
@@ -296,6 +298,7 @@ set (game_SRCS
     AuraRemovalMgr.h
     AutoBroadCastMgr.h
     Bonk/BonkCodex.h
+    Bonk/BonkLocale.h
     Bonk/BonkMastery.h
     Bonk/BonkMgr.h
     Bonk/BonkMobAI.h
@@ -306,6 +309,7 @@ set (game_SRCS
     Bonk/BonkRunStats.h
     Bonk/BonkSandbox.h
     Bonk/BonkSpawnPoints.h
+    Bonk/BonkStrings.h
     Bonk/BonkTelegraph.h
     Camera.h
     ClientDefines.h
