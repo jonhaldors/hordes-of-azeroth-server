@@ -438,6 +438,7 @@ class BonkRun
         bool IsOwnedOffer(Offer const& offer) const;
         bool HasOwnedOffer() const;
         bool CanBanish(Offer const& offer) const;
+        void ReplaceBanishedOffer(size_t slot);
 
         struct Orb
         {

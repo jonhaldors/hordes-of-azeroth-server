@@ -10242,6 +10242,11 @@ bool BonkRun::IsOwnedOffer(Offer const& offer) const
     return rank != m_passiveRanks.end() && rank->second > 0;
 }
 
+bool BonkRun::CanBanish(Offer const& offer) const
+{
+    return offer.step == BONK_STEP_EVOLVE || !IsOwnedOffer(offer);
+}
+
 bool BonkRun::HasOwnedOffer() const
 {
     return std::any_of(m_offer.begin(), m_offer.end(), [this](Offer const& offer) { return IsOwnedOffer(offer); });
@@ -10335,11 +10340,6 @@ void BonkRun::GiveExperience(uint32 xp)
         m_overcapXp += xp;
         while (m_overcapXp >= next)
         {
-bool BonkRun::CanBanish(Offer const& offer) const
-{
-    return offer.step == BONK_STEP_EVOLVE || !IsOwnedOffer(offer);
-}
-
             m_overcapXp -= next;
             ++m_overcapLevel;
             ++m_pendingLevels;
@@ -12398,20 +12398,51 @@ bool BonkRun::Banish(uint32 choice, std::string& error)
     }
 
     Offer const offer = m_offer[choice - 1];
+    if (!CanBanish(offer))
+    {
+        error = "You can't banish something you already have.";
+        SendOffer();
+        return false;
+    }
     m_banished.insert(GetBanishKey(offer));
     m_player->GetBonkPlayer()->Notify("You banished " + DescribeOffer(offer, nullptr) + " for the rest of this run.");
     --m_banishes;
 
-    std::vector<Offer> kept;
-    for (size_t i = 0; i < m_offer.size(); ++i)
-        if (m_offer[i].locked && i + 1 != choice)
-            kept.push_back(m_offer[i]);
-    if (!OfferUpgrades(m_offerSource, nullptr, &kept))
+    ReplaceBanishedOffer(choice - 1);
+    if (!m_offer.empty())
+    {
+        SendOffer();
+        return true;
+    }
+    std::vector<Offer> const none;
+    if (!OfferUpgrades(m_offerSource, nullptr, &none))
     {
         SetPaused(false);
         m_player->GetBonkPlayer()->SendAddon("picked");
     }
     return true;
+}
+
+void BonkRun::ReplaceBanishedOffer(size_t slot)
+{
+    std::vector<Offer> const none;
+    std::vector<Offer> drawn;
+    OfferUpgrades(m_offerSource, &m_offer, &none, &drawn);
+    auto onBoard = [this](Offer const& card)
+    {
+        return std::any_of(m_offer.begin(), m_offer.end(), [&card](Offer const& shown)
+        {
+            return shown.isCard == card.isCard && shown.isWeapon == card.isWeapon && shown.id == card.id;
+        });
+    };
+    auto replacement = std::find_if(drawn.begin(), drawn.end(), [&](Offer const& card)
+    {
+        return !onBoard(card) && !m_banished.count(GetBanishKey(card));
+    });
+    if (replacement != drawn.end())
+        m_offer[slot] = *replacement;
+    else
+        m_offer.erase(m_offer.begin() + slot);
 }
 
 bool BonkRun::Skip(std::string& error)
@@ -12491,12 +12522,6 @@ std::string BonkRun::DescribeWeaponStats() const
 
 std::pair<uint64, uint32> BonkRun::GetOwnedSpellTotals(OwnedWeapon const& owned) const
 {
-    if (!CanBanish(offer))
-    {
-        error = "You can't banish something you already have.";
-        SendOffer();
-        return false;
-    }
     std::pair<uint64, uint32> totals{ 0, 0 };
     for (uint32 spellId : IsShapeshift(owned) ? BonkStats::GetWeaponSpells(owned.weapon) : std::vector<uint32>{ owned.weapon.spellId })
     {
