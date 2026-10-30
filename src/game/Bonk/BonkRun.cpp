@@ -249,10 +249,12 @@ namespace
     float const BONK_START_EDGE         = 60.0f;
     float const BONK_START_EDGE_ENCLOSED = 25.0f;
     float const BONK_START_SPREAD       = 80.0f;
-    uint32 const BONK_ZONE_START_TRIES  = 24;
+    uint32 const BONK_ZONE_START_TRIES  = 40;
     float const BONK_ZONE_START_MARGIN  = 6.0f;
     float const BONK_ZONE_START_FLAT    = 12.0f;
     float const BONK_ZONE_START_CLEAR   = 1.5f;
+    int32 const BONK_ZONE_START_SPAWN_CELLS = 2;
+    size_t const BONK_ZONE_START_SPAWNS = 3;
 int const BONK_START_PATH_POLYS     = 2048;
 int const BONK_START_PATH_NODES     = 65535;
 float const BONK_START_POLY_REACH   = 10.0f;
@@ -1213,6 +1215,19 @@ namespace
         return top <= z + BONK_ZONE_START_CLEAR;
     }
 
+    bool HasWorldSpawnsNear(uint32 mapId, float x, float y)
+    {
+        CellPair const center = MaNGOS::ComputeCellPair(x, y);
+        int32 const last = int32(TOTAL_NUMBER_OF_CELLS_PER_MAP) - 1;
+        size_t spawns = 0;
+        std::shared_lock<std::shared_timed_mutex> lock(sObjectMgr.GetCellLoadingObjectsMutex());
+        for (int32 cx = std::max(0, int32(center.x_coord) - BONK_ZONE_START_SPAWN_CELLS); cx <= std::min(last, int32(center.x_coord) + BONK_ZONE_START_SPAWN_CELLS); ++cx)
+            for (int32 cy = std::max(0, int32(center.y_coord) - BONK_ZONE_START_SPAWN_CELLS); cy <= std::min(last, int32(center.y_coord) + BONK_ZONE_START_SPAWN_CELLS); ++cy)
+                if (CellObjectGuids const* guids = sObjectMgr.GetCellObjectGuids(mapId, uint32(cy) * TOTAL_NUMBER_OF_CELLS_PER_MAP + uint32(cx)))
+                    spawns += guids->creatures.size() + guids->gameobjects.size();
+        return spawns >= BONK_ZONE_START_SPAWNS;
+    }
+
     void LoadGridsBetween(TerrainInfo* terrain, float fromX, float fromY, float toX, float toY)
     {
         float const step = SIZE_OF_GRIDS / 2.0f;
@@ -1282,6 +1297,8 @@ namespace
             float py = frand(BONK_ZONE_START_MARGIN, 100.0f - BONK_ZONE_START_MARGIN);
             if (!Zone2MapCoordinates(px, py, map.zoneId))
                 return false;
+            if (!HasWorldSpawnsNear(map.mapId, px, py))
+                continue;
             float const pz = terrain->GetHeightStatic(px, py, MAX_HEIGHT, false);
             if (pz <= INVALID_HEIGHT || !IsOpenGround(terrain, map.zoneId, px, py, pz))
                 continue;
@@ -1310,7 +1327,7 @@ namespace
         std::vector<BonkMapStart const*> reachable;
         TerrainInfo* terrain = sTerrainMgr.LoadTerrain(map.mapId);
         for (BonkMapStart const& start : starts)
-            if (map.type != BONK_MAP_OPEN || CanWalkFromAnchor(map, terrain, start.x, start.y, start.z))
+            if (map.type != BONK_MAP_OPEN || (HasWorldSpawnsNear(map.mapId, start.x, start.y) && CanWalkFromAnchor(map, terrain, start.x, start.y, start.z)))
                 reachable.push_back(&start);
         return reachable;
     }
