@@ -35,6 +35,16 @@ namespace
         return text;
     }
 
+    std::string ChanceNumber(float value)
+    {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%.1f", value);
+        std::string text = buffer;
+        if (text.size() > 2 && text.compare(text.size() - 2, 2, ".0") == 0)
+            text.resize(text.size() - 2);
+        return text;
+    }
+
     BonkString GetStatGainText(BonkPassiveEffect stat)
     {
         switch (stat)
@@ -67,7 +77,7 @@ namespace
     {
         float const sum = BonkRun::GetCopySum(copies);
         auto text = [locale](BonkString id, float value) { return sBonkLocale.GetString(id, locale, { Number(value) }); };
-        auto chance = [&]() { return text(BONK_STRING_CARD_CHANCE, BonkRun::GetStackedChance(card.values[0], copies)); };
+        auto chance = [&]() { return sBonkLocale.GetString(BONK_STRING_CARD_CHANCE, locale, { ChanceNumber(BonkRun::GetStackedChance(card.values[0], copies)) }); };
         auto cooldown = [&]() { return text(BONK_STRING_CARD_COOLDOWN, card.cooldownMs * BonkRun::GetCopyWeight(copies) / 1000.0f); };
         switch (card.effect)
         {
