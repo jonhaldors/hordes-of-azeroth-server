@@ -3242,6 +3242,16 @@ namespace
         return std::to_string(int32(std::floor(value + 0.5f)));
     }
 
+    std::string Chance(float value)
+    {
+        char text[16];
+        snprintf(text, sizeof(text), "%.1f", value);
+        std::string result = text;
+        if (result.size() > 2 && result.compare(result.size() - 2, 2, ".0") == 0)
+            result.resize(result.size() - 2);
+        return result;
+    }
+
     std::string Ordinal(uint32 value)
     {
         uint32 const tens = value % 100;
@@ -3315,11 +3325,14 @@ void BonkPlayer::SendFloorPreview(BonkTier const& tier, BonkRunBonuses const& bo
         uint32 const affixes = tier.eliteAffixes + bonuses.eliteAffixes + BonkRun::MilestoneAffixes(tier, floor);
         float const gold = (BonkRun::FloorRewardScale(tier, floor) - 1.0f) * 100.0f;
         float const legendary = BonkRun::BossLegendaryChance(tier, floor);
+        float const epic = (100.0f - legendary) * BonkRun::BossEpicChance(tier, floor) / 100.0f;
+        bool const mythic = tier.key == "mythic";
         bool const firstCleared = tier.key == "mythic" && floor <= cleared;
         SendAddon("floor~" + std::to_string(tier.id) + "~" + std::to_string(floor) + "~" + Percent((health - 1.0f) * 100.0f) + "~" +
             Percent((damage - 1.0f) * 100.0f) + "~" + Percent(veterans) + "~" + std::to_string(affixes) + "~" + Percent(gold) + "~" +
-            Percent(legendary) + "~" + DescribeFloorChange(tier, floor) + "~" + DescribeFirstClear(tier, floor) + "~" + (firstCleared ? "1" : "0") + "~" +
-            std::to_string(FloorBand(tier, floor)) + "~" + FloorChangeKind(tier, floor));
+            (mythic ? Chance(legendary) : "") + "~" + DescribeFloorChange(tier, floor) + "~" + DescribeFirstClear(tier, floor) + "~" + (firstCleared ? "1" : "0") + "~" +
+            std::to_string(FloorBand(tier, floor)) + "~" + FloorChangeKind(tier, floor) + "~" +
+            (mythic ? Chance(epic) + "~" + Chance(100.0f - legendary - epic) : "~"));
     }
 }
 

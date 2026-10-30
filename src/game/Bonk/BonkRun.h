@@ -187,6 +187,7 @@ class BonkRun
         static float MilestoneVeteranChance(BonkTier const& tier, uint32 stage);
         static float FloorRewardScale(BonkTier const& tier, uint32 stage);
         static float BossLegendaryChance(BonkTier const& tier, uint32 stage);
+        static float BossEpicChance(BonkTier const& tier, uint32 stage);
         uint32 GetMilestoneAffixes() const;
         float GetMilestoneVeteranChance() const;
         uint32 GetEvolveRank() const;
