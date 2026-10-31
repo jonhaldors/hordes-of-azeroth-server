@@ -533,10 +533,15 @@ void BonkRun::AddDamageStats(OwnedWeapon const& owned, OwnedWeapon const& next, 
         stats.push_back({ GetString(BONK_STRING_STAT_DAMAGE), ShownNumber(GetShownHit(owned, 0.0f)), ShownNumber(hit) });
 
     float const tick = GetShownTick(next, 0.0f);
-    if (tick > 0.0f)
-        if (BonkKeywordInfo const* info = sBonkMgr.GetKeyword(next.weapon.applies))
-            stats.push_back({ GetString(BONK_STRING_KEYWORD_DAMAGE_PER_STACK, { Localize(BONK_FIELD_KEYWORD_NAME, uint32(info->id), info->name) }),
-                ShownNumber(GetShownTick(owned, 0.0f)), ShownNumber(tick) });
+    if (tick <= 0.0f)
+        return;
+    std::string const tickBefore = ShownNumber(GetShownTick(owned, 0.0f));
+    std::string const tickAfter = ShownNumber(tick);
+    if (tickBefore == tickAfter)
+        return;
+    if (BonkKeywordInfo const* info = sBonkMgr.GetKeyword(next.weapon.applies))
+        stats.push_back({ GetString(BONK_STRING_KEYWORD_DAMAGE_PER_STACK, { Localize(BONK_FIELD_KEYWORD_NAME, uint32(info->id), info->name) }),
+            tickBefore, tickAfter });
 }
 
 void BonkRun::AddUpgradeStats(OwnedWeapon const& owned, OwnedWeapon const& next, bool hasDamage, std::vector<BonkStatChange>& stats) const

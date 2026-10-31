@@ -10397,7 +10397,22 @@ bool BonkRun::AutoPickCatchUp(std::string& error)
         error = GetString(BONK_STRING_SELECTION_ONLY_NEW_CARDS);
         return false;
     }
-    return Pick(uint32(ChooseAutoPick() + 1), error);
+    return RunAutoPicks(error);
+}
+
+bool BonkRun::RunAutoPicks(std::string& error)
+{
+    m_autoPickRunning = true;
+    bool picked = true;
+    while (picked && IsAutoPicking() && !m_offer.empty() && HasOwnedOffer())
+        picked = Pick(uint32(ChooseAutoPick() + 1), error);
+    m_autoPickRunning = false;
+    if (!m_offer.empty() && IsAutoPicking())
+    {
+        m_autoPickCatchUp = false;
+        SendOffer();
+    }
+    return picked;
 }
 
 void BonkRun::GiveCheckpointCatchUp()
@@ -12157,8 +12172,11 @@ bool BonkRun::OfferUpgrades(OfferSource source, std::vector<Offer> const* avoid,
     SetPaused(true);
     if (IsAutoPicking() && HasOwnedOffer())
     {
-        std::string error;
-        Pick(uint32(ChooseAutoPick() + 1), error);
+        if (!m_autoPickRunning)
+        {
+            std::string error;
+            RunAutoPicks(error);
+        }
         return true;
     }
     m_autoPickCatchUp = false;

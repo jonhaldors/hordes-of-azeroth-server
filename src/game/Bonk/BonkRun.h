@@ -185,6 +185,7 @@ class BonkRun
         size_t ChooseAutoPick() const;
         bool IsAutoPicking() const { return m_autoPickCatchUp && m_catchUpLevels && m_offerSource == OFFER_LEVEL; }
         bool AutoPickCatchUp(std::string& error);
+        bool RunAutoPicks(std::string& error);
         static float TierKneeHealthSteps(BonkTier const& tier, uint32 stage);
         static float TierDamageScale(BonkTier const& tier, uint32 stage);
         static uint32 FloorMilestones(BonkTier const& tier, uint32 stage);
@@ -1287,6 +1288,7 @@ class BonkRun
         uint32 m_startFloor = 1;
         uint32 m_catchUpLevels = 0;
         bool m_autoPickCatchUp = false;
+        bool m_autoPickRunning = false;
         uint32 m_floorBestAtStart = 0;
         void ApplyInvader();
 
